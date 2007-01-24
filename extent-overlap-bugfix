@@ -1,0 +1,151 @@
+To:	linux-ext4@vger.kernel.org
+
+From: \"Amit K. Arora\" <aarora@linux.vnet.ibm.com>
+
+Cc:	suparna@in.ibm.com, cmm@us.ibm.com, alex@clusterfs.com
+Subject: [Resubmit][PATCH 1/1] Extent overlap bugfix in ext4
+
+Note: This patch is being resubmitted as part of the recall of all the
+patches for ext4. It uses 2.6.20-rc5 version as the base.
+
+Problem Description:
+-------------------
+The ext4_ext_get_blocks() and ext4_ext_insert_extent() routines do not
+have a complete check for extent overlap, when a new extent needs to be
+inserted in an inode. With the current implementation, an overlap is
+possible when the new extent being inserted has ee_block that is not
+part of any of the existing extents, but the tail/center portion of this
+new extent _is_. This is possible only when we are writing/preallocating
+blocks across a hole.
+Though this problem was discovered while stress testing persistent
+preallocation patches (using modified fsx-linux); this essentially is an
+independent problem and should be fixed by a separate patch. Hence this
+fix.
+
+The Fix:
+-------
+The suggested patch fixes this by having a check in get_blocks() for
+finding if the new extent overlaps with an existing one. If it does, the
+length of the new extent is modified such that the overlap does not
+happen at all.
+
+Other option discussed:
+----------------------
+The other option discussed was to not to use ext4_ext_get_blocks() for
+persistent preallocation, and use ext4_ext_walk_space() with some helper
+function instead. This was considered because walk_space() already does
+a complete check for overlap and hence we can avoid duplication of this
+part of the logic in get_blocks(). But, again, there will be a
+duplication of code in the new helper function that may be required for
+this (like, calling ext4_new_blocks() and ext4_ext_insert_extent()).
+
+Updates from the original (first) version:
+-----------------------------------------
+This patch takes care of following review comments from Mingming, Alex
+and Suparna:
+(a) Not to use ext4_ext_find_extent() in check_overlap(), since it is an
+expensive operation.
+(b) Use "unsigned long" for (logical) block numbers everywhere.
+(c) Return true/false by check_overlap(), rather than extent pointer or
+the block number.
+(d) Update the length of the new extent in check_overlap(), if there is
+an overlap detected.
+(e) No need to have a check in insert_extent() (i.e. no BUG_ON required)
+
+
+Here is the patch:
+
+Signed-off-by: Amit Arora <aarora@in.ibm.com>
+---
+
+ fs/ext4/extents.c               |   50 +++++++++++++++++++++++++++++++++++++--
+ include/linux/ext4_fs_extents.h |    1 +
+ 2 files changed, 49 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index dc2724f..2f958fb 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -1129,6 +1129,45 @@ ext4_can_extents_be_merged(struct inode *inode, struct ext4_extent *ex1,
+ }
+ 
+ /*
++ * ext4_ext_check_overlap:
++ * check if a portion of the "newext" extent overlaps with an
++ * existing extent.
++ *
++ * If there is an overlap discovered, it updates the length of the newext
++ * such that there will be no overlap, and then returns 1.
++ * If there is no overlap found, it returns 0.
++ */
++unsigned int ext4_ext_check_overlap(struct inode *inode,
++					struct ext4_extent *newext,
++					struct ext4_ext_path *path)
++{
++	unsigned long b1, b2;
++	unsigned int depth, len1;
++
++	b1 = le32_to_cpu(newext->ee_block);
++	len1 = le16_to_cpu(newext->ee_len);
++	depth = ext_depth(inode);
++	if (!path[depth].p_ext)
++		goto out;
++	b2 = le32_to_cpu(path[depth].p_ext->ee_block);
++
++	/* get the next allocated block if the extent in the path
++	 * is before the requested block(s) */
++	if (b2 < b1) {
++		b2 = ext4_ext_next_allocated_block(path);
++		if (b2 == EXT_MAX_BLOCK)
++			goto out;
++	}
++
++	if (b1 + len1 > b2) {
++		newext->ee_len = cpu_to_le16(b2 - b1);
++		return 1;
++	}
++out:
++	return 0;
++}
++
++/*
+  * ext4_ext_insert_extent:
+  * tries to merge requsted extent into the existing extent or
+  * inserts requested extent as new one into the tree,
+@@ -2032,7 +2071,15 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 
+ 	/* allocate new block */
+ 	goal = ext4_ext_find_goal(inode, path, iblock);
+-	allocated = max_blocks;
++
++	/* Check if we can really insert (iblock)::(iblock+max_blocks) extent */
++	newex.ee_block = cpu_to_le32(iblock);
++	newex.ee_len = cpu_to_le16(max_blocks);
++	err = ext4_ext_check_overlap(inode, &newex, path);
++	if (err)
++		allocated = le16_to_cpu(newex.ee_len);
++	else
++		allocated = max_blocks;
+ 	newblock = ext4_new_blocks(handle, inode, goal, &allocated, &err);
+ 	if (!newblock)
+ 		goto out2;
+@@ -2040,7 +2087,6 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 			goal, newblock, allocated);
+ 
+ 	/* try to insert new extent into found leaf and return */
+-	newex.ee_block = cpu_to_le32(iblock);
+ 	ext4_ext_store_pblock(&newex, newblock);
+ 	newex.ee_len = cpu_to_le16(allocated);
+ 	err = ext4_ext_insert_extent(handle, inode, path, &newex);
+diff --git a/include/linux/ext4_fs_extents.h b/include/linux/ext4_fs_extents.h
+index a41cc24..0226703 100644
+--- a/include/linux/ext4_fs_extents.h
++++ b/include/linux/ext4_fs_extents.h
+@@ -190,6 +190,7 @@ ext4_ext_invalidate_cache(struct inode *inode)
+ 
+ extern int ext4_extent_tree_init(handle_t *, struct inode *);
+ extern int ext4_ext_calc_credits_for_insert(struct inode *, struct ext4_ext_path *);
++extern unsigned int ext4_ext_check_overlap(struct inode *, struct ext4_extent *, struct ext4_ext_path *);
+ extern int ext4_ext_insert_extent(handle_t *, struct inode *, struct ext4_ext_path *, struct ext4_extent *);
+ extern int ext4_ext_walk_space(struct inode *, unsigned long, unsigned long, ext_prepare_callback, void *);
+ extern struct ext4_ext_path * ext4_ext_find_extent(struct inode *, int, struct ext4_ext_path *);

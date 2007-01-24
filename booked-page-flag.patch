@@ -1,0 +1,40 @@
+Subject: [RFC] delayed allocation for ext4
+
+From: Alex Tomas <alex@clusterfs.com>
+
+To: linux-ext4@vger.kernel.org
+CC: linux-kernel@vger.kernel.org, alex@clusterfs.com
+
+booked-page-flag.patch
+
+adds PG_booked bit to page->flags. it's used in delayed
+allocation to mark space is already reserved for page
+(including possible metadata)
+---
+
+ include/linux/page-flags.h |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/page-flags.h b/include/linux/page-flags.h
+index 350878a..465a314 100644
+--- a/include/linux/page-flags.h
++++ b/include/linux/page-flags.h
+@@ -90,6 +90,7 @@
+ #define PG_reclaim		17	/* To be reclaimed asap */
+ #define PG_nosave_free		18	/* Used for system suspend/resume */
+ #define PG_buddy		19	/* Page is free, on buddy lists */
++#define PG_booked		20	/* Has blocks reserved on-disk */
+ 
+ 
+ #if (BITS_PER_LONG > 32)
+@@ -230,6 +231,10 @@ static inline void SetPageUptodate(struct page *page)
+ #define SetPageMappedToDisk(page) set_bit(PG_mappedtodisk, &(page)->flags)
+ #define ClearPageMappedToDisk(page) clear_bit(PG_mappedtodisk, &(page)->flags)
+ 
++#define PageBooked(page)	test_bit(PG_booked, &(page)->flags)
++#define SetPageBooked(page)	set_bit(PG_booked, &(page)->flags)
++#define ClearPageBooked(page)	clear_bit(PG_booked, &(page)->flags)
++
+ #define PageReclaim(page)	test_bit(PG_reclaim, &(page)->flags)
+ #define SetPageReclaim(page)	set_bit(PG_reclaim, &(page)->flags)
+ #define ClearPageReclaim(page)	clear_bit(PG_reclaim, &(page)->flags)
