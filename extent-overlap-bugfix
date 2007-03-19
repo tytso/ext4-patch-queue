@@ -53,15 +53,14 @@ Here is the patch:
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
 ---
 
- fs/ext4/extents.c               |   50 +++++++++++++++++++++++++++++++++++++--
- include/linux/ext4_fs_extents.h |    1 +
+ fs/ext4/extents.c               |   50 ++++++++++++++++++++++++++++++++++++++--
+ include/linux/ext4_fs_extents.h |    1 
  2 files changed, 49 insertions(+), 2 deletions(-)
 
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index dc2724f..2f958fb 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -1129,6 +1129,45 @@ ext4_can_extents_be_merged(struct inode *inode, struct ext4_extent *ex1,
+diff -Nurp linux001/fs/ext4/extents.c linux002/fs/ext4/extents.c
+--- linux001/fs/ext4/extents.c	2007-03-19 16:03:07.000000000 -0500
++++ linux002/fs/ext4/extents.c	2007-03-19 16:03:07.000000000 -0500
+@@ -1129,6 +1129,45 @@ ext4_can_extents_be_merged(struct inode 
  }
  
  /*
@@ -107,7 +106,7 @@ index dc2724f..2f958fb 100644
   * ext4_ext_insert_extent:
   * tries to merge requsted extent into the existing extent or
   * inserts requested extent as new one into the tree,
-@@ -2032,7 +2071,15 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2032,7 +2071,15 @@ int ext4_ext_get_blocks(handle_t *handle
  
  	/* allocate new block */
  	goal = ext4_ext_find_goal(inode, path, iblock);
@@ -124,7 +123,7 @@ index dc2724f..2f958fb 100644
  	newblock = ext4_new_blocks(handle, inode, goal, &allocated, &err);
  	if (!newblock)
  		goto out2;
-@@ -2040,7 +2087,6 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2040,7 +2087,6 @@ int ext4_ext_get_blocks(handle_t *handle
  			goal, newblock, allocated);
  
  	/* try to insert new extent into found leaf and return */
@@ -132,11 +131,10 @@ index dc2724f..2f958fb 100644
  	ext4_ext_store_pblock(&newex, newblock);
  	newex.ee_len = cpu_to_le16(allocated);
  	err = ext4_ext_insert_extent(handle, inode, path, &newex);
-diff --git a/include/linux/ext4_fs_extents.h b/include/linux/ext4_fs_extents.h
-index a41cc24..0226703 100644
---- a/include/linux/ext4_fs_extents.h
-+++ b/include/linux/ext4_fs_extents.h
-@@ -190,6 +190,7 @@ ext4_ext_invalidate_cache(struct inode *inode)
+diff -Nurp linux001/include/linux/ext4_fs_extents.h linux002/include/linux/ext4_fs_extents.h
+--- linux001/include/linux/ext4_fs_extents.h	2007-03-19 16:03:07.000000000 -0500
++++ linux002/include/linux/ext4_fs_extents.h	2007-03-19 16:03:07.000000000 -0500
+@@ -190,6 +190,7 @@ ext4_ext_invalidate_cache(struct inode *
  
  extern int ext4_extent_tree_init(handle_t *, struct inode *);
  extern int ext4_ext_calc_credits_for_insert(struct inode *, struct ext4_ext_path *);

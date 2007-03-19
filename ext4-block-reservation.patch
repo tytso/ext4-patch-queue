@@ -10,17 +10,16 @@ From: Alex Tomas <alex@clusterfs.com>
 
 ---
 
- fs/ext4/balloc.c           |  176 +++++++++++++++++++++++++++++++++++++++++++-
- fs/ext4/super.c            |    2 +
+ fs/ext4/balloc.c           |  176 ++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/super.c            |    2 
  include/linux/ext4_fs.h    |    5 +
  include/linux/ext4_fs_sb.h |    5 +
  4 files changed, 185 insertions(+), 3 deletions(-)
 
-diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index c4dd110..c3e4e7e 100644
---- a/fs/ext4/balloc.c
-+++ b/fs/ext4/balloc.c
-@@ -630,8 +630,10 @@ void ext4_free_blocks(handle_t *handle, struct inode *inode,
+diff -Nurp linux005/fs/ext4/balloc.c linux006/fs/ext4/balloc.c
+--- linux005/fs/ext4/balloc.c	2007-03-19 16:03:07.000000000 -0500
++++ linux006/fs/ext4/balloc.c	2007-03-19 16:03:07.000000000 -0500
+@@ -630,8 +630,10 @@ void ext4_free_blocks(handle_t *handle, 
  		return;
  	}
  	ext4_free_blocks_sb(handle, sb, block, count, &dquot_freed_blocks);
@@ -32,7 +31,7 @@ index c4dd110..c3e4e7e 100644
  	return;
  }
  
-@@ -1440,7 +1442,7 @@ ext4_fsblk_t ext4_new_blocks(handle_t *handle, struct inode *inode,
+@@ -1440,7 +1442,7 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
  	struct ext4_sb_info *sbi;
  	struct ext4_reserve_window_node *my_rsv = NULL;
  	struct ext4_block_alloc_info *block_i;
@@ -41,7 +40,7 @@ index c4dd110..c3e4e7e 100644
  #ifdef EXT4FS_DEBUG
  	static int goal_hits, goal_attempts;
  #endif
-@@ -1462,6 +1464,13 @@ ext4_fsblk_t ext4_new_blocks(handle_t *handle, struct inode *inode,
+@@ -1462,6 +1464,13 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
  		return 0;
  	}
  
@@ -68,7 +67,7 @@ index c4dd110..c3e4e7e 100644
  	brelse(bitmap_bh);
  	return 0;
  }
-@@ -1834,3 +1846,161 @@ unsigned long ext4_bg_num_gdb(struct super_block *sb, int group)
+@@ -1834,3 +1846,161 @@ unsigned long ext4_bg_num_gdb(struct sup
  	return ext4_bg_num_gdb_meta(sb,group);
  
  }
@@ -230,11 +229,10 @@ index c4dd110..c3e4e7e 100644
 +	sbi->s_reservation_slots = NULL;
 +}
 +
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 486a641..53138fd 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -439,6 +439,7 @@ static void ext4_put_super (struct super_block * sb)
+diff -Nurp linux005/fs/ext4/super.c linux006/fs/ext4/super.c
+--- linux005/fs/ext4/super.c	2007-03-19 16:03:07.000000000 -0500
++++ linux006/fs/ext4/super.c	2007-03-19 16:03:07.000000000 -0500
+@@ -439,6 +439,7 @@ static void ext4_put_super (struct super
  	struct ext4_super_block *es = sbi->s_es;
  	int i;
  
@@ -242,7 +240,7 @@ index 486a641..53138fd 100644
  	ext4_ext_release(sb);
  	ext4_xattr_put_super(sb);
  	jbd2_journal_destroy(sbi->s_journal);
-@@ -1867,6 +1868,7 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
+@@ -1871,6 +1872,7 @@ static int ext4_fill_super (struct super
  		"writeback");
  
  	ext4_ext_init(sb);
@@ -250,10 +248,9 @@ index 486a641..53138fd 100644
  
  	lock_kernel();
  	return 0;
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index b101b79..be5612f 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
+diff -Nurp linux005/include/linux/ext4_fs.h linux006/include/linux/ext4_fs.h
+--- linux005/include/linux/ext4_fs.h	2007-03-19 16:03:07.000000000 -0500
++++ linux006/include/linux/ext4_fs.h	2007-03-19 16:03:07.000000000 -0500
 @@ -203,6 +203,7 @@ struct ext4_group_desc
  #define EXT4_STATE_JDATA		0x00000001 /* journaled data exists */
  #define EXT4_STATE_NEW			0x00000002 /* inode is newly created */
@@ -262,7 +259,7 @@ index b101b79..be5612f 100644
  
  /* Used to pass group descriptor data when online resize is done */
  struct ext4_new_group_input {
-@@ -821,6 +822,10 @@ extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
+@@ -821,6 +822,10 @@ extern struct ext4_group_desc * ext4_get
  extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
  extern void ext4_init_block_alloc_info(struct inode *);
  extern void ext4_rsv_window_add(struct super_block *sb, struct ext4_reserve_window_node *rsv);
@@ -273,10 +270,9 @@ index b101b79..be5612f 100644
  
  /* dir.c */
  extern int ext4_check_dir_entry(const char *, struct inode *,
-diff --git a/include/linux/ext4_fs_sb.h b/include/linux/ext4_fs_sb.h
-index 691a713..b01aaf1 100644
---- a/include/linux/ext4_fs_sb.h
-+++ b/include/linux/ext4_fs_sb.h
+diff -Nurp linux005/include/linux/ext4_fs_sb.h linux006/include/linux/ext4_fs_sb.h
+--- linux005/include/linux/ext4_fs_sb.h	2007-02-04 12:44:54.000000000 -0600
++++ linux006/include/linux/ext4_fs_sb.h	2007-03-19 16:03:07.000000000 -0500
 @@ -24,6 +24,8 @@
  #endif
  #include <linux/rbtree.h>

@@ -4,6 +4,8 @@ delayed allocation itself, enabled by "delalloc" mount option.
 extents support is also required. currently it works only
 with blocksize=pagesize.
 
+Shaggy fixed a lot of endian errors reported by sparse
+
 From: Alex Tomas <alex@clusterfs.com>
 ---
 
@@ -11,18 +13,17 @@ From: Alex Tomas <alex@clusterfs.com>
  fs/ext4/extents.c               |   30 +
  fs/ext4/file.c                  |    4 
  fs/ext4/inode.c                 |   34 +
- fs/ext4/super.c                 |   15 -
- fs/ext4/writeback.c             | 1169 +++++++++++++++++++++++++++++++++++++++
+ fs/ext4/super.c                 |   15 
+ fs/ext4/writeback.c             | 1179 ++++++++++++++++++++++++++++++++++++++++
  include/linux/ext4_fs.h         |   13 
  include/linux/ext4_fs_extents.h |    1 
  include/linux/ext4_fs_i.h       |    5 
  include/linux/ext4_fs_sb.h      |   11 
- 10 files changed, 1278 insertions(+), 6 deletions(-)
+ 10 files changed, 1288 insertions(+), 6 deletions(-)
 
-diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
-index ae6e7e5..7b24c73 100644
---- a/fs/ext4/Makefile
-+++ b/fs/ext4/Makefile
+diff -Nurp linux006/fs/ext4/Makefile linux007/fs/ext4/Makefile
+--- linux006/fs/ext4/Makefile	2007-02-04 12:44:54.000000000 -0600
++++ linux007/fs/ext4/Makefile	2007-03-19 16:03:07.000000000 -0500
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -32,11 +33,10 @@ index ae6e7e5..7b24c73 100644
  
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 81bee22..c6593c4 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -2418,6 +2418,36 @@ int ext4_ext_writepage_trans_blocks(struct inode *inode, int num)
+diff -Nurp linux006/fs/ext4/extents.c linux007/fs/ext4/extents.c
+--- linux006/fs/ext4/extents.c	2007-03-19 16:03:07.000000000 -0500
++++ linux007/fs/ext4/extents.c	2007-03-19 16:03:07.000000000 -0500
+@@ -2418,6 +2418,36 @@ int ext4_ext_writepage_trans_blocks(stru
  	return needed;
  }
  
@@ -73,11 +73,10 @@ index 81bee22..c6593c4 100644
  EXPORT_SYMBOL(ext4_mark_inode_dirty);
  EXPORT_SYMBOL(ext4_ext_invalidate_cache);
  EXPORT_SYMBOL(ext4_ext_insert_extent);
-diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 3bbc24b..237819f 100644
---- a/fs/ext4/file.c
-+++ b/fs/ext4/file.c
-@@ -35,8 +35,8 @@ static int ext4_release_file (struct inode * inode, struct file * filp)
+diff -Nurp linux006/fs/ext4/file.c linux007/fs/ext4/file.c
+--- linux006/fs/ext4/file.c	2007-03-19 07:16:36.000000000 -0500
++++ linux007/fs/ext4/file.c	2007-03-19 16:03:07.000000000 -0500
+@@ -35,8 +35,8 @@ static int ext4_release_file (struct ino
  {
  	/* if we are the last writer on the inode, drop the block reservation */
  	if ((filp->f_mode & FMODE_WRITE) &&
@@ -88,10 +87,9 @@ index 3bbc24b..237819f 100644
  		mutex_lock(&EXT4_I(inode)->truncate_mutex);
  		ext4_discard_reservation(inode);
  		mutex_unlock(&EXT4_I(inode)->truncate_mutex);
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index a127cc0..71fe60d 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
+diff -Nurp linux006/fs/ext4/inode.c linux007/fs/ext4/inode.c
+--- linux006/fs/ext4/inode.c	2007-03-19 16:03:07.000000000 -0500
++++ linux007/fs/ext4/inode.c	2007-03-19 16:03:07.000000000 -0500
 @@ -943,7 +943,7 @@ out:
  
  #define DIO_CREDITS (EXT4_RESERVE_TRANS_BLOCKS + 32)
@@ -100,8 +98,8 @@ index a127cc0..71fe60d 100644
 +int ext4_get_block(struct inode *inode, sector_t iblock,
  			struct buffer_head *bh_result, int create)
  {
- 	handle_t *handle = journal_current_handle();
-@@ -1807,9 +1807,34 @@ static const struct address_space_operations ext4_journalled_aops = {
+ 	handle_t *handle = ext4_journal_current_handle();
+@@ -1807,9 +1807,34 @@ static const struct address_space_operat
  	.releasepage	= ext4_releasepage,
  };
  
@@ -137,7 +135,7 @@ index a127cc0..71fe60d 100644
  		inode->i_mapping->a_ops = &ext4_ordered_aops;
  	else if (ext4_should_writeback_data(inode))
  		inode->i_mapping->a_ops = &ext4_writeback_aops;
-@@ -1834,6 +1859,11 @@ int ext4_block_truncate_page(handle_t *handle, struct page *page,
+@@ -1834,6 +1859,11 @@ int ext4_block_truncate_page(handle_t *h
  	int err = 0;
  	void *kaddr;
  
@@ -149,11 +147,10 @@ index a127cc0..71fe60d 100644
  	blocksize = inode->i_sb->s_blocksize;
  	length = blocksize - (offset & (blocksize - 1));
  	iblock = index << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 53138fd..84ef0b9 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -439,6 +439,7 @@ static void ext4_put_super (struct super_block * sb)
+diff -Nurp linux006/fs/ext4/super.c linux007/fs/ext4/super.c
+--- linux006/fs/ext4/super.c	2007-03-19 16:03:07.000000000 -0500
++++ linux007/fs/ext4/super.c	2007-03-19 16:03:08.000000000 -0500
+@@ -439,6 +439,7 @@ static void ext4_put_super (struct super
  	struct ext4_super_block *es = sbi->s_es;
  	int i;
  
@@ -161,15 +158,15 @@ index 53138fd..84ef0b9 100644
  	ext4_reserve_release(sb);
  	ext4_ext_release(sb);
  	ext4_xattr_put_super(sb);
-@@ -506,6 +507,13 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
+@@ -506,6 +507,13 @@ static struct inode *ext4_alloc_inode(st
  	ei->i_block_alloc_info = NULL;
  	ei->vfs_inode.i_version = 1;
  	memset(&ei->i_cached_extent, 0, sizeof(struct ext4_ext_cache));
 +
 +	/* FIXME: these wb-related fields could be initialized once */
-+ 	ei->i_blocks_reserved = 0;
-+ 	ei->i_md_reserved = 0;
-+ 	atomic_set(&ei->i_wb_writers, 0);
++	ei->i_blocks_reserved = 0;
++	ei->i_md_reserved = 0;
++	atomic_set(&ei->i_wb_writers, 0);
 +	spin_lock_init(&ei->i_wb_reserved_lock);
 +
  	return &ei->vfs_inode;
@@ -202,7 +199,7 @@ index 53138fd..84ef0b9 100644
  		case Opt_ignore:
  			break;
  		case Opt_resize:
-@@ -1869,6 +1881,7 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
+@@ -1873,6 +1885,7 @@ static int ext4_fill_super (struct super
  
  	ext4_ext_init(sb);
  	ext4_reserve_init(sb);
@@ -210,12 +207,10 @@ index 53138fd..84ef0b9 100644
  
  	lock_kernel();
  	return 0;
-diff --git a/fs/ext4/writeback.c b/fs/ext4/writeback.c
-new file mode 100644
-index 0000000..8861500
---- /dev/null
-+++ b/fs/ext4/writeback.c
-@@ -0,0 +1,1169 @@
+diff -Nurp linux006/fs/ext4/writeback.c linux007/fs/ext4/writeback.c
+--- linux006/fs/ext4/writeback.c	1969-12-31 18:00:00.000000000 -0600
++++ linux007/fs/ext4/writeback.c	2007-03-19 16:03:08.000000000 -0500
+@@ -0,0 +1,1179 @@
 +/*
 + * Copyright (c) 2003-2006, Cluster File Systems, Inc, info@clusterfs.com
 + * Written by Alex Tomas <alex@clusterfs.com>
@@ -340,7 +335,7 @@ index 0000000..8861500
 +static struct bio * ext4_wb_bio_alloc(struct inode *inode,
 +					sector_t first_block, int nr_vecs)
 +{
-+	int gfp_flags = GFP_NOFS | __GFP_HIGH;
++	gfp_t gfp_flags = GFP_NOFS | __GFP_HIGH;
 +	struct bio *bio;
 +	int maxreq;
 +
@@ -506,10 +501,11 @@ index 0000000..8861500
 +	BUG_ON(list_empty(&wc->list));
 +
 +	wb_debug("cook and submit bios for %u/%u/%u for %lu/%u\n",
-+		ex->ee_block, ex->ee_len, ex->ee_start, wc->start, wc->len);
++		 le32_to_cpu(ex->ee_block), le16_to_cpu(ex->ee_len),
++		 le32_to_cpu(ex->ee_start), wc->start, wc->len);
 +
-+	blk = ex->ee_block;
-+	remain = ex->ee_len;
++	blk = le32_to_cpu(ex->ee_block);
++	remain = le16_to_cpu(ex->ee_len);
 +	wc->extents++;
 +
 +	while (remain) {
@@ -547,9 +543,11 @@ index 0000000..8861500
 +alloc_new_bio:
 +		if (bio == NULL) {
 +			/* +2 because head/tail may belong to different pages */
-+			nr_pages = (ex->ee_len - (blk - ex->ee_block));
++			nr_pages = (le16_to_cpu(ex->ee_len) -
++				    (blk - le32_to_cpu(ex->ee_block)));
 +			nr_pages = (nr_pages >> (PAGE_CACHE_SHIFT - blkbits));
-+			off = ex->ee_start + (blk - ex->ee_block);
++			off = le32_to_cpu(ex->ee_start) +
++			      (blk - le32_to_cpu(ex->ee_block));
 +			bio = ext4_wb_bio_alloc(inode, off, nr_pages + 2);
 +			if (bio == NULL)
 +				return -ENOMEM;
@@ -595,7 +593,8 @@ index 0000000..8861500
 +		
 +		/* try to predict block placement */
 +		if ((ex = path[depth].p_ext))
-+			return ex->ee_start + (block - ex->ee_block);
++			return le32_to_cpu(ex->ee_start) +
++			       (block - le32_to_cpu(ex->ee_block));
 +
 +		/* it looks index is empty
 +		 * try to find starting from index itself */
@@ -634,14 +633,15 @@ index 0000000..8861500
 +				(unsigned) ec->ec_block,
 +				(unsigned) ec->ec_len,
 +				(unsigned) ec->ec_start);
-+		nex.ee_start = ec->ec_start;
-+		nex.ee_block = ec->ec_block;
-+		nex.ee_len = ec->ec_len;
++		nex.ee_start = cpu_to_le32(ec->ec_start);
++		nex.ee_block = cpu_to_le32(ec->ec_block);
++		nex.ee_len = cpu_to_le16(ec->ec_len);
 +		err = ext4_wb_submit_extent(wc, NULL, &nex, 0);
 +
 +		/* correct on-disk size, if we grow within
 +		 * already allocated block */
-+		new_i_size = (loff_t) nex.ee_block + nex.ee_len;
++		new_i_size = (loff_t) le32_to_cpu(nex.ee_block) +
++			     le16_to_cpu(nex.ee_len);
 +		new_i_size = new_i_size << inode->i_blkbits;
 +		if (new_i_size > i_size_read(inode))
 +			new_i_size = i_size_read(inode);
@@ -706,10 +706,10 @@ index 0000000..8861500
 +			pblock, count, inode->i_ino, ec->ec_len);
 +
 +	/* insert new extent */
-+	nex.ee_start = pblock;
++	nex.ee_start = cpu_to_le32(pblock);
 +	nex.ee_start_hi = 0;
-+	nex.ee_len = count;
-+	nex.ee_block = ec->ec_block;
++	nex.ee_len = cpu_to_le16(count);
++	nex.ee_block = cpu_to_le32(ec->ec_block);
 +	err = ext4_ext_insert_extent(handle, inode, path, &nex);
 +	if (err)
 +		goto out;
@@ -719,16 +719,19 @@ index 0000000..8861500
 +	 * we are asking ext4_ext_walk_space() to continue 
 +	 * scaning after that block
 +	 */
-+	ec->ec_len = nex.ee_len;
++	ec->ec_len = le16_to_cpu(nex.ee_len);
 +	BUG_ON(nex.ee_len == 0);
 +
 +#ifdef EXT4_WB_STATS
-+	atomic_add(nex.ee_len, &EXT4_SB(inode->i_sb)->s_wb_allocated);
++	atomic_add(le16_to_cpu(nex.ee_len),
++		   &EXT4_SB(inode->i_sb)->s_wb_allocated);
 +#endif
 +
 +	wb_debug("inserted %lu/%lu/%lu for %lu (asked %u)\n",
-+		(unsigned long) nex.ee_block, (unsigned long) nex.ee_len, 
-+		(unsigned long) nex.ee_start, inode->i_ino, ec->ec_len);
++		(unsigned long) le32_to_cpu(nex.ee_block),
++		(unsigned long) le16_to_cpu(nex.ee_len), 
++		(unsigned long) le32_to_cpu(nex.ee_start),
++		inode->i_ino, ec->ec_len);
 +
 +	/*
 +	 * Important! The nex can change after insert. So do not
@@ -737,12 +740,14 @@ index 0000000..8861500
 +
 +	/* block have been allocated for data, so time to drop dirty
 +	 * in correspondend buffer_heads to prevent corruptions */
-+	for (i = 0; i < nex.ee_len; i++)
-+		unmap_underlying_metadata(sb->s_bdev, nex.ee_start + i);
++	for (i = 0; i < le16_to_cpu(nex.ee_len); i++)
++		unmap_underlying_metadata(sb->s_bdev,
++					  le32_to_cpu(nex.ee_start) + i);
 +
 +	/* correct on-disk inode size */
-+	if (nex.ee_len > 0) {
-+		new_i_size = (loff_t) nex.ee_block + nex.ee_len;
++	if (le16_to_cpu(nex.ee_len) > 0) {
++		new_i_size = (loff_t) le32_to_cpu(nex.ee_block) +
++			     le16_to_cpu(nex.ee_len);
 +		new_i_size = new_i_size << inode->i_blkbits;
 +		if (new_i_size > i_size_read(inode))
 +			new_i_size = i_size_read(inode);
@@ -1082,7 +1087,7 @@ index 0000000..8861500
 +				wb_debug("read block %u\n",
 +						(unsigned) bhw->b_blocknr);
 +				set_bh_page(bhw, page, 0);
-+				bhw->b_this_page = 0;
++				bhw->b_this_page = NULL;
 +				bhw->b_size = 1 << inode->i_blkbits;
 +				atomic_set(&bhw->b_count, 1);
 +				ll_rw_block(READ, 1, &bhw);
@@ -1313,7 +1318,7 @@ index 0000000..8861500
 +			wb_debug("read block %u for part.trunc on %lu\n",
 +					(unsigned) bhw->b_blocknr, page->index);
 +			set_bh_page(bhw, page, 0);
-+			bhw->b_this_page = 0;
++			bhw->b_this_page = NULL;
 +			bhw->b_size = 1 << inode->i_blkbits;
 +			atomic_set(&bhw->b_count, 1);
 +			ll_rw_block(READ, 1, &bhw);
@@ -1385,10 +1390,9 @@ index 0000000..8861500
 +#endif
 +}
 +
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index be5612f..0f60034 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
+diff -Nurp linux006/include/linux/ext4_fs.h linux007/include/linux/ext4_fs.h
+--- linux006/include/linux/ext4_fs.h	2007-03-19 16:03:07.000000000 -0500
++++ linux007/include/linux/ext4_fs.h	2007-03-19 16:03:08.000000000 -0500
 @@ -414,6 +414,7 @@ struct ext4_inode {
  #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
  #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
@@ -1397,7 +1401,7 @@ index be5612f..0f60034 100644
  
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
-@@ -1007,6 +1008,18 @@ ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+@@ -1007,6 +1008,18 @@ ext4_get_blocks_wrap(handle_t *handle, s
  }
  
  
@@ -1416,11 +1420,10 @@ index be5612f..0f60034 100644
  #endif	/* __KERNEL__ */
  
  #endif	/* _LINUX_EXT4_FS_H */
-diff --git a/include/linux/ext4_fs_extents.h b/include/linux/ext4_fs_extents.h
-index b77584e..6093c57 100644
---- a/include/linux/ext4_fs_extents.h
-+++ b/include/linux/ext4_fs_extents.h
-@@ -208,6 +208,7 @@ extern unsigned int ext4_ext_check_overlap(struct inode *, struct ext4_extent *,
+diff -Nurp linux006/include/linux/ext4_fs_extents.h linux007/include/linux/ext4_fs_extents.h
+--- linux006/include/linux/ext4_fs_extents.h	2007-03-19 16:03:07.000000000 -0500
++++ linux007/include/linux/ext4_fs_extents.h	2007-03-19 16:03:08.000000000 -0500
+@@ -208,6 +208,7 @@ extern unsigned int ext4_ext_check_overl
  extern int ext4_ext_insert_extent(handle_t *, struct inode *, struct ext4_ext_path *, struct ext4_extent *);
  extern int ext4_ext_walk_space(struct inode *, unsigned long, unsigned long, ext_prepare_callback, void *);
  extern struct ext4_ext_path * ext4_ext_find_extent(struct inode *, int, struct ext4_ext_path *);
@@ -1428,10 +1431,9 @@ index b77584e..6093c57 100644
  
  #endif /* _LINUX_EXT4_EXTENTS */
  
-diff --git a/include/linux/ext4_fs_i.h b/include/linux/ext4_fs_i.h
-index bb42379..d6a7453 100644
---- a/include/linux/ext4_fs_i.h
-+++ b/include/linux/ext4_fs_i.h
+diff -Nurp linux006/include/linux/ext4_fs_i.h linux007/include/linux/ext4_fs_i.h
+--- linux006/include/linux/ext4_fs_i.h	2007-03-19 16:03:07.000000000 -0500
++++ linux007/include/linux/ext4_fs_i.h	2007-03-19 16:03:08.000000000 -0500
 @@ -153,6 +153,11 @@ struct ext4_inode_info {
  
  	unsigned long i_ext_generation;
@@ -1444,10 +1446,9 @@ index bb42379..d6a7453 100644
  };
  
  #endif	/* _LINUX_EXT4_FS_I */
-diff --git a/include/linux/ext4_fs_sb.h b/include/linux/ext4_fs_sb.h
-index b01aaf1..fdc6373 100644
---- a/include/linux/ext4_fs_sb.h
-+++ b/include/linux/ext4_fs_sb.h
+diff -Nurp linux006/include/linux/ext4_fs_sb.h linux007/include/linux/ext4_fs_sb.h
+--- linux006/include/linux/ext4_fs_sb.h	2007-03-19 16:03:07.000000000 -0500
++++ linux007/include/linux/ext4_fs_sb.h	2007-03-19 16:03:08.000000000 -0500
 @@ -94,6 +94,17 @@ struct ext4_sb_info {
  	unsigned long s_ext_blocks;
  	unsigned long s_ext_extents;

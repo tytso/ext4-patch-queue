@@ -13,20 +13,19 @@ dump "ee_start".
 
 Hope this helps.
 
-  Valérie
+ValÃ©rie
 
 From: Valerie Clement <valerie.clement@bull.net>
 
 ---
 
- fs/ext4/writeback.c |   19 +++++++++++++------
- 1 files changed, 13 insertions(+), 6 deletions(-)
+ fs/ext4/writeback.c |   20 ++++++++++++++------
+ 1 file changed, 14 insertions(+), 6 deletions(-)
 
-diff --git a/fs/ext4/writeback.c b/fs/ext4/writeback.c
-index 8861500..20e1d2e 100644
---- a/fs/ext4/writeback.c
-+++ b/fs/ext4/writeback.c
-@@ -274,7 +274,8 @@ static int ext4_wb_submit_extent(struct ext4_wb_control *wc, handle_t *handle,
+diff -Nurp linux007/fs/ext4/writeback.c linux008/fs/ext4/writeback.c
+--- linux007/fs/ext4/writeback.c	2007-03-19 16:03:08.000000000 -0500
++++ linux008/fs/ext4/writeback.c	2007-03-19 16:03:08.000000000 -0500
+@@ -274,7 +274,8 @@ static int ext4_wb_submit_extent(struct 
  	struct inode *inode = wc->mapping->host;
  	int blkbits = inode->i_blkbits;
  	struct page *page;
@@ -36,54 +35,55 @@ index 8861500..20e1d2e 100644
  	unsigned long pstart, plen, prev;
  	struct bio *bio = NULL;
  	int nr_pages;
-@@ -332,6 +333,7 @@ alloc_new_bio:
- 			nr_pages = (ex->ee_len - (blk - ex->ee_block));
+@@ -335,6 +336,8 @@ alloc_new_bio:
  			nr_pages = (nr_pages >> (PAGE_CACHE_SHIFT - blkbits));
- 			off = ex->ee_start + (blk - ex->ee_block);
-+			off |= (ext4_fsblk_t) ex->ee_start_hi << 32;
+ 			off = le32_to_cpu(ex->ee_start) +
+ 			      (blk - le32_to_cpu(ex->ee_block));
++			off |= (ext4_fsblk_t)
++				le16_to_cpu(ex->ee_start_hi) << 32;
  			bio = ext4_wb_bio_alloc(inode, off, nr_pages + 2);
  			if (bio == NULL)
  				return -ENOMEM;
-@@ -377,7 +379,9 @@ ext4_wb_find_goal(struct inode *inode, struct ext4_ext_path *path,
+@@ -380,7 +383,9 @@ ext4_wb_find_goal(struct inode *inode, s
  		
  		/* try to predict block placement */
  		if ((ex = path[depth].p_ext))
--			return ex->ee_start + (block - ex->ee_block);
-+			return ((ex->ee_start
-+				| ((ext4_fsblk_t) ex->ee_start_hi << 32))
-+				+ (block - ex->ee_block));
+-			return le32_to_cpu(ex->ee_start) +
++			return (le32_to_cpu(ex->ee_start) |
++				((ext4_fsblk_t)
++				 le16_to_cpu(ex->ee_start_hi) << 32)) +
+ 			       (block - le32_to_cpu(ex->ee_block));
  
  		/* it looks index is empty
- 		 * try to find starting from index itself */
-@@ -416,7 +420,8 @@ static int ext4_wb_handle_extent(struct inode *inode,
+@@ -420,7 +425,8 @@ static int ext4_wb_handle_extent(struct 
  				(unsigned) ec->ec_block,
  				(unsigned) ec->ec_len,
  				(unsigned) ec->ec_start);
--		nex.ee_start = ec->ec_start;
-+		nex.ee_start = ec->ec_start & 0xffffffff;
-+		nex.ee_start_hi = (ec->ec_start >> 32) & 0xffff;
- 		nex.ee_block = ec->ec_block;
- 		nex.ee_len = ec->ec_len;
+-		nex.ee_start = cpu_to_le32(ec->ec_start);
++		nex.ee_start = cpu_to_le32(ec->ec_start & 0xffffffff);
++		nex.ee_start_hi = cpu_to_le16((ec->ec_start >> 32) & 0xffff);
+ 		nex.ee_block = cpu_to_le32(ec->ec_block);
+ 		nex.ee_len = cpu_to_le16(ec->ec_len);
  		err = ext4_wb_submit_extent(wc, NULL, &nex, 0);
-@@ -488,8 +493,8 @@ static int ext4_wb_handle_extent(struct inode *inode,
+@@ -493,8 +499,8 @@ static int ext4_wb_handle_extent(struct 
  			pblock, count, inode->i_ino, ec->ec_len);
  
  	/* insert new extent */
--	nex.ee_start = pblock;
+-	nex.ee_start = cpu_to_le32(pblock);
 -	nex.ee_start_hi = 0;
-+	nex.ee_start = pblock & 0xffffffff;
-+	nex.ee_start_hi = (pblock >> 32) & 0xffff;
- 	nex.ee_len = count;
- 	nex.ee_block = ec->ec_block;
++	nex.ee_start = cpu_to_le32(pblock & 0xffffffff);
++	nex.ee_start_hi = cpu_to_le16((pblock >> 32) & 0xffff);
+ 	nex.ee_len = cpu_to_le16(count);
+ 	nex.ee_block = cpu_to_le32(ec->ec_block);
  	err = ext4_ext_insert_extent(handle, inode, path, &nex);
-@@ -520,7 +525,9 @@ static int ext4_wb_handle_extent(struct inode *inode,
- 	/* block have been allocated for data, so time to drop dirty
+@@ -529,7 +535,9 @@ static int ext4_wb_handle_extent(struct 
  	 * in correspondend buffer_heads to prevent corruptions */
- 	for (i = 0; i < nex.ee_len; i++)
--		unmap_underlying_metadata(sb->s_bdev, nex.ee_start + i);
-+		unmap_underlying_metadata(sb->s_bdev,
-+				((ext4_fsblk_t) nex.ee_start_hi << 32)
-+				+ nex.ee_start + i);
+ 	for (i = 0; i < le16_to_cpu(nex.ee_len); i++)
+ 		unmap_underlying_metadata(sb->s_bdev,
+-					  le32_to_cpu(nex.ee_start) + i);
++					  ((ext4_fsblk_t)
++					   le16_to_cpu(nex.ee_start_hi) << 32) +
++					   le32_to_cpu(nex.ee_start) + i);
  
  	/* correct on-disk inode size */
- 	if (nex.ee_len > 0) {
+ 	if (le16_to_cpu(nex.ee_len) > 0) {

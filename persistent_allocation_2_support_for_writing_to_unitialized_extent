@@ -4,17 +4,17 @@ This patch adds the support for writing to an uninitialized extent (the
 extent which was created as a result of persistent preallocation).
 
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
+Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 ---
 
- fs/ext4/extents.c               |  228 ++++++++++++++++++++++++++++++++++-----
+ fs/ext4/extents.c               |  228 +++++++++++++++++++++++++++++++++++-----
  include/linux/ext4_fs_extents.h |    1 
  2 files changed, 202 insertions(+), 27 deletions(-)
 
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 09ba97c..81bee22 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -1141,6 +1141,51 @@ ext4_can_extents_be_merged(struct inode *inode, struct ext4_extent *ex1,
+diff -Nurp linux003/fs/ext4/extents.c linux004/fs/ext4/extents.c
+--- linux003/fs/ext4/extents.c	2007-03-19 16:03:07.000000000 -0500
++++ linux004/fs/ext4/extents.c	2007-03-19 16:03:07.000000000 -0500
+@@ -1141,6 +1141,51 @@ ext4_can_extents_be_merged(struct inode 
  }
  
  /*
@@ -93,7 +93,7 @@ index 09ba97c..81bee22 100644
  
  	/* try to merge extents to the left */
  
-@@ -1999,15 +2026,149 @@ void ext4_ext_release(struct super_block *sb)
+@@ -1999,15 +2026,149 @@ void ext4_ext_release(struct super_block
  #endif
  }
  
@@ -184,7 +184,7 @@ index 09ba97c..81bee22 100644
 +	}
 +	/* ex2: iblock to iblock + maxblocks-1 : initialised */
 +	ex2->ee_block = cpu_to_le32(iblock);
-+	ex2->ee_start = newblock;
++	ex2->ee_start = cpu_to_le32(newblock);
 +	ext4_ext_store_pblock(ex2, newblock);
 +	ex2->ee_len = cpu_to_le16(allocated);
 +	if (ex2 != ex)
@@ -244,7 +244,7 @@ index 09ba97c..81bee22 100644
  	unsigned long allocated = 0;
  
  	__clear_bit(BH_New, &bh_result->b_state);
-@@ -2055,6 +2216,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2055,6 +2216,7 @@ int ext4_ext_get_blocks(handle_t *handle
  	 * this is why assert can't be put in ext4_ext_find_extent()
  	 */
  	BUG_ON(path[depth].p_ext == NULL && depth != 0);
@@ -252,7 +252,7 @@ index 09ba97c..81bee22 100644
  
  	ex = path[depth].p_ext;
  	if (ex) {
-@@ -2063,13 +2225,9 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2063,13 +2225,9 @@ int ext4_ext_get_blocks(handle_t *handle
  		unsigned short ee_len;
  
  		/*
@@ -266,8 +266,8 @@ index 09ba97c..81bee22 100644
 -			goto out2;
  		ee_len = ext4_ext_get_actual_len(ex);
  		/* if found extent covers block, simply return it */
- 	        if (iblock >= ee_block && iblock < ee_block + ee_len) {
-@@ -2078,12 +2236,27 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 		if (iblock >= ee_block && iblock < ee_block + ee_len) {
+@@ -2078,12 +2236,27 @@ int ext4_ext_get_blocks(handle_t *handle
  			allocated = ee_len - (iblock - ee_block);
  			ext_debug("%d fit into %lu:%d -> %llu\n", (int) iblock,
  					ee_block, ee_len, newblock);
@@ -297,7 +297,7 @@ index 09ba97c..81bee22 100644
  		}
  	}
  
-@@ -2135,6 +2308,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2135,6 +2308,7 @@ int ext4_ext_get_blocks(handle_t *handle
  
  	/* previous routine could use block we allocated */
  	newblock = ext_pblock(&newex);
@@ -305,11 +305,10 @@ index 09ba97c..81bee22 100644
  	__set_bit(BH_New, &bh_result->b_state);
  
  	/* Cache only when it is _not_ an uninitialized extent */
-diff --git a/include/linux/ext4_fs_extents.h b/include/linux/ext4_fs_extents.h
-index fed7cc3..b77584e 100644
---- a/include/linux/ext4_fs_extents.h
-+++ b/include/linux/ext4_fs_extents.h
-@@ -203,6 +203,7 @@ ext4_ext_invalidate_cache(struct inode *inode)
+diff -Nurp linux003/include/linux/ext4_fs_extents.h linux004/include/linux/ext4_fs_extents.h
+--- linux003/include/linux/ext4_fs_extents.h	2007-03-19 16:03:07.000000000 -0500
++++ linux004/include/linux/ext4_fs_extents.h	2007-03-19 16:03:07.000000000 -0500
+@@ -203,6 +203,7 @@ ext4_ext_invalidate_cache(struct inode *
  
  extern int ext4_extent_tree_init(handle_t *, struct inode *);
  extern int ext4_ext_calc_credits_for_insert(struct inode *, struct ext4_ext_path *);

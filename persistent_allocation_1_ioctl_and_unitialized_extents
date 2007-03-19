@@ -6,17 +6,16 @@ preallocation of blocks to an extent enabled file in ext4.
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
 ---
 
- fs/ext4/extents.c               |  125 ++++++++++++++++++++++++++-------------
+ fs/ext4/extents.c               |  125 ++++++++++++++++++++++++++--------------
  fs/ext4/ioctl.c                 |   69 ++++++++++++++++++++++
  include/linux/ext4_fs.h         |   13 ++++
  include/linux/ext4_fs_extents.h |   13 ++++
  4 files changed, 177 insertions(+), 43 deletions(-)
 
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 2f958fb..09ba97c 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -283,7 +283,7 @@ static void ext4_ext_show_path(struct inode *inode, struct ext4_ext_path *path)
+diff -Nurp linux002/fs/ext4/extents.c linux003/fs/ext4/extents.c
+--- linux002/fs/ext4/extents.c	2007-03-19 16:03:07.000000000 -0500
++++ linux003/fs/ext4/extents.c	2007-03-19 16:03:07.000000000 -0500
+@@ -283,7 +283,7 @@ static void ext4_ext_show_path(struct in
  		} else if (path->p_ext) {
  			ext_debug("  %d:%d:%llu ",
  				  le32_to_cpu(path->p_ext->ee_block),
@@ -25,29 +24,29 @@ index 2f958fb..09ba97c 100644
  				  ext_pblock(path->p_ext));
  		} else
  			ext_debug("  []");
-@@ -306,7 +306,7 @@ static void ext4_ext_show_leaf(struct inode *inode, struct ext4_ext_path *path)
+@@ -306,7 +306,7 @@ static void ext4_ext_show_leaf(struct in
  
  	for (i = 0; i < le16_to_cpu(eh->eh_entries); i++, ex++) {
  		ext_debug("%d:%d:%llu ", le32_to_cpu(ex->ee_block),
 -			  le16_to_cpu(ex->ee_len), ext_pblock(ex));
-+			  	ext4_ext_get_actual_len(ex), ext_pblock(ex));
++				ext4_ext_get_actual_len(ex), ext_pblock(ex));
  	}
  	ext_debug("\n");
  }
-@@ -426,7 +426,7 @@ ext4_ext_binsearch(struct inode *inode, struct ext4_ext_path *path, int block)
+@@ -426,7 +426,7 @@ ext4_ext_binsearch(struct inode *inode, 
  	ext_debug("  -> %d:%llu:%d ",
- 		        le32_to_cpu(path->p_ext->ee_block),
- 		        ext_pblock(path->p_ext),
+ 			le32_to_cpu(path->p_ext->ee_block),
+ 			ext_pblock(path->p_ext),
 -			le16_to_cpu(path->p_ext->ee_len));
 +			ext4_ext_get_actual_len(path->p_ext));
  
  #ifdef CHECK_BINSEARCH
  	{
-@@ -687,7 +687,7 @@ static int ext4_ext_split(handle_t *handle, struct inode *inode,
+@@ -687,7 +687,7 @@ static int ext4_ext_split(handle_t *hand
  		ext_debug("move %d:%llu:%d in new leaf %llu\n",
- 			        le32_to_cpu(path[depth].p_ext->ee_block),
- 			        ext_pblock(path[depth].p_ext),
--			        le16_to_cpu(path[depth].p_ext->ee_len),
+ 				le32_to_cpu(path[depth].p_ext->ee_block),
+ 				ext_pblock(path[depth].p_ext),
+-				le16_to_cpu(path[depth].p_ext->ee_len),
 +				ext4_ext_get_actual_len(path[depth].p_ext),
  				newblock);
  		/*memmove(ex++, path[depth].p_ext++,
@@ -73,14 +72,14 @@ index 2f958fb..09ba97c 100644
  			le32_to_cpu(ex2->ee_block))
  		return 0;
  
-@@ -1116,14 +1128,14 @@ ext4_can_extents_be_merged(struct inode *inode, struct ext4_extent *ex1,
+@@ -1116,14 +1128,14 @@ ext4_can_extents_be_merged(struct inode 
  	 * as an RO_COMPAT feature, refuse to merge to extents if
  	 * this can result in the top bit of ee_len being set.
  	 */
 -	if (le16_to_cpu(ex1->ee_len) + le16_to_cpu(ex2->ee_len) > EXT_MAX_LEN)
 +	if (ext1_ee_len + ext2_ee_len > EXT_MAX_LEN)
  		return 0;
- #ifdef AGRESSIVE_TEST
+ #ifdef AGGRESSIVE_TEST
  	if (le16_to_cpu(ex1->ee_len) >= 4)
  		return 0;
  #endif
@@ -90,7 +89,7 @@ index 2f958fb..09ba97c 100644
  		return 1;
  	return 0;
  }
-@@ -1145,7 +1157,7 @@ unsigned int ext4_ext_check_overlap(struct inode *inode,
+@@ -1145,7 +1157,7 @@ unsigned int ext4_ext_check_overlap(stru
  	unsigned int depth, len1;
  
  	b1 = le32_to_cpu(newext->ee_block);
@@ -99,7 +98,7 @@ index 2f958fb..09ba97c 100644
  	depth = ext_depth(inode);
  	if (!path[depth].p_ext)
  		goto out;
-@@ -1181,9 +1193,9 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
+@@ -1181,9 +1193,9 @@ int ext4_ext_insert_extent(handle_t *han
  	struct ext4_extent *ex, *fex;
  	struct ext4_extent *nearex; /* nearest extent */
  	struct ext4_ext_path *npath = NULL;
@@ -111,7 +110,7 @@ index 2f958fb..09ba97c 100644
  	depth = ext_depth(inode);
  	ex = path[depth].p_ext;
  	BUG_ON(path[depth].p_hdr == NULL);
-@@ -1191,14 +1203,23 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
+@@ -1191,14 +1203,23 @@ int ext4_ext_insert_extent(handle_t *han
  	/* try to insert block into found extent and return */
  	if (ex && ext4_can_extents_be_merged(inode, ex, newext)) {
  		ext_debug("append %d block to %d:%d (from %llu)\n",
@@ -141,18 +140,18 @@ index 2f958fb..09ba97c 100644
  		goto merge;
 @@ -1254,7 +1275,7 @@ has_space:
  		ext_debug("first extent in the leaf: %d:%llu:%d\n",
- 			        le32_to_cpu(newext->ee_block),
- 			        ext_pblock(newext),
--			        le16_to_cpu(newext->ee_len));
+ 				le32_to_cpu(newext->ee_block),
+ 				ext_pblock(newext),
+-				le16_to_cpu(newext->ee_len));
 +				ext4_ext_get_actual_len(newext));
  		path[depth].p_ext = EXT_FIRST_EXTENT(eh);
  	} else if (le32_to_cpu(newext->ee_block)
- 		           > le32_to_cpu(nearex->ee_block)) {
+ 			   > le32_to_cpu(nearex->ee_block)) {
 @@ -1267,7 +1288,7 @@ has_space:
  					"move %d from 0x%p to 0x%p\n",
- 				        le32_to_cpu(newext->ee_block),
- 				        ext_pblock(newext),
--				        le16_to_cpu(newext->ee_len),
+ 					le32_to_cpu(newext->ee_block),
+ 					ext_pblock(newext),
+-					le16_to_cpu(newext->ee_len),
 +					ext4_ext_get_actual_len(newext),
  					nearex, len, nearex + 1, nearex + 2);
  			memmove(nearex + 2, nearex + 1, len);
@@ -182,7 +181,7 @@ index 2f958fb..09ba97c 100644
  		if (nearex + 1 < EXT_LAST_EXTENT(eh)) {
  			len = (EXT_LAST_EXTENT(eh) - nearex - 1)
  					* sizeof(struct ext4_extent);
-@@ -1370,8 +1396,8 @@ int ext4_ext_walk_space(struct inode *inode, unsigned long block,
+@@ -1370,8 +1396,8 @@ int ext4_ext_walk_space(struct inode *in
  			end = le32_to_cpu(ex->ee_block);
  			if (block + num < end)
  				end = block + num;
@@ -193,7 +192,7 @@ index 2f958fb..09ba97c 100644
  			/* need to allocate space after found extent */
  			start = block;
  			end = block + num;
-@@ -1383,7 +1409,8 @@ int ext4_ext_walk_space(struct inode *inode, unsigned long block,
+@@ -1383,7 +1409,8 @@ int ext4_ext_walk_space(struct inode *in
  			 * by found extent
  			 */
  			start = block;
@@ -203,36 +202,36 @@ index 2f958fb..09ba97c 100644
  			if (block + num < end)
  				end = block + num;
  			exists = 1;
-@@ -1399,7 +1426,7 @@ int ext4_ext_walk_space(struct inode *inode, unsigned long block,
+@@ -1399,7 +1426,7 @@ int ext4_ext_walk_space(struct inode *in
  			cbex.ec_type = EXT4_EXT_CACHE_GAP;
  		} else {
- 		        cbex.ec_block = le32_to_cpu(ex->ee_block);
--		        cbex.ec_len = le16_to_cpu(ex->ee_len);
+ 			cbex.ec_block = le32_to_cpu(ex->ee_block);
+-			cbex.ec_len = le16_to_cpu(ex->ee_len);
 +			cbex.ec_len = ext4_ext_get_actual_len(ex);
- 		        cbex.ec_start = ext_pblock(ex);
+ 			cbex.ec_start = ext_pblock(ex);
  			cbex.ec_type = EXT4_EXT_CACHE_EXTENT;
  		}
-@@ -1472,15 +1499,15 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
+@@ -1472,15 +1499,15 @@ ext4_ext_put_gap_in_cache(struct inode *
  		ext_debug("cache gap(before): %lu [%lu:%lu]",
  				(unsigned long) block,
- 			        (unsigned long) le32_to_cpu(ex->ee_block),
--			        (unsigned long) le16_to_cpu(ex->ee_len));
-+			        (unsigned long) ext4_ext_get_actual_len(ex));
+ 				(unsigned long) le32_to_cpu(ex->ee_block),
+-				(unsigned long) le16_to_cpu(ex->ee_len));
++				(unsigned long) ext4_ext_get_actual_len(ex));
  	} else if (block >= le32_to_cpu(ex->ee_block)
--		            + le16_to_cpu(ex->ee_len)) {
-+		            + ext4_ext_get_actual_len(ex)) {
- 	        lblock = le32_to_cpu(ex->ee_block)
--		         + le16_to_cpu(ex->ee_len);
-+		         + ext4_ext_get_actual_len(ex);
+-			    + le16_to_cpu(ex->ee_len)) {
++			    + ext4_ext_get_actual_len(ex)) {
+ 		lblock = le32_to_cpu(ex->ee_block)
+-			 + le16_to_cpu(ex->ee_len);
++			 + ext4_ext_get_actual_len(ex);
  		len = ext4_ext_next_allocated_block(path);
  		ext_debug("cache gap(after): [%lu:%lu] %lu",
- 			        (unsigned long) le32_to_cpu(ex->ee_block),
--			        (unsigned long) le16_to_cpu(ex->ee_len),
-+			        (unsigned long) ext4_ext_get_actual_len(ex),
+ 				(unsigned long) le32_to_cpu(ex->ee_block),
+-				(unsigned long) le16_to_cpu(ex->ee_len),
++				(unsigned long) ext4_ext_get_actual_len(ex),
  				(unsigned long) block);
  		BUG_ON(len == lblock);
  		len = len - lblock;
-@@ -1610,12 +1637,12 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -1610,12 +1637,12 @@ static int ext4_remove_blocks(handle_t *
  				unsigned long from, unsigned long to)
  {
  	struct buffer_head *bh;
@@ -246,7 +245,7 @@ index 2f958fb..09ba97c 100644
  		spin_lock(&sbi->s_ext_stats_lock);
  		sbi->s_ext_blocks += ee_len;
  		sbi->s_ext_extents++;
-@@ -1629,12 +1656,12 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -1629,12 +1656,12 @@ static int ext4_remove_blocks(handle_t *
  	}
  #endif
  	if (from >= le32_to_cpu(ex->ee_block)
@@ -262,7 +261,7 @@ index 2f958fb..09ba97c 100644
  		ext_debug("free last %lu blocks starting %llu\n", num, start);
  		for (i = 0; i < num; i++) {
  			bh = sb_find_get_block(inode->i_sb, start + i);
-@@ -1642,12 +1669,12 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -1642,12 +1669,12 @@ static int ext4_remove_blocks(handle_t *
  		}
  		ext4_free_blocks(handle, inode, start, num);
  	} else if (from == le32_to_cpu(ex->ee_block)
@@ -278,7 +277,7 @@ index 2f958fb..09ba97c 100644
  	}
  	return 0;
  }
-@@ -1661,7 +1688,7 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -1661,7 +1688,7 @@ ext4_ext_rm_leaf(handle_t *handle, struc
  	struct ext4_extent_header *eh;
  	unsigned a, b, block, num;
  	unsigned long ex_ee_block;
@@ -287,7 +286,7 @@ index 2f958fb..09ba97c 100644
  	struct ext4_extent *ex;
  
  	ext_debug("truncate since %lu in leaf\n", start);
-@@ -1676,7 +1703,9 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -1676,7 +1703,9 @@ ext4_ext_rm_leaf(handle_t *handle, struc
  	ex = EXT_LAST_EXTENT(eh);
  
  	ex_ee_block = le32_to_cpu(ex->ee_block);
@@ -298,7 +297,7 @@ index 2f958fb..09ba97c 100644
  
  	while (ex >= EXT_FIRST_EXTENT(eh) &&
  			ex_ee_block + ex_ee_len > start) {
-@@ -1744,6 +1773,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -1744,6 +1773,8 @@ ext4_ext_rm_leaf(handle_t *handle, struc
  
  		ex->ee_block = cpu_to_le32(block);
  		ex->ee_len = cpu_to_le16(num);
@@ -307,7 +306,7 @@ index 2f958fb..09ba97c 100644
  
  		err = ext4_ext_dirty(handle, inode, path + depth);
  		if (err)
-@@ -1753,7 +1784,7 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -1753,7 +1784,7 @@ ext4_ext_rm_leaf(handle_t *handle, struc
  				ext_pblock(ex));
  		ex--;
  		ex_ee_block = le32_to_cpu(ex->ee_block);
@@ -316,16 +315,16 @@ index 2f958fb..09ba97c 100644
  	}
  
  	if (correct_index && eh->eh_entries)
-@@ -2029,7 +2060,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2029,7 +2060,7 @@ int ext4_ext_get_blocks(handle_t *handle
  	if (ex) {
- 	        unsigned long ee_block = le32_to_cpu(ex->ee_block);
+ 		unsigned long ee_block = le32_to_cpu(ex->ee_block);
  		ext4_fsblk_t ee_start = ext_pblock(ex);
 -		unsigned short ee_len  = le16_to_cpu(ex->ee_len);
 +		unsigned short ee_len;
  
  		/*
  		 * Allow future support for preallocated extents to be added
-@@ -2037,8 +2068,9 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2037,8 +2068,9 @@ int ext4_ext_get_blocks(handle_t *handle
  		 * Uninitialized extents are treated as holes, except that
  		 * we avoid (fail) allocating new blocks during a write.
  		 */
@@ -334,9 +333,9 @@ index 2f958fb..09ba97c 100644
  			goto out2;
 +		ee_len = ext4_ext_get_actual_len(ex);
  		/* if found extent covers block, simply return it */
- 	        if (iblock >= ee_block && iblock < ee_block + ee_len) {
+ 		if (iblock >= ee_block && iblock < ee_block + ee_len) {
  			newblock = iblock - ee_block + ee_start;
-@@ -2046,8 +2078,11 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2046,8 +2078,11 @@ int ext4_ext_get_blocks(handle_t *handle
  			allocated = ee_len - (iblock - ee_block);
  			ext_debug("%d fit into %lu:%d -> %llu\n", (int) iblock,
  					ee_block, ee_len, newblock);
@@ -350,7 +349,7 @@ index 2f958fb..09ba97c 100644
  			goto out;
  		}
  	}
-@@ -2089,6 +2124,8 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2089,6 +2124,8 @@ int ext4_ext_get_blocks(handle_t *handle
  	/* try to insert new extent into found leaf and return */
  	ext4_ext_store_pblock(&newex, newblock);
  	newex.ee_len = cpu_to_le16(allocated);
@@ -359,7 +358,7 @@ index 2f958fb..09ba97c 100644
  	err = ext4_ext_insert_extent(handle, inode, path, &newex);
  	if (err)
  		goto out2;
-@@ -2100,8 +2137,10 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2100,8 +2137,10 @@ int ext4_ext_get_blocks(handle_t *handle
  	newblock = ext_pblock(&newex);
  	__set_bit(BH_New, &bh_result->b_state);
  
@@ -372,10 +371,9 @@ index 2f958fb..09ba97c 100644
  out:
  	if (allocated > max_blocks)
  		allocated = max_blocks;
-diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 500567d..4914d0e 100644
---- a/fs/ext4/ioctl.c
-+++ b/fs/ext4/ioctl.c
+diff -Nurp linux002/fs/ext4/ioctl.c linux003/fs/ext4/ioctl.c
+--- linux002/fs/ext4/ioctl.c	2007-02-04 12:44:54.000000000 -0600
++++ linux003/fs/ext4/ioctl.c	2007-03-19 16:03:07.000000000 -0500
 @@ -11,6 +11,7 @@
  #include <linux/jbd2.h>
  #include <linux/capability.h>
@@ -424,7 +422,7 @@ index 500567d..4914d0e 100644
 +		while (ret >= 0 && ret < max_blocks) {
 +			block = block + ret;
 +			max_blocks = max_blocks - ret;
-+	  		ret = ext4_ext_get_blocks(handle, inode, block,
++			ret = ext4_ext_get_blocks(handle, inode, block,
 +						max_blocks, &map_bh,
 +						EXT4_CREATE_UNINITIALIZED_EXT,
 +						0);
@@ -459,15 +457,14 @@ index 500567d..4914d0e 100644
  	default:
  		return -ENOTTY;
  	}
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 498503e..b101b79 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
+diff -Nurp linux002/include/linux/ext4_fs.h linux003/include/linux/ext4_fs.h
+--- linux002/include/linux/ext4_fs.h	2007-03-19 16:03:07.000000000 -0500
++++ linux003/include/linux/ext4_fs.h	2007-03-19 16:03:07.000000000 -0500
 @@ -102,6 +102,8 @@
  				 EXT4_GOOD_OLD_FIRST_INO : \
  				 (s)->s_first_ino)
  #endif
-+#define EXT4_BLOCK_ALIGN(size, blkbits) 	(((size)+(1 << blkbits)-1) & \
++#define EXT4_BLOCK_ALIGN(size, blkbits)		(((size)+(1 << blkbits)-1) & \
 +							(~((1 << blkbits)-1)))
  
  /*
@@ -497,10 +494,9 @@ index 498503e..b101b79 100644
  
  /*
   * ioctl commands in 32 bit emulation
-diff --git a/include/linux/ext4_fs_extents.h b/include/linux/ext4_fs_extents.h
-index 0226703..fed7cc3 100644
---- a/include/linux/ext4_fs_extents.h
-+++ b/include/linux/ext4_fs_extents.h
+diff -Nurp linux002/include/linux/ext4_fs_extents.h linux003/include/linux/ext4_fs_extents.h
+--- linux002/include/linux/ext4_fs_extents.h	2007-03-19 16:03:07.000000000 -0500
++++ linux003/include/linux/ext4_fs_extents.h	2007-03-19 16:03:07.000000000 -0500
 @@ -125,6 +125,19 @@ struct ext4_ext_path {
  #define EXT4_EXT_CACHE_EXTENT	2
  
@@ -511,7 +507,7 @@ index 0226703..fed7cc3 100644
 + */
 +#define ext4_ext_mark_uninitialized(ext)	((ext)->ee_len |= \
 +							cpu_to_le16(0x8000))
-+#define ext4_ext_is_uninitialized(ext)  	((le16_to_cpu((ext)->ee_len))& \
++#define ext4_ext_is_uninitialized(ext)		((le16_to_cpu((ext)->ee_len))& \
 +									0x8000)
 +#define ext4_ext_get_actual_len(ext)		((le16_to_cpu((ext)->ee_len))& \
 +									0x7FFF)
