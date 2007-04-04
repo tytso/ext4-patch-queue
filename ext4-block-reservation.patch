@@ -9,17 +9,11 @@ should be reserved
 From: Alex Tomas <alex@clusterfs.com>
 
 ---
-
- fs/ext4/balloc.c           |  176 ++++++++++++++++++++++++++++++++++++++++++++-
- fs/ext4/super.c            |    2 
- include/linux/ext4_fs.h    |    5 +
- include/linux/ext4_fs_sb.h |    5 +
- 4 files changed, 185 insertions(+), 3 deletions(-)
-
-diff -Nurp linux005/fs/ext4/balloc.c linux006/fs/ext4/balloc.c
---- linux005/fs/ext4/balloc.c	2007-03-19 16:03:07.000000000 -0500
-+++ linux006/fs/ext4/balloc.c	2007-03-19 16:03:07.000000000 -0500
-@@ -630,8 +630,10 @@ void ext4_free_blocks(handle_t *handle, 
+Index: linux-2.6.21-rc5/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.21-rc5.orig/fs/ext4/balloc.c	2007-03-30 16:15:27.000000000 -0700
++++ linux-2.6.21-rc5/fs/ext4/balloc.c	2007-04-02 17:48:46.000000000 -0700
+@@ -630,8 +630,10 @@
  		return;
  	}
  	ext4_free_blocks_sb(handle, sb, block, count, &dquot_freed_blocks);
@@ -31,7 +25,7 @@ diff -Nurp linux005/fs/ext4/balloc.c linux006/fs/ext4/balloc.c
  	return;
  }
  
-@@ -1440,7 +1442,7 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
+@@ -1440,7 +1442,7 @@
  	struct ext4_sb_info *sbi;
  	struct ext4_reserve_window_node *my_rsv = NULL;
  	struct ext4_block_alloc_info *block_i;
@@ -40,7 +34,7 @@ diff -Nurp linux005/fs/ext4/balloc.c linux006/fs/ext4/balloc.c
  #ifdef EXT4FS_DEBUG
  	static int goal_hits, goal_attempts;
  #endif
-@@ -1462,6 +1464,13 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
+@@ -1462,6 +1464,13 @@
  		return 0;
  	}
  
@@ -54,7 +48,7 @@ diff -Nurp linux005/fs/ext4/balloc.c linux006/fs/ext4/balloc.c
  	sbi = EXT4_SB(sb);
  	es = EXT4_SB(sb)->s_es;
  	ext4_debug("goal=%lu.\n", goal);
-@@ -1674,8 +1683,11 @@ out:
+@@ -1674,8 +1683,11 @@
  	/*
  	 * Undo the block allocation
  	 */
@@ -67,7 +61,7 @@ diff -Nurp linux005/fs/ext4/balloc.c linux006/fs/ext4/balloc.c
  	brelse(bitmap_bh);
  	return 0;
  }
-@@ -1834,3 +1846,161 @@ unsigned long ext4_bg_num_gdb(struct sup
+@@ -1834,3 +1846,161 @@
  	return ext4_bg_num_gdb_meta(sb,group);
  
  }
@@ -229,10 +223,11 @@ diff -Nurp linux005/fs/ext4/balloc.c linux006/fs/ext4/balloc.c
 +	sbi->s_reservation_slots = NULL;
 +}
 +
-diff -Nurp linux005/fs/ext4/super.c linux006/fs/ext4/super.c
---- linux005/fs/ext4/super.c	2007-03-19 16:03:07.000000000 -0500
-+++ linux006/fs/ext4/super.c	2007-03-19 16:03:07.000000000 -0500
-@@ -439,6 +439,7 @@ static void ext4_put_super (struct super
+Index: linux-2.6.21-rc5/fs/ext4/super.c
+===================================================================
+--- linux-2.6.21-rc5.orig/fs/ext4/super.c	2007-04-02 17:34:39.000000000 -0700
++++ linux-2.6.21-rc5/fs/ext4/super.c	2007-04-02 17:56:13.000000000 -0700
+@@ -439,6 +439,7 @@
  	struct ext4_super_block *es = sbi->s_es;
  	int i;
  
@@ -240,7 +235,7 @@ diff -Nurp linux005/fs/ext4/super.c linux006/fs/ext4/super.c
  	ext4_ext_release(sb);
  	ext4_xattr_put_super(sb);
  	jbd2_journal_destroy(sbi->s_journal);
-@@ -1871,6 +1872,7 @@ static int ext4_fill_super (struct super
+@@ -1903,6 +1904,7 @@
  		"writeback");
  
  	ext4_ext_init(sb);
@@ -248,10 +243,11 @@ diff -Nurp linux005/fs/ext4/super.c linux006/fs/ext4/super.c
  
  	lock_kernel();
  	return 0;
-diff -Nurp linux005/include/linux/ext4_fs.h linux006/include/linux/ext4_fs.h
---- linux005/include/linux/ext4_fs.h	2007-03-19 16:03:07.000000000 -0500
-+++ linux006/include/linux/ext4_fs.h	2007-03-19 16:03:07.000000000 -0500
-@@ -203,6 +203,7 @@ struct ext4_group_desc
+Index: linux-2.6.21-rc5/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.21-rc5.orig/include/linux/ext4_fs.h	2007-04-02 14:51:17.000000000 -0700
++++ linux-2.6.21-rc5/include/linux/ext4_fs.h	2007-04-02 17:56:13.000000000 -0700
+@@ -203,6 +203,7 @@
  #define EXT4_STATE_JDATA		0x00000001 /* journaled data exists */
  #define EXT4_STATE_NEW			0x00000002 /* inode is newly created */
  #define EXT4_STATE_XATTR		0x00000004 /* has in-inode xattrs */
@@ -259,7 +255,7 @@ diff -Nurp linux005/include/linux/ext4_fs.h linux006/include/linux/ext4_fs.h
  
  /* Used to pass group descriptor data when online resize is done */
  struct ext4_new_group_input {
-@@ -821,6 +822,10 @@ extern struct ext4_group_desc * ext4_get
+@@ -896,6 +897,10 @@
  extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
  extern void ext4_init_block_alloc_info(struct inode *);
  extern void ext4_rsv_window_add(struct super_block *sb, struct ext4_reserve_window_node *rsv);
@@ -270,9 +266,10 @@ diff -Nurp linux005/include/linux/ext4_fs.h linux006/include/linux/ext4_fs.h
  
  /* dir.c */
  extern int ext4_check_dir_entry(const char *, struct inode *,
-diff -Nurp linux005/include/linux/ext4_fs_sb.h linux006/include/linux/ext4_fs_sb.h
---- linux005/include/linux/ext4_fs_sb.h	2007-02-04 12:44:54.000000000 -0600
-+++ linux006/include/linux/ext4_fs_sb.h	2007-03-19 16:03:07.000000000 -0500
+Index: linux-2.6.21-rc5/include/linux/ext4_fs_sb.h
+===================================================================
+--- linux-2.6.21-rc5.orig/include/linux/ext4_fs_sb.h	2007-04-02 14:50:04.000000000 -0700
++++ linux-2.6.21-rc5/include/linux/ext4_fs_sb.h	2007-04-02 17:56:13.000000000 -0700
 @@ -24,6 +24,8 @@
  #endif
  #include <linux/rbtree.h>
@@ -282,7 +279,7 @@ diff -Nurp linux005/include/linux/ext4_fs_sb.h linux006/include/linux/ext4_fs_sb
  /*
   * third extended-fs super-block data in memory
   */
-@@ -65,6 +67,9 @@ struct ext4_sb_info {
+@@ -65,6 +67,9 @@
  	struct rb_root s_rsv_window_root;
  	struct ext4_reserve_window_node s_rsv_window_head;
  

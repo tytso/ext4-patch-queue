@@ -1,31 +1,9 @@
-[RFC] ext4-delayed-allocation.patch
-
-Hi Alex,
-
-I tested your patch on my system with a 20TB device, but some tests
-failed. Looking at the code, I saw that the support of 48-bit block
-number in extents is lacking.
-
-I made some changes in the code (see the patch in attachment) and now
-all my tests are OK.
-The patch is not complete, I didn't update calls to wb_debug() which
-dump "ee_start".
-
-Hope this helps.
-
-Valérie
-
-From: Valerie Clement <valerie.clement@bull.net>
-
 ---
-
- fs/ext4/writeback.c |   20 ++++++++++++++------
- 1 file changed, 14 insertions(+), 6 deletions(-)
-
-diff -Nurp linux007/fs/ext4/writeback.c linux008/fs/ext4/writeback.c
---- linux007/fs/ext4/writeback.c	2007-03-19 16:03:08.000000000 -0500
-+++ linux008/fs/ext4/writeback.c	2007-03-19 16:03:08.000000000 -0500
-@@ -274,7 +274,8 @@ static int ext4_wb_submit_extent(struct 
+Index: linux-2.6.21-rc5/fs/ext4/writeback.c
+===================================================================
+--- linux-2.6.21-rc5.orig/fs/ext4/writeback.c	2007-04-02 17:49:02.000000000 -0700
++++ linux-2.6.21-rc5/fs/ext4/writeback.c	2007-04-02 17:52:11.000000000 -0700
+@@ -274,7 +274,8 @@
  	struct inode *inode = wc->mapping->host;
  	int blkbits = inode->i_blkbits;
  	struct page *page;
@@ -35,7 +13,7 @@ diff -Nurp linux007/fs/ext4/writeback.c linux008/fs/ext4/writeback.c
  	unsigned long pstart, plen, prev;
  	struct bio *bio = NULL;
  	int nr_pages;
-@@ -335,6 +336,8 @@ alloc_new_bio:
+@@ -335,6 +336,8 @@
  			nr_pages = (nr_pages >> (PAGE_CACHE_SHIFT - blkbits));
  			off = le32_to_cpu(ex->ee_start) +
  			      (blk - le32_to_cpu(ex->ee_block));
@@ -44,8 +22,8 @@ diff -Nurp linux007/fs/ext4/writeback.c linux008/fs/ext4/writeback.c
  			bio = ext4_wb_bio_alloc(inode, off, nr_pages + 2);
  			if (bio == NULL)
  				return -ENOMEM;
-@@ -380,7 +383,9 @@ ext4_wb_find_goal(struct inode *inode, s
- 		
+@@ -380,7 +383,9 @@
+ 
  		/* try to predict block placement */
  		if ((ex = path[depth].p_ext))
 -			return le32_to_cpu(ex->ee_start) +
@@ -55,7 +33,7 @@ diff -Nurp linux007/fs/ext4/writeback.c linux008/fs/ext4/writeback.c
  			       (block - le32_to_cpu(ex->ee_block));
  
  		/* it looks index is empty
-@@ -420,7 +425,8 @@ static int ext4_wb_handle_extent(struct 
+@@ -420,7 +425,8 @@
  				(unsigned) ec->ec_block,
  				(unsigned) ec->ec_len,
  				(unsigned) ec->ec_start);
@@ -65,7 +43,7 @@ diff -Nurp linux007/fs/ext4/writeback.c linux008/fs/ext4/writeback.c
  		nex.ee_block = cpu_to_le32(ec->ec_block);
  		nex.ee_len = cpu_to_le16(ec->ec_len);
  		err = ext4_wb_submit_extent(wc, NULL, &nex, 0);
-@@ -493,8 +499,8 @@ static int ext4_wb_handle_extent(struct 
+@@ -493,8 +499,8 @@
  			pblock, count, inode->i_ino, ec->ec_len);
  
  	/* insert new extent */
@@ -76,7 +54,7 @@ diff -Nurp linux007/fs/ext4/writeback.c linux008/fs/ext4/writeback.c
  	nex.ee_len = cpu_to_le16(count);
  	nex.ee_block = cpu_to_le32(ec->ec_block);
  	err = ext4_ext_insert_extent(handle, inode, path, &nex);
-@@ -529,7 +535,9 @@ static int ext4_wb_handle_extent(struct 
+@@ -529,7 +535,9 @@
  	 * in correspondend buffer_heads to prevent corruptions */
  	for (i = 0; i < le16_to_cpu(nex.ee_len); i++)
  		unmap_underlying_metadata(sb->s_bdev,

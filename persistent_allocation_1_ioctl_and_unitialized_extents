@@ -5,16 +5,9 @@ preallocation of blocks to an extent enabled file in ext4.
 
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
 ---
-
- fs/ext4/extents.c               |  125 ++++++++++++++++++++++++++--------------
- fs/ext4/ioctl.c                 |   69 ++++++++++++++++++++++
- include/linux/ext4_fs.h         |   13 ++++
- include/linux/ext4_fs_extents.h |   13 ++++
- 4 files changed, 177 insertions(+), 43 deletions(-)
-
 diff -Nurp linux002/fs/ext4/extents.c linux003/fs/ext4/extents.c
---- linux002/fs/ext4/extents.c	2007-03-19 16:03:07.000000000 -0500
-+++ linux003/fs/ext4/extents.c	2007-03-19 16:03:07.000000000 -0500
+--- linux002/fs/ext4/extents.c	2007-03-19 08:32:45.000000000 -0500
++++ linux003/fs/ext4/extents.c	2007-03-19 08:32:45.000000000 -0500
 @@ -283,7 +283,7 @@ static void ext4_ext_show_path(struct in
  		} else if (path->p_ext) {
  			ext_debug("  %d:%d:%llu ",
@@ -373,7 +366,7 @@ diff -Nurp linux002/fs/ext4/extents.c linux003/fs/ext4/extents.c
  		allocated = max_blocks;
 diff -Nurp linux002/fs/ext4/ioctl.c linux003/fs/ext4/ioctl.c
 --- linux002/fs/ext4/ioctl.c	2007-02-04 12:44:54.000000000 -0600
-+++ linux003/fs/ext4/ioctl.c	2007-03-19 16:03:07.000000000 -0500
++++ linux003/fs/ext4/ioctl.c	2007-03-19 08:32:45.000000000 -0500
 @@ -11,6 +11,7 @@
  #include <linux/jbd2.h>
  #include <linux/capability.h>
@@ -458,8 +451,8 @@ diff -Nurp linux002/fs/ext4/ioctl.c linux003/fs/ext4/ioctl.c
  		return -ENOTTY;
  	}
 diff -Nurp linux002/include/linux/ext4_fs.h linux003/include/linux/ext4_fs.h
---- linux002/include/linux/ext4_fs.h	2007-03-19 16:03:07.000000000 -0500
-+++ linux003/include/linux/ext4_fs.h	2007-03-19 16:03:07.000000000 -0500
+--- linux002/include/linux/ext4_fs.h	2007-03-19 08:32:44.000000000 -0500
++++ linux003/include/linux/ext4_fs.h	2007-03-19 08:32:45.000000000 -0500
 @@ -102,6 +102,8 @@
  				 EXT4_GOOD_OLD_FIRST_INO : \
  				 (s)->s_first_ino)
@@ -495,8 +488,8 @@ diff -Nurp linux002/include/linux/ext4_fs.h linux003/include/linux/ext4_fs.h
  /*
   * ioctl commands in 32 bit emulation
 diff -Nurp linux002/include/linux/ext4_fs_extents.h linux003/include/linux/ext4_fs_extents.h
---- linux002/include/linux/ext4_fs_extents.h	2007-03-19 16:03:07.000000000 -0500
-+++ linux003/include/linux/ext4_fs_extents.h	2007-03-19 16:03:07.000000000 -0500
+--- linux002/include/linux/ext4_fs_extents.h	2007-03-19 08:32:45.000000000 -0500
++++ linux003/include/linux/ext4_fs_extents.h	2007-03-19 08:32:45.000000000 -0500
 @@ -125,6 +125,19 @@ struct ext4_ext_path {
  #define EXT4_EXT_CACHE_EXTENT	2
  
