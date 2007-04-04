@@ -1,0 +1,34 @@
+Add a mount option to turn off delayed allocation.
+
+Signed-Off-By: Mingming Cao <cmm@us.ibm.com>
+
+Index: linux-2.6.21-rc5/fs/ext4/super.c
+===================================================================
+--- linux-2.6.21-rc5.orig/fs/ext4/super.c	2007-04-02 17:59:25.000000000 -0700
++++ linux-2.6.21-rc5/fs/ext4/super.c	2007-04-02 18:01:40.000000000 -0700
+@@ -738,6 +738,7 @@
+ 	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
+ 	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
+ 	Opt_grpquota, Opt_extents, Opt_noextents, Opt_delayed_alloc,
++	Opt_nodelayed_alloc,
+ };
+ 
+ static match_table_t tokens = {
+@@ -790,6 +791,7 @@
+ 	{Opt_extents, "extents"},
+ 	{Opt_noextents, "noextents"},
+ 	{Opt_delayed_alloc, "delalloc"},
++	{Opt_nodelayed_alloc, "nodelalloc"},
+ 	{Opt_err, NULL},
+ 	{Opt_resize, "resize"},
+ };
+@@ -1107,6 +1109,9 @@
+ 		case Opt_delayed_alloc:
+ 			set_opt(sbi->s_mount_opt, DELAYED_ALLOC);
+ 			break;
++		case Opt_nodelayed_alloc:
++			clear_opt(sbi->s_mount_opt, DELAYED_ALLOC);
++			break;
+ 		case Opt_ignore:
+ 			break;
+ 		case Opt_resize:
