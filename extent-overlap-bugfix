@@ -4,7 +4,7 @@ Note: This patch is being resubmitted as part of the recall of all the
 patches for ext4. It uses 2.6.20-rc5 version as the base.
 
 Problem Description:
--------------------
+
 The ext4_ext_get_blocks() and ext4_ext_insert_extent() routines do not
 have a complete check for extent overlap, when a new extent needs to be
 inserted in an inode. With the current implementation, an overlap is
@@ -18,14 +18,14 @@ independent problem and should be fixed by a separate patch. Hence this
 fix.
 
 The Fix:
--------
+
 The suggested patch fixes this by having a check in get_blocks() for
 finding if the new extent overlaps with an existing one. If it does, the
 length of the new extent is modified such that the overlap does not
 happen at all.
 
 Other option discussed:
-----------------------
+
 The other option discussed was to not to use ext4_ext_get_blocks() for
 persistent preallocation, and use ext4_ext_walk_space() with some helper
 function instead. This was considered because walk_space() already does
@@ -35,7 +35,7 @@ duplication of code in the new helper function that may be required for
 this (like, calling ext4_new_blocks() and ext4_ext_insert_extent()).
 
 Updates from the original (first) version:
------------------------------------------
+
 This patch takes care of following review comments from Mingming, Alex
 and Suparna:
 (a) Not to use ext4_ext_find_extent() in check_overlap(), since it is an
