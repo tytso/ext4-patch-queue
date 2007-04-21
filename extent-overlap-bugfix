@@ -52,10 +52,11 @@ Here is the patch:
 
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
 ---
-diff -Nurp linux001/fs/ext4/extents.c linux002/fs/ext4/extents.c
---- linux001/fs/ext4/extents.c	2007-03-19 08:32:44.000000000 -0500
-+++ linux002/fs/ext4/extents.c	2007-03-19 08:32:45.000000000 -0500
-@@ -1129,6 +1129,45 @@ ext4_can_extents_be_merged(struct inode 
+Index: linux-2.6.21-rc7/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.21-rc7.orig/fs/ext4/extents.c	2007-04-17 14:26:25.000000000 -0700
++++ linux-2.6.21-rc7/fs/ext4/extents.c	2007-04-17 17:54:31.000000000 -0700
+@@ -1129,6 +1129,45 @@
  }
  
  /*
@@ -101,7 +102,7 @@ diff -Nurp linux001/fs/ext4/extents.c linux002/fs/ext4/extents.c
   * ext4_ext_insert_extent:
   * tries to merge requsted extent into the existing extent or
   * inserts requested extent as new one into the tree,
-@@ -2032,7 +2071,15 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2032,7 +2071,15 @@
  
  	/* allocate new block */
  	goal = ext4_ext_find_goal(inode, path, iblock);
@@ -118,7 +119,7 @@ diff -Nurp linux001/fs/ext4/extents.c linux002/fs/ext4/extents.c
  	newblock = ext4_new_blocks(handle, inode, goal, &allocated, &err);
  	if (!newblock)
  		goto out2;
-@@ -2040,7 +2087,6 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2040,7 +2087,6 @@
  			goal, newblock, allocated);
  
  	/* try to insert new extent into found leaf and return */
@@ -126,10 +127,11 @@ diff -Nurp linux001/fs/ext4/extents.c linux002/fs/ext4/extents.c
  	ext4_ext_store_pblock(&newex, newblock);
  	newex.ee_len = cpu_to_le16(allocated);
  	err = ext4_ext_insert_extent(handle, inode, path, &newex);
-diff -Nurp linux001/include/linux/ext4_fs_extents.h linux002/include/linux/ext4_fs_extents.h
---- linux001/include/linux/ext4_fs_extents.h	2007-03-19 08:32:44.000000000 -0500
-+++ linux002/include/linux/ext4_fs_extents.h	2007-03-19 08:32:45.000000000 -0500
-@@ -190,6 +190,7 @@ ext4_ext_invalidate_cache(struct inode *
+Index: linux-2.6.21-rc7/include/linux/ext4_fs_extents.h
+===================================================================
+--- linux-2.6.21-rc7.orig/include/linux/ext4_fs_extents.h	2007-04-17 14:26:25.000000000 -0700
++++ linux-2.6.21-rc7/include/linux/ext4_fs_extents.h	2007-04-17 17:54:31.000000000 -0700
+@@ -190,6 +190,7 @@
  
  extern int ext4_extent_tree_init(handle_t *, struct inode *);
  extern int ext4_ext_calc_credits_for_insert(struct inode *, struct ext4_ext_path *);

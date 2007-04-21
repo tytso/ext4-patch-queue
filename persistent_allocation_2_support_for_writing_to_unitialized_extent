@@ -6,10 +6,11 @@ extent which was created as a result of persistent preallocation).
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
 Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 ---
-diff -Nurp linux003/fs/ext4/extents.c linux004/fs/ext4/extents.c
---- linux003/fs/ext4/extents.c	2007-03-19 08:32:45.000000000 -0500
-+++ linux004/fs/ext4/extents.c	2007-03-19 08:32:45.000000000 -0500
-@@ -1141,6 +1141,51 @@ ext4_can_extents_be_merged(struct inode 
+Index: linux-2.6.21-rc7/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.21-rc7.orig/fs/ext4/extents.c	2007-04-17 14:26:25.000000000 -0700
++++ linux-2.6.21-rc7/fs/ext4/extents.c	2007-04-17 17:54:15.000000000 -0700
+@@ -1141,6 +1141,51 @@
  }
  
  /*
@@ -61,7 +62,7 @@ diff -Nurp linux003/fs/ext4/extents.c linux004/fs/ext4/extents.c
   * ext4_ext_check_overlap:
   * check if a portion of the "newext" extent overlaps with an
   * existing extent.
-@@ -1316,25 +1361,7 @@ has_space:
+@@ -1316,25 +1361,7 @@
  
  merge:
  	/* try to merge extents to the right */
@@ -88,7 +89,7 @@ diff -Nurp linux003/fs/ext4/extents.c linux004/fs/ext4/extents.c
  
  	/* try to merge extents to the left */
  
-@@ -1999,15 +2026,149 @@ void ext4_ext_release(struct super_block
+@@ -1999,15 +2026,149 @@
  #endif
  }
  
@@ -239,7 +240,7 @@ diff -Nurp linux003/fs/ext4/extents.c linux004/fs/ext4/extents.c
  	unsigned long allocated = 0;
  
  	__clear_bit(BH_New, &bh_result->b_state);
-@@ -2055,6 +2216,7 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2055,6 +2216,7 @@
  	 * this is why assert can't be put in ext4_ext_find_extent()
  	 */
  	BUG_ON(path[depth].p_ext == NULL && depth != 0);
@@ -247,7 +248,7 @@ diff -Nurp linux003/fs/ext4/extents.c linux004/fs/ext4/extents.c
  
  	ex = path[depth].p_ext;
  	if (ex) {
-@@ -2063,13 +2225,9 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2063,13 +2225,9 @@
  		unsigned short ee_len;
  
  		/*
@@ -262,7 +263,7 @@ diff -Nurp linux003/fs/ext4/extents.c linux004/fs/ext4/extents.c
  		ee_len = ext4_ext_get_actual_len(ex);
  		/* if found extent covers block, simply return it */
  		if (iblock >= ee_block && iblock < ee_block + ee_len) {
-@@ -2078,12 +2236,27 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2078,12 +2236,27 @@
  			allocated = ee_len - (iblock - ee_block);
  			ext_debug("%d fit into %lu:%d -> %llu\n", (int) iblock,
  					ee_block, ee_len, newblock);
@@ -292,7 +293,7 @@ diff -Nurp linux003/fs/ext4/extents.c linux004/fs/ext4/extents.c
  		}
  	}
  
-@@ -2135,6 +2308,7 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2135,6 +2308,7 @@
  
  	/* previous routine could use block we allocated */
  	newblock = ext_pblock(&newex);
@@ -300,10 +301,11 @@ diff -Nurp linux003/fs/ext4/extents.c linux004/fs/ext4/extents.c
  	__set_bit(BH_New, &bh_result->b_state);
  
  	/* Cache only when it is _not_ an uninitialized extent */
-diff -Nurp linux003/include/linux/ext4_fs_extents.h linux004/include/linux/ext4_fs_extents.h
---- linux003/include/linux/ext4_fs_extents.h	2007-03-19 08:32:45.000000000 -0500
-+++ linux004/include/linux/ext4_fs_extents.h	2007-03-19 08:32:45.000000000 -0500
-@@ -203,6 +203,7 @@ ext4_ext_invalidate_cache(struct inode *
+Index: linux-2.6.21-rc7/include/linux/ext4_fs_extents.h
+===================================================================
+--- linux-2.6.21-rc7.orig/include/linux/ext4_fs_extents.h	2007-04-17 14:26:25.000000000 -0700
++++ linux-2.6.21-rc7/include/linux/ext4_fs_extents.h	2007-04-17 17:54:15.000000000 -0700
+@@ -203,6 +203,7 @@
  
  extern int ext4_extent_tree_init(handle_t *, struct inode *);
  extern int ext4_ext_calc_credits_for_insert(struct inode *, struct ext4_ext_path *);

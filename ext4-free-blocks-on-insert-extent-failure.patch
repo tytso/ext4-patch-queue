@@ -1,0 +1,24 @@
+when ext4_ext_insert_extent() fails to insert new blocks
+we should free just allocated blocks. please, consider
+for review.
+
+Signed-off-by: Alex Tomas <alex@clusterfs.com>
+
+Index: linux-2.6.21-rc7/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.21-rc7.orig/fs/ext4/extents.c	2007-04-17 18:04:50.000000000 -0700
++++ linux-2.6.21-rc7/fs/ext4/extents.c	2007-04-17 18:04:52.000000000 -0700
+@@ -2324,8 +2324,12 @@
+ 	if (create == EXT4_CREATE_UNINITIALIZED_EXT)  /* Mark uninitialized */
+ 		ext4_ext_mark_uninitialized(&newex);
+ 	err = ext4_ext_insert_extent(handle, inode, path, &newex);
+-	if (err)
++	if (err) {
++		/* free data blocks we just allocated */
++		ext4_free_blocks(handle, inode, ext_pblock(&newex),
++					le16_to_cpu(newex.ee_len));
+ 		goto out2;
++	}
+ 
+ 	if (extend_disksize && inode->i_size > EXT4_I(inode)->i_disksize)
+ 		EXT4_I(inode)->i_disksize = inode->i_size;
