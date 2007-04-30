@@ -1,0 +1,48 @@
+From: David Chinner <dgc@sgi.com>
+Subject: [PATCH] ia64 fallocate syscall
+Cc: "Amit K. Arora" <aarora@linux.vnet.ibm.com>, 
+        akpm@linux-foundation.org, linux-ext4@vger.kernel.org,
+        suparna@in.ibm.com, cmm@us.ibm.com
+
+ia64 fallocate syscall support.
+
+Signed-Off-By: Dave Chinner <dgc@sgi.com>
+
+---
+ arch/ia64/kernel/entry.S  |    1 +
+ include/asm-ia64/unistd.h |    3 ++-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+Index: 2.6.x-xfs-new/arch/ia64/kernel/entry.S
+===================================================================
+--- 2.6.x-xfs-new.orig/arch/ia64/kernel/entry.S	2007-03-29 19:01:41.000000000 +1000
++++ 2.6.x-xfs-new/arch/ia64/kernel/entry.S	2007-04-27 19:12:56.829396661 +1000
+@@ -1612,5 +1612,6 @@ sys_call_table:
+ 	data8 sys_vmsplice
+ 	data8 sys_ni_syscall			// reserved for move_pages
+ 	data8 sys_getcpu
++	data8 sys_fallocate
+ 
+ 	.org sys_call_table + 8*NR_syscalls	// guard against failures to increase NR_syscalls
+Index: 2.6.x-xfs-new/include/asm-ia64/unistd.h
+===================================================================
+--- 2.6.x-xfs-new.orig/include/asm-ia64/unistd.h	2007-03-29 19:03:37.000000000 +1000
++++ 2.6.x-xfs-new/include/asm-ia64/unistd.h	2007-04-27 19:18:18.215568425 +1000
+@@ -293,11 +293,12 @@
+ #define __NR_vmsplice			1302
+ /* 1303 reserved for move_pages */
+ #define __NR_getcpu			1304
++#define __NR_fallocate			1305
+ 
+ #ifdef __KERNEL__
+ 
+ 
+-#define NR_syscalls			281 /* length of syscall table */
++#define NR_syscalls			282 /* length of syscall table */
+ 
+ #define __ARCH_WANT_SYS_RT_SIGACTION
+ 
+-
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
