@@ -8,10 +8,10 @@ Shaggy fixed a lot of endian errors reported by sparse
 
 From: Alex Tomas <alex@clusterfs.com>
 ---
-Index: linux-2.6.21-rc7/fs/ext4/Makefile
+Index: linux-2.6.21.1/fs/ext4/Makefile
 ===================================================================
---- linux-2.6.21-rc7.orig/fs/ext4/Makefile	2007-04-17 18:04:16.000000000 -0700
-+++ linux-2.6.21-rc7/fs/ext4/Makefile	2007-04-17 18:08:03.000000000 -0700
+--- linux-2.6.21.1.orig/fs/ext4/Makefile	2007-05-11 16:33:09.000000000 -0700
++++ linux-2.6.21.1/fs/ext4/Makefile	2007-05-11 16:35:18.000000000 -0700
 @@ -6,7 +6,7 @@
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -21,12 +21,12 @@ Index: linux-2.6.21-rc7/fs/ext4/Makefile
  
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-Index: linux-2.6.21-rc7/fs/ext4/extents.c
+Index: linux-2.6.21.1/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.21-rc7.orig/fs/ext4/extents.c	2007-04-17 18:04:52.000000000 -0700
-+++ linux-2.6.21-rc7/fs/ext4/extents.c	2007-04-17 18:08:03.000000000 -0700
-@@ -2446,6 +2446,36 @@
- 	return needed;
+--- linux-2.6.21.1.orig/fs/ext4/extents.c	2007-05-11 16:35:10.000000000 -0700
++++ linux-2.6.21.1/fs/ext4/extents.c	2007-05-11 16:35:18.000000000 -0700
+@@ -2521,6 +2521,36 @@
+ 	return ret > 0 ? 0 : ret;
  }
  
 +int ext4_ext_calc_metadata_amount(struct inode *inode, int blocks)
@@ -62,10 +62,10 @@ Index: linux-2.6.21-rc7/fs/ext4/extents.c
  EXPORT_SYMBOL(ext4_mark_inode_dirty);
  EXPORT_SYMBOL(ext4_ext_invalidate_cache);
  EXPORT_SYMBOL(ext4_ext_insert_extent);
-Index: linux-2.6.21-rc7/fs/ext4/file.c
+Index: linux-2.6.21.1/fs/ext4/file.c
 ===================================================================
---- linux-2.6.21-rc7.orig/fs/ext4/file.c	2007-04-17 18:04:16.000000000 -0700
-+++ linux-2.6.21-rc7/fs/ext4/file.c	2007-04-17 18:08:03.000000000 -0700
+--- linux-2.6.21.1.orig/fs/ext4/file.c	2007-05-11 16:33:09.000000000 -0700
++++ linux-2.6.21.1/fs/ext4/file.c	2007-05-11 16:35:18.000000000 -0700
 @@ -35,8 +35,8 @@
  {
  	/* if we are the last writer on the inode, drop the block reservation */
@@ -77,10 +77,10 @@ Index: linux-2.6.21-rc7/fs/ext4/file.c
  		mutex_lock(&EXT4_I(inode)->truncate_mutex);
  		ext4_discard_reservation(inode);
  		mutex_unlock(&EXT4_I(inode)->truncate_mutex);
-Index: linux-2.6.21-rc7/fs/ext4/inode.c
+Index: linux-2.6.21.1/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.21-rc7.orig/fs/ext4/inode.c	2007-04-17 18:04:46.000000000 -0700
-+++ linux-2.6.21-rc7/fs/ext4/inode.c	2007-04-17 18:08:03.000000000 -0700
+--- linux-2.6.21.1.orig/fs/ext4/inode.c	2007-05-11 16:34:58.000000000 -0700
++++ linux-2.6.21.1/fs/ext4/inode.c	2007-05-11 16:35:18.000000000 -0700
 @@ -943,7 +943,7 @@
  
  #define DIO_CREDITS (EXT4_RESERVE_TRANS_BLOCKS + 32)
@@ -138,10 +138,10 @@ Index: linux-2.6.21-rc7/fs/ext4/inode.c
  	blocksize = inode->i_sb->s_blocksize;
  	length = blocksize - (offset & (blocksize - 1));
  	iblock = index << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
-Index: linux-2.6.21-rc7/fs/ext4/super.c
+Index: linux-2.6.21.1/fs/ext4/super.c
 ===================================================================
---- linux-2.6.21-rc7.orig/fs/ext4/super.c	2007-04-17 18:05:21.000000000 -0700
-+++ linux-2.6.21-rc7/fs/ext4/super.c	2007-04-17 18:08:03.000000000 -0700
+--- linux-2.6.21.1.orig/fs/ext4/super.c	2007-05-11 16:35:15.000000000 -0700
++++ linux-2.6.21.1/fs/ext4/super.c	2007-05-11 16:35:18.000000000 -0700
 @@ -439,6 +439,7 @@
  	struct ext4_super_block *es = sbi->s_es;
  	int i;
@@ -191,7 +191,7 @@ Index: linux-2.6.21-rc7/fs/ext4/super.c
  		case Opt_ignore:
  			break;
  		case Opt_resize:
-@@ -1905,6 +1917,7 @@
+@@ -1911,6 +1923,7 @@
  
  	ext4_ext_init(sb);
  	ext4_reserve_init(sb);
@@ -199,10 +199,10 @@ Index: linux-2.6.21-rc7/fs/ext4/super.c
  
  	lock_kernel();
  	return 0;
-Index: linux-2.6.21-rc7/fs/ext4/writeback.c
+Index: linux-2.6.21.1/fs/ext4/writeback.c
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.21-rc7/fs/ext4/writeback.c	2007-04-17 18:08:03.000000000 -0700
++++ linux-2.6.21.1/fs/ext4/writeback.c	2007-05-11 16:35:18.000000000 -0700
 @@ -0,0 +1,1179 @@
 +/*
 + * Copyright (c) 2003-2006, Cluster File Systems, Inc, info@clusterfs.com
@@ -1383,11 +1383,11 @@ Index: linux-2.6.21-rc7/fs/ext4/writeback.c
 +#endif
 +}
 +
-Index: linux-2.6.21-rc7/include/linux/ext4_fs.h
+Index: linux-2.6.21.1/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.21-rc7.orig/include/linux/ext4_fs.h	2007-04-17 18:07:38.000000000 -0700
-+++ linux-2.6.21-rc7/include/linux/ext4_fs.h	2007-04-17 18:08:03.000000000 -0700
-@@ -481,6 +481,7 @@
+--- linux-2.6.21.1.orig/include/linux/ext4_fs.h	2007-05-11 16:35:15.000000000 -0700
++++ linux-2.6.21.1/include/linux/ext4_fs.h	2007-05-11 16:35:18.000000000 -0700
+@@ -474,6 +474,7 @@
  #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
  #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
  #define EXT4_MOUNT_EXTENTS		0x400000 /* Extents support */
@@ -1395,7 +1395,7 @@ Index: linux-2.6.21-rc7/include/linux/ext4_fs.h
  
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
-@@ -1086,6 +1087,18 @@
+@@ -1080,6 +1081,18 @@
  }
  
  
@@ -1414,10 +1414,10 @@ Index: linux-2.6.21-rc7/include/linux/ext4_fs.h
  #endif	/* __KERNEL__ */
  
  #endif	/* _LINUX_EXT4_FS_H */
-Index: linux-2.6.21-rc7/include/linux/ext4_fs_extents.h
+Index: linux-2.6.21.1/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.21-rc7.orig/include/linux/ext4_fs_extents.h	2007-04-17 18:04:16.000000000 -0700
-+++ linux-2.6.21-rc7/include/linux/ext4_fs_extents.h	2007-04-17 18:08:03.000000000 -0700
+--- linux-2.6.21.1.orig/include/linux/ext4_fs_extents.h	2007-05-11 16:33:09.000000000 -0700
++++ linux-2.6.21.1/include/linux/ext4_fs_extents.h	2007-05-11 16:35:18.000000000 -0700
 @@ -208,6 +208,7 @@
  extern int ext4_ext_insert_extent(handle_t *, struct inode *, struct ext4_ext_path *, struct ext4_extent *);
  extern int ext4_ext_walk_space(struct inode *, unsigned long, unsigned long, ext_prepare_callback, void *);
@@ -1426,10 +1426,10 @@ Index: linux-2.6.21-rc7/include/linux/ext4_fs_extents.h
  
  #endif /* _LINUX_EXT4_EXTENTS */
  
-Index: linux-2.6.21-rc7/include/linux/ext4_fs_i.h
+Index: linux-2.6.21.1/include/linux/ext4_fs_i.h
 ===================================================================
---- linux-2.6.21-rc7.orig/include/linux/ext4_fs_i.h	2007-04-17 18:04:31.000000000 -0700
-+++ linux-2.6.21-rc7/include/linux/ext4_fs_i.h	2007-04-17 18:09:07.000000000 -0700
+--- linux-2.6.21.1.orig/include/linux/ext4_fs_i.h	2007-05-11 16:33:09.000000000 -0700
++++ linux-2.6.21.1/include/linux/ext4_fs_i.h	2007-05-11 16:35:18.000000000 -0700
 @@ -155,6 +155,11 @@
  	struct ext4_ext_cache i_cached_extent;
  	struct timespec i_crtime;
@@ -1442,10 +1442,10 @@ Index: linux-2.6.21-rc7/include/linux/ext4_fs_i.h
  };
  
  #endif	/* _LINUX_EXT4_FS_I */
-Index: linux-2.6.21-rc7/include/linux/ext4_fs_sb.h
+Index: linux-2.6.21.1/include/linux/ext4_fs_sb.h
 ===================================================================
---- linux-2.6.21-rc7.orig/include/linux/ext4_fs_sb.h	2007-04-17 18:05:21.000000000 -0700
-+++ linux-2.6.21-rc7/include/linux/ext4_fs_sb.h	2007-04-17 18:08:03.000000000 -0700
+--- linux-2.6.21.1.orig/include/linux/ext4_fs_sb.h	2007-05-11 16:35:15.000000000 -0700
++++ linux-2.6.21.1/include/linux/ext4_fs_sb.h	2007-05-11 16:35:18.000000000 -0700
 @@ -95,6 +95,17 @@
  	unsigned long s_ext_blocks;
  	unsigned long s_ext_extents;

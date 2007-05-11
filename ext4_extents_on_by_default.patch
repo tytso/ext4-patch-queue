@@ -1,0 +1,22 @@
+Turn on extents feature by default in ext4 filesystem. User could use
+-o noextents to turn it off.
+
+Signed-Off-By: Mingming Cao <cmm@us.ibm.com>
+
+Index: linux-2.6.21.1/fs/ext4/super.c
+===================================================================
+--- linux-2.6.21.1.orig/fs/ext4/super.c	2007-05-11 16:33:10.000000000 -0700
++++ linux-2.6.21.1/fs/ext4/super.c	2007-05-11 16:34:50.000000000 -0700
+@@ -1549,6 +1549,12 @@
+ 
+ 	set_opt(sbi->s_mount_opt, RESERVATION);
+ 
++	/*
++	 * turn on extents feature by default in ext4 filesystem
++	 * User -o noextents to turn it off
++	 */
++	set_opt (sbi->s_mount_opt, EXTENTS);
++
+ 	if (!parse_options ((char *) data, sb, &journal_inum, &journal_devnum,
+ 			    NULL, 0))
+ 		goto failed_mount;
