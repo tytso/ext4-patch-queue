@@ -13,11 +13,11 @@ Signed-off-by: Amit Arora <aarora@in.ibm.com>
  include/linux/ext4_fs_extents.h |    1 
  2 files changed, 202 insertions(+), 27 deletions(-)
 
-Index: linux-2.6.21/fs/ext4/extents.c
+Index: linux-2.6.22-rc1/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.21.orig/fs/ext4/extents.c
-+++ linux-2.6.21/fs/ext4/extents.c
-@@ -1141,6 +1141,51 @@ ext4_can_extents_be_merged(struct inode 
+--- linux-2.6.22-rc1.orig/fs/ext4/extents.c	2007-05-15 15:47:43.000000000 -0700
++++ linux-2.6.22-rc1/fs/ext4/extents.c	2007-05-15 16:23:47.000000000 -0700
+@@ -1189,6 +1189,50 @@
  }
  
  /*
@@ -53,7 +53,7 @@ Index: linux-2.6.21/fs/ext4/extents.c
 +
 +		if (ex + 1 < EXT_LAST_EXTENT(eh)) {
 +			len = (EXT_LAST_EXTENT(eh) - ex - 1)
-+					* sizeof(struct ext4_extent);
++				* sizeof(struct ext4_extent);
 +			memmove(ex + 1, ex + 2, len);
 +		}
 +		eh->eh_entries = cpu_to_le16(le16_to_cpu(eh->eh_entries)-1);
@@ -64,12 +64,11 @@ Index: linux-2.6.21/fs/ext4/extents.c
 +	return merge_done;
 +}
 +
-+
 +/*
-  * ext4_ext_check_overlap:
-  * check if a portion of the "newext" extent overlaps with an
-  * existing extent.
-@@ -1316,25 +1361,7 @@ has_space:
+  * ext4_ext_insert_extent:
+  * tries to merge requsted extent into the existing extent or
+  * inserts requested extent as new one into the tree,
+@@ -1327,25 +1371,7 @@
  
  merge:
  	/* try to merge extents to the right */
@@ -96,7 +95,7 @@ Index: linux-2.6.21/fs/ext4/extents.c
  
  	/* try to merge extents to the left */
  
-@@ -1999,15 +2026,149 @@ void ext4_ext_release(struct super_block
+@@ -2011,15 +2037,149 @@
  #endif
  }
  
@@ -247,7 +246,7 @@ Index: linux-2.6.21/fs/ext4/extents.c
  	unsigned long allocated = 0;
  
  	__clear_bit(BH_New, &bh_result->b_state);
-@@ -2055,6 +2216,7 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2067,6 +2227,7 @@
  	 * this is why assert can't be put in ext4_ext_find_extent()
  	 */
  	BUG_ON(path[depth].p_ext == NULL && depth != 0);
@@ -255,7 +254,7 @@ Index: linux-2.6.21/fs/ext4/extents.c
  
  	ex = path[depth].p_ext;
  	if (ex) {
-@@ -2063,13 +2225,9 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2075,13 +2236,9 @@
  		unsigned short ee_len;
  
  		/*
@@ -269,8 +268,8 @@ Index: linux-2.6.21/fs/ext4/extents.c
 -			goto out2;
  		ee_len = ext4_ext_get_actual_len(ex);
  		/* if found extent covers block, simply return it */
- 	        if (iblock >= ee_block && iblock < ee_block + ee_len) {
-@@ -2078,12 +2236,27 @@ int ext4_ext_get_blocks(handle_t *handle
+ 		if (iblock >= ee_block && iblock < ee_block + ee_len) {
+@@ -2090,12 +2247,27 @@
  			allocated = ee_len - (iblock - ee_block);
  			ext_debug("%d fit into %lu:%d -> %llu\n", (int) iblock,
  					ee_block, ee_len, newblock);
@@ -300,7 +299,7 @@ Index: linux-2.6.21/fs/ext4/extents.c
  		}
  	}
  
-@@ -2135,6 +2308,7 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2147,6 +2319,7 @@
  
  	/* previous routine could use block we allocated */
  	newblock = ext_pblock(&newex);
@@ -308,11 +307,11 @@ Index: linux-2.6.21/fs/ext4/extents.c
  	__set_bit(BH_New, &bh_result->b_state);
  
  	/* Cache only when it is _not_ an uninitialized extent */
-Index: linux-2.6.21/include/linux/ext4_fs_extents.h
+Index: linux-2.6.22-rc1/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.21.orig/include/linux/ext4_fs_extents.h
-+++ linux-2.6.21/include/linux/ext4_fs_extents.h
-@@ -203,6 +203,7 @@ ext4_ext_invalidate_cache(struct inode *
+--- linux-2.6.22-rc1.orig/include/linux/ext4_fs_extents.h	2007-05-15 15:38:54.000000000 -0700
++++ linux-2.6.22-rc1/include/linux/ext4_fs_extents.h	2007-05-15 15:50:25.000000000 -0700
+@@ -202,6 +202,7 @@
  
  extern int ext4_extent_tree_init(handle_t *, struct inode *);
  extern int ext4_ext_calc_credits_for_insert(struct inode *, struct ext4_ext_path *);
@@ -320,7 +319,3 @@ Index: linux-2.6.21/include/linux/ext4_fs_extents.h
  extern unsigned int ext4_ext_check_overlap(struct inode *, struct ext4_extent *, struct ext4_ext_path *);
  extern int ext4_ext_insert_extent(handle_t *, struct inode *, struct ext4_ext_path *, struct ext4_extent *);
  extern int ext4_ext_walk_space(struct inode *, unsigned long, unsigned long, ext_prepare_callback, void *);
--
-To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html

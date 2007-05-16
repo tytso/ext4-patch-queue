@@ -1,76 +1,106 @@
-From: "Amit K. Arora" <aarora@linux.vnet.ibm.com>
-Subject: [PATCH 2/5] fallocate() on s390
-Cc: linux-ext4@vger.kernel.org, xfs@oss.sgi.com, suparna@in.ibm.com,
-        cmm@us.ibm.com
+This is the patch suggested by Martin Schwidefsky to support
+sys_fallocate() on s390(x) platform.
+
+He also suggested a wrapper in glibc to handle this system call on
+s390. Posting it here so that we get feedback for this too.
+
+.globl __fallocate
+ENTRY(__fallocate)
+	stm	%r6,%r7,28(%r15)	/* save %r6/%r7 on stack */
+	cfi_offset (%r7, -68)
+	cfi_offset (%r6, -72)
+	lm	%r6,%r7,96(%r15)	/* load loff_t len from stack */
+	svc	SYS_ify(fallocate)
+	lm	%r6,%r7,28(%r15)	/* restore %r6/%r7 from stack */
+	br	%r14
+PSEUDO_END(__fallocate)
+
+
+Here are the comments and the patch to linux kernel from him.
+
+-------------
+From: Martin Schwidefsky <schwidefsky@de.ibm.com>
 
 This patch implements support of fallocate system call on s390(x)
 platform. A wrapper is added to address the issue which s390 ABI has
-with "preferred" ordering of arguments in this system call (i.e. int,
-int, loff_t, loff_t).
+with the arguments of this system call.
 
-I will request s390 experts to please review this code and verify if
-this patch is correct. Thanks!
-
-Signed-off-by: Amit Arora <aarora@in.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
 ---
  arch/s390/kernel/compat_wrapper.S |   10 ++++++++++
- arch/s390/kernel/sys_s390.c       |   10 ++++++++++
+ arch/s390/kernel/sys_s390.c       |   29 +++++++++++++++++++++++++++++
  arch/s390/kernel/syscalls.S       |    1 +
  include/asm-s390/unistd.h         |    3 ++-
- 4 files changed, 23 insertions(+), 1 deletion(-)
+ 4 files changed, 42 insertions(+), 1 deletion(-)
 
-Index: linux-2.6.21/arch/s390/kernel/compat_wrapper.S
+Index: linux-2.6.22-rc1/arch/s390/kernel/compat_wrapper.S
 ===================================================================
---- linux-2.6.21.orig/arch/s390/kernel/compat_wrapper.S
-+++ linux-2.6.21/arch/s390/kernel/compat_wrapper.S
-@@ -1682,3 +1682,13 @@ compat_sys_utimes_wrapper:
+--- linux-2.6.22-rc1.orig/arch/s390/kernel/compat_wrapper.S	2007-05-12 18:45:56.000000000 -0700
++++ linux-2.6.22-rc1/arch/s390/kernel/compat_wrapper.S	2007-05-15 15:34:59.000000000 -0700
+@@ -1682,3 +1682,13 @@
  	llgtr	%r2,%r2			# char *
  	llgtr	%r3,%r3			# struct compat_timeval *
  	jg	compat_sys_utimes
 +
-+	.globl	s390_fallocate_wrapper
-+s390_fallocate_wrapper:
++	.globl  sys_fallocate_wrapper
++sys_fallocate_wrapper:
 +	lgfr	%r2,%r2			# int
-+	sllg	%r3,%r3,32		# get high word of 64bit loff_t
-+	or	%r3,%r4			# get low word of 64bit loff_t
-+	sllg	%r4,%r5,32		# get high word of 64bit loff_t
-+	or	%r4,%r6			# get low word of 64bit loff_t
-+	llgf	%r5,164(%r15)		# unsigned int
-+	jg	s390_fallocate
-Index: linux-2.6.21/arch/s390/kernel/sys_s390.c
++	lgfr	%r3,%r3			# int
++	sllg    %r4,%r4,32		# get high word of 64bit loff_t
++	lr      %r4,%r5			# get low word of 64bit loff_t
++	sllg    %r5,%r6,32		# get high word of 64bit loff_t
++	l	%r5,164(%r15)		# get low word of 64bit loff_t
++	jg	sys_fallocate
+Index: linux-2.6.22-rc1/arch/s390/kernel/sys_s390.c
 ===================================================================
---- linux-2.6.21.orig/arch/s390/kernel/sys_s390.c
-+++ linux-2.6.21/arch/s390/kernel/sys_s390.c
-@@ -268,6 +268,16 @@ s390_fadvise64_64(struct fadvise64_64_ar
+--- linux-2.6.22-rc1.orig/arch/s390/kernel/sys_s390.c	2007-05-12 18:45:56.000000000 -0700
++++ linux-2.6.22-rc1/arch/s390/kernel/sys_s390.c	2007-05-15 15:34:59.000000000 -0700
+@@ -265,3 +265,32 @@
+ 		return -EFAULT;
+ 	return sys_fadvise64_64(a.fd, a.offset, a.len, a.advice);
  }
- 
- /*
-+ * This is a wrapper to call sys_fallocate(). Since s390 ABI has a problem
-+ * with the int, int, loff_t, loff_t ordering of arguments, this wrapper
-+ * is required.
-+ */
-+asmlinkage long s390_fallocate(int fd, loff_t offset, loff_t len, int mode)
-+{
-+	return sys_fallocate(fd, mode, offset, len);
-+}
 +
++#ifndef CONFIG_64BIT
 +/*
-  * Do a system call from kernel instead of calling sys_execve so we
-  * end up with proper pt_regs.
-  */
-Index: linux-2.6.21/arch/s390/kernel/syscalls.S
++ * This is a wrapper to call sys_fallocate(). For 31 bit s390 the last
++ * 64 bit argument "len" is split into the upper and lower 32 bits. The
++ * system call wrapper in the user space loads the value to %r6/%r7.
++ * The code in entry.S keeps the values in %r2 - %r6 where they are and
++ * stores %r7 to 96(%r15). But the standard C linkage requires that
++ * the whole 64 bit value for len is stored on the stack and doesn't
++ * use %r6 at all. So s390_fallocate has to convert the arguments from
++ *   %r2: fd, %r3: mode, %r4/%r5: offset, %r6/96(%r15)-99(%r15): len
++ * to
++ *   %r2: fd, %r3: mode, %r4/%r5: offset, 96(%r15)-103(%r15): len
++ */
++asmlinkage long s390_fallocate(int fd, int mode, loff_t offset,
++			       u32 len_high, u32 len_low)
++{
++	union {
++		u64 len;
++		struct {
++			u32 high;
++			u32 low;
++		};
++	} cv;
++	cv.high = len_high;
++	cv.low = len_low;
++	return sys_fallocate(fd, mode, offset, cv.len);
++}
++#endif
+Index: linux-2.6.22-rc1/arch/s390/kernel/syscalls.S
 ===================================================================
---- linux-2.6.21.orig/arch/s390/kernel/syscalls.S
-+++ linux-2.6.21/arch/s390/kernel/syscalls.S
-@@ -322,3 +322,4 @@ NI_SYSCALL							/* 310 sys_move_pages *
+--- linux-2.6.22-rc1.orig/arch/s390/kernel/syscalls.S	2007-05-12 18:45:56.000000000 -0700
++++ linux-2.6.22-rc1/arch/s390/kernel/syscalls.S	2007-05-15 15:34:59.000000000 -0700
+@@ -322,3 +322,4 @@
  SYSCALL(sys_getcpu,sys_getcpu,sys_getcpu_wrapper)
  SYSCALL(sys_epoll_pwait,sys_epoll_pwait,compat_sys_epoll_pwait_wrapper)
  SYSCALL(sys_utimes,sys_utimes,compat_sys_utimes_wrapper)
-+SYSCALL(s390_fallocate,s390_fallocate,s390_fallocate_wrapper)
-Index: linux-2.6.21/include/asm-s390/unistd.h
++SYSCALL(s390_fallocate,sys_fallocate,sys_fallocate_wrapper)
+Index: linux-2.6.22-rc1/include/asm-s390/unistd.h
 ===================================================================
---- linux-2.6.21.orig/include/asm-s390/unistd.h
-+++ linux-2.6.21/include/asm-s390/unistd.h
+--- linux-2.6.22-rc1.orig/include/asm-s390/unistd.h	2007-05-12 18:45:56.000000000 -0700
++++ linux-2.6.22-rc1/include/asm-s390/unistd.h	2007-05-15 15:34:59.000000000 -0700
 @@ -251,8 +251,9 @@
  #define __NR_getcpu		311
  #define __NR_epoll_pwait	312
@@ -82,8 +112,3 @@ Index: linux-2.6.21/include/asm-s390/unistd.h
  
  /* 
   * There are some system calls that are not present on 64 bit, some
--
-To unsubscribe from this list: send the line "unsubscribe linux-kernel" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-Please read the FAQ at  http://www.tux.org/lkml/

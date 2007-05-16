@@ -10,10 +10,10 @@ It provides statistics via procfs such as transaction lifetime and size.
 Signed-off-by: Johann Lombardi <johann.lombardi@bull.net>
 --
 
-Index: linux-2.6.21.1/include/linux/jbd2.h
+Index: linux-2.6.22-rc1/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.21.1.orig/include/linux/jbd2.h	2007-05-11 16:33:09.000000000 -0700
-+++ linux-2.6.21.1/include/linux/jbd2.h	2007-05-11 16:35:30.000000000 -0700
+--- linux-2.6.22-rc1.orig/include/linux/jbd2.h	2007-05-12 18:45:56.000000000 -0700
++++ linux-2.6.22-rc1/include/linux/jbd2.h	2007-05-15 16:26:22.000000000 -0700
 @@ -408,6 +408,16 @@
  };
  
@@ -141,11 +141,11 @@ Index: linux-2.6.21.1/include/linux/jbd2.h
  	 * An opaque pointer to fs-private information.  ext3 puts its
  	 * superblock pointer here
  	 */
-Index: linux-2.6.21.1/fs/jbd2/transaction.c
+Index: linux-2.6.22-rc1/fs/jbd2/transaction.c
 ===================================================================
---- linux-2.6.21.1.orig/fs/jbd2/transaction.c	2007-05-11 16:33:09.000000000 -0700
-+++ linux-2.6.21.1/fs/jbd2/transaction.c	2007-05-11 16:35:30.000000000 -0700
-@@ -60,6 +60,8 @@
+--- linux-2.6.22-rc1.orig/fs/jbd2/transaction.c	2007-05-12 18:45:56.000000000 -0700
++++ linux-2.6.22-rc1/fs/jbd2/transaction.c	2007-05-15 16:26:22.000000000 -0700
+@@ -59,6 +59,8 @@
  
  	J_ASSERT(journal->j_running_transaction == NULL);
  	journal->j_running_transaction = transaction;
@@ -154,7 +154,7 @@ Index: linux-2.6.21.1/fs/jbd2/transaction.c
  
  	return transaction;
  }
-@@ -86,6 +88,7 @@
+@@ -85,6 +87,7 @@
  	int nblocks = handle->h_buffer_credits;
  	transaction_t *new_transaction = NULL;
  	int ret = 0;
@@ -162,7 +162,7 @@ Index: linux-2.6.21.1/fs/jbd2/transaction.c
  
  	if (nblocks > journal->j_max_transaction_buffers) {
  		printk(KERN_ERR "JBD: %s wants too many credits (%d > %d)\n",
-@@ -219,6 +222,12 @@
+@@ -218,6 +221,12 @@
  	/* OK, account for the buffers that this operation expects to
  	 * use and add the handle to the running transaction. */
  
@@ -175,10 +175,10 @@ Index: linux-2.6.21.1/fs/jbd2/transaction.c
  	handle->h_transaction = transaction;
  	transaction->t_outstanding_credits += nblocks;
  	transaction->t_updates++;
-Index: linux-2.6.21.1/fs/jbd2/checkpoint.c
+Index: linux-2.6.22-rc1/fs/jbd2/checkpoint.c
 ===================================================================
---- linux-2.6.21.1.orig/fs/jbd2/checkpoint.c	2007-05-11 16:33:09.000000000 -0700
-+++ linux-2.6.21.1/fs/jbd2/checkpoint.c	2007-05-11 16:35:30.000000000 -0700
+--- linux-2.6.22-rc1.orig/fs/jbd2/checkpoint.c	2007-05-12 18:45:56.000000000 -0700
++++ linux-2.6.22-rc1/fs/jbd2/checkpoint.c	2007-05-15 16:26:22.000000000 -0700
 @@ -232,7 +232,8 @@
   * Called under jbd_lock_bh_state(jh2bh(jh)), and drops it
   */
@@ -259,19 +259,19 @@ Index: linux-2.6.21.1/fs/jbd2/checkpoint.c
 +
  	kfree(transaction);
  }
-Index: linux-2.6.21.1/fs/jbd2/commit.c
+Index: linux-2.6.22-rc1/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.21.1.orig/fs/jbd2/commit.c	2007-05-11 16:33:09.000000000 -0700
-+++ linux-2.6.21.1/fs/jbd2/commit.c	2007-05-11 16:35:30.000000000 -0700
-@@ -21,6 +21,7 @@
+--- linux-2.6.22-rc1.orig/fs/jbd2/commit.c	2007-05-12 18:45:56.000000000 -0700
++++ linux-2.6.22-rc1/fs/jbd2/commit.c	2007-05-15 16:26:49.000000000 -0700
+@@ -20,6 +20,7 @@
+ #include <linux/slab.h>
  #include <linux/mm.h>
  #include <linux/pagemap.h>
- #include <linux/smp_lock.h>
 +#include <linux/jiffies.h>
  
  /*
   * Default IO end handler for temporary BJ_IO buffer_heads.
-@@ -291,6 +292,7 @@
+@@ -290,6 +291,7 @@
   */
  void jbd2_journal_commit_transaction(journal_t *journal)
  {
@@ -279,7 +279,7 @@ Index: linux-2.6.21.1/fs/jbd2/commit.c
  	transaction_t *commit_transaction;
  	struct journal_head *jh, *new_jh, *descriptor;
  	struct buffer_head **wbuf = journal->j_wbuf;
-@@ -338,6 +340,11 @@
+@@ -337,6 +339,11 @@
  	spin_lock(&journal->j_state_lock);
  	commit_transaction->t_state = T_LOCKED;
  
@@ -291,7 +291,7 @@ Index: linux-2.6.21.1/fs/jbd2/commit.c
  	spin_lock(&commit_transaction->t_handle_lock);
  	while (commit_transaction->t_updates) {
  		DEFINE_WAIT(wait);
-@@ -408,6 +415,9 @@
+@@ -407,6 +414,9 @@
  	 */
  	jbd2_journal_switch_revoke_table(journal);
  
@@ -301,7 +301,7 @@ Index: linux-2.6.21.1/fs/jbd2/commit.c
  	commit_transaction->t_state = T_FLUSH;
  	journal->j_committing_transaction = commit_transaction;
  	journal->j_running_transaction = NULL;
-@@ -499,6 +509,11 @@
+@@ -498,6 +508,11 @@
  	 */
  	commit_transaction->t_state = T_COMMIT;
  
@@ -313,7 +313,7 @@ Index: linux-2.6.21.1/fs/jbd2/commit.c
  	descriptor = NULL;
  	bufs = 0;
  	while (commit_transaction->t_buffers) {
-@@ -647,6 +662,7 @@
+@@ -646,6 +661,7 @@
  				submit_bh(WRITE, bh);
  			}
  			cond_resched();
@@ -321,7 +321,7 @@ Index: linux-2.6.21.1/fs/jbd2/commit.c
  
  			/* Force a new descriptor to be generated next
                             time round the loop. */
-@@ -817,6 +833,7 @@
+@@ -816,6 +832,7 @@
  		cp_transaction = jh->b_cp_transaction;
  		if (cp_transaction) {
  			JBUFFER_TRACE(jh, "remove from old cp transaction");
@@ -329,7 +329,7 @@ Index: linux-2.6.21.1/fs/jbd2/commit.c
  			__jbd2_journal_remove_checkpoint(jh);
  		}
  
-@@ -891,6 +908,36 @@
+@@ -890,6 +907,36 @@
  
  	J_ASSERT(commit_transaction->t_state == T_COMMIT);
  
@@ -366,11 +366,11 @@ Index: linux-2.6.21.1/fs/jbd2/commit.c
  	commit_transaction->t_state = T_FINISHED;
  	J_ASSERT(commit_transaction == journal->j_committing_transaction);
  	journal->j_commit_sequence = commit_transaction->t_tid;
-Index: linux-2.6.21.1/fs/jbd2/journal.c
+Index: linux-2.6.22-rc1/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.21.1.orig/fs/jbd2/journal.c	2007-05-11 16:33:09.000000000 -0700
-+++ linux-2.6.21.1/fs/jbd2/journal.c	2007-05-11 16:35:30.000000000 -0700
-@@ -36,6 +36,7 @@
+--- linux-2.6.22-rc1.orig/fs/jbd2/journal.c	2007-05-12 18:45:56.000000000 -0700
++++ linux-2.6.22-rc1/fs/jbd2/journal.c	2007-05-15 16:26:22.000000000 -0700
+@@ -35,6 +35,7 @@
  #include <linux/kthread.h>
  #include <linux/poison.h>
  #include <linux/proc_fs.h>
@@ -378,7 +378,7 @@ Index: linux-2.6.21.1/fs/jbd2/journal.c
  
  #include <asm/uaccess.h>
  #include <asm/page.h>
-@@ -635,6 +636,300 @@
+@@ -640,6 +641,300 @@
  	return jbd2_journal_add_journal_head(bh);
  }
  
@@ -679,7 +679,7 @@ Index: linux-2.6.21.1/fs/jbd2/journal.c
  /*
   * Management for journal control blocks: functions to create and
   * destroy journal_t structures, and to initialise and read existing
-@@ -677,6 +972,9 @@
+@@ -682,6 +977,9 @@
  		kfree(journal);
  		goto fail;
  	}
@@ -689,7 +689,7 @@ Index: linux-2.6.21.1/fs/jbd2/journal.c
  	return journal;
  fail:
  	return NULL;
-@@ -727,6 +1025,7 @@
+@@ -732,6 +1030,7 @@
  		journal = NULL;
  		goto out;
  	}
@@ -697,7 +697,7 @@ Index: linux-2.6.21.1/fs/jbd2/journal.c
  	journal->j_dev = bdev;
  	journal->j_fs_dev = fs_dev;
  	journal->j_blk_offset = start;
-@@ -769,6 +1068,7 @@
+@@ -774,6 +1073,7 @@
  
  	journal->j_maxlen = inode->i_size >> inode->i_sb->s_blocksize_bits;
  	journal->j_blocksize = inode->i_sb->s_blocksize;
@@ -705,7 +705,7 @@ Index: linux-2.6.21.1/fs/jbd2/journal.c
  
  	/* journal descriptor can store up to n blocks -bzzz */
  	n = journal->j_blocksize / sizeof(journal_block_tag_t);
-@@ -1157,6 +1457,8 @@
+@@ -1161,6 +1461,8 @@
  		brelse(journal->j_sb_buffer);
  	}
  
@@ -714,7 +714,7 @@ Index: linux-2.6.21.1/fs/jbd2/journal.c
  	if (journal->j_inode)
  		iput(journal->j_inode);
  	if (journal->j_revoke)
-@@ -2007,6 +2309,28 @@
+@@ -2011,6 +2313,28 @@
  
  #endif
  
@@ -743,7 +743,7 @@ Index: linux-2.6.21.1/fs/jbd2/journal.c
  struct kmem_cache *jbd2_handle_cache;
  
  static int __init journal_init_handle_cache(void)
-@@ -2064,6 +2388,7 @@
+@@ -2068,6 +2392,7 @@
  	if (ret != 0)
  		jbd2_journal_destroy_caches();
  	create_jbd_proc_entry();
@@ -751,7 +751,7 @@ Index: linux-2.6.21.1/fs/jbd2/journal.c
  	return ret;
  }
  
-@@ -2075,6 +2400,7 @@
+@@ -2079,6 +2404,7 @@
  		printk(KERN_EMERG "JBD: leaked %d journal_heads!\n", n);
  #endif
  	jbd2_remove_jbd_proc_entry();
