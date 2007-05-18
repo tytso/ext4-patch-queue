@@ -1,14 +1,17 @@
+ext4: Extent overlap bugfix
+
 This patch adds a check for overlap of extents and cuts short the
 new extent to be inserted, if there is a chance of overlap.
 
-Changelog:
----------
-As suggested by Andrew, a check for wrap though zero has been added.
-
-Here is the new patch:
-
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
-Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+
+Changes from Take3 to Take4:
+ - no change -
+Changes from Take2 to Take3:
+ 1) Patch rebased to 2.6.22-rc1 kernel.
+Changes from Take1 to Take2:
+ 1) As suggested by Andrew, a check for wrap though zero has been added.
 ---
  fs/ext4/extents.c               |   60 ++++++++++++++++++++++++++++++++++++++--
  include/linux/ext4_fs_extents.h |    1 
@@ -16,9 +19,9 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.22-rc1/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/extents.c	2007-05-15 15:17:26.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/extents.c	2007-05-15 15:38:18.000000000 -0700
-@@ -1128,6 +1128,55 @@
+--- linux-2.6.22-rc1.orig/fs/ext4/extents.c
++++ linux-2.6.22-rc1/fs/ext4/extents.c
+@@ -1128,6 +1128,55 @@ ext4_can_extents_be_merged(struct inode 
  }
  
  /*
@@ -74,7 +77,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
   * ext4_ext_insert_extent:
   * tries to merge requsted extent into the existing extent or
   * inserts requested extent as new one into the tree,
-@@ -2031,7 +2080,15 @@
+@@ -2031,7 +2080,15 @@ int ext4_ext_get_blocks(handle_t *handle
  
  	/* allocate new block */
  	goal = ext4_ext_find_goal(inode, path, iblock);
@@ -91,7 +94,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  	newblock = ext4_new_blocks(handle, inode, goal, &allocated, &err);
  	if (!newblock)
  		goto out2;
-@@ -2039,7 +2096,6 @@
+@@ -2039,7 +2096,6 @@ int ext4_ext_get_blocks(handle_t *handle
  			goal, newblock, allocated);
  
  	/* try to insert new extent into found leaf and return */
@@ -101,9 +104,9 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  	err = ext4_ext_insert_extent(handle, inode, path, &newex);
 Index: linux-2.6.22-rc1/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs_extents.h	2007-05-15 15:17:26.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs_extents.h	2007-05-15 15:38:18.000000000 -0700
-@@ -190,6 +190,7 @@
+--- linux-2.6.22-rc1.orig/include/linux/ext4_fs_extents.h
++++ linux-2.6.22-rc1/include/linux/ext4_fs_extents.h
+@@ -190,6 +190,7 @@ ext4_ext_invalidate_cache(struct inode *
  
  extern int ext4_extent_tree_init(handle_t *, struct inode *);
  extern int ext4_ext_calc_credits_for_insert(struct inode *, struct ext4_ext_path *);
@@ -111,3 +114,7 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs_extents.h
  extern int ext4_ext_insert_extent(handle_t *, struct inode *, struct ext4_ext_path *, struct ext4_extent *);
  extern int ext4_ext_walk_space(struct inode *, unsigned long, unsigned long, ext_prepare_callback, void *);
  extern struct ext4_ext_path * ext4_ext_find_extent(struct inode *, int, struct ext4_ext_path *);
+-
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html

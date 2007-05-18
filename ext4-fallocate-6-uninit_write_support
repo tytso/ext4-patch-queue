@@ -1,53 +1,66 @@
-From: "Amit K. Arora" <aarora@linux.vnet.ibm.com>
-Subject: [PATCH 5/5] ext4: write support for preallocated blocks/extents
-Cc: linux-ext4@vger.kernel.org, suparna@in.ibm.com, cmm@us.ibm.com
+ext4: write support for preallocated blocks
 
-This patch adds write support for preallocated (using fallocate system
-call) blocks/extents. The preallocated extents in ext4 are marked
-"uninitialized", hence they need special handling especially while
-writing to them. This patch takes care of that.
+This patch adds write support to the uninitialized extents that get
+created when a preallocation is done using fallocate(). It takes care of
+splitting the extents into multiple (upto three) extents and merging the
+new split extents with neighbouring ones, if possible.
 
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
+
+
+Changes from Take3 to Take4:
+ - no change -
+Changes from Take2 to Take3:
+ 1) Patch now rebased to 2.6.22-rc1 kernel.
+Changes from Take1 to Take2:
+ 1) Replaced BUG_ON with WARN_ON & ext4_error.
+ 2) Added variable names to the function declaration of
+    ext4_ext_try_to_merge().
+ 3) Updated variable declarations to use multiple-definitions-per-line.
+ 4) "if((a=foo())).." was broken into "a=foo(); if(a).."
+ 5) Removed extra spaces.
+
 ---
- fs/ext4/extents.c               |  228 +++++++++++++++++++++++++++++++++++-----
- include/linux/ext4_fs_extents.h |    1 
- 2 files changed, 202 insertions(+), 27 deletions(-)
+ fs/ext4/extents.c               |  234 +++++++++++++++++++++++++++++++++++-----
+ include/linux/ext4_fs_extents.h |    3 
+ 2 files changed, 210 insertions(+), 27 deletions(-)
 
 Index: linux-2.6.22-rc1/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/extents.c	2007-05-15 15:47:43.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/extents.c	2007-05-15 16:23:47.000000000 -0700
-@@ -1189,6 +1189,50 @@
+--- linux-2.6.22-rc1.orig/fs/ext4/extents.c
++++ linux-2.6.22-rc1/fs/ext4/extents.c
+@@ -1140,6 +1140,54 @@ ext4_can_extents_be_merged(struct inode 
  }
  
  /*
-+ * ext4_ext_try_to_merge:
-+ * tries to merge the "ex" extent to the next extent in the tree.
++ * This function tries to merge the "ex" extent to the next extent in the tree.
 + * It always tries to merge towards right. If you want to merge towards
 + * left, pass "ex - 1" as argument instead of "ex".
 + * Returns 0 if the extents (ex and ex+1) were _not_ merged and returns
 + * 1 if they got merged.
 + */
 +int ext4_ext_try_to_merge(struct inode *inode,
-+				struct ext4_ext_path *path,
-+				struct ext4_extent *ex)
++			  struct ext4_ext_path *path,
++			  struct ext4_extent *ex)
 +{
 +	struct ext4_extent_header *eh;
 +	unsigned int depth, len;
-+	int merge_done=0, uninitialized = 0;
++	int merge_done = 0;
++	int uninitialized = 0;
 +
 +	depth = ext_depth(inode);
 +	BUG_ON(path[depth].p_hdr == NULL);
 +	eh = path[depth].p_hdr;
 +
-+	while (ex < EXT_LAST_EXTENT(eh)) {
++	while (ex < EXT_LAST_EXTENT(eh))
++	{
 +		if (!ext4_can_extents_be_merged(inode, ex, ex + 1))
 +			break;
 +		/* merge with next extent! */
 +		if (ext4_ext_is_uninitialized(ex))
 +			uninitialized = 1;
 +		ex->ee_len = cpu_to_le16(ext4_ext_get_actual_len(ex)
-+					+ ext4_ext_get_actual_len(ex + 1));
++				+ ext4_ext_get_actual_len(ex + 1));
 +		if (uninitialized)
 +			ext4_ext_mark_uninitialized(ex);
 +
@@ -56,19 +69,22 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
 +				* sizeof(struct ext4_extent);
 +			memmove(ex + 1, ex + 2, len);
 +		}
-+		eh->eh_entries = cpu_to_le16(le16_to_cpu(eh->eh_entries)-1);
++		eh->eh_entries = cpu_to_le16(le16_to_cpu(eh->eh_entries) - 1);
 +		merge_done = 1;
-+		BUG_ON(eh->eh_entries == 0);
++		WARN_ON(eh->eh_entries == 0);
++		if (!eh->eh_entries)
++			ext4_error(inode->i_sb, "ext4_ext_try_to_merge",
++			   "inode#%lu, eh->eh_entries = 0!", inode->i_ino);
 +	}
 +
 +	return merge_done;
 +}
 +
 +/*
-  * ext4_ext_insert_extent:
-  * tries to merge requsted extent into the existing extent or
-  * inserts requested extent as new one into the tree,
-@@ -1327,25 +1371,7 @@
+  * check if a portion of the "newext" extent overlaps with an
+  * existing extent.
+  *
+@@ -1327,25 +1375,7 @@ has_space:
  
  merge:
  	/* try to merge extents to the right */
@@ -95,31 +111,34 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  
  	/* try to merge extents to the left */
  
-@@ -2011,15 +2037,149 @@
+@@ -2011,15 +2041,152 @@ void ext4_ext_release(struct super_block
  #endif
  }
  
 +/*
-+ * ext4_ext_convert_to_initialized:
-+ * this function is called by ext4_ext_get_blocks() if someone tries to write
++ * This function is called by ext4_ext_get_blocks() if someone tries to write
 + * to an uninitialized extent. It may result in splitting the uninitialized
-+ * extent into multiple extents (upto three). Atleast one initialized extent
-+ * and atmost two uninitialized extents can result.
++ * extent into multiple extents (upto three - one initialized and two
++ * uninitialized).
 + * There are three possibilities:
-+ *   a> No split required: Entire extent should be initialized.
-+ *   b> Split into two extents: Only one end of the extent is being written to.
-+ *   c> Split into three extents: Somone is writing in middle of the extent.
++ *   a> There is no split required: Entire extent should be initialized
++ *   b> Splits in two extents: Write is happening at either end of the extent
++ *   c> Splits in three extents: Somone is writing in middle of the extent
 + */
 +int ext4_ext_convert_to_initialized(handle_t *handle, struct inode *inode,
 +					struct ext4_ext_path *path,
 +					ext4_fsblk_t iblock,
 +					unsigned long max_blocks)
 +{
-+	struct ext4_extent *ex, *ex1 = NULL, *ex2 = NULL, *ex3 = NULL, newex;
++	struct ext4_extent *ex, newex;
++	struct ext4_extent *ex1 = NULL;
++	struct ext4_extent *ex2 = NULL;
++	struct ext4_extent *ex3 = NULL;
 +	struct ext4_extent_header *eh;
 +	unsigned int allocated, ee_block, ee_len, depth;
 +	ext4_fsblk_t newblock;
-+	int err = 0, ret = 0;
++	int err = 0;
++	int ret = 0;
 +
 +	depth = ext_depth(inode);
 +	eh = path[depth].p_hdr;
@@ -158,9 +177,8 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
 +		 * as part of the insert above.
 +		 */
 +		newdepth = ext_depth(inode);
-+		if (newdepth != depth)
-+		{
-+			depth=newdepth;
++		if (newdepth != depth) {
++			depth = newdepth;
 +			path = ext4_ext_find_extent(inode, iblock, NULL);
 +			if (IS_ERR(path)) {
 +				err = PTR_ERR(path);
@@ -191,7 +209,8 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
 +	ex2->ee_len = cpu_to_le16(allocated);
 +	if (ex2 != ex)
 +		goto insert;
-+	if ((err = ext4_ext_get_access(handle, inode, path + depth)))
++	err = ext4_ext_get_access(handle, inode, path + depth);
++	if (err)
 +		goto out;
 +	/* New (initialized) extent starts from the first block
 +	 * in the current extent. i.e., ex2 == ex
@@ -213,7 +232,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
 +	}
 +	/* Try to Merge towards right. This might be required
 +	 * only when the whole extent is being written to.
-+	 * i.e. ex2==ex and ex3==NULL.
++	 * i.e. ex2 == ex and ex3 == NULL.
 +	 */
 +	if (!ex3) {
 +		ret = ext4_ext_try_to_merge(inode, path, ex2);
@@ -246,7 +265,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  	unsigned long allocated = 0;
  
  	__clear_bit(BH_New, &bh_result->b_state);
-@@ -2067,6 +2227,7 @@
+@@ -2067,6 +2234,7 @@ int ext4_ext_get_blocks(handle_t *handle
  	 * this is why assert can't be put in ext4_ext_find_extent()
  	 */
  	BUG_ON(path[depth].p_ext == NULL && depth != 0);
@@ -254,7 +273,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  
  	ex = path[depth].p_ext;
  	if (ex) {
-@@ -2075,13 +2236,9 @@
+@@ -2075,13 +2243,9 @@ int ext4_ext_get_blocks(handle_t *handle
  		unsigned short ee_len;
  
  		/*
@@ -268,8 +287,8 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
 -			goto out2;
  		ee_len = ext4_ext_get_actual_len(ex);
  		/* if found extent covers block, simply return it */
- 		if (iblock >= ee_block && iblock < ee_block + ee_len) {
-@@ -2090,12 +2247,27 @@
+ 	        if (iblock >= ee_block && iblock < ee_block + ee_len) {
+@@ -2090,12 +2254,27 @@ int ext4_ext_get_blocks(handle_t *handle
  			allocated = ee_len - (iblock - ee_block);
  			ext_debug("%d fit into %lu:%d -> %llu\n", (int) iblock,
  					ee_block, ee_len, newblock);
@@ -299,7 +318,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  		}
  	}
  
-@@ -2147,6 +2319,7 @@
+@@ -2147,6 +2326,7 @@ int ext4_ext_get_blocks(handle_t *handle
  
  	/* previous routine could use block we allocated */
  	newblock = ext_pblock(&newex);
@@ -309,13 +328,19 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  	/* Cache only when it is _not_ an uninitialized extent */
 Index: linux-2.6.22-rc1/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs_extents.h	2007-05-15 15:38:54.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs_extents.h	2007-05-15 15:50:25.000000000 -0700
-@@ -202,6 +202,7 @@
+--- linux-2.6.22-rc1.orig/include/linux/ext4_fs_extents.h
++++ linux-2.6.22-rc1/include/linux/ext4_fs_extents.h
+@@ -202,6 +202,9 @@ static inline int ext4_ext_get_actual_le
  
  extern int ext4_extent_tree_init(handle_t *, struct inode *);
  extern int ext4_ext_calc_credits_for_insert(struct inode *, struct ext4_ext_path *);
-+extern int ext4_ext_try_to_merge(struct inode *, struct ext4_ext_path *, struct ext4_extent *);
++extern int ext4_ext_try_to_merge(struct inode *inode,
++				 struct ext4_ext_path *path,
++				 struct ext4_extent *);
  extern unsigned int ext4_ext_check_overlap(struct inode *, struct ext4_extent *, struct ext4_ext_path *);
  extern int ext4_ext_insert_extent(handle_t *, struct inode *, struct ext4_ext_path *, struct ext4_extent *);
  extern int ext4_ext_walk_space(struct inode *, unsigned long, unsigned long, ext_prepare_callback, void *);
+-
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
