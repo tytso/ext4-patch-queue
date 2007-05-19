@@ -28,9 +28,9 @@ Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
 
 Index: linux-2.6.22-rc1/arch/s390/kernel/compat_wrapper.S
 ===================================================================
---- linux-2.6.22-rc1.orig/arch/s390/kernel/compat_wrapper.S
-+++ linux-2.6.22-rc1/arch/s390/kernel/compat_wrapper.S
-@@ -1682,3 +1682,13 @@ compat_sys_utimes_wrapper:
+--- linux-2.6.22-rc1.orig/arch/s390/kernel/compat_wrapper.S	2007-05-18 16:30:17.000000000 -0700
++++ linux-2.6.22-rc1/arch/s390/kernel/compat_wrapper.S	2007-05-18 16:32:42.000000000 -0700
+@@ -1682,3 +1682,13 @@
  	llgtr	%r2,%r2			# char *
  	llgtr	%r3,%r3			# struct compat_timeval *
  	jg	compat_sys_utimes
@@ -46,9 +46,9 @@ Index: linux-2.6.22-rc1/arch/s390/kernel/compat_wrapper.S
 +	jg	sys_fallocate
 Index: linux-2.6.22-rc1/arch/s390/kernel/sys_s390.c
 ===================================================================
---- linux-2.6.22-rc1.orig/arch/s390/kernel/sys_s390.c
-+++ linux-2.6.22-rc1/arch/s390/kernel/sys_s390.c
-@@ -265,3 +265,32 @@ s390_fadvise64_64(struct fadvise64_64_ar
+--- linux-2.6.22-rc1.orig/arch/s390/kernel/sys_s390.c	2007-05-18 16:30:17.000000000 -0700
++++ linux-2.6.22-rc1/arch/s390/kernel/sys_s390.c	2007-05-18 16:32:42.000000000 -0700
+@@ -265,3 +265,32 @@
  		return -EFAULT;
  	return sys_fadvise64_64(a.fd, a.offset, a.len, a.advice);
  }
@@ -83,17 +83,17 @@ Index: linux-2.6.22-rc1/arch/s390/kernel/sys_s390.c
 +#endif
 Index: linux-2.6.22-rc1/arch/s390/kernel/syscalls.S
 ===================================================================
---- linux-2.6.22-rc1.orig/arch/s390/kernel/syscalls.S
-+++ linux-2.6.22-rc1/arch/s390/kernel/syscalls.S
-@@ -322,3 +322,4 @@ NI_SYSCALL							/* 310 sys_move_pages *
+--- linux-2.6.22-rc1.orig/arch/s390/kernel/syscalls.S	2007-05-18 16:30:17.000000000 -0700
++++ linux-2.6.22-rc1/arch/s390/kernel/syscalls.S	2007-05-18 16:32:42.000000000 -0700
+@@ -322,3 +322,4 @@
  SYSCALL(sys_getcpu,sys_getcpu,sys_getcpu_wrapper)
  SYSCALL(sys_epoll_pwait,sys_epoll_pwait,compat_sys_epoll_pwait_wrapper)
  SYSCALL(sys_utimes,sys_utimes,compat_sys_utimes_wrapper)
 +SYSCALL(s390_fallocate,sys_fallocate,sys_fallocate_wrapper)
 Index: linux-2.6.22-rc1/include/asm-s390/unistd.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/asm-s390/unistd.h
-+++ linux-2.6.22-rc1/include/asm-s390/unistd.h
+--- linux-2.6.22-rc1.orig/include/asm-s390/unistd.h	2007-05-18 16:30:17.000000000 -0700
++++ linux-2.6.22-rc1/include/asm-s390/unistd.h	2007-05-18 16:32:42.000000000 -0700
 @@ -251,8 +251,9 @@
  #define __NR_getcpu		311
  #define __NR_epoll_pwait	312
@@ -105,7 +105,3 @@ Index: linux-2.6.22-rc1/include/asm-s390/unistd.h
  
  /* 
   * There are some system calls that are not present on 64 bit, some
--
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html

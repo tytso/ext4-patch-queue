@@ -7,8 +7,8 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.22-rc1/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/extents.c	2007-05-15 16:23:47.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/extents.c	2007-05-15 16:25:47.000000000 -0700
+--- linux-2.6.22-rc1.orig/fs/ext4/extents.c	2007-05-18 16:32:10.000000000 -0700
++++ linux-2.6.22-rc1/fs/ext4/extents.c	2007-05-18 16:32:27.000000000 -0700
 @@ -91,36 +91,6 @@
  	ix->ei_leaf_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1) & 0xffff);
  }
@@ -194,8 +194,8 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  	/* find extent */
  	ext4_ext_binsearch(inode, path + ppos, block);
  
-@@ -1729,13 +1756,12 @@
- 	unsigned uninitialized = 0;
+@@ -1624,13 +1651,12 @@
+ 	unsigned short ex_ee_len;
  	struct ext4_extent *ex;
  
 +	/* the header must be checked already in ext4_ext_remove_space() */
@@ -209,7 +209,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  
  	/* find where to start removing */
  	ex = EXT_LAST_EXTENT(eh);
-@@ -1885,7 +1911,7 @@
+@@ -1776,7 +1802,7 @@
  		return -ENOMEM;
  	}
  	path[0].p_hdr = ext_inode_hdr(inode);
@@ -218,7 +218,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  		err = -EIO;
  		goto out;
  	}
-@@ -1906,17 +1932,8 @@
+@@ -1797,17 +1823,8 @@
  		if (!path[i].p_hdr) {
  			ext_debug("initialize header\n");
  			path[i].p_hdr = ext_block_hdr(path[i].p_bh);
@@ -236,7 +236,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  		if (!path[i].p_idx) {
  			/* this level hasn't been touched yet */
  			path[i].p_idx = EXT_LAST_INDEX(path[i].p_hdr);
-@@ -1933,17 +1950,24 @@
+@@ -1824,17 +1841,24 @@
  				i, EXT_FIRST_INDEX(path[i].p_hdr),
  				path[i].p_idx);
  		if (ext4_ext_more_to_rm(path + i)) {

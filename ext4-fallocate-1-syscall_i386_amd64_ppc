@@ -134,18 +134,18 @@ Changes from Take1(initial post on 26th April, 2007) to Take2:
 
 Index: linux-2.6.22-rc1/arch/i386/kernel/syscall_table.S
 ===================================================================
---- linux-2.6.22-rc1.orig/arch/i386/kernel/syscall_table.S
-+++ linux-2.6.22-rc1/arch/i386/kernel/syscall_table.S
-@@ -323,3 +323,4 @@ ENTRY(sys_call_table)
+--- linux-2.6.22-rc1.orig/arch/i386/kernel/syscall_table.S	2007-05-18 16:30:18.000000000 -0700
++++ linux-2.6.22-rc1/arch/i386/kernel/syscall_table.S	2007-05-18 16:32:39.000000000 -0700
+@@ -323,3 +323,4 @@
  	.long sys_signalfd
  	.long sys_timerfd
  	.long sys_eventfd
 +	.long sys_fallocate
 Index: linux-2.6.22-rc1/arch/powerpc/kernel/sys_ppc32.c
 ===================================================================
---- linux-2.6.22-rc1.orig/arch/powerpc/kernel/sys_ppc32.c
-+++ linux-2.6.22-rc1/arch/powerpc/kernel/sys_ppc32.c
-@@ -773,6 +773,13 @@ asmlinkage int compat_sys_truncate64(con
+--- linux-2.6.22-rc1.orig/arch/powerpc/kernel/sys_ppc32.c	2007-05-18 16:30:18.000000000 -0700
++++ linux-2.6.22-rc1/arch/powerpc/kernel/sys_ppc32.c	2007-05-18 16:32:39.000000000 -0700
+@@ -773,6 +773,13 @@
  	return sys_truncate(path, (high << 32) | low);
  }
  
@@ -161,9 +161,9 @@ Index: linux-2.6.22-rc1/arch/powerpc/kernel/sys_ppc32.c
  {
 Index: linux-2.6.22-rc1/fs/open.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/open.c
-+++ linux-2.6.22-rc1/fs/open.c
-@@ -353,6 +353,92 @@ asmlinkage long sys_ftruncate64(unsigned
+--- linux-2.6.22-rc1.orig/fs/open.c	2007-05-18 16:30:18.000000000 -0700
++++ linux-2.6.22-rc1/fs/open.c	2007-05-18 16:32:39.000000000 -0700
+@@ -353,6 +353,92 @@
  #endif
  
  /*
@@ -258,8 +258,8 @@ Index: linux-2.6.22-rc1/fs/open.c
   * switching the fsuid/fsgid around to the real ones.
 Index: linux-2.6.22-rc1/include/asm-i386/unistd.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/asm-i386/unistd.h
-+++ linux-2.6.22-rc1/include/asm-i386/unistd.h
+--- linux-2.6.22-rc1.orig/include/asm-i386/unistd.h	2007-05-18 16:30:18.000000000 -0700
++++ linux-2.6.22-rc1/include/asm-i386/unistd.h	2007-05-18 16:32:39.000000000 -0700
 @@ -329,10 +329,11 @@
  #define __NR_signalfd		321
  #define __NR_timerfd		322
@@ -275,17 +275,17 @@ Index: linux-2.6.22-rc1/include/asm-i386/unistd.h
  #define __ARCH_WANT_OLD_READDIR
 Index: linux-2.6.22-rc1/include/asm-powerpc/systbl.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/asm-powerpc/systbl.h
-+++ linux-2.6.22-rc1/include/asm-powerpc/systbl.h
-@@ -308,3 +308,4 @@ COMPAT_SYS_SPU(move_pages)
+--- linux-2.6.22-rc1.orig/include/asm-powerpc/systbl.h	2007-05-18 16:30:18.000000000 -0700
++++ linux-2.6.22-rc1/include/asm-powerpc/systbl.h	2007-05-18 16:32:39.000000000 -0700
+@@ -308,3 +308,4 @@
  SYSCALL_SPU(getcpu)
  COMPAT_SYS(epoll_pwait)
  COMPAT_SYS_SPU(utimensat)
 +COMPAT_SYS(fallocate)
 Index: linux-2.6.22-rc1/include/asm-powerpc/unistd.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/asm-powerpc/unistd.h
-+++ linux-2.6.22-rc1/include/asm-powerpc/unistd.h
+--- linux-2.6.22-rc1.orig/include/asm-powerpc/unistd.h	2007-05-18 16:30:18.000000000 -0700
++++ linux-2.6.22-rc1/include/asm-powerpc/unistd.h	2007-05-18 16:32:39.000000000 -0700
 @@ -327,10 +327,11 @@
  #define __NR_getcpu		302
  #define __NR_epoll_pwait	303
@@ -301,9 +301,9 @@ Index: linux-2.6.22-rc1/include/asm-powerpc/unistd.h
  #define NR_syscalls	__NR_syscalls
 Index: linux-2.6.22-rc1/include/asm-x86_64/unistd.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/asm-x86_64/unistd.h
-+++ linux-2.6.22-rc1/include/asm-x86_64/unistd.h
-@@ -630,6 +630,8 @@ __SYSCALL(__NR_signalfd, sys_signalfd)
+--- linux-2.6.22-rc1.orig/include/asm-x86_64/unistd.h	2007-05-18 16:30:18.000000000 -0700
++++ linux-2.6.22-rc1/include/asm-x86_64/unistd.h	2007-05-18 16:32:39.000000000 -0700
+@@ -630,6 +630,8 @@
  __SYSCALL(__NR_timerfd, sys_timerfd)
  #define __NR_eventfd		283
  __SYSCALL(__NR_eventfd, sys_eventfd)
@@ -314,9 +314,9 @@ Index: linux-2.6.22-rc1/include/asm-x86_64/unistd.h
  #define __ARCH_WANT_OLD_READDIR
 Index: linux-2.6.22-rc1/include/linux/fs.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/fs.h
-+++ linux-2.6.22-rc1/include/linux/fs.h
-@@ -266,6 +266,17 @@ extern int dir_notify_enable;
+--- linux-2.6.22-rc1.orig/include/linux/fs.h	2007-05-18 16:30:18.000000000 -0700
++++ linux-2.6.22-rc1/include/linux/fs.h	2007-05-18 16:32:39.000000000 -0700
+@@ -266,6 +266,17 @@
  #define SYNC_FILE_RANGE_WRITE		2
  #define SYNC_FILE_RANGE_WAIT_AFTER	4
  
@@ -334,7 +334,7 @@ Index: linux-2.6.22-rc1/include/linux/fs.h
  #ifdef __KERNEL__
  
  #include <linux/linkage.h>
-@@ -1137,6 +1148,8 @@ struct inode_operations {
+@@ -1137,6 +1148,8 @@
  	ssize_t (*listxattr) (struct dentry *, char *, size_t);
  	int (*removexattr) (struct dentry *, const char *);
  	void (*truncate_range)(struct inode *, loff_t, loff_t);
@@ -345,9 +345,9 @@ Index: linux-2.6.22-rc1/include/linux/fs.h
  struct seq_file;
 Index: linux-2.6.22-rc1/include/linux/syscalls.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/syscalls.h
-+++ linux-2.6.22-rc1/include/linux/syscalls.h
-@@ -608,6 +608,7 @@ asmlinkage long sys_signalfd(int ufd, si
+--- linux-2.6.22-rc1.orig/include/linux/syscalls.h	2007-05-18 16:30:18.000000000 -0700
++++ linux-2.6.22-rc1/include/linux/syscalls.h	2007-05-18 16:32:39.000000000 -0700
+@@ -608,6 +608,7 @@
  asmlinkage long sys_timerfd(int ufd, int clockid, int flags,
  			    const struct itimerspec __user *utmr);
  asmlinkage long sys_eventfd(unsigned int count);
@@ -357,15 +357,11 @@ Index: linux-2.6.22-rc1/include/linux/syscalls.h
  
 Index: linux-2.6.22-rc1/arch/x86_64/ia32/ia32entry.S
 ===================================================================
---- linux-2.6.22-rc1.orig/arch/x86_64/ia32/ia32entry.S
-+++ linux-2.6.22-rc1/arch/x86_64/ia32/ia32entry.S
-@@ -719,4 +719,5 @@ ia32_sys_call_table:
+--- linux-2.6.22-rc1.orig/arch/x86_64/ia32/ia32entry.S	2007-05-18 16:30:18.000000000 -0700
++++ linux-2.6.22-rc1/arch/x86_64/ia32/ia32entry.S	2007-05-18 16:32:39.000000000 -0700
+@@ -719,4 +719,5 @@
  	.quad compat_sys_signalfd
  	.quad compat_sys_timerfd
  	.quad sys_eventfd
 +	.quad sys_fallocate
  ia32_syscall_end:
--
-To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html

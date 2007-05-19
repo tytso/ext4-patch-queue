@@ -35,9 +35,9 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.22-rc1/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/inode.c	2007-05-15 16:25:11.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/inode.c	2007-05-15 16:25:33.000000000 -0700
-@@ -2690,6 +2690,13 @@
+--- linux-2.6.22-rc1.orig/fs/ext4/inode.c	2007-05-18 16:33:03.000000000 -0700
++++ linux-2.6.22-rc1/fs/ext4/inode.c	2007-05-18 16:33:09.000000000 -0700
+@@ -2709,6 +2709,13 @@
  	EXT4_INODE_GET_XTIME(i_atime, inode, raw_inode);
  	EXT4_EINODE_GET_XTIME(i_crtime, ei, raw_inode);
  
@@ -51,7 +51,7 @@ Index: linux-2.6.22-rc1/fs/ext4/inode.c
  	if (S_ISREG(inode->i_mode)) {
  		inode->i_op = &ext4_file_inode_operations;
  		inode->i_fop = &ext4_file_operations;
-@@ -2832,8 +2839,14 @@
+@@ -2852,8 +2859,14 @@
  	} else for (block = 0; block < EXT4_N_BLOCKS; block++)
  		raw_inode->i_block[block] = ei->i_data[block];
  
@@ -67,7 +67,7 @@ Index: linux-2.6.22-rc1/fs/ext4/inode.c
  
  	BUFFER_TRACE(bh, "call ext4_journal_dirty_metadata");
  	rc = ext4_journal_dirty_metadata(handle, bh);
-@@ -3107,10 +3120,32 @@
+@@ -3127,10 +3140,32 @@
  int ext4_mark_inode_dirty(handle_t *handle, struct inode *inode)
  {
  	struct ext4_iloc iloc;
@@ -103,8 +103,8 @@ Index: linux-2.6.22-rc1/fs/ext4/inode.c
  	return err;
 Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs.h	2007-05-15 16:25:30.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs.h	2007-05-15 16:25:33.000000000 -0700
+--- linux-2.6.22-rc1.orig/include/linux/ext4_fs.h	2007-05-18 16:33:06.000000000 -0700
++++ linux-2.6.22-rc1/include/linux/ext4_fs.h	2007-05-18 16:33:09.000000000 -0700
 @@ -202,6 +202,7 @@
  #define EXT4_STATE_JDATA		0x00000001 /* journaled data exists */
  #define EXT4_STATE_NEW			0x00000002 /* inode is newly created */
@@ -133,8 +133,8 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
  #define i_frag		osd2.linux2.l_i_frag
 Index: linux-2.6.22-rc1/include/linux/ext4_fs_i.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs_i.h	2007-05-15 16:24:13.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs_i.h	2007-05-15 16:25:33.000000000 -0700
+--- linux-2.6.22-rc1.orig/include/linux/ext4_fs_i.h	2007-05-18 16:33:03.000000000 -0700
++++ linux-2.6.22-rc1/include/linux/ext4_fs_i.h	2007-05-18 16:33:09.000000000 -0700
 @@ -154,6 +154,7 @@
  	unsigned long i_ext_generation;
  	struct ext4_ext_cache i_cached_extent;
@@ -145,8 +145,8 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs_i.h
  #endif	/* _LINUX_EXT4_FS_I */
 Index: linux-2.6.22-rc1/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/xattr.c	2007-05-15 16:24:13.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/xattr.c	2007-05-15 16:25:33.000000000 -0700
+--- linux-2.6.22-rc1.orig/fs/ext4/xattr.c	2007-05-18 16:33:03.000000000 -0700
++++ linux-2.6.22-rc1/fs/ext4/xattr.c	2007-05-18 16:33:09.000000000 -0700
 @@ -508,6 +508,20 @@
  	return;
  }
@@ -439,8 +439,8 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
   *
 Index: linux-2.6.22-rc1/fs/ext4/xattr.h
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/xattr.h	2007-05-12 18:45:56.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/xattr.h	2007-05-15 16:25:33.000000000 -0700
+--- linux-2.6.22-rc1.orig/fs/ext4/xattr.h	2007-05-18 16:30:09.000000000 -0700
++++ linux-2.6.22-rc1/fs/ext4/xattr.h	2007-05-18 16:33:09.000000000 -0700
 @@ -74,6 +74,9 @@
  extern void ext4_xattr_delete_inode(handle_t *, struct inode *);
  extern void ext4_xattr_put_super(struct super_block *);
