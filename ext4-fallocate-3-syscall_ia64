@@ -4,37 +4,32 @@ ia64 fallocate syscall support.
 
 Signed-Off-By: Dave Chinner <dgc@sgi.com>
 
----
- arch/ia64/kernel/entry.S  |    1 +
- include/asm-ia64/unistd.h |    3 ++-
- 2 files changed, 3 insertions(+), 1 deletion(-)
-
-Index: linux-2.6.22-rc1/arch/ia64/kernel/entry.S
-===================================================================
---- linux-2.6.22-rc1.orig/arch/ia64/kernel/entry.S	2007-05-18 16:30:16.000000000 -0700
-+++ linux-2.6.22-rc1/arch/ia64/kernel/entry.S	2007-05-18 16:32:45.000000000 -0700
-@@ -1585,5 +1585,6 @@
- 	data8 sys_getcpu
- 	data8 sys_epoll_pwait			// 1305
- 	data8 sys_utimensat
-+	data8 sys_fallocate
+diff --git a/arch/ia64/kernel/entry.S b/arch/ia64/kernel/entry.S
+index 95f5175..9841059 100644
+--- a/arch/ia64/kernel/entry.S
++++ b/arch/ia64/kernel/entry.S
+@@ -1588,5 +1588,6 @@ sys_call_table:
+ 	data8 sys_signalfd
+ 	data8 sys_timerfd
+ 	data8 sys_eventfd
++	data8 sys_fallocate			// 1310
  
  	.org sys_call_table + 8*NR_syscalls	// guard against failures to increase NR_syscalls
-Index: linux-2.6.22-rc1/include/asm-ia64/unistd.h
-===================================================================
---- linux-2.6.22-rc1.orig/include/asm-ia64/unistd.h	2007-05-18 16:30:16.000000000 -0700
-+++ linux-2.6.22-rc1/include/asm-ia64/unistd.h	2007-05-18 17:34:58.000000000 -0700
-@@ -296,11 +296,12 @@
- #define __NR_getcpu			1304
- #define __NR_epoll_pwait		1305
- #define __NR_utimensat			1306
-+#define __NR_fallocate			1307
+diff --git a/include/asm-ia64/unistd.h b/include/asm-ia64/unistd.h
+index d7781a2..b6e4d0a 100644
+--- a/include/asm-ia64/unistd.h
++++ b/include/asm-ia64/unistd.h
+@@ -299,11 +299,12 @@
+ #define __NR_signalfd			1307
+ #define __NR_timerfd			1308
+ #define __NR_eventfd			1309
++#define __NR_fallocate			1310
  
  #ifdef __KERNEL__
  
  
--#define NR_syscalls			283 /* length of syscall table */
-+#define NR_syscalls			285 /* length of syscall table */
+-#define NR_syscalls			286 /* length of syscall table */
++#define NR_syscalls			287 /* length of syscall table */
  
  #define __ARCH_WANT_SYS_RT_SIGACTION
  #define __ARCH_WANT_SYS_RT_SIGSUSPEND

@@ -74,8 +74,9 @@ solve this problem which makes use of a wrapper in the kernel. This will
 require special handling of this system call on s390 in glibc as well.
 But, this seems to be the best solution so far.
 
-Known Problem:
--------------
+Known Problems:
+==============
+
 mmapped writes into uninitialized extents is a known problem with the
 current ext4 patches. Like XFS, ext4 may need to implement
 ->page_mkwrite() to solve this. See:
@@ -132,20 +133,20 @@ Changes from Take1(initial post on 26th April, 2007) to Take2:
  include/linux/syscalls.h         |    1 
  10 files changed, 116 insertions(+), 2 deletions(-)
 
-Index: linux-2.6.22-rc1/arch/i386/kernel/syscall_table.S
-===================================================================
---- linux-2.6.22-rc1.orig/arch/i386/kernel/syscall_table.S	2007-05-18 16:30:18.000000000 -0700
-+++ linux-2.6.22-rc1/arch/i386/kernel/syscall_table.S	2007-05-18 16:32:39.000000000 -0700
-@@ -323,3 +323,4 @@
+diff --git a/arch/i386/kernel/syscall_table.S b/arch/i386/kernel/syscall_table.S
+index bf6adce..8344c70 100644
+--- a/arch/i386/kernel/syscall_table.S
++++ b/arch/i386/kernel/syscall_table.S
+@@ -323,3 +323,4 @@ ENTRY(sys_call_table)
  	.long sys_signalfd
  	.long sys_timerfd
  	.long sys_eventfd
 +	.long sys_fallocate
-Index: linux-2.6.22-rc1/arch/powerpc/kernel/sys_ppc32.c
-===================================================================
---- linux-2.6.22-rc1.orig/arch/powerpc/kernel/sys_ppc32.c	2007-05-18 16:30:18.000000000 -0700
-+++ linux-2.6.22-rc1/arch/powerpc/kernel/sys_ppc32.c	2007-05-18 16:32:39.000000000 -0700
-@@ -773,6 +773,13 @@
+diff --git a/arch/powerpc/kernel/sys_ppc32.c b/arch/powerpc/kernel/sys_ppc32.c
+index 047246a..1269b32 100644
+--- a/arch/powerpc/kernel/sys_ppc32.c
++++ b/arch/powerpc/kernel/sys_ppc32.c
+@@ -773,6 +773,13 @@ asmlinkage int compat_sys_truncate64(const char __user * path, u32 reg4,
  	return sys_truncate(path, (high << 32) | low);
  }
  
@@ -159,11 +160,21 @@ Index: linux-2.6.22-rc1/arch/powerpc/kernel/sys_ppc32.c
  asmlinkage int compat_sys_ftruncate64(unsigned int fd, u32 reg4, unsigned long high,
  				 unsigned long low)
  {
-Index: linux-2.6.22-rc1/fs/open.c
-===================================================================
---- linux-2.6.22-rc1.orig/fs/open.c	2007-05-18 16:30:18.000000000 -0700
-+++ linux-2.6.22-rc1/fs/open.c	2007-05-18 16:32:39.000000000 -0700
-@@ -353,6 +353,92 @@
+diff --git a/arch/x86_64/ia32/ia32entry.S b/arch/x86_64/ia32/ia32entry.S
+index 21868f9..d6064cd 100644
+--- a/arch/x86_64/ia32/ia32entry.S
++++ b/arch/x86_64/ia32/ia32entry.S
+@@ -719,4 +719,5 @@ ia32_sys_call_table:
+ 	.quad compat_sys_signalfd
+ 	.quad compat_sys_timerfd
+ 	.quad sys_eventfd
++	.quad sys_fallocate
+ ia32_syscall_end:
+diff --git a/fs/open.c b/fs/open.c
+index 0d515d1..02d50c3 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -353,6 +353,92 @@ asmlinkage long sys_ftruncate64(unsigned int fd, loff_t length)
  #endif
  
  /*
@@ -256,10 +267,10 @@ Index: linux-2.6.22-rc1/fs/open.c
   * access() needs to use the real uid/gid, not the effective uid/gid.
   * We do this by temporarily clearing all FS-related capabilities and
   * switching the fsuid/fsgid around to the real ones.
-Index: linux-2.6.22-rc1/include/asm-i386/unistd.h
-===================================================================
---- linux-2.6.22-rc1.orig/include/asm-i386/unistd.h	2007-05-18 16:30:18.000000000 -0700
-+++ linux-2.6.22-rc1/include/asm-i386/unistd.h	2007-05-18 16:32:39.000000000 -0700
+diff --git a/include/asm-i386/unistd.h b/include/asm-i386/unistd.h
+index e84ace1..9b15545 100644
+--- a/include/asm-i386/unistd.h
++++ b/include/asm-i386/unistd.h
 @@ -329,10 +329,11 @@
  #define __NR_signalfd		321
  #define __NR_timerfd		322
@@ -273,37 +284,40 @@ Index: linux-2.6.22-rc1/include/asm-i386/unistd.h
  
  #define __ARCH_WANT_IPC_PARSE_VERSION
  #define __ARCH_WANT_OLD_READDIR
-Index: linux-2.6.22-rc1/include/asm-powerpc/systbl.h
-===================================================================
---- linux-2.6.22-rc1.orig/include/asm-powerpc/systbl.h	2007-05-18 16:30:18.000000000 -0700
-+++ linux-2.6.22-rc1/include/asm-powerpc/systbl.h	2007-05-18 16:32:39.000000000 -0700
-@@ -308,3 +308,4 @@
+diff --git a/include/asm-powerpc/systbl.h b/include/asm-powerpc/systbl.h
+index 700ca59..437b0df 100644
+--- a/include/asm-powerpc/systbl.h
++++ b/include/asm-powerpc/systbl.h
+@@ -308,6 +308,7 @@ COMPAT_SYS_SPU(move_pages)
  SYSCALL_SPU(getcpu)
  COMPAT_SYS(epoll_pwait)
  COMPAT_SYS_SPU(utimensat)
 +COMPAT_SYS(fallocate)
-Index: linux-2.6.22-rc1/include/asm-powerpc/unistd.h
-===================================================================
---- linux-2.6.22-rc1.orig/include/asm-powerpc/unistd.h	2007-05-18 16:30:18.000000000 -0700
-+++ linux-2.6.22-rc1/include/asm-powerpc/unistd.h	2007-05-18 16:32:39.000000000 -0700
-@@ -327,10 +327,11 @@
- #define __NR_getcpu		302
- #define __NR_epoll_pwait	303
- #define __NR_utimensat		304
-+#define __NR_fallocate		305
+ COMPAT_SYS_SPU(signalfd)
+ COMPAT_SYS_SPU(timerfd)
+ SYSCALL_SPU(eventfd)
+diff --git a/include/asm-powerpc/unistd.h b/include/asm-powerpc/unistd.h
+index e3c28dc..cb22470 100644
+--- a/include/asm-powerpc/unistd.h
++++ b/include/asm-powerpc/unistd.h
+@@ -330,10 +330,11 @@
+ #define __NR_signalfd		305
+ #define __NR_timerfd		306
+ #define __NR_eventfd		307
++#define __NR_fallocate		308
  
  #ifdef __KERNEL__
  
--#define __NR_syscalls		305
-+#define __NR_syscalls		306
+-#define __NR_syscalls		308
++#define __NR_syscalls		309
  
  #define __NR__exit __NR_exit
  #define NR_syscalls	__NR_syscalls
-Index: linux-2.6.22-rc1/include/asm-x86_64/unistd.h
-===================================================================
---- linux-2.6.22-rc1.orig/include/asm-x86_64/unistd.h	2007-05-18 16:30:18.000000000 -0700
-+++ linux-2.6.22-rc1/include/asm-x86_64/unistd.h	2007-05-18 16:32:39.000000000 -0700
-@@ -630,6 +630,8 @@
+diff --git a/include/asm-x86_64/unistd.h b/include/asm-x86_64/unistd.h
+index ae1ed05..12329e9 100644
+--- a/include/asm-x86_64/unistd.h
++++ b/include/asm-x86_64/unistd.h
+@@ -630,6 +630,8 @@ __SYSCALL(__NR_signalfd, sys_signalfd)
  __SYSCALL(__NR_timerfd, sys_timerfd)
  #define __NR_eventfd		283
  __SYSCALL(__NR_eventfd, sys_eventfd)
@@ -312,11 +326,11 @@ Index: linux-2.6.22-rc1/include/asm-x86_64/unistd.h
  
  #ifndef __NO_STUBS
  #define __ARCH_WANT_OLD_READDIR
-Index: linux-2.6.22-rc1/include/linux/fs.h
-===================================================================
---- linux-2.6.22-rc1.orig/include/linux/fs.h	2007-05-18 16:30:18.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/fs.h	2007-05-18 16:32:39.000000000 -0700
-@@ -266,6 +266,17 @@
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 7cf0c54..1514354 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -266,6 +266,17 @@ extern int dir_notify_enable;
  #define SYNC_FILE_RANGE_WRITE		2
  #define SYNC_FILE_RANGE_WAIT_AFTER	4
  
@@ -334,7 +348,7 @@ Index: linux-2.6.22-rc1/include/linux/fs.h
  #ifdef __KERNEL__
  
  #include <linux/linkage.h>
-@@ -1137,6 +1148,8 @@
+@@ -1137,6 +1148,8 @@ struct inode_operations {
  	ssize_t (*listxattr) (struct dentry *, char *, size_t);
  	int (*removexattr) (struct dentry *, const char *);
  	void (*truncate_range)(struct inode *, loff_t, loff_t);
@@ -343,11 +357,11 @@ Index: linux-2.6.22-rc1/include/linux/fs.h
  };
  
  struct seq_file;
-Index: linux-2.6.22-rc1/include/linux/syscalls.h
-===================================================================
---- linux-2.6.22-rc1.orig/include/linux/syscalls.h	2007-05-18 16:30:18.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/syscalls.h	2007-05-18 16:32:39.000000000 -0700
-@@ -608,6 +608,7 @@
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index b02070e..dd61dc5 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -608,6 +608,7 @@ asmlinkage long sys_signalfd(int ufd, sigset_t __user *user_mask, size_t sizemas
  asmlinkage long sys_timerfd(int ufd, int clockid, int flags,
  			    const struct itimerspec __user *utmr);
  asmlinkage long sys_eventfd(unsigned int count);
@@ -355,13 +369,3 @@ Index: linux-2.6.22-rc1/include/linux/syscalls.h
  
  int kernel_execve(const char *filename, char *const argv[], char *const envp[]);
  
-Index: linux-2.6.22-rc1/arch/x86_64/ia32/ia32entry.S
-===================================================================
---- linux-2.6.22-rc1.orig/arch/x86_64/ia32/ia32entry.S	2007-05-18 16:30:18.000000000 -0700
-+++ linux-2.6.22-rc1/arch/x86_64/ia32/ia32entry.S	2007-05-18 16:32:39.000000000 -0700
-@@ -719,4 +719,5 @@
- 	.quad compat_sys_signalfd
- 	.quad compat_sys_timerfd
- 	.quad sys_eventfd
-+	.quad sys_fallocate
- ia32_syscall_end:
