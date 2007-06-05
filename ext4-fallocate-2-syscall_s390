@@ -19,22 +19,14 @@ ENTRY(__fallocate)
 PSEUDO_END(__fallocate)
 
 Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
----
- arch/s390/kernel/compat_wrapper.S |   10 ++++++++++
- arch/s390/kernel/sys_s390.c       |   29 +++++++++++++++++++++++++++++
- arch/s390/kernel/syscalls.S       |    1 +
- include/asm-s390/unistd.h         |    3 ++-
- 4 files changed, 42 insertions(+), 1 deletion(-)
-
-Index: linux-2.6.22-rc1/arch/s390/kernel/compat_wrapper.S
-===================================================================
---- linux-2.6.22-rc1.orig/arch/s390/kernel/compat_wrapper.S	2007-05-18 16:30:17.000000000 -0700
-+++ linux-2.6.22-rc1/arch/s390/kernel/compat_wrapper.S	2007-05-18 16:32:42.000000000 -0700
-@@ -1682,3 +1682,13 @@
- 	llgtr	%r2,%r2			# char *
+diff --git a/arch/s390/kernel/compat_wrapper.S b/arch/s390/kernel/compat_wrapper.S
+index acc4154..8e0071c 100644
+--- a/arch/s390/kernel/compat_wrapper.S
++++ b/arch/s390/kernel/compat_wrapper.S
+@@ -1683,6 +1683,16 @@ compat_sys_utimes_wrapper:
  	llgtr	%r3,%r3			# struct compat_timeval *
  	jg	compat_sys_utimes
-+
+ 
 +	.globl  sys_fallocate_wrapper
 +sys_fallocate_wrapper:
 +	lgfr	%r2,%r2			# int
@@ -44,11 +36,15 @@ Index: linux-2.6.22-rc1/arch/s390/kernel/compat_wrapper.S
 +	sllg    %r5,%r6,32		# get high word of 64bit loff_t
 +	l	%r5,164(%r15)		# get low word of 64bit loff_t
 +	jg	sys_fallocate
-Index: linux-2.6.22-rc1/arch/s390/kernel/sys_s390.c
-===================================================================
---- linux-2.6.22-rc1.orig/arch/s390/kernel/sys_s390.c	2007-05-18 16:30:17.000000000 -0700
-+++ linux-2.6.22-rc1/arch/s390/kernel/sys_s390.c	2007-05-18 16:32:42.000000000 -0700
-@@ -265,3 +265,32 @@
++
+ 	.globl	compat_sys_utimensat_wrapper
+ compat_sys_utimensat_wrapper:
+ 	llgfr	%r2,%r2			# unsigned int
+diff --git a/arch/s390/kernel/sys_s390.c b/arch/s390/kernel/sys_s390.c
+index 1c90c7e..632fd0f 100644
+--- a/arch/s390/kernel/sys_s390.c
++++ b/arch/s390/kernel/sys_s390.c
+@@ -265,3 +265,32 @@ s390_fadvise64_64(struct fadvise64_64_args __user *args)
  		return -EFAULT;
  	return sys_fadvise64_64(a.fd, a.offset, a.len, a.advice);
  }
@@ -81,27 +77,29 @@ Index: linux-2.6.22-rc1/arch/s390/kernel/sys_s390.c
 +	return sys_fallocate(fd, mode, offset, cv.len);
 +}
 +#endif
-Index: linux-2.6.22-rc1/arch/s390/kernel/syscalls.S
-===================================================================
---- linux-2.6.22-rc1.orig/arch/s390/kernel/syscalls.S	2007-05-18 16:30:17.000000000 -0700
-+++ linux-2.6.22-rc1/arch/s390/kernel/syscalls.S	2007-05-18 16:32:42.000000000 -0700
-@@ -322,3 +322,4 @@
+diff --git a/arch/s390/kernel/syscalls.S b/arch/s390/kernel/syscalls.S
+index 738feb4..9c6a843 100644
+--- a/arch/s390/kernel/syscalls.S
++++ b/arch/s390/kernel/syscalls.S
+@@ -322,6 +322,7 @@ NI_SYSCALL							/* 310 sys_move_pages */
  SYSCALL(sys_getcpu,sys_getcpu,sys_getcpu_wrapper)
  SYSCALL(sys_epoll_pwait,sys_epoll_pwait,compat_sys_epoll_pwait_wrapper)
  SYSCALL(sys_utimes,sys_utimes,compat_sys_utimes_wrapper)
 +SYSCALL(s390_fallocate,sys_fallocate,sys_fallocate_wrapper)
-Index: linux-2.6.22-rc1/include/asm-s390/unistd.h
-===================================================================
---- linux-2.6.22-rc1.orig/include/asm-s390/unistd.h	2007-05-18 16:30:17.000000000 -0700
-+++ linux-2.6.22-rc1/include/asm-s390/unistd.h	2007-05-18 16:32:42.000000000 -0700
-@@ -251,8 +251,9 @@
- #define __NR_getcpu		311
- #define __NR_epoll_pwait	312
- #define __NR_utimes		313
-+#define __NR_fallocate		314
- 
--#define NR_syscalls 314
-+#define NR_syscalls 315
+ NI_SYSCALL							/* 314 sys_fallocate */
+ SYSCALL(sys_utimensat,sys_utimensat,compat_sys_utimensat_wrapper)	/* 315 */
+ SYSCALL(sys_signalfd,sys_signalfd,compat_sys_signalfd_wrapper)
+diff --git a/include/asm-s390/unistd.h b/include/asm-s390/unistd.h
+index 790c1c5..1dede71 100644
+--- a/include/asm-s390/unistd.h
++++ b/include/asm-s390/unistd.h
+@@ -256,7 +256,8 @@
+ #define __NR_signalfd		316
+ #define __NR_timerfd		317
+ #define __NR_eventfd		318
+-#define NR_syscalls 319
++#define __NR_fallocate		319
++#define NR_syscalls 320
  
  /* 
   * There are some system calls that are not present on 64 bit, some
