@@ -2,15 +2,12 @@ The following patch moved the ext4_expand_extra_isize() function to
 inode.c and provide proper defines in xattr.h. Renamed the ext3
 functions to ext4_xxx_xxx().
 
-Compile tested. Can you Ack the changes. Appreciate if you can let me
-know it passes your tests.
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
-Signed-Off-By: Mingming Cao <cmm@us.ibm.com>
-
-Index: linux-2.6.22-rc1/fs/ext4/inode.c
+Index: linux-2.6.22-rc4/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/inode.c	2007-05-18 16:33:09.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/inode.c	2007-05-18 16:33:12.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/inode.c	2007-06-11 17:47:36.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/inode.c	2007-06-13 10:45:10.000000000 -0700
 @@ -3117,6 +3117,40 @@
  }
  
@@ -19,7 +16,7 @@ Index: linux-2.6.22-rc1/fs/ext4/inode.c
 + * Returns 0 on success or negative error number on failure.
 + */
 +int ext4_expand_extra_isize(struct inode *inode, unsigned int new_extra_isize,
-+                        struct ext4_iloc iloc, handle_t *handle)
++			struct ext4_iloc iloc, handle_t *handle)
 +{
 +	struct ext4_inode *raw_inode;
 +	struct ext4_xattr_ibody_header *header;
@@ -32,7 +29,7 @@ Index: linux-2.6.22-rc1/fs/ext4/inode.c
 +	raw_inode = ext4_raw_inode(&iloc);
 +
 +	header = IHDR(inode, raw_inode);
-+        entry = IFIRST(header);
++	entry = IFIRST(header);
 +
 +	/* No extended attributes present */
 +	if (!(EXT4_I(inode)->i_state & EXT4_STATE_XATTR) ||
@@ -52,10 +49,10 @@ Index: linux-2.6.22-rc1/fs/ext4/inode.c
   * What we do here is to mark the in-core inode as clean with respect to inode
   * dirtiness (it may still be data-dirty).
   * This means that the in-core inode may be reaped by prune_icache
-Index: linux-2.6.22-rc1/fs/ext4/xattr.c
+Index: linux-2.6.22-rc4/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/xattr.c	2007-05-18 16:33:09.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/xattr.c	2007-05-18 16:33:12.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/xattr.c	2007-06-11 17:47:51.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/xattr.c	2007-06-11 17:48:03.000000000 -0700
 @@ -66,13 +66,6 @@
  #define BFIRST(bh) ENTRY(BHDR(bh)+1)
  #define IS_LAST_ENTRY(entry) (*(__u32 *)(entry) == 0)
@@ -88,7 +85,7 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
  				     int value_offs_shift, void *to,
  				     void *from, size_t n, int blocksize)
  {
-@@ -1103,13 +1096,14 @@
+@@ -1104,13 +1097,14 @@
  	memmove(to, from, n);
  }
  
@@ -107,7 +104,7 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
  	struct ext4_xattr_ibody_header *header;
  	struct ext4_xattr_entry *entry, *last, *first;
  	struct buffer_head *bh = NULL;
-@@ -1123,27 +1117,15 @@
+@@ -1124,27 +1118,15 @@
  	int s_min_extra_isize = EXT4_SB(inode->i_sb)->s_es->s_min_extra_isize;
  
  	down_write(&EXT4_I(inode)->xattr_sem);
@@ -135,7 +132,7 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
  	/*
  	 * Check if enough free space is available in the inode to shift the
  	 * entries ahead by new_extra_isize.
-@@ -1155,10 +1137,10 @@
+@@ -1156,10 +1138,10 @@
  	last = entry;
  	total_ino = sizeof(struct ext4_xattr_ibody_header);
  
@@ -148,7 +145,7 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
  				- new_extra_isize, (void *)raw_inode +
  				EXT4_GOOD_OLD_INODE_SIZE + new_extra_isize,
  				(void *)header, total_ino,
-@@ -1188,7 +1170,7 @@
+@@ -1189,7 +1171,7 @@
  		first = BFIRST(bh);
  		end = bh->b_data + bh->b_size;
  		min_offs = end - base;
@@ -157,7 +154,7 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
  					     &total_blk);
  		if (free < new_extra_isize) {
  			if (!tried_min_extra_isize && s_min_extra_isize) {
-@@ -1287,7 +1269,7 @@
+@@ -1286,7 +1268,7 @@
  		else
  			shift_bytes = entry_size + size;
  		/* Adjust the offsets and shift the remaining entries ahead */
@@ -166,10 +163,10 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
  			shift_bytes, (void *)raw_inode +
  			EXT4_GOOD_OLD_INODE_SIZE + extra_isize + shift_bytes,
  			(void *)header, total_ino - entry_size,
-Index: linux-2.6.22-rc1/fs/ext4/xattr.h
+Index: linux-2.6.22-rc4/fs/ext4/xattr.h
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/xattr.h	2007-05-18 16:33:09.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/xattr.h	2007-05-18 16:33:12.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/xattr.h	2007-06-11 17:42:58.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/xattr.h	2007-06-11 17:48:03.000000000 -0700
 @@ -56,6 +56,13 @@
  #define EXT4_XATTR_SIZE(size) \
  	(((size) + EXT4_XATTR_ROUND) & ~EXT4_XATTR_ROUND)

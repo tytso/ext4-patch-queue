@@ -1,9 +1,10 @@
+Signed-off-by: Alex Tomas <alex@clusterfs.com>
 ---
-Index: linux-2.6.22-rc1/fs/ext4/writeback.c
+Index: linux-2.6.22-rc4/fs/ext4/writeback.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/writeback.c	2007-05-15 16:26:07.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/writeback.c	2007-05-15 16:26:10.000000000 -0700
-@@ -274,7 +274,8 @@
+--- linux-2.6.22-rc4.orig/fs/ext4/writeback.c	2007-06-13 11:52:29.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/writeback.c	2007-06-13 11:54:30.000000000 -0700
+@@ -275,7 +275,8 @@
  	struct inode *inode = wc->mapping->host;
  	int blkbits = inode->i_blkbits;
  	struct page *page;
@@ -13,7 +14,7 @@ Index: linux-2.6.22-rc1/fs/ext4/writeback.c
  	unsigned long pstart, plen, prev;
  	struct bio *bio = NULL;
  	int nr_pages;
-@@ -335,6 +336,8 @@
+@@ -336,6 +337,8 @@
  			nr_pages = (nr_pages >> (PAGE_CACHE_SHIFT - blkbits));
  			off = le32_to_cpu(ex->ee_start) +
  			      (blk - le32_to_cpu(ex->ee_block));
@@ -22,18 +23,18 @@ Index: linux-2.6.22-rc1/fs/ext4/writeback.c
  			bio = ext4_wb_bio_alloc(inode, off, nr_pages + 2);
  			if (bio == NULL)
  				return -ENOMEM;
-@@ -380,7 +383,9 @@
- 
+@@ -383,7 +386,9 @@
  		/* try to predict block placement */
- 		if ((ex = path[depth].p_ext))
+ 		ex = path[depth].p_ext;
+ 		if (ex)
 -			return le32_to_cpu(ex->ee_start) +
 +			return (le32_to_cpu(ex->ee_start) |
 +				((ext4_fsblk_t)
-+				 le16_to_cpu(ex->ee_start_hi) << 32)) +
++				le16_to_cpu(ex->ee_start_hi) << 32)) +
  			       (block - le32_to_cpu(ex->ee_block));
  
  		/* it looks index is empty
-@@ -420,7 +425,8 @@
+@@ -423,7 +428,8 @@
  				(unsigned) ec->ec_block,
  				(unsigned) ec->ec_len,
  				(unsigned) ec->ec_start);
@@ -43,7 +44,7 @@ Index: linux-2.6.22-rc1/fs/ext4/writeback.c
  		nex.ee_block = cpu_to_le32(ec->ec_block);
  		nex.ee_len = cpu_to_le16(ec->ec_len);
  		err = ext4_wb_submit_extent(wc, NULL, &nex, 0);
-@@ -493,8 +499,8 @@
+@@ -497,8 +503,8 @@
  			pblock, count, inode->i_ino, ec->ec_len);
  
  	/* insert new extent */
@@ -54,7 +55,7 @@ Index: linux-2.6.22-rc1/fs/ext4/writeback.c
  	nex.ee_len = cpu_to_le16(count);
  	nex.ee_block = cpu_to_le32(ec->ec_block);
  	err = ext4_ext_insert_extent(handle, inode, path, &nex);
-@@ -529,7 +535,9 @@
+@@ -533,7 +539,9 @@
  	 * in correspondend buffer_heads to prevent corruptions */
  	for (i = 0; i < le16_to_cpu(nex.ee_len); i++)
  		unmap_underlying_metadata(sb->s_bdev,

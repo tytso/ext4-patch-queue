@@ -10,10 +10,10 @@ It provides statistics via procfs such as transaction lifetime and size.
 Signed-off-by: Johann Lombardi <johann.lombardi@bull.net>
 --
 
-Index: linux-2.6.22-rc1/include/linux/jbd2.h
+Index: linux-2.6.22-rc4/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/jbd2.h	2007-05-12 18:45:56.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/jbd2.h	2007-05-15 16:26:22.000000000 -0700
+--- linux-2.6.22-rc4.orig/include/linux/jbd2.h	2007-06-11 17:28:17.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/jbd2.h	2007-06-13 10:45:21.000000000 -0700
 @@ -408,6 +408,16 @@
  };
  
@@ -141,10 +141,10 @@ Index: linux-2.6.22-rc1/include/linux/jbd2.h
  	 * An opaque pointer to fs-private information.  ext3 puts its
  	 * superblock pointer here
  	 */
-Index: linux-2.6.22-rc1/fs/jbd2/transaction.c
+Index: linux-2.6.22-rc4/fs/jbd2/transaction.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/jbd2/transaction.c	2007-05-12 18:45:56.000000000 -0700
-+++ linux-2.6.22-rc1/fs/jbd2/transaction.c	2007-05-15 16:26:22.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/jbd2/transaction.c	2007-06-11 17:22:14.000000000 -0700
++++ linux-2.6.22-rc4/fs/jbd2/transaction.c	2007-06-13 10:47:56.000000000 -0700
 @@ -59,6 +59,8 @@
  
  	J_ASSERT(journal->j_running_transaction == NULL);
@@ -169,16 +169,16 @@ Index: linux-2.6.22-rc1/fs/jbd2/transaction.c
 +	if (time_after(transaction->t_start, ts)) {
 +		ts = jbd2_time_diff(ts, transaction->t_start);
 +		if (ts > transaction->t_max_wait)
-+			transaction->t_max_wait= ts;
++			transaction->t_max_wait = ts;
 +	}
 +
  	handle->h_transaction = transaction;
  	transaction->t_outstanding_credits += nblocks;
  	transaction->t_updates++;
-Index: linux-2.6.22-rc1/fs/jbd2/checkpoint.c
+Index: linux-2.6.22-rc4/fs/jbd2/checkpoint.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/jbd2/checkpoint.c	2007-05-12 18:45:56.000000000 -0700
-+++ linux-2.6.22-rc1/fs/jbd2/checkpoint.c	2007-05-15 16:26:22.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/jbd2/checkpoint.c	2007-06-11 17:22:14.000000000 -0700
++++ linux-2.6.22-rc4/fs/jbd2/checkpoint.c	2007-06-13 10:48:44.000000000 -0700
 @@ -232,7 +232,8 @@
   * Called under jbd_lock_bh_state(jh2bh(jh)), and drops it
   */
@@ -233,7 +233,7 @@ Index: linux-2.6.22-rc1/fs/jbd2/checkpoint.c
  	assert_spin_locked(&journal->j_list_lock);
  	if (transaction->t_cpnext) {
  		transaction->t_cpnext->t_cpprev = transaction->t_cpprev;
-@@ -693,5 +701,25 @@
+@@ -693,5 +701,26 @@
  	J_ASSERT(journal->j_running_transaction != transaction);
  
  	jbd_debug(1, "Dropping transaction %d, all done\n", transaction->t_tid);
@@ -248,7 +248,8 @@ Index: linux-2.6.22-rc1/fs/jbd2/checkpoint.c
 +		stats.u.chp = transaction->t_chp_stats;
 +		if (stats.ts_chp_time)
 +			stats.ts_chp_time =
-+				jbd2_time_diff(stats.ts_chp_time, CURRENT_MSECS);
++				jbd2_time_diff(stats.ts_chp_time,
++						CURRENT_MSECS);
 +		spin_lock(&journal->j_history_lock);
 +		memcpy(journal->j_history + journal->j_history_cur, &stats,
 +				sizeof(stats));
@@ -259,10 +260,10 @@ Index: linux-2.6.22-rc1/fs/jbd2/checkpoint.c
 +
  	kfree(transaction);
  }
-Index: linux-2.6.22-rc1/fs/jbd2/commit.c
+Index: linux-2.6.22-rc4/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/jbd2/commit.c	2007-05-12 18:45:56.000000000 -0700
-+++ linux-2.6.22-rc1/fs/jbd2/commit.c	2007-05-15 16:26:49.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/jbd2/commit.c	2007-06-11 17:22:14.000000000 -0700
++++ linux-2.6.22-rc4/fs/jbd2/commit.c	2007-06-13 10:45:21.000000000 -0700
 @@ -20,6 +20,7 @@
  #include <linux/slab.h>
  #include <linux/mm.h>
@@ -366,19 +367,19 @@ Index: linux-2.6.22-rc1/fs/jbd2/commit.c
  	commit_transaction->t_state = T_FINISHED;
  	J_ASSERT(commit_transaction == journal->j_committing_transaction);
  	journal->j_commit_sequence = commit_transaction->t_tid;
-Index: linux-2.6.22-rc1/fs/jbd2/journal.c
+Index: linux-2.6.22-rc4/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/jbd2/journal.c	2007-05-12 18:45:56.000000000 -0700
-+++ linux-2.6.22-rc1/fs/jbd2/journal.c	2007-05-15 16:26:22.000000000 -0700
-@@ -35,6 +35,7 @@
- #include <linux/kthread.h>
+--- linux-2.6.22-rc4.orig/fs/jbd2/journal.c	2007-06-11 17:28:17.000000000 -0700
++++ linux-2.6.22-rc4/fs/jbd2/journal.c	2007-06-13 12:11:49.000000000 -0700
+@@ -36,6 +36,7 @@
  #include <linux/poison.h>
  #include <linux/proc_fs.h>
+ #include <linux/debugfs.h>
 +#include <linux/seq_file.h>
  
  #include <asm/uaccess.h>
  #include <asm/page.h>
-@@ -640,6 +641,300 @@
+@@ -641,6 +642,306 @@
  	return jbd2_journal_add_journal_head(bh);
  }
  
@@ -419,7 +420,13 @@ Index: linux-2.6.22-rc1/fs/jbd2/journal.c
 +	ts = jbd2_history_skip_empty(s, s->stats + s->start, 1);
 +	if (!ts)
 +		return NULL;
-+	while (--l && (ts = jbd2_history_skip_empty(s, ++ts, 0)) != NULL);
++	l--;
++	while (l) {
++		ts = jbd2_history_skip_empty(s, ++ts, 0);
++		if (!ts)
++			break;
++		l--;
++	}
 +	return ts;
 +}
 +
@@ -679,7 +686,7 @@ Index: linux-2.6.22-rc1/fs/jbd2/journal.c
  /*
   * Management for journal control blocks: functions to create and
   * destroy journal_t structures, and to initialise and read existing
-@@ -682,6 +977,9 @@
+@@ -683,6 +984,9 @@
  		kfree(journal);
  		goto fail;
  	}
@@ -689,15 +696,15 @@ Index: linux-2.6.22-rc1/fs/jbd2/journal.c
  	return journal;
  fail:
  	return NULL;
-@@ -732,6 +1030,7 @@
+@@ -733,6 +1037,7 @@
  		journal = NULL;
  		goto out;
  	}
-+ 	jbd2_stats_proc_init(journal);
++	jbd2_stats_proc_init(journal);
  	journal->j_dev = bdev;
  	journal->j_fs_dev = fs_dev;
  	journal->j_blk_offset = start;
-@@ -774,6 +1073,7 @@
+@@ -775,6 +1080,7 @@
  
  	journal->j_maxlen = inode->i_size >> inode->i_sb->s_blocksize_bits;
  	journal->j_blocksize = inode->i_sb->s_blocksize;
@@ -705,7 +712,7 @@ Index: linux-2.6.22-rc1/fs/jbd2/journal.c
  
  	/* journal descriptor can store up to n blocks -bzzz */
  	n = journal->j_blocksize / sizeof(journal_block_tag_t);
-@@ -1161,6 +1461,8 @@
+@@ -1162,6 +1468,8 @@
  		brelse(journal->j_sb_buffer);
  	}
  
@@ -714,7 +721,7 @@ Index: linux-2.6.22-rc1/fs/jbd2/journal.c
  	if (journal->j_inode)
  		iput(journal->j_inode);
  	if (journal->j_revoke)
-@@ -2011,6 +2313,28 @@
+@@ -1989,6 +2297,28 @@
  
  #endif
  
@@ -743,18 +750,18 @@ Index: linux-2.6.22-rc1/fs/jbd2/journal.c
  struct kmem_cache *jbd2_handle_cache;
  
  static int __init journal_init_handle_cache(void)
-@@ -2068,6 +2392,7 @@
+@@ -2046,6 +2376,7 @@
  	if (ret != 0)
  		jbd2_journal_destroy_caches();
- 	create_jbd_proc_entry();
+ 	jbd2_create_debugfs_entry();
 +	jbd2_create_jbd_stats_proc_entry();
  	return ret;
  }
  
-@@ -2079,6 +2404,7 @@
+@@ -2057,6 +2388,7 @@
  		printk(KERN_EMERG "JBD: leaked %d journal_heads!\n", n);
  #endif
- 	jbd2_remove_jbd_proc_entry();
+ 	jbd2_remove_debugfs_entry();
 +	jbd2_remove_jbd_stats_proc_entry();
  	jbd2_journal_destroy_caches();
  }

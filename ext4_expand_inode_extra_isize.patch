@@ -33,10 +33,10 @@ Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Kalpak Shah <kalpak@clusterfs.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
-Index: linux-2.6.22-rc1/fs/ext4/inode.c
+Index: linux-2.6.22-rc4/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/inode.c	2007-05-18 16:33:03.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/inode.c	2007-05-18 16:33:09.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/inode.c	2007-06-11 17:39:05.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/inode.c	2007-06-11 17:47:36.000000000 -0700
 @@ -2709,6 +2709,13 @@
  	EXT4_INODE_GET_XTIME(i_atime, inode, raw_inode);
  	EXT4_EINODE_GET_XTIME(i_crtime, ei, raw_inode);
@@ -67,7 +67,7 @@ Index: linux-2.6.22-rc1/fs/ext4/inode.c
  
  	BUFFER_TRACE(bh, "call ext4_journal_dirty_metadata");
  	rc = ext4_journal_dirty_metadata(handle, bh);
-@@ -3127,10 +3140,32 @@
+@@ -3127,10 +3140,33 @@
  int ext4_mark_inode_dirty(handle_t *handle, struct inode *inode)
  {
  	struct ext4_iloc iloc;
@@ -85,14 +85,15 @@ Index: linux-2.6.22-rc1/fs/ext4/inode.c
 +		if ((jbd2_journal_extend(handle,
 +			     EXT4_DATA_TRANS_BLOCKS(inode->i_sb))) == 0) {
 +			ret = ext4_expand_extra_isize(inode,
-+  					EXT4_SB(inode->i_sb)->s_want_extra_isize,
-+					iloc, handle);
++				EXT4_SB(inode->i_sb)->s_want_extra_isize,
++				iloc, handle);
 +			if (ret) {
 +				EXT4_I(inode)->i_state |= EXT4_STATE_NO_EXPAND;
 +				if (!expand_message) {
 +					ext4_warning(inode->i_sb, __FUNCTION__,
-+					"Unable to expand inode %lu. Delete some"
-+					" EAs or run e2fsck.", inode->i_ino);
++					"Unable to expand inode %lu. Delete"
++					" some EAs or run e2fsck.",
++					inode->i_ino);
 +					expand_message = 1;
 +				}
 +			}
@@ -101,10 +102,10 @@ Index: linux-2.6.22-rc1/fs/ext4/inode.c
  	if (!err)
  		err = ext4_mark_iloc_dirty(handle, inode, &iloc);
  	return err;
-Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs.h	2007-05-18 16:33:06.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs.h	2007-05-18 16:33:09.000000000 -0700
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs.h	2007-06-11 17:42:46.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs.h	2007-06-11 17:42:58.000000000 -0700
 @@ -202,6 +202,7 @@
  #define EXT4_STATE_JDATA		0x00000001 /* journaled data exists */
  #define EXT4_STATE_NEW			0x00000002 /* inode is newly created */
@@ -122,7 +123,7 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
  		} linux1;
  		struct {
  			__u32  h_i_translator;
-@@ -405,6 +406,8 @@
+@@ -406,6 +407,8 @@
  				       raw_inode->xtime ## _extra);	       \
  } while (0)
  
@@ -131,10 +132,10 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
  #if defined(__KERNEL__) || defined(__linux__)
  #define i_reserved1	osd1.linux1.l_i_reserved1
  #define i_frag		osd2.linux2.l_i_frag
-Index: linux-2.6.22-rc1/include/linux/ext4_fs_i.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs_i.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs_i.h	2007-05-18 16:33:03.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs_i.h	2007-05-18 16:33:09.000000000 -0700
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs_i.h	2007-06-11 17:39:05.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs_i.h	2007-06-11 17:42:58.000000000 -0700
 @@ -154,6 +154,7 @@
  	unsigned long i_ext_generation;
  	struct ext4_ext_cache i_cached_extent;
@@ -143,10 +144,10 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs_i.h
  };
  
  #endif	/* _LINUX_EXT4_FS_I */
-Index: linux-2.6.22-rc1/fs/ext4/xattr.c
+Index: linux-2.6.22-rc4/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/xattr.c	2007-05-18 16:33:03.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/xattr.c	2007-05-18 16:33:09.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/xattr.c	2007-06-11 17:39:05.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/xattr.c	2007-06-11 17:47:51.000000000 -0700
 @@ -508,6 +508,20 @@
  	return;
  }
@@ -180,12 +181,12 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
  	if (!error) {
  		ext4_xattr_update_super_block(handle, inode->i_sb);
  		inode->i_ctime = ext4_current_time(inode);
-+		if(!value)
++		if (!value)
 +			EXT4_I(inode)->i_state &= ~EXT4_STATE_NO_EXPAND;
  		error = ext4_mark_iloc_dirty(handle, inode, &is.iloc);
  		/*
  		 * The bh is consumed by ext4_mark_iloc_dirty, even with
-@@ -1066,6 +1083,251 @@
+@@ -1066,6 +1083,250 @@
  	return error;
  }
  
@@ -201,7 +202,8 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
 +		if (!last->e_value_block && last->e_value_size) {
 +			new_offs = le16_to_cpu(last->e_value_offs) +
 +							value_offs_shift;
-+			BUG_ON(new_offs + le32_to_cpu(last->e_value_size) > blocksize);
++			BUG_ON(new_offs + le32_to_cpu(last->e_value_size)
++				 > blocksize);
 +			last->e_value_offs = cpu_to_le16(new_offs);
 +		}
 +	}
@@ -305,8 +307,7 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
 +			error = -1;
 +			goto cleanup;
 +		}
-+	}
-+	else {
++	} else {
 +		free = inode->i_sb->s_blocksize;
 +	}
 +
@@ -334,13 +335,13 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
 +		/* Find the entry best suited to be pushed into EA block */
 +		entry = NULL;
 +		for (; !IS_LAST_ENTRY(last); last = EXT4_XATTR_NEXT(last)) {
-+			total_size = EXT4_XATTR_SIZE(le32_to_cpu(last->e_value_size)) +
-+	    			    	EXT4_XATTR_LEN(last->e_name_len);
++			total_size =
++			EXT4_XATTR_SIZE(le32_to_cpu(last->e_value_size)) +
++					EXT4_XATTR_LEN(last->e_name_len);
 +			if (total_size <= free && total_size < temp) {
 +				if (total_size < new_extra_isize) {
 +					small_entry = last;
-+				}
-+				else {
++				} else {
 +					entry = last;
 +					temp = total_size;
 +				}
@@ -350,8 +351,7 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
 +		if (entry == NULL) {
 +			if (small_entry) {
 +				entry = small_entry;
-+			}
-+			else {
++			} else {
 +				if (!tried_min_extra_isize &&
 +				    s_min_extra_isize) {
 +					tried_min_extra_isize++;
@@ -437,10 +437,10 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
  /*
   * ext4_xattr_delete_inode()
   *
-Index: linux-2.6.22-rc1/fs/ext4/xattr.h
+Index: linux-2.6.22-rc4/fs/ext4/xattr.h
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/xattr.h	2007-05-18 16:30:09.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/xattr.h	2007-05-18 16:33:09.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/xattr.h	2007-06-11 17:22:14.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/xattr.h	2007-06-11 17:42:58.000000000 -0700
 @@ -74,6 +74,9 @@
  extern void ext4_xattr_delete_inode(handle_t *, struct inode *);
  extern void ext4_xattr_put_super(struct super_block *);

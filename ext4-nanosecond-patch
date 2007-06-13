@@ -10,10 +10,10 @@ Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
-Index: linux-2.6.22-rc1/fs/ext4/ialloc.c
+Index: linux-2.6.22-rc4/fs/ext4/ialloc.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/ialloc.c	2007-05-18 16:30:11.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/ialloc.c	2007-05-18 16:33:03.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/ialloc.c	2007-06-11 17:22:15.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/ialloc.c	2007-06-11 17:39:05.000000000 -0700
 @@ -563,7 +563,8 @@
  	inode->i_ino = ino;
  	/* This is the optimal IO size (for stat), not the fs block size */
@@ -36,10 +36,10 @@ Index: linux-2.6.22-rc1/fs/ext4/ialloc.c
  
  	ret = inode;
  	if(DQUOT_ALLOC_INODE(inode)) {
-Index: linux-2.6.22-rc1/fs/ext4/inode.c
+Index: linux-2.6.22-rc4/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/inode.c	2007-05-18 16:32:17.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/inode.c	2007-05-18 16:33:03.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/inode.c	2007-06-11 17:24:28.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/inode.c	2007-06-11 17:39:05.000000000 -0700
 @@ -726,7 +726,7 @@
  
  	/* We are done with atomic stuff, now do the rest of housekeeping */
@@ -97,10 +97,10 @@ Index: linux-2.6.22-rc1/fs/ext4/inode.c
  	raw_inode->i_blocks = cpu_to_le32(inode->i_blocks);
  	raw_inode->i_dtime = cpu_to_le32(ei->i_dtime);
  	raw_inode->i_flags = cpu_to_le32(ei->i_flags);
-Index: linux-2.6.22-rc1/fs/ext4/ioctl.c
+Index: linux-2.6.22-rc4/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/ioctl.c	2007-05-18 16:32:17.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/ioctl.c	2007-05-18 16:33:03.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/ioctl.c	2007-06-11 17:25:11.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/ioctl.c	2007-06-11 17:39:05.000000000 -0700
 @@ -97,7 +97,7 @@
  		ei->i_flags = flags;
  
@@ -119,10 +119,10 @@ Index: linux-2.6.22-rc1/fs/ext4/ioctl.c
  			inode->i_generation = generation;
  			err = ext4_mark_iloc_dirty(handle, inode, &iloc);
  		}
-Index: linux-2.6.22-rc1/fs/ext4/namei.c
+Index: linux-2.6.22-rc4/fs/ext4/namei.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/namei.c	2007-05-18 16:32:09.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/namei.c	2007-05-18 16:33:03.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/namei.c	2007-06-11 17:22:15.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/namei.c	2007-06-11 17:39:05.000000000 -0700
 @@ -1285,7 +1285,7 @@
  	 * happen is that the times are slightly out of date
  	 * and/or different from the directory change time.
@@ -187,11 +187,11 @@ Index: linux-2.6.22-rc1/fs/ext4/namei.c
  	ext4_update_dx_flag(old_dir);
  	if (dir_bh) {
  		BUFFER_TRACE(dir_bh, "get_write_access");
-Index: linux-2.6.22-rc1/fs/ext4/super.c
+Index: linux-2.6.22-rc4/fs/ext4/super.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/super.c	2007-05-18 16:32:15.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/super.c	2007-05-18 16:33:03.000000000 -0700
-@@ -1644,6 +1644,8 @@
+--- linux-2.6.22-rc4.orig/fs/ext4/super.c	2007-06-11 17:28:09.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/super.c	2007-06-11 17:39:05.000000000 -0700
+@@ -1642,6 +1642,8 @@
  				sbi->s_inode_size);
  			goto failed_mount;
  		}
@@ -200,7 +200,7 @@ Index: linux-2.6.22-rc1/fs/ext4/super.c
  	}
  	sbi->s_frag_size = EXT4_MIN_FRAG_SIZE <<
  				   le32_to_cpu(es->s_log_frag_size);
-@@ -1860,6 +1862,32 @@
+@@ -1865,6 +1867,32 @@
  	}
  
  	ext4_setup_super (sb, es, sb->s_flags & MS_RDONLY);
@@ -233,10 +233,10 @@ Index: linux-2.6.22-rc1/fs/ext4/super.c
  	/*
  	 * akpm: core read_super() calls in here with the superblock locked.
  	 * That deadlocks, because orphan cleanup needs to lock the superblock
-Index: linux-2.6.22-rc1/fs/ext4/xattr.c
+Index: linux-2.6.22-rc4/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/xattr.c	2007-05-18 16:30:11.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/xattr.c	2007-05-18 16:33:03.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/xattr.c	2007-06-11 17:22:15.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/xattr.c	2007-06-11 17:39:05.000000000 -0700
 @@ -1013,7 +1013,7 @@
  	}
  	if (!error) {
@@ -246,10 +246,10 @@ Index: linux-2.6.22-rc1/fs/ext4/xattr.c
  		error = ext4_mark_iloc_dirty(handle, inode, &is.iloc);
  		/*
  		 * The bh is consumed by ext4_mark_iloc_dirty, even with
-Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs.h	2007-05-18 16:32:51.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs.h	2007-05-18 16:33:03.000000000 -0700
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs.h	2007-06-11 17:36:13.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs.h	2007-06-11 17:41:55.000000000 -0700
 @@ -288,7 +288,7 @@
  	__le16	i_uid;		/* Low 16 bits of Owner Uid */
  	__le32	i_size;		/* Size in bytes */
@@ -259,7 +259,7 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
  	__le32	i_mtime;	/* Modification time */
  	__le32	i_dtime;	/* Deletion Time */
  	__le16	i_gid;		/* Low 16 bits of Group Id */
-@@ -337,10 +337,73 @@
+@@ -337,10 +337,74 @@
  	} osd2;				/* OS dependent 2 */
  	__le16	i_extra_isize;
  	__le16	i_pad1;
@@ -267,7 +267,7 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
 +	__le32  i_mtime_extra;  /* extra Modification time(nsec << 2 | epoch) */
 +	__le32  i_atime_extra;  /* extra Access time      (nsec << 2 | epoch) */
 +	__le32  i_crtime;       /* File Creation time */
-+	__le32  i_crtime_extra; /* extra File Creation time (nsec << 2 | epoch) */
++	__le32  i_crtime_extra; /* extra FileCreationtime (nsec << 2 | epoch) */
  };
  
  #define i_size_high	i_dir_acl
@@ -289,7 +289,8 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
 +			   ((time->tv_nsec << 2) & EXT4_NSEC_MASK));
 +}
 +
-+static inline void ext4_decode_extra_time(struct timespec *time, __le32 extra) {
++static inline void ext4_decode_extra_time(struct timespec *time, __le32 extra)
++{
 +       if (sizeof(time->tv_sec) > 4)
 +	       time->tv_sec |= (__u64)(le32_to_cpu(extra) & EXT4_EPOCH_MASK)
 +			       << 32;
@@ -333,7 +334,7 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
  #if defined(__KERNEL__) || defined(__linux__)
  #define i_reserved1	osd1.linux1.l_i_reserved1
  #define i_frag		osd2.linux2.l_i_frag
-@@ -532,6 +597,13 @@
+@@ -539,6 +603,13 @@
  	return container_of(inode, struct ext4_inode_info, vfs_inode);
  }
  
@@ -347,7 +348,7 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
  static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  {
  	return ino == EXT4_ROOT_INO ||
-@@ -602,6 +674,7 @@
+@@ -609,6 +680,7 @@
  #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
  #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
  #define EXT4_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
@@ -355,18 +356,18 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
  
  #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
  #define EXT4_FEATURE_INCOMPAT_FILETYPE		0x0002
-@@ -619,6 +692,7 @@
+@@ -626,6 +698,7 @@
  					 EXT4_FEATURE_INCOMPAT_64BIT)
  #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
  					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
-+					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE| \
++					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \
  					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR)
  
  /*
-Index: linux-2.6.22-rc1/include/linux/ext4_fs_i.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs_i.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs_i.h	2007-05-18 16:32:09.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs_i.h	2007-05-18 16:33:03.000000000 -0700
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs_i.h	2007-06-11 17:22:15.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs_i.h	2007-06-11 17:39:05.000000000 -0700
 @@ -153,6 +153,7 @@
  
  	unsigned long i_ext_generation;
@@ -375,10 +376,10 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs_i.h
  };
  
  #endif	/* _LINUX_EXT4_FS_I */
-Index: linux-2.6.22-rc1/include/linux/ext4_fs_sb.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs_sb.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs_sb.h	2007-05-18 16:30:11.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs_sb.h	2007-05-18 16:33:03.000000000 -0700
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs_sb.h	2007-06-11 17:28:15.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs_sb.h	2007-06-11 17:39:05.000000000 -0700
 @@ -79,6 +79,7 @@
  	char *s_qf_names[MAXQUOTAS];		/* Names of quota files with journalled quota */
  	int s_jquota_fmt;			/* Format of quota to use */

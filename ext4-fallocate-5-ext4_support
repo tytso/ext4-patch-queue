@@ -37,10 +37,10 @@ Changes from Take1 to Take2:
  include/linux/ext4_fs_extents.h |   12 +
  4 files changed, 229 insertions(+), 41 deletions(-)
 
-Index: linux-2.6.22-rc1/fs/ext4/extents.c
+Index: linux-2.6.22-rc4/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/extents.c	2007-05-18 16:32:48.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/extents.c	2007-05-18 16:32:51.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/extents.c	2007-06-11 17:27:57.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/extents.c	2007-06-11 17:35:37.000000000 -0700
 @@ -316,7 +316,7 @@
  		} else if (path->p_ext) {
  			ext_debug("  %d:%d:%llu ",
@@ -242,18 +242,18 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
  				(unsigned long) block,
  				(unsigned long) le32_to_cpu(ex->ee_block),
 -				(unsigned long) le16_to_cpu(ex->ee_len));
-+			        (unsigned long) ext4_ext_get_actual_len(ex));
++				(unsigned long) ext4_ext_get_actual_len(ex));
  	} else if (block >= le32_to_cpu(ex->ee_block)
 -			    + le16_to_cpu(ex->ee_len)) {
-+		            + ext4_ext_get_actual_len(ex)) {
++			+ ext4_ext_get_actual_len(ex)) {
  		lblock = le32_to_cpu(ex->ee_block)
 -			 + le16_to_cpu(ex->ee_len);
-+		         + ext4_ext_get_actual_len(ex);
++			+ ext4_ext_get_actual_len(ex);
  		len = ext4_ext_next_allocated_block(path);
  		ext_debug("cache gap(after): [%lu:%lu] %lu",
  				(unsigned long) le32_to_cpu(ex->ee_block),
 -				(unsigned long) le16_to_cpu(ex->ee_len),
-+			        (unsigned long) ext4_ext_get_actual_len(ex),
++				(unsigned long) ext4_ext_get_actual_len(ex),
  				(unsigned long) block);
  		BUG_ON(len == lblock);
  		len = len - lblock;
@@ -390,7 +390,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
 -	ext4_ext_put_in_cache(inode, iblock, allocated, newblock,
 -				EXT4_EXT_CACHE_EXTENT);
 +	/* Cache only when it is _not_ an uninitialized extent */
-+	if (create!=EXT4_CREATE_UNINITIALIZED_EXT)
++	if (create != EXT4_CREATE_UNINITIALIZED_EXT)
 +		ext4_ext_put_in_cache(inode, iblock, allocated, newblock,
 +						EXT4_EXT_CACHE_EXTENT);
  out:
@@ -435,7 +435,7 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
 +
 +	block = offset >> blkbits;
 +	max_blocks = (EXT4_BLOCK_ALIGN(len + offset, blkbits) >> blkbits)
-+		 	- block;
++			- block;
 +
 +	/*
 +	 * credits to insert 1 extent into extent tree + buffers to be able to
@@ -526,10 +526,10 @@ Index: linux-2.6.22-rc1/fs/ext4/extents.c
 +	return ret > 0 ? ret2 : ret;
 +}
 +
-Index: linux-2.6.22-rc1/fs/ext4/file.c
+Index: linux-2.6.22-rc4/fs/ext4/file.c
 ===================================================================
---- linux-2.6.22-rc1.orig/fs/ext4/file.c	2007-05-18 16:30:13.000000000 -0700
-+++ linux-2.6.22-rc1/fs/ext4/file.c	2007-05-18 16:32:51.000000000 -0700
+--- linux-2.6.22-rc4.orig/fs/ext4/file.c	2007-06-11 17:22:15.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/file.c	2007-06-11 17:31:16.000000000 -0700
 @@ -135,5 +135,6 @@
  	.removexattr	= generic_removexattr,
  #endif
@@ -537,15 +537,15 @@ Index: linux-2.6.22-rc1/fs/ext4/file.c
 +	.fallocate	= ext4_fallocate,
  };
  
-Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs.h	2007-05-18 16:32:17.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs.h	2007-05-18 16:32:51.000000000 -0700
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs.h	2007-06-11 17:28:15.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs.h	2007-06-11 17:36:13.000000000 -0700
 @@ -102,6 +102,7 @@
  				 EXT4_GOOD_OLD_FIRST_INO : \
  				 (s)->s_first_ino)
  #endif
-+#define EXT4_BLOCK_ALIGN(size, blkbits)		ALIGN((size),(1 << (blkbits)))
++#define EXT4_BLOCK_ALIGN(size, blkbits)		ALIGN((size), (1 << (blkbits)))
  
  /*
   * Macro-instructions used to manage fragments
@@ -561,7 +561,7 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
  
  /*
   * ioctl commands
-@@ -977,6 +983,8 @@
+@@ -984,6 +990,8 @@
  extern void ext4_ext_truncate(struct inode *, struct page *);
  extern void ext4_ext_init(struct super_block *);
  extern void ext4_ext_release(struct super_block *);
@@ -570,23 +570,26 @@ Index: linux-2.6.22-rc1/include/linux/ext4_fs.h
  static inline int
  ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
  			unsigned long max_blocks, struct buffer_head *bh,
-Index: linux-2.6.22-rc1/include/linux/ext4_fs_extents.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.22-rc1.orig/include/linux/ext4_fs_extents.h	2007-05-18 16:32:48.000000000 -0700
-+++ linux-2.6.22-rc1/include/linux/ext4_fs_extents.h	2007-05-18 16:32:51.000000000 -0700
-@@ -188,6 +188,18 @@
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs_extents.h	2007-06-11 17:22:15.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs_extents.h	2007-06-11 17:37:19.000000000 -0700
+@@ -188,6 +188,21 @@
  	EXT4_I(inode)->i_cached_extent.ec_type = EXT4_EXT_CACHE_NO;
  }
  
-+static inline void ext4_ext_mark_uninitialized(struct ext4_extent *ext) {
++static inline void ext4_ext_mark_uninitialized(struct ext4_extent *ext)
++{
 +	ext->ee_len |= cpu_to_le16(0x8000);
 +}
 +
-+static inline int ext4_ext_is_uninitialized(struct ext4_extent *ext) {
++static inline int ext4_ext_is_uninitialized(struct ext4_extent *ext)
++{
 +	return (int)(le16_to_cpu((ext)->ee_len) & 0x8000);
 +}
 +
-+static inline int ext4_ext_get_actual_len(struct ext4_extent *ext) {
++static inline int ext4_ext_get_actual_len(struct ext4_extent *ext)
++{
 +	return (int)(le16_to_cpu((ext)->ee_len) & 0x7FFF);
 +}
 +
