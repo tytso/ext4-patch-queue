@@ -1,41 +1,15 @@
-ext4: fallocate support in ext4
+fallocate support in ext4
 
 This patch implements ->fallocate() inode operation in ext4. With this
 patch users of ext4 file systems will be able to use fallocate() system
-call for persistent preallocation.
-
-Current implementation only supports preallocation for regular files
-(directories not supported as of date) with extent maps. This patch
-does not support block-mapped files currently.
-
+call for persistent preallocation. Current implementation only supports
+preallocation for regular files (directories not supported as of date)
+with extent maps. This patch does not support block-mapped files currently.
 Only FA_ALLOCATE mode is being supported as of now. Supporting
 FA_DEALLOCATE mode is a <ToDo> item.
 
+
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
-
-
-Changes from Take3 to Take4:
- 1) Changed ext4_fllocate() declaration and definition to return a "long"
-    and not an "int", to match with ->fallocate() inode op.
- 2) Update ctime if new blocks get allocated.
-Changes from Take2 to Take3:
- 1) Patch rebased to 2.6.22-rc1 kernel version.
- 2) Removed unnecessary "EXPORT_SYMBOL(ext4_fallocate);".
-Changes from Take1 to Take2:
- 1) Added more description for ext4_fallocate().
- 2) Now returning EOPNOTSUPP when files are block-mapped (non-extent).
- 3) Moved journal_start & journal_stop inside the while loop.
- 4) Replaced BUG_ON with WARN_ON & ext4_error.
- 5) Make EXT4_BLOCK_ALIGN use ALIGN macro internally.
- 6) Added variable names in the function declaration of ext4_fallocate()
- 7) Converted macros that handle uninitialized extents into inline
-    functions.
----
- fs/ext4/extents.c               |  249 +++++++++++++++++++++++++++++++++-------
- fs/ext4/file.c                  |    1 
- include/linux/ext4_fs.h         |    8 +
- include/linux/ext4_fs_extents.h |   12 +
- 4 files changed, 229 insertions(+), 41 deletions(-)
 
 Index: linux-2.6.22-rc4/fs/ext4/extents.c
 ===================================================================
