@@ -1,0 +1,63 @@
+This patch adds 64-bit inode version support to ext4. The lower 32 bits
+are stored in the osd1.linux1.l_i_version field while the high 32 bits
+are stored in the i_version_hi field newly created in the ext4_inode.
+
+Signed-off-by: Kalpak Shah <kalpak@clusterfs.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+Index: linux-2.6.22-rc4/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.22-rc4.orig/fs/ext4/inode.c	2007-06-13 17:11:11.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/inode.c	2007-06-13 17:11:29.000000000 -0700
+@@ -2709,6 +2709,13 @@ void ext4_read_inode(struct inode * inod
+ 	EXT4_INODE_GET_XTIME(i_atime, inode, raw_inode);
+ 	EXT4_EINODE_GET_XTIME(i_crtime, ei, raw_inode);
+ 
++	inode->i_version = le32_to_cpu(raw_inode->i_disk_version);
++	if (EXT4_INODE_SIZE(inode->i_sb) > EXT4_GOOD_OLD_INODE_SIZE) {
++		if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi))
++			inode->i_version |=
++			(__u64)(le32_to_cpu(raw_inode->i_version_hi)) << 32;
++	}
++
+ 	if (S_ISREG(inode->i_mode)) {
+ 		inode->i_op = &ext4_file_inode_operations;
+ 		inode->i_fop = &ext4_file_operations;
+@@ -2852,8 +2859,14 @@ static int ext4_do_update_inode(handle_t
+ 	} else for (block = 0; block < EXT4_N_BLOCKS; block++)
+ 		raw_inode->i_block[block] = ei->i_data[block];
+ 
+-	if (ei->i_extra_isize)
++	raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
++	if (ei->i_extra_isize) {
++		if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi)) {
++			raw_inode->i_version_hi =
++				cpu_to_le32(ei->i_fs_version >> 32);
++		}
+ 		raw_inode->i_extra_isize = cpu_to_le16(ei->i_extra_isize);
++	}
+ 
+ 	BUFFER_TRACE(bh, "call ext4_journal_dirty_metadata");
+ 	rc = ext4_journal_dirty_metadata(handle, bh);
+Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs.h	2007-06-13 17:11:11.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs.h	2007-06-13 17:11:29.000000000 -0700
+@@ -297,7 +297,7 @@ struct ext4_inode {
+ 	__le32	i_flags;	/* File flags */
+ 	union {
+ 		struct {
+-			__u32  l_i_reserved1;
++			__u32  l_i_version;
+ 		} linux1;
+ 		struct {
+ 			__u32  h_i_translator;
+@@ -406,6 +406,8 @@ do {									       \
+ 				       raw_inode->xtime ## _extra);	       \
+ } while (0)
+ 
++#define i_disk_version osd1.linux1.l_i_version
++
+ #if defined(__KERNEL__) || defined(__linux__)
+ #define i_reserved1	osd1.linux1.l_i_reserved1
+ #define i_frag		osd2.linux2.l_i_frag
