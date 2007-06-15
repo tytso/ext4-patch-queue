@@ -42,7 +42,7 @@ Index: linux-2.6.22-rc4/fs/libfs.c
  		iput(root);
 @@ -255,6 +256,8 @@ int simple_link(struct dentry *old_dentr
  	struct inode *inode = old_dentry->d_inode;
- 
+
  	inode->i_ctime = dir->i_ctime = dir->i_mtime = CURRENT_TIME;
 +	inode->i_version++;
 +	dir->i_version++;
@@ -51,7 +51,7 @@ Index: linux-2.6.22-rc4/fs/libfs.c
  	dget(dentry);
 @@ -287,6 +290,8 @@ int simple_unlink(struct inode *dir, str
  	struct inode *inode = dentry->d_inode;
- 
+
  	inode->i_ctime = dir->i_ctime = dir->i_mtime = CURRENT_TIME;
 +	inode->i_version++;
 +	dir->i_version++;
@@ -59,12 +59,12 @@ Index: linux-2.6.22-rc4/fs/libfs.c
  	dput(dentry);
  	return 0;
 @@ -323,6 +328,8 @@ int simple_rename(struct inode *old_dir,
- 
+
  	old_dir->i_ctime = old_dir->i_mtime = new_dir->i_ctime =
  		new_dir->i_mtime = inode->i_ctime = CURRENT_TIME;
 +	old_dir->i_version++;
 +	new_dir->i_version++;
- 
+
  	return 0;
  }
 @@ -399,6 +406,7 @@ int simple_fill_super(struct super_block
@@ -92,19 +92,6 @@ Index: linux-2.6.22-rc4/fs/pipe.c
  	inode->i_gid = current->fsgid;
  	inode->i_atime = inode->i_mtime = inode->i_ctime = CURRENT_TIME;
 +	inode->i_version = 1;
- 
+
  	return inode;
- 
-Index: linux-2.6.22-rc4/include/linux/fs.h
-===================================================================
---- linux-2.6.22-rc4.orig/include/linux/fs.h	2007-06-13 17:16:27.000000000 -0700
-+++ linux-2.6.22-rc4/include/linux/fs.h	2007-06-13 17:24:57.000000000 -0700
-@@ -549,7 +549,7 @@ struct inode {
- 	uid_t			i_uid;
- 	gid_t			i_gid;
- 	dev_t			i_rdev;
--	unsigned long		i_version;
-+	uint64_t		i_version;
- 	loff_t			i_size;
- #ifdef __NEED_I_SIZE_ORDERED
- 	seqcount_t		i_size_seqcount;
+
