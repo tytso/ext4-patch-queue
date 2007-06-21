@@ -1,0 +1,23 @@
+Variable "free" was declarated as __u64 so conidition (free < 0) always
+false, even if free was overflowed during substraction.
+
+Singed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+---
+ fs/ext4/balloc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+Index: linux-2.6.22-rc5/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.22-rc5.orig/fs/ext4/balloc.c	2007-06-20 17:15:32.000000000 -0700
++++ linux-2.6.22-rc5/fs/ext4/balloc.c	2007-06-20 17:15:37.000000000 -0700
+@@ -1995,8 +1995,8 @@ void ext4_rebalance_reservation(struct e
+ 			chunk = free;
+ 		if (rs[i].rs_reserved || i == smp_processor_id()) {
+ 			rs[i].rs_reserved = chunk;
++			BUG_ON(free < chunk);
+ 			free -= chunk;
+-			BUG_ON(free < 0);
+ 		}
+ 	}
+ 	BUG_ON(free);

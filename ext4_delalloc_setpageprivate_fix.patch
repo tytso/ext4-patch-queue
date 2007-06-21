@@ -1,0 +1,49 @@
+iOn Tue, 2007-06-19 at 11:11 +0400, Alex Tomas wrote:
+Mingming Cao wrote:
+> >>From the comments it says the page->private is set to 1 to letting
+> > commit_write know that it needs block reservation, but I don't see the
+> > page->private value being checked in ext4_wb_commit_write(). Instead,
+> > the PageMappedToDisk(page) flag is being checked.
+> > 
+> > Alex, can you clarify the use of page->private and PagePrivate flag
+> > here? Do we still need the page->private for delayed allocation, with
+> > PageBooked flag and PageMappedToDisk page flag?
+> 
+> sorry for confusion, we need PagePrivate so that truncate calls our
+> ->invalidatepage(). in turn this call is needed to drop unused reservation.
+> 
+> block_read_full_page() must not happen to pages being delayed allocated
+> in the first place - it's uptodate by definition. I think the problem
+> began when ext4_wb_commit_write() exited due to -ENOSPC but left not
+> uptodate *and* with PG_private. then subsequent access to page turned to
+> block_read_full_page() which relies on PG_private and meaningful private
+> field. Dmitry, could you repeat the test with SetPagePrivate(page) moved
+> to after that if() with ext4_wb_reserve_space_page(), please?
+> 
+
+Signed-off-by: Mingming Cao
+Index: linux-2.6.22-rc5/fs/ext4/writeback.c
+===================================================================
+--- linux-2.6.22-rc5.orig/fs/ext4/writeback.c	2007-06-20 17:15:21.000000000 -0700
++++ linux-2.6.22-rc5/fs/ext4/writeback.c	2007-06-20 17:15:41.000000000 -0700
+@@ -918,16 +918,16 @@ int ext4_wb_commit_write(struct file *fi
+ 	wb_debug("commit page %lu (%u-%u) for inode %lu\n",
+ 			page->index, from, to, inode->i_ino);
+ 
+-	/* mark page private so that we get
+-	 * called to invalidate/release page */
+-	SetPagePrivate(page);
+-
+ 	if (!PageBooked(page) && !PageMappedToDisk(page)) {
+ 		/* ->prepare_write() observed that block for this
+ 		 * page hasn't been allocated yet. there fore it
+ 		 * asked to reserve block for later allocation */
+ 		BUG_ON(page->private == 0);
+ 		page->private = 0;
++		/* mark page private so that we get
++		 * called to invalidate/release page */
++		SetPagePrivate(page);
++
+ 		err = ext4_wb_reserve_space_page(page, 1);
+ 		if (err)
+ 			return err;

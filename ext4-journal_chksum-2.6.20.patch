@@ -1,0 +1,615 @@
+Index: linux-2.6.22-rc5/fs/jbd2/commit.c
+===================================================================
+--- linux-2.6.22-rc5.orig/fs/jbd2/commit.c	2007-06-20 16:51:30.000000000 -0700
++++ linux-2.6.22-rc5/fs/jbd2/commit.c	2007-06-20 16:54:48.000000000 -0700
+@@ -21,6 +21,7 @@
+ #include <linux/mm.h>
+ #include <linux/pagemap.h>
+ #include <linux/jiffies.h>
++#include <linux/crc32.h>
+ 
+ /*
+  * Default IO end handler for temporary BJ_IO buffer_heads.
+@@ -93,15 +94,18 @@ static int inverted_lock(journal_t *jour
+ 	return 1;
+ }
+ 
+-/* Done it all: now write the commit record.  We should have
++/*
++ * Done it all: now submit the commit record.  We should have
+  * cleaned up our previous buffers by now, so if we are in abort
+  * mode we can now just skip the rest of the journal write
+  * entirely.
+  *
+  * Returns 1 if the journal needs to be aborted or 0 on success
+  */
+-static int journal_write_commit_record(journal_t *journal,
+-					transaction_t *commit_transaction)
++static int journal_submit_commit_record(journal_t *journal,
++					transaction_t *commit_transaction,
++					struct buffer_head **cbh,
++					__u32 crc32_sum)
+ {
+ 	struct journal_head *descriptor;
+ 	struct buffer_head *bh;
+@@ -117,21 +121,36 @@ static int journal_write_commit_record(j
+ 
+ 	bh = jh2bh(descriptor);
+ 
+-	/* AKPM: buglet - add `i' to tmp! */
+ 	for (i = 0; i < bh->b_size; i += 512) {
+-		journal_header_t *tmp = (journal_header_t*)bh->b_data;
++ 		struct commit_header *tmp = (struct commit_header*)bh->b_data +
++					    i;
+ 		tmp->h_magic = cpu_to_be32(JBD2_MAGIC_NUMBER);
+ 		tmp->h_blocktype = cpu_to_be32(JBD2_COMMIT_BLOCK);
+ 		tmp->h_sequence = cpu_to_be32(commit_transaction->t_tid);
+-	}
++
++ 		if (JBD2_HAS_COMPAT_FEATURE(journal,
++					    JBD2_FEATURE_COMPAT_CHECKSUM)) {
++ 			tmp->h_chksum_type 	= JBD2_CRC32_CHKSUM;
++ 			tmp->h_chksum_size 	= JBD2_CRC32_CHKSUM_SIZE;
++ 			tmp->h_chksum[0] 	= crc32_sum;
++ 		}
++  	}
++
++ 	JBUFFER_TRACE(descriptor, "submit commit block");
++ 	lock_buffer(bh);
+ 
+-	JBUFFER_TRACE(descriptor, "write commit block");
+ 	set_buffer_dirty(bh);
+-	if (journal->j_flags & JBD2_BARRIER) {
++ 	set_buffer_uptodate(bh);
++ 	bh->b_end_io = journal_end_buffer_io_sync;
++
++ 	if (journal->j_flags & JBD2_BARRIER &&
++ 		!JBD2_HAS_COMPAT_FEATURE(journal,
++					 JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)) {
+ 		set_buffer_ordered(bh);
+ 		barrier_done = 1;
+-	}
+-	ret = sync_dirty_buffer(bh);
++ 	}
++ 	ret = submit_bh(WRITE, bh);
++
+ 	/* is it possible for another commit to fail at roughly
+ 	 * the same time as this one?  If so, we don't want to
+ 	 * trust the barrier flag in the super, but instead want
+@@ -152,14 +171,72 @@ static int journal_write_commit_record(j
+ 		clear_buffer_ordered(bh);
+ 		set_buffer_uptodate(bh);
+ 		set_buffer_dirty(bh);
+-		ret = sync_dirty_buffer(bh);
++		ret = submit_bh(WRITE, bh);
+ 	}
+-	put_bh(bh);		/* One for getblk() */
+-	jbd2_journal_put_journal_head(descriptor);
++	*cbh = bh;
++	return ret;
++}
++
++/*
++ * This function along with journal_submit_commit_record
++ * allows to write the commit record asynchronously.
++ */
++static int journal_wait_on_commit_record(struct buffer_head *bh)
++{
++	int ret = 0;
+ 
+-	return (ret == -EIO);
++	if (buffer_locked(bh))
++		wait_on_buffer(bh);
++
++	if (unlikely(!buffer_uptodate(bh)))
++		ret = -EIO;
++	put_bh(bh);            /* One for getblk() */
++	jbd2_journal_put_journal_head(bh2jh(bh));
++
++	return ret;
+ }
+ 
++/*
++ * Wait for all submitted IO to complete.
++ */
++static int journal_wait_on_locked_list(journal_t *journal,
++				       transaction_t *commit_transaction)
++{
++	int ret = 0;
++	struct journal_head *jh;
++
++	while (commit_transaction->t_locked_list) {
++		struct buffer_head *bh;
++
++		jh = commit_transaction->t_locked_list->b_tprev;
++		bh = jh2bh(jh);
++		get_bh(bh);
++		if (buffer_locked(bh)) {
++			spin_unlock(&journal->j_list_lock);
++			wait_on_buffer(bh);
++			if (unlikely(!buffer_uptodate(bh)))
++				ret = -EIO;
++			spin_lock(&journal->j_list_lock);
++		}
++		if (!inverted_lock(journal, bh)) {
++			put_bh(bh);
++			spin_lock(&journal->j_list_lock);
++			continue;
++		}
++		if (buffer_jbd(bh) && jh->b_jlist == BJ_Locked) {
++			__jbd2_journal_unfile_buffer(jh);
++			jbd_unlock_bh_state(bh);
++			jbd2_journal_remove_journal_head(bh);
++			put_bh(bh);
++		} else {
++			jbd_unlock_bh_state(bh);
++		}
++		put_bh(bh);
++		cond_resched_lock(&journal->j_list_lock);
++	}
++	return ret;
++  }
++
+ static void journal_do_submit_data(struct buffer_head **wbuf, int bufs)
+ {
+ 	int i;
+@@ -307,6 +384,8 @@ void jbd2_journal_commit_transaction(jou
+ 	int tag_flag;
+ 	int i;
+ 	int tag_bytes = journal_tag_bytes(journal);
++	struct buffer_head *cbh = NULL; /* For transactional checksums */
++	__u32 crc32_sum = ~0;
+ 
+ 	/*
+ 	 * First job: lock down the current transaction and wait for
+@@ -450,38 +529,15 @@ void jbd2_journal_commit_transaction(jou
+ 	journal_submit_data_buffers(journal, commit_transaction);
+ 
+ 	/*
+-	 * Wait for all previously submitted IO to complete.
++	 * Wait for all previously submitted IO to complete if commit
++	 * record is to be written synchronously.
+ 	 */
+ 	spin_lock(&journal->j_list_lock);
+-	while (commit_transaction->t_locked_list) {
+-		struct buffer_head *bh;
++	if (!JBD2_HAS_INCOMPAT_FEATURE(journal,
++		JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT))
++		err = journal_wait_on_locked_list(journal,
++						commit_transaction);
+ 
+-		jh = commit_transaction->t_locked_list->b_tprev;
+-		bh = jh2bh(jh);
+-		get_bh(bh);
+-		if (buffer_locked(bh)) {
+-			spin_unlock(&journal->j_list_lock);
+-			wait_on_buffer(bh);
+-			if (unlikely(!buffer_uptodate(bh)))
+-				err = -EIO;
+-			spin_lock(&journal->j_list_lock);
+-		}
+-		if (!inverted_lock(journal, bh)) {
+-			put_bh(bh);
+-			spin_lock(&journal->j_list_lock);
+-			continue;
+-		}
+-		if (buffer_jbd(bh) && jh->b_jlist == BJ_Locked) {
+-			__jbd2_journal_unfile_buffer(jh);
+-			jbd_unlock_bh_state(bh);
+-			jbd2_journal_remove_journal_head(bh);
+-			put_bh(bh);
+-		} else {
+-			jbd_unlock_bh_state(bh);
+-		}
+-		put_bh(bh);
+-		cond_resched_lock(&journal->j_list_lock);
+-	}
+ 	spin_unlock(&journal->j_list_lock);
+ 
+ 	if (err)
+@@ -654,6 +710,16 @@ void jbd2_journal_commit_transaction(jou
+ start_journal_io:
+ 			for (i = 0; i < bufs; i++) {
+ 				struct buffer_head *bh = wbuf[i];
++				/*
++				 * Compute checksum.
++				 */
++				if (JBD2_HAS_COMPAT_FEATURE(journal,
++					JBD2_FEATURE_COMPAT_CHECKSUM)) {
++					crc32_sum = crc32_be(crc32_sum,
++							(void *)bh->b_data,
++							bh->b_size);
++				}
++
+ 				lock_buffer(bh);
+ 				clear_buffer_dirty(bh);
+ 				set_buffer_uptodate(bh);
+@@ -670,6 +736,23 @@ start_journal_io:
+ 		}
+ 	}
+ 
++	/* Done it all: now write the commit record asynchronously. */
++
++	if (JBD2_HAS_INCOMPAT_FEATURE(journal,
++		JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)) {
++		err = journal_submit_commit_record(journal, commit_transaction,
++						 &cbh, crc32_sum);
++		if (err)
++			__jbd2_journal_abort_hard(journal);
++
++		spin_lock(&journal->j_list_lock);
++		err = journal_wait_on_locked_list(journal,
++						commit_transaction);
++		spin_unlock(&journal->j_list_lock);
++		if (err)
++			__jbd2_journal_abort_hard(journal);
++	}
++
+ 	/* Lo and behold: we have just managed to send a transaction to
+            the log.  Before we can commit it, wait for the IO so far to
+            complete.  Control buffers being written are on the
+@@ -768,9 +851,15 @@ wait_for_iobuf:
+ 	}
+ 
+ 	jbd_debug(3, "JBD: commit phase 6\n");
+-
+-	if (journal_write_commit_record(journal, commit_transaction))
+-		err = -EIO;
++
++	if (!JBD2_HAS_INCOMPAT_FEATURE(journal,
++		JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)) {
++		err = journal_submit_commit_record(journal, commit_transaction,
++						&cbh, crc32_sum);
++		if (err)
++			__jbd2_journal_abort_hard(journal);
++	}
++	err = journal_wait_on_commit_record(cbh);
+ 
+ 	if (err)
+ 		__jbd2_journal_abort_hard(journal);
+Index: linux-2.6.22-rc5/include/linux/jbd2.h
+===================================================================
+--- linux-2.6.22-rc5.orig/include/linux/jbd2.h	2007-06-20 16:51:30.000000000 -0700
++++ linux-2.6.22-rc5/include/linux/jbd2.h	2007-06-20 16:54:11.000000000 -0700
+@@ -148,6 +148,29 @@ typedef struct journal_header_s
+ 	__be32		h_sequence;
+ } journal_header_t;
+ 
++/*
++ * Checksum types.
++ */
++#define JBD2_CRC32_CHKSUM   1
++#define JBD2_MD5_CHKSUM     2
++#define JBD2_SHA1_CHKSUM    3
++
++#define JBD2_CRC32_CHKSUM_SIZE 4
++
++#define JBD2_CHECKSUM_BYTES (32 / sizeof(u32))
++/*
++ * Commit block header for storing transactional checksums:
++ */
++struct commit_header
++{
++	__be32		h_magic;
++	__be32          h_blocktype;
++	__be32          h_sequence;
++	unsigned char   h_chksum_type;
++	unsigned char   h_chksum_size;
++	unsigned char 	h_padding[2];
++	__u32 		h_chksum[JBD2_CHECKSUM_BYTES];
++};
+ 
+ /*
+  * The block tag: used to describe a single buffer in the journal.
+@@ -241,14 +264,18 @@ typedef struct journal_superblock_s
+ 	((j)->j_format_version >= 2 &&					\
+ 	 ((j)->j_superblock->s_feature_incompat & cpu_to_be32((mask))))
+ 
+-#define JBD2_FEATURE_INCOMPAT_REVOKE	0x00000001
+-#define JBD2_FEATURE_INCOMPAT_64BIT	0x00000002
++#define JBD2_FEATURE_COMPAT_CHECKSUM	0x00000001
++
++#define JBD2_FEATURE_INCOMPAT_REVOKE		0x00000001
++#define JBD2_FEATURE_INCOMPAT_64BIT		0x00000002
++#define JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT	0x00000004
+ 
+ /* Features known to this kernel version: */
+-#define JBD2_KNOWN_COMPAT_FEATURES	0
++#define JBD2_KNOWN_COMPAT_FEATURES	JBD2_FEATURE_COMPAT_CHECKSUM
+ #define JBD2_KNOWN_ROCOMPAT_FEATURES	0
+ #define JBD2_KNOWN_INCOMPAT_FEATURES	(JBD2_FEATURE_INCOMPAT_REVOKE | \
+-					 JBD2_FEATURE_INCOMPAT_64BIT)
++					JBD2_FEATURE_INCOMPAT_64BIT | \
++ 					JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)
+ 
+ #ifdef __KERNEL__
+ 
+@@ -1023,6 +1050,8 @@ extern int	   jbd2_journal_check_availab
+ 		   (journal_t *, unsigned long, unsigned long, unsigned long);
+ extern int	   jbd2_journal_set_features
+ 		   (journal_t *, unsigned long, unsigned long, unsigned long);
++extern int	   jbd2_journal_clear_features
++		   (journal_t *, unsigned long, unsigned long, unsigned long);
+ extern int	   jbd2_journal_create     (journal_t *);
+ extern int	   jbd2_journal_load       (journal_t *journal);
+ extern void	   jbd2_journal_destroy    (journal_t *);
+Index: linux-2.6.22-rc5/fs/ext4/super.c
+===================================================================
+--- linux-2.6.22-rc5.orig/fs/ext4/super.c	2007-06-20 16:53:41.000000000 -0700
++++ linux-2.6.22-rc5/fs/ext4/super.c	2007-06-20 16:54:11.000000000 -0700
+@@ -722,6 +722,7 @@ enum {
+ 	Opt_user_xattr, Opt_nouser_xattr, Opt_acl, Opt_noacl,
+ 	Opt_reservation, Opt_noreservation, Opt_noload, Opt_nobh, Opt_bh,
+ 	Opt_commit, Opt_journal_update, Opt_journal_inum, Opt_journal_dev,
++	Opt_journal_checksum, Opt_journal_async_commit,
+ 	Opt_abort, Opt_data_journal, Opt_data_ordered, Opt_data_writeback,
+ 	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
+ 	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
+@@ -761,6 +762,8 @@ static match_table_t tokens = {
+ 	{Opt_journal_update, "journal=update"},
+ 	{Opt_journal_inum, "journal=%u"},
+ 	{Opt_journal_dev, "journal_dev=%u"},
++	{Opt_journal_checksum, "journal_checksum"},
++	{Opt_journal_async_commit, "journal_async_commit"},
+ 	{Opt_abort, "abort"},
+ 	{Opt_data_journal, "data=journal"},
+ 	{Opt_data_ordered, "data=ordered"},
+@@ -949,6 +952,13 @@ static int parse_options (char *options,
+ 				return 0;
+ 			*journal_devnum = option;
+ 			break;
++		case Opt_journal_checksum:
++			set_opt (sbi->s_mount_opt, JOURNAL_CHECKSUM);
++			break;
++		case Opt_journal_async_commit:
++			set_opt (sbi->s_mount_opt, JOURNAL_ASYNC_COMMIT);
++			set_opt (sbi->s_mount_opt, JOURNAL_CHECKSUM);
++			break;
+ 		case Opt_noload:
+ 			set_opt (sbi->s_mount_opt, NOLOAD);
+ 			break;
+@@ -1912,6 +1922,21 @@ static int ext4_fill_super (struct super
+ 		goto failed_mount4;
+ 	}
+ 
++	if (test_opt(sb, JOURNAL_ASYNC_COMMIT)) {
++		jbd2_journal_set_features(sbi->s_journal,
++				JBD2_FEATURE_COMPAT_CHECKSUM, 0,
++				JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT);
++	} else if (test_opt(sb, JOURNAL_CHECKSUM)) {
++		jbd2_journal_set_features(sbi->s_journal,
++				JBD2_FEATURE_COMPAT_CHECKSUM, 0, 0);
++		jbd2_journal_clear_features(sbi->s_journal, 0, 0,
++				JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT);
++	} else {
++		jbd2_journal_clear_features(sbi->s_journal,
++				JBD2_FEATURE_COMPAT_CHECKSUM, 0,
++				JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT);
++	}
++
+ 	/* We have now updated the journal if required, so we can
+ 	 * validate the data journaling mode. */
+ 	switch (test_opt(sb, DATA_FLAGS)) {
+Index: linux-2.6.22-rc5/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.22-rc5.orig/include/linux/ext4_fs.h	2007-06-20 16:53:41.000000000 -0700
++++ linux-2.6.22-rc5/include/linux/ext4_fs.h	2007-06-20 16:56:26.000000000 -0700
+@@ -481,6 +481,8 @@ do {									       \
+ #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
+ #define EXT4_MOUNT_EXTENTS		0x400000 /* Extents support */
+ #define EXT4_MOUNT_NOVERSION		0x800000 /* No inode version updates */
++#define EXT4_MOUNT_JOURNAL_CHECKSUM     0x1000000 /* Journal checksums */
++#define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT 0x2000000 /* Journal Async Commit */
+ 
+ /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
+ #ifndef _LINUX_EXT2_FS_H
+Index: linux-2.6.22-rc5/fs/jbd2/recovery.c
+===================================================================
+--- linux-2.6.22-rc5.orig/fs/jbd2/recovery.c	2007-06-18 15:08:26.000000000 -0700
++++ linux-2.6.22-rc5/fs/jbd2/recovery.c	2007-06-20 16:54:11.000000000 -0700
+@@ -21,6 +21,7 @@
+ #include <linux/jbd2.h>
+ #include <linux/errno.h>
+ #include <linux/slab.h>
++#include <linux/crc32.h>
+ #endif
+ 
+ /*
+@@ -316,6 +317,37 @@ static inline unsigned long long read_ta
+ 	return block;
+ }
+ 
++/*
++ * cal_chksums calculates the checksums for the blocks described in the
++ * descriptor block.
++ */
++static int cal_chksums(journal_t *journal, struct buffer_head *bh,
++		       unsigned long *next_log_block, __u32 *crc32_sum)
++{
++	int i, num_blks, err;
++	unsigned long io_block;
++	struct buffer_head *obh;
++
++	num_blks = count_tags(journal, bh);
++	/* Calculate checksum of the descriptor block. */
++	*crc32_sum = crc32_be(*crc32_sum, (void *)bh->b_data, bh->b_size);
++
++	for (i = 0; i < num_blks; i++) {
++		io_block = (*next_log_block)++;
++		wrap(journal, *next_log_block);
++		err = jread(&obh, journal, io_block);
++		if (err) {
++			printk(KERN_ERR "JBD: IO error %d recovering block "
++				"%ld in log\n", err, io_block);
++			return 1;
++		} else {
++			*crc32_sum = crc32_be(*crc32_sum, (void *)obh->b_data,
++				     obh->b_size);
++		}
++	}
++	return 0;
++}
++
+ static int do_one_pass(journal_t *journal,
+ 			struct recovery_info *info, enum passtype pass)
+ {
+@@ -328,6 +360,7 @@ static int do_one_pass(journal_t *journa
+ 	unsigned int		sequence;
+ 	int			blocktype;
+ 	int			tag_bytes = journal_tag_bytes(journal);
++	__u32			crc32_sum = ~0; /* Transactional Checksums */
+ 
+ 	/* Precompute the maximum metadata descriptors in a descriptor block */
+ 	int			MAX_BLOCKS_PER_DESC;
+@@ -419,9 +452,23 @@ static int do_one_pass(journal_t *journa
+ 		switch(blocktype) {
+ 		case JBD2_DESCRIPTOR_BLOCK:
+ 			/* If it is a valid descriptor block, replay it
+-			 * in pass REPLAY; otherwise, just skip over the
+-			 * blocks it describes. */
++			 * in pass REPLAY; if journal_checksums enabled, then
++			 * calculate checksums in PASS_SCAN, otherwise,
++			 * just skip over the blocks it describes. */
+ 			if (pass != PASS_REPLAY) {
++				if (pass == PASS_SCAN &&
++				    JBD2_HAS_COMPAT_FEATURE(journal,
++					    JBD2_FEATURE_COMPAT_CHECKSUM) &&
++				    !info->end_transaction) {
++					if (cal_chksums(journal, bh,
++							&next_log_block,
++							&crc32_sum)) {
++						brelse(bh);
++       						break;
++					}
++					brelse(bh);
++					continue;
++				}
+ 				next_log_block += count_tags(journal, bh);
+ 				wrap(journal, next_log_block);
+ 				brelse(bh);
+@@ -516,9 +563,71 @@ static int do_one_pass(journal_t *journa
+ 			continue;
+ 
+ 		case JBD2_COMMIT_BLOCK:
+-			/* Found an expected commit block: not much to
+-			 * do other than move on to the next sequence
++			/*     How to differentiate between interrupted commit
++			 *               and journal corruption ?
++			 *
++			 * {nth transaction}
++			 *        Checksum Verification Failed
++			 *			 |
++			 *		 ____________________
++			 *		|		     |
++			 * 	async_commit             sync_commit
++			 *     		|                    |
++			 *		| GO TO NEXT    "Journal Corruption"
++			 *		| TRANSACTION
++			 *		|
++			 * {(n+1)th transanction}
++		         *		|
++			 * 	 _______|______________
++			 * 	|	 	      |
++			 * Commit block found	Commit block not found
++		         *      |		      |
++		         * "Journal Corruption"       |
++		      	 *		 _____________|__________
++       			 *     		|	           	|
++		     	 *	nth trans corrupt	OR   nth trans
++		 	 *	and (n+1)th interrupted     interrupted
++			 *	before commit block
++			 *      could reach the disk.
++			 *	(Cannot find the difference in above
++			 *	 mentioned conditions. Hence assume
++			 *	 "Interrupted Commit".)
++			 */
++
++			/* Found an expected commit block: if checksums
++			 * are present verify them in PASS_SCAN; else not
++			 * much to do other than move on to the next sequence
+ 			 * number. */
++			if (pass == PASS_SCAN &&
++			    JBD2_HAS_COMPAT_FEATURE(journal,
++				    JBD2_FEATURE_COMPAT_CHECKSUM)) {
++				struct commit_header *cbh =
++	  				(struct commit_header *)bh->b_data;
++
++				if (info->end_transaction) {
++					printk(KERN_ERR "JBD: Transaction %u "
++						"found to be corrupt.\n",
++						next_commit_ID - 1);
++					brelse(bh);
++					break;
++				}
++
++				if (crc32_sum != cbh->h_chksum[0]) {
++					info->end_transaction = next_commit_ID;
++
++					if (!JBD2_HAS_COMPAT_FEATURE(journal,
++					    JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT))
++					{
++						printk(KERN_ERR
++						       "JBD: Transaction %u "
++       						       "found to be corrupt.\n",
++       						       next_commit_ID);
++						brelse(bh);
++						break;
++					}
++				}
++				crc32_sum = ~0;
++			}
+ 			brelse(bh);
+ 			next_commit_ID++;
+ 			continue;
+@@ -554,9 +663,10 @@ static int do_one_pass(journal_t *journa
+ 	 * transaction marks the end of the valid log.
+ 	 */
+ 
+-	if (pass == PASS_SCAN)
+-		info->end_transaction = next_commit_ID;
+-	else {
++	if (pass == PASS_SCAN) {
++ 		if (!info->end_transaction)
++       		       info->end_transaction = next_commit_ID;
++	} else {
+ 		/* It's really bad news if different passes end up at
+ 		 * different places (but possible due to IO errors). */
+ 		if (info->end_transaction != next_commit_ID) {
+Index: linux-2.6.22-rc5/fs/jbd2/journal.c
+===================================================================
+--- linux-2.6.22-rc5.orig/fs/jbd2/journal.c	2007-06-20 16:51:30.000000000 -0700
++++ linux-2.6.22-rc5/fs/jbd2/journal.c	2007-06-20 16:54:11.000000000 -0700
+@@ -1581,6 +1581,33 @@ int jbd2_journal_set_features (journal_t
+ 	return 1;
+ }
+ 
++/**
++ * int jbd2_journal_clear_features () - Clear a given journal feature in the superblock
++ * @journal: Journal to act on.
++ * @compat: bitmask of compatible features
++ * @ro: bitmask of features that force read-only mount
++ * @incompat: bitmask of incompatible features
++ *
++ * Clear a given journal feature as present on the
++ * superblock.  Returns true if the requested features could be reset.
++ *
++ */
++int jbd2_journal_clear_features (journal_t *journal, unsigned long compat,
++			  unsigned long ro, unsigned long incompat)
++{
++	journal_superblock_t *sb;
++
++	jbd_debug(1, "Clear features 0x%lx/0x%lx/0x%lx\n",
++		  compat, ro, incompat);
++
++	sb = journal->j_superblock;
++
++	sb->s_feature_compat    &= ~cpu_to_be32(compat);
++	sb->s_feature_ro_compat &= ~cpu_to_be32(ro);
++	sb->s_feature_incompat  &= ~cpu_to_be32(incompat);
++
++	return 1;
++}
+ 
+ /**
+  * int jbd2_journal_update_format () - Update on-disk journal structure.

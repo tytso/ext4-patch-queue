@@ -9,11 +9,11 @@ should be reserved
 From: Alex Tomas <alex@clusterfs.com>
 
 ---
-Index: linux-2.6.22-rc4/fs/ext4/balloc.c
+Index: linux-2.6.22-rc5/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/ext4/balloc.c	2007-06-14 17:30:36.000000000 -0700
-+++ linux-2.6.22-rc4/fs/ext4/balloc.c	2007-06-14 17:33:04.000000000 -0700
-@@ -630,8 +630,10 @@ void ext4_free_blocks(handle_t *handle, 
+--- linux-2.6.22-rc5.orig/fs/ext4/balloc.c	2007-06-20 16:57:17.000000000 -0700
++++ linux-2.6.22-rc5/fs/ext4/balloc.c	2007-06-20 17:14:06.000000000 -0700
+@@ -713,8 +713,10 @@ void ext4_free_blocks(handle_t *handle, 
  		return;
  	}
  	ext4_free_blocks_sb(handle, sb, block, count, &dquot_freed_blocks);
@@ -25,7 +25,7 @@ Index: linux-2.6.22-rc4/fs/ext4/balloc.c
  	return;
  }
  
-@@ -1440,7 +1442,7 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
+@@ -1523,7 +1525,7 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
  	struct ext4_sb_info *sbi;
  	struct ext4_reserve_window_node *my_rsv = NULL;
  	struct ext4_block_alloc_info *block_i;
@@ -34,7 +34,7 @@ Index: linux-2.6.22-rc4/fs/ext4/balloc.c
  #ifdef EXT4FS_DEBUG
  	static int goal_hits, goal_attempts;
  #endif
-@@ -1462,6 +1464,13 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
+@@ -1545,6 +1547,13 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
  		return 0;
  	}
  
@@ -48,7 +48,7 @@ Index: linux-2.6.22-rc4/fs/ext4/balloc.c
  	sbi = EXT4_SB(sb);
  	es = EXT4_SB(sb)->s_es;
  	ext4_debug("goal=%lu.\n", goal);
-@@ -1674,8 +1683,11 @@ out:
+@@ -1760,8 +1769,11 @@ out:
  	/*
  	 * Undo the block allocation
  	 */
@@ -61,7 +61,7 @@ Index: linux-2.6.22-rc4/fs/ext4/balloc.c
  	brelse(bitmap_bh);
  	return 0;
  }
-@@ -1834,3 +1846,161 @@ unsigned long ext4_bg_num_gdb(struct sup
+@@ -1920,3 +1932,161 @@ unsigned long ext4_bg_num_gdb(struct sup
  	return ext4_bg_num_gdb_meta(sb,group);
  
  }
@@ -223,11 +223,11 @@ Index: linux-2.6.22-rc4/fs/ext4/balloc.c
 +	sbi->s_reservation_slots = NULL;
 +}
 +
-Index: linux-2.6.22-rc4/fs/ext4/super.c
+Index: linux-2.6.22-rc5/fs/ext4/super.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/ext4/super.c	2007-06-14 17:32:27.000000000 -0700
-+++ linux-2.6.22-rc4/fs/ext4/super.c	2007-06-14 17:33:04.000000000 -0700
-@@ -439,6 +439,7 @@ static void ext4_put_super (struct super
+--- linux-2.6.22-rc5.orig/fs/ext4/super.c	2007-06-20 17:13:56.000000000 -0700
++++ linux-2.6.22-rc5/fs/ext4/super.c	2007-06-20 17:14:06.000000000 -0700
+@@ -440,6 +440,7 @@ static void ext4_put_super (struct super
  	struct ext4_super_block *es = sbi->s_es;
  	int i;
  
@@ -235,7 +235,7 @@ Index: linux-2.6.22-rc4/fs/ext4/super.c
  	ext4_ext_release(sb);
  	ext4_xattr_put_super(sb);
  	jbd2_journal_destroy(sbi->s_journal);
-@@ -1917,6 +1918,7 @@ static int ext4_fill_super (struct super
+@@ -2037,6 +2038,7 @@ static int ext4_fill_super (struct super
  		"writeback");
  
  	ext4_ext_init(sb);
@@ -243,11 +243,11 @@ Index: linux-2.6.22-rc4/fs/ext4/super.c
  
  	lock_kernel();
  	return 0;
-Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
+Index: linux-2.6.22-rc5/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22-rc4.orig/include/linux/ext4_fs.h	2007-06-14 17:32:55.000000000 -0700
-+++ linux-2.6.22-rc4/include/linux/ext4_fs.h	2007-06-14 17:33:04.000000000 -0700
-@@ -203,6 +203,7 @@ struct ext4_group_desc
+--- linux-2.6.22-rc5.orig/include/linux/ext4_fs.h	2007-06-20 17:13:56.000000000 -0700
++++ linux-2.6.22-rc5/include/linux/ext4_fs.h	2007-06-20 17:14:06.000000000 -0700
+@@ -209,6 +209,7 @@ struct ext4_group_desc
  #define EXT4_STATE_NEW			0x00000002 /* inode is newly created */
  #define EXT4_STATE_XATTR		0x00000004 /* has in-inode xattrs */
  #define EXT4_STATE_NO_EXPAND		0x00000008 /* No space for expansion */
@@ -255,7 +255,7 @@ Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
  
  /* Used to pass group descriptor data when online resize is done */
  struct ext4_new_group_input {
-@@ -901,6 +902,10 @@ extern struct ext4_group_desc * ext4_get
+@@ -911,6 +912,10 @@ extern struct ext4_group_desc * ext4_get
  extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
  extern void ext4_init_block_alloc_info(struct inode *);
  extern void ext4_rsv_window_add(struct super_block *sb, struct ext4_reserve_window_node *rsv);
@@ -266,10 +266,10 @@ Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
  
  /* dir.c */
  extern int ext4_check_dir_entry(const char *, struct inode *,
-Index: linux-2.6.22-rc4/include/linux/ext4_fs_sb.h
+Index: linux-2.6.22-rc5/include/linux/ext4_fs_sb.h
 ===================================================================
---- linux-2.6.22-rc4.orig/include/linux/ext4_fs_sb.h	2007-06-14 17:30:47.000000000 -0700
-+++ linux-2.6.22-rc4/include/linux/ext4_fs_sb.h	2007-06-14 17:33:04.000000000 -0700
+--- linux-2.6.22-rc5.orig/include/linux/ext4_fs_sb.h	2007-06-20 16:51:25.000000000 -0700
++++ linux-2.6.22-rc5/include/linux/ext4_fs_sb.h	2007-06-20 17:14:06.000000000 -0700
 @@ -24,6 +24,8 @@
  #endif
  #include <linux/rbtree.h>
