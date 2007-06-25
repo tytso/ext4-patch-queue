@@ -8,11 +8,11 @@ Shaggy fixed a lot of endian errors reported by sparse
 
 From: Alex Tomas <alex@clusterfs.com>
 ---
-Index: linux-2.6.22-rc5/fs/ext4/Makefile
+Index: linux-2.6.22-rc4/fs/ext4/Makefile
 ===================================================================
---- linux-2.6.22-rc5.orig/fs/ext4/Makefile	2007-06-20 16:51:24.000000000 -0700
-+++ linux-2.6.22-rc5/fs/ext4/Makefile	2007-06-20 17:14:19.000000000 -0700
-@@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
+--- linux-2.6.22-rc4.orig/fs/ext4/Makefile	2007-06-11 17:22:14.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/Makefile	2007-06-13 11:02:00.000000000 -0700
+@@ -6,7 +6,7 @@
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
  		   ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
@@ -21,11 +21,11 @@ Index: linux-2.6.22-rc5/fs/ext4/Makefile
  
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-Index: linux-2.6.22-rc5/fs/ext4/extents.c
+Index: linux-2.6.22-rc4/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.22-rc5.orig/fs/ext4/extents.c	2007-06-20 16:51:24.000000000 -0700
-+++ linux-2.6.22-rc5/fs/ext4/extents.c	2007-06-20 17:14:19.000000000 -0700
-@@ -2599,3 +2599,32 @@ retry:
+--- linux-2.6.22-rc4.orig/fs/ext4/extents.c	2007-06-11 17:38:52.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/extents.c	2007-06-13 12:00:55.000000000 -0700
+@@ -2588,3 +2588,32 @@
  	return ret > 0 ? ret2 : ret;
  }
  
@@ -58,11 +58,11 @@ Index: linux-2.6.22-rc5/fs/ext4/extents.c
 +
 +	return num;
 +}
-Index: linux-2.6.22-rc5/fs/ext4/file.c
+Index: linux-2.6.22-rc4/fs/ext4/file.c
 ===================================================================
---- linux-2.6.22-rc5.orig/fs/ext4/file.c	2007-06-20 16:51:25.000000000 -0700
-+++ linux-2.6.22-rc5/fs/ext4/file.c	2007-06-20 17:14:19.000000000 -0700
-@@ -35,8 +35,8 @@ static int ext4_release_file (struct ino
+--- linux-2.6.22-rc4.orig/fs/ext4/file.c	2007-06-11 17:31:16.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/file.c	2007-06-13 11:02:00.000000000 -0700
+@@ -35,8 +35,8 @@
  {
  	/* if we are the last writer on the inode, drop the block reservation */
  	if ((filp->f_mode & FMODE_WRITE) &&
@@ -73,11 +73,11 @@ Index: linux-2.6.22-rc5/fs/ext4/file.c
  		mutex_lock(&EXT4_I(inode)->truncate_mutex);
  		ext4_discard_reservation(inode);
  		mutex_unlock(&EXT4_I(inode)->truncate_mutex);
-Index: linux-2.6.22-rc5/fs/ext4/inode.c
+Index: linux-2.6.22-rc4/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.22-rc5.orig/fs/ext4/inode.c	2007-06-20 16:51:25.000000000 -0700
-+++ linux-2.6.22-rc5/fs/ext4/inode.c	2007-06-20 17:14:19.000000000 -0700
-@@ -942,7 +942,7 @@ out:
+--- linux-2.6.22-rc4.orig/fs/ext4/inode.c	2007-06-13 10:45:10.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/inode.c	2007-06-13 11:02:00.000000000 -0700
+@@ -942,7 +942,7 @@
  
  #define DIO_CREDITS (EXT4_RESERVE_TRANS_BLOCKS + 32)
  
@@ -86,7 +86,7 @@ Index: linux-2.6.22-rc5/fs/ext4/inode.c
  			struct buffer_head *bh_result, int create)
  {
  	handle_t *handle = ext4_journal_current_handle();
-@@ -1741,9 +1741,34 @@ static const struct address_space_operat
+@@ -1741,9 +1741,34 @@
  	.releasepage	= ext4_releasepage,
  };
  
@@ -122,7 +122,7 @@ Index: linux-2.6.22-rc5/fs/ext4/inode.c
  		inode->i_mapping->a_ops = &ext4_ordered_aops;
  	else if (ext4_should_writeback_data(inode))
  		inode->i_mapping->a_ops = &ext4_writeback_aops;
-@@ -1768,6 +1793,11 @@ int ext4_block_truncate_page(handle_t *h
+@@ -1768,6 +1793,11 @@
  	int err = 0;
  	void *kaddr;
  
@@ -134,11 +134,11 @@ Index: linux-2.6.22-rc5/fs/ext4/inode.c
  	blocksize = inode->i_sb->s_blocksize;
  	length = blocksize - (offset & (blocksize - 1));
  	iblock = index << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
-Index: linux-2.6.22-rc5/fs/ext4/super.c
+Index: linux-2.6.22-rc4/fs/ext4/super.c
 ===================================================================
---- linux-2.6.22-rc5.orig/fs/ext4/super.c	2007-06-20 17:14:06.000000000 -0700
-+++ linux-2.6.22-rc5/fs/ext4/super.c	2007-06-20 17:15:47.000000000 -0700
-@@ -440,6 +440,7 @@ static void ext4_put_super (struct super
+--- linux-2.6.22-rc4.orig/fs/ext4/super.c	2007-06-13 11:00:34.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/super.c	2007-06-13 11:56:05.000000000 -0700
+@@ -439,6 +439,7 @@
  	struct ext4_super_block *es = sbi->s_es;
  	int i;
  
@@ -146,7 +146,7 @@ Index: linux-2.6.22-rc5/fs/ext4/super.c
  	ext4_reserve_release(sb);
  	ext4_ext_release(sb);
  	ext4_xattr_put_super(sb);
-@@ -507,6 +508,13 @@ static struct inode *ext4_alloc_inode(st
+@@ -506,6 +507,13 @@
  	ei->i_block_alloc_info = NULL;
  	ei->vfs_inode.i_version = 1;
  	memset(&ei->i_cached_extent, 0, sizeof(struct ext4_ext_cache));
@@ -160,23 +160,24 @@ Index: linux-2.6.22-rc5/fs/ext4/super.c
  	return &ei->vfs_inode;
  }
  
-@@ -729,6 +737,7 @@ enum {
+@@ -726,7 +734,7 @@
+ 	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
- 	Opt_grpquota, Opt_extents, Opt_noextents, Opt_noversion,
-+	Opt_delayed_alloc,
+-	Opt_grpquota, Opt_extents, Opt_noextents,
++	Opt_grpquota, Opt_extents, Opt_noextents, Opt_delayed_alloc,
  };
  
  static match_table_t tokens = {
-@@ -783,6 +792,7 @@ static match_table_t tokens = {
+@@ -778,6 +786,7 @@
+ 	{Opt_barrier, "barrier=%u"},
  	{Opt_extents, "extents"},
  	{Opt_noextents, "noextents"},
- 	{Opt_noversion, "noversion"},
 +	{Opt_delayed_alloc, "delalloc"},
  	{Opt_err, NULL},
  	{Opt_resize, "resize"},
  };
-@@ -1104,6 +1114,9 @@ clear_qf_name:
+@@ -1092,6 +1101,9 @@
  			else
  				clear_opt(sbi->s_mount_opt, BARRIER);
  			break;
@@ -186,7 +187,7 @@ Index: linux-2.6.22-rc5/fs/ext4/super.c
  		case Opt_ignore:
  			break;
  		case Opt_resize:
-@@ -2039,6 +2052,7 @@ static int ext4_fill_super (struct super
+@@ -1915,6 +1927,7 @@
  
  	ext4_ext_init(sb);
  	ext4_reserve_init(sb);
@@ -194,10 +195,10 @@ Index: linux-2.6.22-rc5/fs/ext4/super.c
  
  	lock_kernel();
  	return 0;
-Index: linux-2.6.22-rc5/fs/ext4/writeback.c
+Index: linux-2.6.22-rc4/fs/ext4/writeback.c
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.22-rc5/fs/ext4/writeback.c	2007-06-20 17:15:48.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/writeback.c	2007-06-13 11:58:59.000000000 -0700
 @@ -0,0 +1,1185 @@
 +/*
 + * Copyright (c) 2003-2006, Cluster File Systems, Inc, info@clusterfs.com
@@ -1384,19 +1385,19 @@ Index: linux-2.6.22-rc5/fs/ext4/writeback.c
 +#endif
 +}
 +
-Index: linux-2.6.22-rc5/include/linux/ext4_fs.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22-rc5.orig/include/linux/ext4_fs.h	2007-06-20 17:14:06.000000000 -0700
-+++ linux-2.6.22-rc5/include/linux/ext4_fs.h	2007-06-20 17:16:25.000000000 -0700
-@@ -484,6 +484,7 @@ do {									       \
- #define EXT4_MOUNT_NOVERSION		0x800000 /* No inode version updates */
- #define EXT4_MOUNT_JOURNAL_CHECKSUM     0x1000000 /* Journal checksums */
- #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT 0x2000000 /* Journal Async Commit */
-+#define EXT4_MOUNT_DELAYED_ALLOC        0x4000000/* Delayed allocation support*/
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs.h	2007-06-13 11:00:34.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs.h	2007-06-13 12:00:00.000000000 -0700
+@@ -475,6 +475,7 @@
+ #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
+ #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
+ #define EXT4_MOUNT_EXTENTS		0x400000 /* Extents support */
++#define EXT4_MOUNT_DELAYED_ALLOC	0x1000000/* Delayed allocation support*/
  
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
-@@ -1100,6 +1101,21 @@ ext4_get_blocks_wrap(handle_t *handle, s
+@@ -1089,6 +1090,21 @@
  }
  
  
@@ -1418,11 +1419,11 @@ Index: linux-2.6.22-rc5/include/linux/ext4_fs.h
  #endif	/* __KERNEL__ */
  
  #endif	/* _LINUX_EXT4_FS_H */
-Index: linux-2.6.22-rc5/include/linux/ext4_fs_extents.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.22-rc5.orig/include/linux/ext4_fs_extents.h	2007-06-20 16:51:25.000000000 -0700
-+++ linux-2.6.22-rc5/include/linux/ext4_fs_extents.h	2007-06-20 17:14:19.000000000 -0700
-@@ -212,6 +212,7 @@ extern unsigned int ext4_ext_check_overl
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs_extents.h	2007-06-11 17:38:15.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs_extents.h	2007-06-13 11:02:00.000000000 -0700
+@@ -212,6 +212,7 @@
  extern int ext4_ext_insert_extent(handle_t *, struct inode *, struct ext4_ext_path *, struct ext4_extent *);
  extern int ext4_ext_walk_space(struct inode *, unsigned long, unsigned long, ext_prepare_callback, void *);
  extern struct ext4_ext_path * ext4_ext_find_extent(struct inode *, int, struct ext4_ext_path *);
@@ -1430,14 +1431,15 @@ Index: linux-2.6.22-rc5/include/linux/ext4_fs_extents.h
  
  #endif /* _LINUX_EXT4_EXTENTS */
  
-Index: linux-2.6.22-rc5/include/linux/ext4_fs_i.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs_i.h
 ===================================================================
---- linux-2.6.22-rc5.orig/include/linux/ext4_fs_i.h	2007-06-20 16:51:25.000000000 -0700
-+++ linux-2.6.22-rc5/include/linux/ext4_fs_i.h	2007-06-20 17:14:19.000000000 -0700
-@@ -154,6 +154,10 @@ struct ext4_inode_info {
- 	unsigned long i_ext_generation;
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs_i.h	2007-06-11 17:42:58.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs_i.h	2007-06-13 11:02:00.000000000 -0700
+@@ -155,6 +155,11 @@
  	struct ext4_ext_cache i_cached_extent;
  	struct timespec i_crtime;
+ 	__u64 i_fs_version;
++
 +	__u32 i_blocks_reserved;
 +	__u32 i_md_reserved;
 +	spinlock_t i_wb_reserved_lock;  /* to protect i_md_reserved */
@@ -1445,11 +1447,11 @@ Index: linux-2.6.22-rc5/include/linux/ext4_fs_i.h
  };
  
  #endif	/* _LINUX_EXT4_FS_I */
-Index: linux-2.6.22-rc5/include/linux/ext4_fs_sb.h
+Index: linux-2.6.22-rc4/include/linux/ext4_fs_sb.h
 ===================================================================
---- linux-2.6.22-rc5.orig/include/linux/ext4_fs_sb.h	2007-06-20 17:14:06.000000000 -0700
-+++ linux-2.6.22-rc5/include/linux/ext4_fs_sb.h	2007-06-20 17:14:19.000000000 -0700
-@@ -95,6 +95,17 @@ struct ext4_sb_info {
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs_sb.h	2007-06-13 11:00:34.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs_sb.h	2007-06-13 11:02:00.000000000 -0700
+@@ -95,6 +95,17 @@
  	unsigned long s_ext_blocks;
  	unsigned long s_ext_extents;
  #endif

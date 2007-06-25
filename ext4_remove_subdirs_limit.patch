@@ -27,9 +27,9 @@ Signed-off-by: Kalpak Shah <kalpak@clusterfs.com>
 
 Index: linux-2.6.22-rc4/fs/ext4/namei.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/ext4/namei.c	2007-06-14 17:30:47.000000000 -0700
-+++ linux-2.6.22-rc4/fs/ext4/namei.c	2007-06-14 17:32:55.000000000 -0700
-@@ -1619,6 +1619,27 @@ static int ext4_delete_entry (handle_t *
+--- linux-2.6.22-rc4.orig/fs/ext4/namei.c	2007-06-11 17:39:05.000000000 -0700
++++ linux-2.6.22-rc4/fs/ext4/namei.c	2007-06-13 10:57:48.000000000 -0700
+@@ -1619,6 +1619,27 @@
  	return -ENOENT;
  }
  
@@ -57,7 +57,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  static int ext4_add_nondir(handle_t *handle,
  		struct dentry *dentry, struct inode *inode)
  {
-@@ -1715,7 +1736,7 @@ static int ext4_mkdir(struct inode * dir
+@@ -1715,7 +1736,7 @@
  	struct ext4_dir_entry_2 * de;
  	int err, retries = 0;
  
@@ -66,7 +66,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  		return -EMLINK;
  
  retry:
-@@ -1738,7 +1759,7 @@ retry:
+@@ -1738,7 +1759,7 @@
  	inode->i_size = EXT4_I(inode)->i_disksize = inode->i_sb->s_blocksize;
  	dir_block = ext4_bread (handle, inode, 0, 1, &err);
  	if (!dir_block) {
@@ -75,7 +75,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  		ext4_mark_inode_dirty(handle, inode);
  		iput (inode);
  		goto out_stop;
-@@ -1770,7 +1791,7 @@ retry:
+@@ -1770,7 +1791,7 @@
  		iput (inode);
  		goto out_stop;
  	}
@@ -84,7 +84,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  	ext4_update_dx_flag(dir);
  	ext4_mark_inode_dirty(handle, dir);
  	d_instantiate(dentry, inode);
-@@ -2035,10 +2056,10 @@ static int ext4_rmdir (struct inode * di
+@@ -2035,10 +2056,10 @@
  	retval = ext4_delete_entry(handle, dir, de, bh);
  	if (retval)
  		goto end_rmdir;
@@ -99,7 +99,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  	inode->i_version++;
  	clear_nlink(inode);
  	/* There's no need to set i_disksize: the fact that i_nlink is
-@@ -2048,7 +2069,7 @@ static int ext4_rmdir (struct inode * di
+@@ -2048,7 +2069,7 @@
  	ext4_orphan_add(handle, inode);
  	inode->i_ctime = dir->i_ctime = dir->i_mtime = ext4_current_time(inode);
  	ext4_mark_inode_dirty(handle, inode);
@@ -108,7 +108,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  	ext4_update_dx_flag(dir);
  	ext4_mark_inode_dirty(handle, dir);
  
-@@ -2099,7 +2120,7 @@ static int ext4_unlink(struct inode * di
+@@ -2099,7 +2120,7 @@
  	dir->i_ctime = dir->i_mtime = ext4_current_time(dir);
  	ext4_update_dx_flag(dir);
  	ext4_mark_inode_dirty(handle, dir);
@@ -117,7 +117,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  	if (!inode->i_nlink)
  		ext4_orphan_add(handle, inode);
  	inode->i_ctime = ext4_current_time(inode);
-@@ -2149,7 +2170,7 @@ retry:
+@@ -2149,7 +2170,7 @@
  		err = __page_symlink(inode, symname, l,
  				mapping_gfp_mask(inode->i_mapping) & ~__GFP_FS);
  		if (err) {
@@ -126,7 +126,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  			ext4_mark_inode_dirty(handle, inode);
  			iput (inode);
  			goto out_stop;
-@@ -2175,8 +2196,9 @@ static int ext4_link (struct dentry * ol
+@@ -2175,8 +2196,9 @@
  	struct inode *inode = old_dentry->d_inode;
  	int err, retries = 0;
  
@@ -137,7 +137,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  	/*
  	 * Return -ENOENT if we've raced with unlink and i_nlink is 0.  Doing
  	 * otherwise has the potential to corrupt the orphan inode list.
-@@ -2194,7 +2216,7 @@ retry:
+@@ -2194,7 +2216,7 @@
  		handle->h_sync = 1;
  
  	inode->i_ctime = ext4_current_time(inode);
@@ -146,7 +146,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  	atomic_inc(&inode->i_count);
  
  	err = ext4_add_nondir(handle, dentry, inode);
-@@ -2327,7 +2349,7 @@ static int ext4_rename (struct inode * o
+@@ -2327,7 +2349,7 @@
  	}
  
  	if (new_inode) {
@@ -155,7 +155,7 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  		new_inode->i_ctime = ext4_current_time(new_inode);
  	}
  	old_dir->i_ctime = old_dir->i_mtime = ext4_current_time(old_dir);
-@@ -2338,11 +2360,13 @@ static int ext4_rename (struct inode * o
+@@ -2338,11 +2360,13 @@
  		PARENT_INO(dir_bh->b_data) = cpu_to_le32(new_dir->i_ino);
  		BUFFER_TRACE(dir_bh, "call ext4_journal_dirty_metadata");
  		ext4_journal_dirty_metadata(handle, dir_bh);
@@ -174,8 +174,8 @@ Index: linux-2.6.22-rc4/fs/ext4/namei.c
  		}
 Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22-rc4.orig/include/linux/ext4_fs.h	2007-06-14 17:32:41.000000000 -0700
-+++ linux-2.6.22-rc4/include/linux/ext4_fs.h	2007-06-14 17:32:55.000000000 -0700
+--- linux-2.6.22-rc4.orig/include/linux/ext4_fs.h	2007-06-11 17:42:58.000000000 -0700
++++ linux-2.6.22-rc4/include/linux/ext4_fs.h	2007-06-13 10:59:07.000000000 -0700
 @@ -71,7 +71,7 @@
  /*
   * Maximal count of links to a file
@@ -185,7 +185,7 @@ Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
  
  /*
   * Macro-instructions used to manage several block sizes
-@@ -685,6 +685,7 @@ static inline int ext4_valid_inum(struct
+@@ -684,6 +684,7 @@
  #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
  #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
  #define EXT4_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
@@ -193,7 +193,7 @@ Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
  #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
  
  #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
-@@ -703,6 +704,7 @@ static inline int ext4_valid_inum(struct
+@@ -702,6 +703,7 @@
  					 EXT4_FEATURE_INCOMPAT_64BIT)
  #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
  					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
