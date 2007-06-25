@@ -1,4 +1,4 @@
-# Rebased the patches to 2.6.22-rc4
+# Rebased the patches to 2.6.22-rc5
 
 # Add mount option to turn off extents
 ext4_noextent_mount_opt.patch
@@ -21,6 +21,7 @@ ext4_set_jbd2_64bit_feature.patch
 jbd2_config_jbd2_debug_fix.patch
 
 # Export jbd2-debug via debugfs
+ext4_CONFIG_JBD2_DEBUG.patch
 jbd2_move_jbd2_debug_to_debugfs.patch
 
 # fallocate() syscall patches and ext4 fallocate() implementation
@@ -34,15 +35,23 @@ ext4-fallocate-6-uninit_write_support
 # Nanosecond timestamp support
 ext4-nanosecond-patch
 
-# Part of i_verion patch:  reserve high 32 bit for 64 bit inode version
+# inode verion patch series
 # inode versioning is needed for NFSv4
-# Missing the full inode version patch
-i_version_hi.patch
 
-#New patch to expand inode i_extra_isize to support features
-#in high part of inode (>128 bytes)
+# vfs changes, 64 bit inode->i_version
+64-bit-i_version.patch
+# reserve hi 32 bit inode version on ext4 on-disk inode
+i_version_hi.patch
+# ext4 inode version read/store
+ext4_i_version_hi_2.patch
+# ext4 inode version update
+i_version_update_ext4.patch
+# add a noversion mount option to disable inode version updates
+ext4_no_version.patch
+
+# New patch to expand inode i_extra_isize to support features
+# in high part of inode (>128 bytes)
 ext4_expand_inode_extra_isize.patch
-ext4_expand_inode_isize_fix.patch
 
 # Export jbd stats through procfs
 # Shall this move to debugfs?
@@ -51,6 +60,15 @@ jbd-stats-through-procfs
 # Remove 32000 subdirs limit. 
 ext4_remove_subdirs_limit.patch
 
+# Add unused inode watermark and checksum to blockgroup descriptors
+# currently this patch series cause mount failed. 
+#ext4_uninit_blockgroup.patch
+# need sign off
+#update-uninit.patch
+#uninit-crc-config-fix.patch
+# Need sing off and fix coding style
+# Add journal checksums
+ext4-journal_chksum-2.6.20.patch
 ##############################################################
 # Unstable patches
 # Note: still lots of outstanding comments from linux-ext4 list, 12/2006
@@ -69,3 +87,11 @@ ext4-delalloc-extents-48bit.patch
 
 # Add mount option to turn off delayed allocation
 ext4_nodelalloc_mount_opt.patch
+
+# Fix error returned from ext4_reserve_global
+ext4_reserve_global_return_error_fix.patch
+
+#Fix invariant checking in ext4_rebalance_reservation()
+#Missing signed offs
+ext4_rebalance_reservation_invariant_checking_fix.patch
+ext4_delalloc_setpageprivate_fix.patch
