@@ -1,0 +1,28 @@
+Subject: ext4: remove extra IS_RDONLY() check
+From: Dave Hansen <haveblue@us.ibm.com>
+
+ext4_change_inode_journal_flag() is only called from one location:
+ext4_ioctl(EXT3_IOC_SETFLAGS).  That ioctl case already has a IS_RDONLY()
+call in it so this one is superfluous.
+
+Signed-off-by: Dave Hansen <haveblue@us.ibm.com>
+Cc: <linux-ext4@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
+---
+
+ fs/ext4/inode.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff -puN fs/ext4/inode.c~ext4-remove-extra-is_rdonly-check fs/ext4/inode.c
+--- a/fs/ext4/inode.c~ext4-remove-extra-is_rdonly-check
++++ a/fs/ext4/inode.c
+@@ -3352,7 +3352,7 @@ int ext4_change_inode_journal_flag(struc
+ 	 */
+
+ 	journal = EXT4_JOURNAL(inode);
+-	if (is_journal_aborted(journal) || IS_RDONLY(inode))
++	if (is_journal_aborted(journal))
+ 		return -EROFS;
+
+ 	jbd2_journal_lock_updates(journal);

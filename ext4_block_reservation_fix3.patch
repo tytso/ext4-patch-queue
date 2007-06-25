@@ -1,0 +1,22 @@
+If ext4_reserve_block has failed we have to drop quota.
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Acked-by: Alex Tomas <alex@clusterfs.com>
+Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
+---
+ fs/ext4/balloc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index a9655f1..eacffd3 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -1467,7 +1467,7 @@ ext4_fsblk_t ext4_new_blocks(handle_t *handle, struct inode *inode,
+ 	if (!(EXT4_I(inode)->i_state & EXT4_STATE_BLOCKS_RESERVED)) {
+ 		*errp = ext4_reserve_blocks(sb, num);
+ 		if (*errp)
+-			return 0;
++			goto out;
+ 		reserved = num;
+ 	}
+
