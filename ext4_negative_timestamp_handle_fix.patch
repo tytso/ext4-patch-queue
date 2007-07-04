@@ -1,0 +1,29 @@
+From: Kalpak Shah <kalpak@clusterfs.com>
+This nanosecond patch seems to be missing the fix below which is required for http://bugzilla.kernel.org/show_bug.cgi?id=5079
+
+If the timestamp is set to before epoch i.e. a negative timestamp then the file may have its date set into the future on 64-bit systems. So when the timestamp is read it must be cast as signed.
+
+Signed-off-by: Kalpak Shah <kalpak@clusterfs.com>
+
+Index: linux-2.6.22-rc6/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.22-rc6.orig/include/linux/ext4_fs.h	2007-07-03 17:59:09.000000000 -0700
++++ linux-2.6.22-rc6/include/linux/ext4_fs.h	2007-07-03 18:00:48.000000000 -0700
+@@ -384,7 +384,7 @@ do {									       \
+ 
+ #define EXT4_INODE_GET_XTIME(xtime, inode, raw_inode)			       \
+ do {									       \
+-	(inode)->xtime.tv_sec = le32_to_cpu((raw_inode)->xtime);	       \
++	(inode)->xtime.tv_sec = (signed)le32_to_cpu((raw_inode)->xtime);	       \
+ 	if (EXT4_FITS_IN_INODE(raw_inode, EXT4_I(inode), xtime ## _extra))     \
+ 		ext4_decode_extra_time(&(inode)->xtime,			       \
+ 				       raw_inode->xtime ## _extra);	       \
+@@ -393,7 +393,7 @@ do {									       \
+ #define EXT4_EINODE_GET_XTIME(xtime, einode, raw_inode)			       \
+ do {									       \
+ 	if (EXT4_FITS_IN_INODE(raw_inode, einode, xtime))		       \
+-		(einode)->xtime.tv_sec = le32_to_cpu((raw_inode)->xtime);      \
++		(einode)->xtime.tv_sec = (signed)le32_to_cpu((raw_inode)->xtime);      \
+ 	if (EXT4_FITS_IN_INODE(raw_inode, einode, xtime ## _extra))	       \
+ 		ext4_decode_extra_time(&(einode)->xtime,		       \
+ 				       raw_inode->xtime ## _extra);	       \

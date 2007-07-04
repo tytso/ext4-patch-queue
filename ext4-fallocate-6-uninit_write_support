@@ -1,3 +1,5 @@
+From:  Amit Arora <aarora@in.ibm.com>
+
 write support for preallocated blocks
 
 This patch adds write support to the uninitialized extents that get
@@ -7,11 +9,11 @@ new split extents with neighbouring ones, if possible.
 
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
 
-Index: linux-2.6.22-rc4/fs/ext4/extents.c
+Index: linux-2.6.22-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/ext4/extents.c
-+++ linux-2.6.22-rc4/fs/ext4/extents.c
-@@ -1167,6 +1167,53 @@ ext4_can_extents_be_merged(struct inode 
+--- linux-2.6.22-rc6.orig/fs/ext4/extents.c	2007-07-03 23:48:31.000000000 -0700
++++ linux-2.6.22-rc6/fs/ext4/extents.c	2007-07-03 23:48:41.000000000 -0700
+@@ -1172,6 +1172,53 @@ ext4_can_extents_be_merged(struct inode 
  }
  
  /*
@@ -65,7 +67,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
   * check if a portion of the "newext" extent overlaps with an
   * existing extent.
   *
-@@ -1354,25 +1401,7 @@ has_space:
+@@ -1359,25 +1406,7 @@ has_space:
  
  merge:
  	/* try to merge extents to the right */
@@ -92,7 +94,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  
  	/* try to merge extents to the left */
  
-@@ -2035,15 +2064,158 @@ void ext4_ext_release(struct super_block
+@@ -2040,15 +2069,158 @@ void ext4_ext_release(struct super_block
  #endif
  }
  
@@ -252,7 +254,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  	unsigned long allocated = 0;
  
  	__clear_bit(BH_New, &bh_result->b_state);
-@@ -2056,8 +2228,10 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2061,8 +2233,10 @@ int ext4_ext_get_blocks(handle_t *handle
  	if (goal) {
  		if (goal == EXT4_EXT_CACHE_GAP) {
  			if (!create) {
@@ -265,7 +267,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  				goto out2;
  			}
  			/* we should allocate requested block */
-@@ -2091,6 +2265,7 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2096,6 +2270,7 @@ int ext4_ext_get_blocks(handle_t *handle
  	 * this is why assert can't be put in ext4_ext_find_extent()
  	 */
  	BUG_ON(path[depth].p_ext == NULL && depth != 0);
@@ -273,7 +275,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  
  	ex = path[depth].p_ext;
  	if (ex) {
-@@ -2099,13 +2274,9 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2104,13 +2279,9 @@ int ext4_ext_get_blocks(handle_t *handle
  		unsigned short ee_len;
  
  		/*
@@ -288,7 +290,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  		ee_len = ext4_ext_get_actual_len(ex);
  		/* if found extent covers block, simply return it */
  		if (iblock >= ee_block && iblock < ee_block + ee_len) {
-@@ -2114,12 +2285,27 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2119,12 +2290,27 @@ int ext4_ext_get_blocks(handle_t *handle
  			allocated = ee_len - (iblock - ee_block);
  			ext_debug("%d fit into %lu:%d -> %llu\n", (int) iblock,
  					ee_block, ee_len, newblock);
@@ -318,7 +320,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  		}
  	}
  
-@@ -2128,8 +2314,10 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2133,8 +2319,10 @@ int ext4_ext_get_blocks(handle_t *handle
  	 * we couldn't try to create block if create flag is zero
  	 */
  	if (!create) {
@@ -331,7 +333,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  		ext4_ext_put_gap_in_cache(inode, path, iblock);
  		goto out2;
  	}
-@@ -2175,6 +2363,7 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2180,6 +2368,7 @@ int ext4_ext_get_blocks(handle_t *handle
  
  	/* previous routine could use block we allocated */
  	newblock = ext_pblock(&newex);
@@ -339,7 +341,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  	__set_bit(BH_New, &bh_result->b_state);
  
  	/* Cache only when it is _not_ an uninitialized extent */
-@@ -2244,7 +2433,8 @@ void ext4_ext_truncate(struct inode * in
+@@ -2249,7 +2438,8 @@ void ext4_ext_truncate(struct inode * in
  	err = ext4_ext_remove_space(inode, last_block);
  
  	/* In a multi-transaction truncate, we only make the final
@@ -349,10 +351,10 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  	if (IS_SYNC(inode))
  		handle->h_sync = 1;
  
-Index: linux-2.6.22-rc4/include/linux/ext4_fs_extents.h
+Index: linux-2.6.22-rc6/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.22-rc4.orig/include/linux/ext4_fs_extents.h
-+++ linux-2.6.22-rc4/include/linux/ext4_fs_extents.h
+--- linux-2.6.22-rc6.orig/include/linux/ext4_fs_extents.h	2007-07-03 23:48:31.000000000 -0700
++++ linux-2.6.22-rc6/include/linux/ext4_fs_extents.h	2007-07-03 23:48:41.000000000 -0700
 @@ -205,6 +205,9 @@ static inline int ext4_ext_get_actual_le
  
  extern int ext4_extent_tree_init(handle_t *, struct inode *);

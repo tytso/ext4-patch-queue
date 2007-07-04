@@ -1,3 +1,4 @@
+From: Mingming Cao <cmm@us.ibm.com>
 On 16:46 Срд 20 Июн     , Mingming Cao wrote:
 > On Wed, 2007-06-20 at 12:15 +0400, Alex Tomas wrote:
 > > Mingming Cao wrote:
@@ -22,27 +23,27 @@ So patch looks like this:
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
-diff --git a/fs/ext4/writeback.c b/fs/ext4/writeback.c
-index 3e669d6..84e5029 100644
---- a/fs/ext4/writeback.c
-+++ b/fs/ext4/writeback.c
-@@ -904,9 +904,6 @@ int ext4_wb_commit_write(struct file *file, struct page *page,
+Index: linux-2.6.22-rc6/fs/ext4/writeback.c
+===================================================================
+--- linux-2.6.22-rc6.orig/fs/ext4/writeback.c	2007-07-03 23:47:53.000000000 -0700
++++ linux-2.6.22-rc6/fs/ext4/writeback.c	2007-07-03 23:48:10.000000000 -0700
+@@ -918,9 +918,6 @@ int ext4_wb_commit_write(struct file *fi
  	wb_debug("commit page %lu (%u-%u) for inode %lu\n",
  			page->index, from, to, inode->i_ino);
-
+ 
 -	/* mark page private so that we get
 -	 * called to invalidate/release page */
 -	SetPagePrivate(page);
-
+ 
  	if (!PageBooked(page) && !PageMappedToDisk(page)) {
  		/* ->prepare_write() observed that block for this
-@@ -918,6 +915,9 @@ int ext4_wb_commit_write(struct file *file, struct page *page,
+@@ -932,6 +929,9 @@ int ext4_wb_commit_write(struct file *fi
  		if (err)
  			return err;
  	}
 +	/* mark page private so that we get
 +	 * called to invalidate/release page */
 +	SetPagePrivate(page);
-
+ 
  	/* ok. block for this page is allocated already or it has
  	 * been reserved succesfully. so, user may use it */

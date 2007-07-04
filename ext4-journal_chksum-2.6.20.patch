@@ -1,12 +1,15 @@
+From: Girish Shilamkar <girish@clusterfs.com>
+
 Journal checksum feature has been added to detect corruption of journal.
 
 Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Girish Shilamkar <girish@clusterfs.com>
 Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 
-diff -Nurp linux024/fs/ext4/super.c linux/fs/ext4/super.c
---- linux024/fs/ext4/super.c	2007-06-25 16:19:24.000000000 -0500
-+++ linux/fs/ext4/super.c	2007-06-26 08:35:16.000000000 -0500
+Index: linux-2.6.22-rc6/fs/ext4/super.c
+===================================================================
+--- linux-2.6.22-rc6.orig/fs/ext4/super.c	2007-07-03 23:42:20.000000000 -0700
++++ linux-2.6.22-rc6/fs/ext4/super.c	2007-07-03 23:47:06.000000000 -0700
 @@ -721,6 +721,7 @@ enum {
  	Opt_user_xattr, Opt_nouser_xattr, Opt_acl, Opt_noacl,
  	Opt_reservation, Opt_noreservation, Opt_noload, Opt_nobh, Opt_bh,
@@ -60,9 +63,10 @@ diff -Nurp linux024/fs/ext4/super.c linux/fs/ext4/super.c
  	/* We have now updated the journal if required, so we can
  	 * validate the data journaling mode. */
  	switch (test_opt(sb, DATA_FLAGS)) {
-diff -Nurp linux024/fs/jbd2/commit.c linux/fs/jbd2/commit.c
---- linux024/fs/jbd2/commit.c	2007-06-25 16:19:25.000000000 -0500
-+++ linux/fs/jbd2/commit.c	2007-06-26 08:40:03.000000000 -0500
+Index: linux-2.6.22-rc6/fs/jbd2/commit.c
+===================================================================
+--- linux-2.6.22-rc6.orig/fs/jbd2/commit.c	2007-07-03 23:43:21.000000000 -0700
++++ linux-2.6.22-rc6/fs/jbd2/commit.c	2007-07-03 23:47:06.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/mm.h>
  #include <linux/pagemap.h>
@@ -324,9 +328,10 @@ diff -Nurp linux024/fs/jbd2/commit.c linux/fs/jbd2/commit.c
  
  	if (err)
  		__jbd2_journal_abort_hard(journal);
-diff -Nurp linux024/fs/jbd2/journal.c linux/fs/jbd2/journal.c
---- linux024/fs/jbd2/journal.c	2007-06-25 16:19:25.000000000 -0500
-+++ linux/fs/jbd2/journal.c	2007-06-26 08:35:16.000000000 -0500
+Index: linux-2.6.22-rc6/fs/jbd2/journal.c
+===================================================================
+--- linux-2.6.22-rc6.orig/fs/jbd2/journal.c	2007-07-03 23:43:21.000000000 -0700
++++ linux-2.6.22-rc6/fs/jbd2/journal.c	2007-07-03 23:47:06.000000000 -0700
 @@ -66,6 +66,7 @@ EXPORT_SYMBOL(jbd2_journal_update_format
  EXPORT_SYMBOL(jbd2_journal_check_used_features);
  EXPORT_SYMBOL(jbd2_journal_check_available_features);
@@ -369,9 +374,10 @@ diff -Nurp linux024/fs/jbd2/journal.c linux/fs/jbd2/journal.c
  
  /**
   * int jbd2_journal_update_format () - Update on-disk journal structure.
-diff -Nurp linux024/fs/jbd2/recovery.c linux/fs/jbd2/recovery.c
---- linux024/fs/jbd2/recovery.c	2007-06-25 16:19:22.000000000 -0500
-+++ linux/fs/jbd2/recovery.c	2007-06-26 08:35:16.000000000 -0500
+Index: linux-2.6.22-rc6/fs/jbd2/recovery.c
+===================================================================
+--- linux-2.6.22-rc6.orig/fs/jbd2/recovery.c	2007-07-03 17:42:05.000000000 -0700
++++ linux-2.6.22-rc6/fs/jbd2/recovery.c	2007-07-03 23:47:06.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/jbd2.h>
  #include <linux/errno.h>
@@ -541,10 +547,11 @@ diff -Nurp linux024/fs/jbd2/recovery.c linux/fs/jbd2/recovery.c
  		/* It's really bad news if different passes end up at
  		 * different places (but possible due to IO errors). */
  		if (info->end_transaction != next_commit_ID) {
-diff -Nurp linux024/include/linux/ext4_fs.h linux/include/linux/ext4_fs.h
---- linux024/include/linux/ext4_fs.h	2007-06-25 16:19:25.000000000 -0500
-+++ linux/include/linux/ext4_fs.h	2007-06-26 08:37:30.000000000 -0500
-@@ -475,6 +475,8 @@ do {									       \
+Index: linux-2.6.22-rc6/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.22-rc6.orig/include/linux/ext4_fs.h	2007-07-03 23:43:39.000000000 -0700
++++ linux-2.6.22-rc6/include/linux/ext4_fs.h	2007-07-03 23:47:06.000000000 -0700
+@@ -469,6 +469,8 @@ do {									       \
  #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
  #define EXT4_MOUNT_EXTENTS		0x400000 /* Extents support */
  #define EXT4_MOUNT_NOVERSION		0x800000 /* No inode version updates */
@@ -553,9 +560,10 @@ diff -Nurp linux024/include/linux/ext4_fs.h linux/include/linux/ext4_fs.h
  
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
-diff -Nurp linux024/include/linux/jbd2.h linux/include/linux/jbd2.h
---- linux024/include/linux/jbd2.h	2007-06-25 16:19:25.000000000 -0500
-+++ linux/include/linux/jbd2.h	2007-06-26 08:35:16.000000000 -0500
+Index: linux-2.6.22-rc6/include/linux/jbd2.h
+===================================================================
+--- linux-2.6.22-rc6.orig/include/linux/jbd2.h	2007-07-03 23:43:21.000000000 -0700
++++ linux-2.6.22-rc6/include/linux/jbd2.h	2007-07-03 23:47:06.000000000 -0700
 @@ -148,6 +148,29 @@ typedef struct journal_header_s
  	__be32		h_sequence;
  } journal_header_t;

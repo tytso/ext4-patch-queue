@@ -1,22 +1,24 @@
+From: Eric Sandeen <sandeen@redhat.com>
+
 Use zero_user_page() in ext4 where possible.
 
 Compile tested, reviews welcome.
 
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 
-Index: linux-2.6.22-rc4-mm2/fs/ext4/inode.c
+Index: linux-2.6.22-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.22-rc4-mm2.orig/fs/ext4/inode.c
-+++ linux-2.6.22-rc4-mm2/fs/ext4/inode.c
-@@ -1830,7 +1830,6 @@ int ext4_block_truncate_page(handle_t *h
+--- linux-2.6.22-rc6.orig/fs/ext4/inode.c	2007-07-03 23:43:19.000000000 -0700
++++ linux-2.6.22-rc6/fs/ext4/inode.c	2007-07-03 23:47:13.000000000 -0700
+@@ -1766,7 +1766,6 @@ int ext4_block_truncate_page(handle_t *h
  	struct inode *inode = mapping->host;
  	struct buffer_head *bh;
  	int err = 0;
 -	void *kaddr;
-
- 	if ((EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL) &&
- 			test_opt(inode->i_sb, EXTENTS) &&
-@@ -1847,10 +1846,7 @@ int ext4_block_truncate_page(handle_t *h
+ 
+ 	blocksize = inode->i_sb->s_blocksize;
+ 	length = blocksize - (offset & (blocksize - 1));
+@@ -1778,10 +1777,7 @@ int ext4_block_truncate_page(handle_t *h
  	 */
  	if (!page_has_buffers(page) && test_opt(inode->i_sb, NOBH) &&
  	     ext4_should_writeback_data(inode) && PageUptodate(page)) {
@@ -28,15 +30,15 @@ Index: linux-2.6.22-rc4-mm2/fs/ext4/inode.c
  		set_page_dirty(page);
  		goto unlock;
  	}
-@@ -1903,10 +1899,7 @@ int ext4_block_truncate_page(handle_t *h
+@@ -1834,10 +1830,7 @@ int ext4_block_truncate_page(handle_t *h
  			goto unlock;
  	}
-
+ 
 -	kaddr = kmap_atomic(page, KM_USER0);
 -	memset(kaddr + offset, 0, length);
 -	flush_dcache_page(page);
 -	kunmap_atomic(kaddr, KM_USER0);
 +	zero_user_page(page, offset, length, KM_USER0);
-
+ 
  	BUFFER_TRACE(bh, "zeroed end of block");
-
+ 

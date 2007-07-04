@@ -11,29 +11,29 @@ Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
  fs/ext4/extents.c |   11 +++++++----
  1 files changed, 7 insertions(+), 4 deletions(-)
 
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 12fe3d7..1fd00ac 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -375,7 +375,7 @@ ext4_ext_binsearch_idx(struct inode *inode, struct ext4_ext_path *path, int bloc
+Index: linux-2.6.22-rc6/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.22-rc6.orig/fs/ext4/extents.c	2007-07-03 23:47:31.000000000 -0700
++++ linux-2.6.22-rc6/fs/ext4/extents.c	2007-07-03 23:47:34.000000000 -0700
+@@ -375,7 +375,7 @@ ext4_ext_binsearch_idx(struct inode *ino
  	ext_debug("binsearch for %d(idx):  ", block);
-
+ 
  	l = EXT_FIRST_INDEX(eh) + 1;
 -	r = EXT_FIRST_INDEX(eh) + le16_to_cpu(eh->eh_entries) - 1;
 +	r = EXT_LAST_INDEX(eh);
  	while (l <= r) {
  		m = l + (r - l) / 2;
  		if (block < le32_to_cpu(m->ei_block))
-@@ -440,7 +440,7 @@ ext4_ext_binsearch(struct inode *inode, struct ext4_ext_path *path, int block)
+@@ -440,7 +440,7 @@ ext4_ext_binsearch(struct inode *inode, 
  	ext_debug("binsearch for %d:  ", block);
-
+ 
  	l = EXT_FIRST_EXTENT(eh) + 1;
 -	r = EXT_FIRST_EXTENT(eh) + le16_to_cpu(eh->eh_entries) - 1;
 +	r = EXT_LAST_EXTENT(eh);
-
+ 
  	while (l <= r) {
  		m = l + (r - l) / 2;
-@@ -922,8 +922,11 @@ static int ext4_ext_grow_indepth(handle_t *handle, struct inode *inode,
+@@ -922,8 +922,11 @@ static int ext4_ext_grow_indepth(handle_
  	curp->p_hdr->eh_max = cpu_to_le16(ext4_ext_space_root_idx(inode));
  	curp->p_hdr->eh_entries = cpu_to_le16(1);
  	curp->p_idx = EXT_FIRST_INDEX(curp->p_hdr);
@@ -45,5 +45,5 @@ index 12fe3d7..1fd00ac 100644
 +	else
 +	  curp->p_idx->ei_block = EXT_FIRST_EXTENT(path[0].p_hdr)->ee_block;
  	ext4_idx_store_pblock(curp->p_idx, newblock);
-
+ 
  	neh = ext_inode_hdr(inode);
