@@ -8,8 +8,8 @@ Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 
 Index: linux-2.6.22/fs/ext4/super.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/super.c	2007-07-09 15:25:49.000000000 -0700
-+++ linux-2.6.22/fs/ext4/super.c	2007-07-09 15:26:01.000000000 -0700
+--- linux-2.6.22.orig/fs/ext4/super.c	2007-07-09 15:41:38.000000000 -0700
++++ linux-2.6.22/fs/ext4/super.c	2007-07-09 15:42:51.000000000 -0700
 @@ -721,6 +721,7 @@ enum {
  	Opt_user_xattr, Opt_nouser_xattr, Opt_acl, Opt_noacl,
  	Opt_reservation, Opt_noreservation, Opt_noload, Opt_nobh, Opt_bh,
@@ -27,7 +27,7 @@ Index: linux-2.6.22/fs/ext4/super.c
  	{Opt_abort, "abort"},
  	{Opt_data_journal, "data=journal"},
  	{Opt_data_ordered, "data=ordered"},
-@@ -948,6 +951,13 @@ static int parse_options (char *options,
+@@ -947,6 +950,13 @@ static int parse_options (char *options,
  				return 0;
  			*journal_devnum = option;
  			break;
@@ -41,7 +41,7 @@ Index: linux-2.6.22/fs/ext4/super.c
  		case Opt_noload:
  			set_opt (sbi->s_mount_opt, NOLOAD);
  			break;
-@@ -1817,6 +1827,21 @@ static int ext4_fill_super (struct super
+@@ -1813,6 +1823,21 @@ static int ext4_fill_super (struct super
  		goto failed_mount4;
  	}
  
@@ -65,8 +65,8 @@ Index: linux-2.6.22/fs/ext4/super.c
  	switch (test_opt(sb, DATA_FLAGS)) {
 Index: linux-2.6.22/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.22.orig/fs/jbd2/commit.c	2007-07-09 15:25:55.000000000 -0700
-+++ linux-2.6.22/fs/jbd2/commit.c	2007-07-09 15:26:01.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/commit.c	2007-07-09 15:41:56.000000000 -0700
++++ linux-2.6.22/fs/jbd2/commit.c	2007-07-09 15:42:51.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/mm.h>
  #include <linux/pagemap.h>
@@ -330,8 +330,8 @@ Index: linux-2.6.22/fs/jbd2/commit.c
  		__jbd2_journal_abort_hard(journal);
 Index: linux-2.6.22/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.22.orig/fs/jbd2/journal.c	2007-07-09 15:25:55.000000000 -0700
-+++ linux-2.6.22/fs/jbd2/journal.c	2007-07-09 15:26:01.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/journal.c	2007-07-09 15:41:56.000000000 -0700
++++ linux-2.6.22/fs/jbd2/journal.c	2007-07-09 15:42:51.000000000 -0700
 @@ -66,6 +66,7 @@ EXPORT_SYMBOL(jbd2_journal_update_format
  EXPORT_SYMBOL(jbd2_journal_check_used_features);
  EXPORT_SYMBOL(jbd2_journal_check_available_features);
@@ -376,8 +376,8 @@ Index: linux-2.6.22/fs/jbd2/journal.c
   * int jbd2_journal_update_format () - Update on-disk journal structure.
 Index: linux-2.6.22/fs/jbd2/recovery.c
 ===================================================================
---- linux-2.6.22.orig/fs/jbd2/recovery.c	2007-07-09 15:25:21.000000000 -0700
-+++ linux-2.6.22/fs/jbd2/recovery.c	2007-07-09 15:26:01.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/recovery.c	2007-07-09 15:40:15.000000000 -0700
++++ linux-2.6.22/fs/jbd2/recovery.c	2007-07-09 15:42:51.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/jbd2.h>
  #include <linux/errno.h>
@@ -549,21 +549,22 @@ Index: linux-2.6.22/fs/jbd2/recovery.c
  		if (info->end_transaction != next_commit_ID) {
 Index: linux-2.6.22/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-09 15:25:57.000000000 -0700
-+++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-09 15:26:01.000000000 -0700
-@@ -475,6 +475,8 @@ do {									       \
+--- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-09 15:41:59.000000000 -0700
++++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-09 15:44:10.000000000 -0700
+@@ -474,7 +474,8 @@ do {									       \
+ #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
  #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
  #define EXT4_MOUNT_EXTENTS		0x400000 /* Extents support */
- #define EXT4_MOUNT_NOVERSION		0x800000 /* No inode version updates */
-+#define EXT4_MOUNT_JOURNAL_CHECKSUM	0x1000000 /* Journal checksums */
-+#define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x2000000 /* Journal Async Commit */
- 
+-
++#define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
++#define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
+ #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
 Index: linux-2.6.22/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/jbd2.h	2007-07-09 15:25:55.000000000 -0700
-+++ linux-2.6.22/include/linux/jbd2.h	2007-07-09 15:26:01.000000000 -0700
+--- linux-2.6.22.orig/include/linux/jbd2.h	2007-07-09 15:41:56.000000000 -0700
++++ linux-2.6.22/include/linux/jbd2.h	2007-07-09 15:42:51.000000000 -0700
 @@ -148,6 +148,29 @@ typedef struct journal_header_s
  	__be32		h_sequence;
  } journal_header_t;
