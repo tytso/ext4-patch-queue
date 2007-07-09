@@ -6,11 +6,11 @@ CONFIG_JBD2_DEBUG.  This patch fixes that.
 
 Signed-off-by: Jose R. Santos <jrs@us.ibm.com>
 ---
-Index: linux-2.6.22-rc4/fs/jbd2/journal.c
+Index: linux-2.6.22/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/jbd2/journal.c	2007-06-11 16:15:49.000000000 -0700
-+++ linux-2.6.22-rc4/fs/jbd2/journal.c	2007-06-11 16:16:18.000000000 -0700
-@@ -528,7 +528,7 @@
+--- linux-2.6.22.orig/fs/jbd2/journal.c	2007-07-08 16:32:17.000000000 -0700
++++ linux-2.6.22/fs/jbd2/journal.c	2007-07-09 15:25:21.000000000 -0700
+@@ -528,7 +528,7 @@ int jbd2_log_wait_commit(journal_t *jour
  {
  	int err = 0;
  
@@ -19,7 +19,7 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
  	spin_lock(&journal->j_state_lock);
  	if (!tid_geq(journal->j_commit_request, tid)) {
  		printk(KERN_EMERG
-@@ -1709,7 +1709,7 @@
+@@ -1709,7 +1709,7 @@ void jbd2_slab_free(void *ptr,  size_t s
   * Journal_head storage management
   */
  static struct kmem_cache *jbd2_journal_head_cache;
@@ -28,7 +28,7 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
  static atomic_t nr_journal_heads = ATOMIC_INIT(0);
  #endif
  
-@@ -1747,7 +1747,7 @@
+@@ -1747,7 +1747,7 @@ static struct journal_head *journal_allo
  	struct journal_head *ret;
  	static unsigned long last_warning;
  
@@ -37,7 +37,7 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
  	atomic_inc(&nr_journal_heads);
  #endif
  	ret = kmem_cache_alloc(jbd2_journal_head_cache, GFP_NOFS);
-@@ -1768,7 +1768,7 @@
+@@ -1768,7 +1768,7 @@ static struct journal_head *journal_allo
  
  static void journal_free_journal_head(struct journal_head *jh)
  {
@@ -46,7 +46,7 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
  	atomic_dec(&nr_journal_heads);
  	memset(jh, JBD_POISON_FREE, sizeof(*jh));
  #endif
-@@ -1953,12 +1953,12 @@
+@@ -1953,12 +1953,12 @@ void jbd2_journal_put_journal_head(struc
  /*
   * /proc tunables
   */
@@ -61,7 +61,7 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
  
  static struct proc_dir_entry *proc_jbd_debug;
  
-@@ -2073,7 +2073,7 @@
+@@ -2073,7 +2073,7 @@ static int __init journal_init(void)
  
  static void __exit journal_exit(void)
  {
@@ -70,11 +70,11 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
  	int n = atomic_read(&nr_journal_heads);
  	if (n)
  		printk(KERN_EMERG "JBD: leaked %d journal_heads!\n", n);
-Index: linux-2.6.22-rc4/fs/jbd2/recovery.c
+Index: linux-2.6.22/fs/jbd2/recovery.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/jbd2/recovery.c	2007-06-04 17:57:25.000000000 -0700
-+++ linux-2.6.22-rc4/fs/jbd2/recovery.c	2007-06-11 16:16:18.000000000 -0700
-@@ -295,7 +295,7 @@
+--- linux-2.6.22.orig/fs/jbd2/recovery.c	2007-07-08 16:32:17.000000000 -0700
++++ linux-2.6.22/fs/jbd2/recovery.c	2007-07-09 15:25:21.000000000 -0700
+@@ -295,7 +295,7 @@ int jbd2_journal_skip_recovery(journal_t
  		printk(KERN_ERR "JBD: error %d scanning journal\n", err);
  		++journal->j_transaction_sequence;
  	} else {
@@ -83,11 +83,11 @@ Index: linux-2.6.22-rc4/fs/jbd2/recovery.c
  		int dropped = info.end_transaction - be32_to_cpu(sb->s_sequence);
  #endif
  		jbd_debug(0,
-Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
+Index: linux-2.6.22/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22-rc4.orig/include/linux/ext4_fs.h	2007-06-11 16:15:59.000000000 -0700
-+++ linux-2.6.22-rc4/include/linux/ext4_fs.h	2007-06-11 16:16:18.000000000 -0700
-@@ -237,7 +237,7 @@
+--- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-09 15:25:08.000000000 -0700
++++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-09 15:25:21.000000000 -0700
+@@ -243,7 +243,7 @@ struct ext4_new_group_data {
  #define EXT4_IOC_GROUP_ADD		_IOW('f', 8,struct ext4_new_group_input)
  #define	EXT4_IOC_GETVERSION_OLD		FS_IOC_GETVERSION
  #define	EXT4_IOC_SETVERSION_OLD		FS_IOC_SETVERSION
@@ -96,7 +96,7 @@ Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
  #define EXT4_IOC_WAIT_FOR_READONLY	_IOR('f', 99, long)
  #endif
  #define EXT4_IOC_GETRSVSZ		_IOR('f', 5, long)
-@@ -253,7 +253,7 @@
+@@ -259,7 +259,7 @@ struct ext4_new_group_data {
  #define EXT4_IOC32_GETRSVSZ		_IOR('f', 5, int)
  #define EXT4_IOC32_SETRSVSZ		_IOW('f', 6, int)
  #define EXT4_IOC32_GROUP_EXTEND		_IOW('f', 7, unsigned int)
@@ -105,11 +105,11 @@ Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
  #define EXT4_IOC32_WAIT_FOR_READONLY	_IOR('f', 99, int)
  #endif
  #define EXT4_IOC32_GETVERSION_OLD	FS_IOC32_GETVERSION
-Index: linux-2.6.22-rc4/include/linux/ext4_fs_sb.h
+Index: linux-2.6.22/include/linux/ext4_fs_sb.h
 ===================================================================
---- linux-2.6.22-rc4.orig/include/linux/ext4_fs_sb.h	2007-06-11 16:15:55.000000000 -0700
-+++ linux-2.6.22-rc4/include/linux/ext4_fs_sb.h	2007-06-11 16:16:18.000000000 -0700
-@@ -71,7 +71,7 @@
+--- linux-2.6.22.orig/include/linux/ext4_fs_sb.h	2007-07-08 16:32:17.000000000 -0700
++++ linux-2.6.22/include/linux/ext4_fs_sb.h	2007-07-09 15:25:21.000000000 -0700
+@@ -71,7 +71,7 @@ struct ext4_sb_info {
  	struct list_head s_orphan;
  	unsigned long s_commit_interval;
  	struct block_device *journal_bdev;
@@ -118,10 +118,10 @@ Index: linux-2.6.22-rc4/include/linux/ext4_fs_sb.h
  	struct timer_list turn_ro_timer;	/* For turning read-only (crash simulation) */
  	wait_queue_head_t ro_wait_queue;	/* For people waiting for the fs to go read-only */
  #endif
-Index: linux-2.6.22-rc4/include/linux/jbd2.h
+Index: linux-2.6.22/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.22-rc4.orig/include/linux/jbd2.h	2007-06-11 16:15:49.000000000 -0700
-+++ linux-2.6.22-rc4/include/linux/jbd2.h	2007-06-11 16:16:18.000000000 -0700
+--- linux-2.6.22.orig/include/linux/jbd2.h	2007-07-08 16:32:17.000000000 -0700
++++ linux-2.6.22/include/linux/jbd2.h	2007-07-09 15:25:21.000000000 -0700
 @@ -50,11 +50,11 @@
   */
  #define JBD_DEFAULT_MAX_COMMIT_AGE 5

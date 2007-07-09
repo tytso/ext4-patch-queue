@@ -7,11 +7,11 @@ been removed. please, review for inclusion.
 Signed-off-by: Alex Tomas <alex@clusterfs.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
-Index: linux-2.6.22-rc4/fs/ext4/extents.c
+Index: linux-2.6.22/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/ext4/extents.c	2007-06-11 17:22:15.000000000 -0700
-+++ linux-2.6.22-rc4/fs/ext4/extents.c	2007-06-11 17:27:57.000000000 -0700
-@@ -91,36 +91,6 @@
+--- linux-2.6.22.orig/fs/ext4/extents.c	2007-07-09 15:25:00.000000000 -0700
++++ linux-2.6.22/fs/ext4/extents.c	2007-07-09 15:25:14.000000000 -0700
+@@ -91,36 +91,6 @@ static void ext4_idx_store_pblock(struct
  	ix->ei_leaf_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1) & 0xffff);
  }
  
@@ -48,7 +48,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  static handle_t *ext4_ext_journal_restart(handle_t *handle, int needed)
  {
  	int err;
-@@ -269,6 +239,70 @@
+@@ -269,6 +239,70 @@ static int ext4_ext_space_root_idx(struc
  	return size;
  }
  
@@ -119,7 +119,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  #ifdef EXT_DEBUG
  static void ext4_ext_show_path(struct inode *inode, struct ext4_ext_path *path)
  {
-@@ -329,6 +363,7 @@
+@@ -329,6 +363,7 @@ static void ext4_ext_drop_refs(struct ex
  /*
   * ext4_ext_binsearch_idx:
   * binary search for the closest index of the given block
@@ -127,7 +127,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
   */
  static void
  ext4_ext_binsearch_idx(struct inode *inode, struct ext4_ext_path *path, int block)
-@@ -336,9 +371,6 @@
+@@ -336,9 +371,6 @@ ext4_ext_binsearch_idx(struct inode *ino
  	struct ext4_extent_header *eh = path->p_hdr;
  	struct ext4_extent_idx *r, *l, *m;
  
@@ -137,7 +137,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  
  	ext_debug("binsearch for %d(idx):  ", block);
  
-@@ -388,6 +420,7 @@
+@@ -388,6 +420,7 @@ ext4_ext_binsearch_idx(struct inode *ino
  /*
   * ext4_ext_binsearch:
   * binary search for closest extent of the given block
@@ -145,7 +145,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
   */
  static void
  ext4_ext_binsearch(struct inode *inode, struct ext4_ext_path *path, int block)
-@@ -395,9 +428,6 @@
+@@ -395,9 +428,6 @@ ext4_ext_binsearch(struct inode *inode, 
  	struct ext4_extent_header *eh = path->p_hdr;
  	struct ext4_extent *r, *l, *m;
  
@@ -155,7 +155,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  	if (eh->eh_entries == 0) {
  		/*
  		 * this leaf is empty:
-@@ -468,11 +498,10 @@
+@@ -468,11 +498,10 @@ ext4_ext_find_extent(struct inode *inode
  	short int depth, i, ppos = 0, alloc = 0;
  
  	eh = ext_inode_hdr(inode);
@@ -169,7 +169,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  
  	/* account possible depth increase */
  	if (!path) {
-@@ -488,6 +517,7 @@
+@@ -488,6 +517,7 @@ ext4_ext_find_extent(struct inode *inode
  	while (i) {
  		ext_debug("depth %d: num %d, max %d\n",
  			  ppos, le16_to_cpu(eh->eh_entries), le16_to_cpu(eh->eh_max));
@@ -177,7 +177,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  		ext4_ext_binsearch_idx(inode, path + ppos, block);
  		path[ppos].p_block = idx_pblock(path[ppos].p_idx);
  		path[ppos].p_depth = i;
-@@ -504,7 +534,7 @@
+@@ -504,7 +534,7 @@ ext4_ext_find_extent(struct inode *inode
  		path[ppos].p_hdr = eh;
  		i--;
  
@@ -186,7 +186,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  			goto err;
  	}
  
-@@ -513,9 +543,6 @@
+@@ -513,9 +543,6 @@ ext4_ext_find_extent(struct inode *inode
  	path[ppos].p_ext = NULL;
  	path[ppos].p_idx = NULL;
  
@@ -196,8 +196,8 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  	/* find extent */
  	ext4_ext_binsearch(inode, path + ppos, block);
  
-@@ -1673,13 +1700,12 @@
- 	unsigned short ex_ee_len;
+@@ -1732,13 +1759,12 @@ ext4_ext_rm_leaf(handle_t *handle, struc
+ 	unsigned uninitialized = 0;
  	struct ext4_extent *ex;
  
 +	/* the header must be checked already in ext4_ext_remove_space() */
@@ -211,7 +211,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  
  	/* find where to start removing */
  	ex = EXT_LAST_EXTENT(eh);
-@@ -1825,7 +1851,7 @@
+@@ -1888,7 +1914,7 @@ int ext4_ext_remove_space(struct inode *
  		return -ENOMEM;
  	}
  	path[0].p_hdr = ext_inode_hdr(inode);
@@ -220,7 +220,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  		err = -EIO;
  		goto out;
  	}
-@@ -1846,17 +1872,8 @@
+@@ -1909,17 +1935,8 @@ int ext4_ext_remove_space(struct inode *
  		if (!path[i].p_hdr) {
  			ext_debug("initialize header\n");
  			path[i].p_hdr = ext_block_hdr(path[i].p_bh);
@@ -238,7 +238,7 @@ Index: linux-2.6.22-rc4/fs/ext4/extents.c
  		if (!path[i].p_idx) {
  			/* this level hasn't been touched yet */
  			path[i].p_idx = EXT_LAST_INDEX(path[i].p_hdr);
-@@ -1873,17 +1890,24 @@
+@@ -1936,17 +1953,24 @@ int ext4_ext_remove_space(struct inode *
  				i, EXT_FIRST_INDEX(path[i].p_hdr),
  				path[i].p_idx);
  		if (ext4_ext_more_to_rm(path + i)) {

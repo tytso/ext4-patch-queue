@@ -7,11 +7,11 @@ interface than ioctl, they are stored correctly.
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
-Index: linux-2.6.22-rc4/fs/ext4/inode.c
+Index: linux-2.6.22/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/ext4/inode.c	2007-06-11 17:24:01.000000000 -0700
-+++ linux-2.6.22-rc4/fs/ext4/inode.c	2007-06-11 17:24:28.000000000 -0700
-@@ -2583,6 +2583,25 @@
+--- linux-2.6.22.orig/fs/ext4/inode.c	2007-07-08 16:32:17.000000000 -0700
++++ linux-2.6.22/fs/ext4/inode.c	2007-07-09 15:25:08.000000000 -0700
+@@ -2583,6 +2583,25 @@ void ext4_set_inode_flags(struct inode *
  		inode->i_flags |= S_DIRSYNC;
  }
  
@@ -37,7 +37,7 @@ Index: linux-2.6.22-rc4/fs/ext4/inode.c
  void ext4_read_inode(struct inode * inode)
  {
  	struct ext4_iloc iloc;
-@@ -2742,6 +2761,7 @@
+@@ -2744,6 +2763,7 @@ static int ext4_do_update_inode(handle_t
  	if (ei->i_state & EXT4_STATE_NEW)
  		memset(raw_inode, 0, EXT4_SB(inode->i_sb)->s_inode_size);
  
@@ -45,11 +45,11 @@ Index: linux-2.6.22-rc4/fs/ext4/inode.c
  	raw_inode->i_mode = cpu_to_le16(inode->i_mode);
  	if(!(test_opt(inode->i_sb, NO_UID32))) {
  		raw_inode->i_uid_low = cpu_to_le16(low_16_bits(inode->i_uid));
-Index: linux-2.6.22-rc4/fs/ext4/ioctl.c
+Index: linux-2.6.22/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/ext4/ioctl.c	2007-06-11 17:24:01.000000000 -0700
-+++ linux-2.6.22-rc4/fs/ext4/ioctl.c	2007-06-11 17:25:11.000000000 -0700
-@@ -28,6 +28,7 @@
+--- linux-2.6.22.orig/fs/ext4/ioctl.c	2007-07-08 16:32:17.000000000 -0700
++++ linux-2.6.22/fs/ext4/ioctl.c	2007-07-09 15:25:08.000000000 -0700
+@@ -28,6 +28,7 @@ int ext4_ioctl (struct inode * inode, st
  
  	switch (cmd) {
  	case EXT4_IOC_GETFLAGS:
@@ -57,11 +57,11 @@ Index: linux-2.6.22-rc4/fs/ext4/ioctl.c
  		flags = ei->i_flags & EXT4_FL_USER_VISIBLE;
  		return put_user(flags, (int __user *) arg);
  	case EXT4_IOC_SETFLAGS: {
-Index: linux-2.6.22-rc4/include/linux/ext4_fs.h
+Index: linux-2.6.22/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22-rc4.orig/include/linux/ext4_fs.h	2007-06-11 17:24:01.000000000 -0700
-+++ linux-2.6.22-rc4/include/linux/ext4_fs.h	2007-06-11 17:24:28.000000000 -0700
-@@ -862,6 +862,7 @@
+--- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-09 15:24:39.000000000 -0700
++++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-09 15:25:08.000000000 -0700
+@@ -868,6 +868,7 @@ extern int ext4_change_inode_journal_fla
  extern int ext4_get_inode_loc(struct inode *, struct ext4_iloc *);
  extern void ext4_truncate (struct inode *);
  extern void ext4_set_inode_flags(struct inode *);
