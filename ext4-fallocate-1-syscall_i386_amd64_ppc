@@ -35,18 +35,20 @@ Signed-off-by: Amit Arora <aarora@in.ibm.com>
 
 Index: linux-2.6.22-rc6/arch/i386/kernel/syscall_table.S
 ===================================================================
---- linux-2.6.22-rc6.orig/arch/i386/kernel/syscall_table.S	2007-07-03 17:41:47.000000000 -0700
-+++ linux-2.6.22-rc6/arch/i386/kernel/syscall_table.S	2007-07-03 23:48:16.000000000 -0700
+diff --git a/arch/i386/kernel/syscall_table.S b/arch/i386/kernel/syscall_table.S
+index bf6adce..8344c70 100644
+--- a/arch/i386/kernel/syscall_table.S
++++ b/arch/i386/kernel/syscall_table.S
 @@ -323,3 +323,4 @@ ENTRY(sys_call_table)
  	.long sys_signalfd
  	.long sys_timerfd
  	.long sys_eventfd
 +	.long sys_fallocate
-Index: linux-2.6.22-rc6/arch/powerpc/kernel/sys_ppc32.c
-===================================================================
---- linux-2.6.22-rc6.orig/arch/powerpc/kernel/sys_ppc32.c	2007-07-03 17:41:47.000000000 -0700
-+++ linux-2.6.22-rc6/arch/powerpc/kernel/sys_ppc32.c	2007-07-03 23:48:16.000000000 -0700
-@@ -773,6 +773,13 @@ asmlinkage int compat_sys_truncate64(con
+diff --git a/arch/powerpc/kernel/sys_ppc32.c b/arch/powerpc/kernel/sys_ppc32.c
+index b42cbf1..bd85b5f 100644
+--- a/arch/powerpc/kernel/sys_ppc32.c
++++ b/arch/powerpc/kernel/sys_ppc32.c
+@@ -773,6 +773,13 @@ asmlinkage int compat_sys_truncate64(const char __user * path, u32 reg4,
  	return sys_truncate(path, (high << 32) | low);
  }
  
@@ -60,21 +62,21 @@ Index: linux-2.6.22-rc6/arch/powerpc/kernel/sys_ppc32.c
  asmlinkage int compat_sys_ftruncate64(unsigned int fd, u32 reg4, unsigned long high,
  				 unsigned long low)
  {
-Index: linux-2.6.22-rc6/arch/x86_64/ia32/ia32entry.S
-===================================================================
---- linux-2.6.22-rc6.orig/arch/x86_64/ia32/ia32entry.S	2007-07-03 17:41:47.000000000 -0700
-+++ linux-2.6.22-rc6/arch/x86_64/ia32/ia32entry.S	2007-07-03 23:48:16.000000000 -0700
+diff --git a/arch/x86_64/ia32/ia32entry.S b/arch/x86_64/ia32/ia32entry.S
+index 47565c3..12ffe77 100644
+--- a/arch/x86_64/ia32/ia32entry.S
++++ b/arch/x86_64/ia32/ia32entry.S
 @@ -719,4 +719,5 @@ ia32_sys_call_table:
  	.quad compat_sys_signalfd
  	.quad compat_sys_timerfd
  	.quad sys_eventfd
 +	.quad sys_fallocate
  ia32_syscall_end:
-Index: linux-2.6.22-rc6/fs/open.c
-===================================================================
---- linux-2.6.22-rc6.orig/fs/open.c	2007-07-03 17:41:47.000000000 -0700
-+++ linux-2.6.22-rc6/fs/open.c	2007-07-03 23:48:16.000000000 -0700
-@@ -353,6 +353,92 @@ asmlinkage long sys_ftruncate64(unsigned
+diff --git a/fs/open.c b/fs/open.c
+index 0d515d1..419a618 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -353,6 +353,92 @@ asmlinkage long sys_ftruncate64(unsigned int fd, loff_t length)
  #endif
  
  /*
@@ -167,10 +169,10 @@ Index: linux-2.6.22-rc6/fs/open.c
   * access() needs to use the real uid/gid, not the effective uid/gid.
   * We do this by temporarily clearing all FS-related capabilities and
   * switching the fsuid/fsgid around to the real ones.
-Index: linux-2.6.22-rc6/include/asm-i386/unistd.h
-===================================================================
---- linux-2.6.22-rc6.orig/include/asm-i386/unistd.h	2007-07-03 17:41:47.000000000 -0700
-+++ linux-2.6.22-rc6/include/asm-i386/unistd.h	2007-07-03 23:48:16.000000000 -0700
+diff --git a/include/asm-i386/unistd.h b/include/asm-i386/unistd.h
+index e84ace1..9b15545 100644
+--- a/include/asm-i386/unistd.h
++++ b/include/asm-i386/unistd.h
 @@ -329,10 +329,11 @@
  #define __NR_signalfd		321
  #define __NR_timerfd		322
@@ -184,10 +186,10 @@ Index: linux-2.6.22-rc6/include/asm-i386/unistd.h
  
  #define __ARCH_WANT_IPC_PARSE_VERSION
  #define __ARCH_WANT_OLD_READDIR
-Index: linux-2.6.22-rc6/include/asm-powerpc/systbl.h
-===================================================================
---- linux-2.6.22-rc6.orig/include/asm-powerpc/systbl.h	2007-07-03 17:41:47.000000000 -0700
-+++ linux-2.6.22-rc6/include/asm-powerpc/systbl.h	2007-07-03 23:48:16.000000000 -0700
+diff --git a/include/asm-powerpc/systbl.h b/include/asm-powerpc/systbl.h
+index 1cc3f9c..cc6d872 100644
+--- a/include/asm-powerpc/systbl.h
++++ b/include/asm-powerpc/systbl.h
 @@ -308,6 +308,7 @@ COMPAT_SYS_SPU(move_pages)
  SYSCALL_SPU(getcpu)
  COMPAT_SYS(epoll_pwait)
@@ -196,27 +198,27 @@ Index: linux-2.6.22-rc6/include/asm-powerpc/systbl.h
  COMPAT_SYS_SPU(signalfd)
  COMPAT_SYS_SPU(timerfd)
  SYSCALL_SPU(eventfd)
-Index: linux-2.6.22-rc6/include/asm-powerpc/unistd.h
-===================================================================
---- linux-2.6.22-rc6.orig/include/asm-powerpc/unistd.h	2007-07-03 17:41:47.000000000 -0700
-+++ linux-2.6.22-rc6/include/asm-powerpc/unistd.h	2007-07-03 23:48:16.000000000 -0700
-@@ -330,10 +330,11 @@
- #define __NR_signalfd		305
+diff --git a/include/asm-powerpc/unistd.h b/include/asm-powerpc/unistd.h
+index f71c606..97d82b6 100644
+--- a/include/asm-powerpc/unistd.h
++++ b/include/asm-powerpc/unistd.h
+@@ -331,10 +331,11 @@
  #define __NR_timerfd		306
  #define __NR_eventfd		307
-+#define __NR_fallocate		308
+ #define __NR_sync_file_range2	308
++#define __NR_fallocate		309
  
  #ifdef __KERNEL__
  
--#define __NR_syscalls		308
-+#define __NR_syscalls		309
+-#define __NR_syscalls		309
++#define __NR_syscalls		310
  
  #define __NR__exit __NR_exit
  #define NR_syscalls	__NR_syscalls
-Index: linux-2.6.22-rc6/include/asm-x86_64/unistd.h
-===================================================================
---- linux-2.6.22-rc6.orig/include/asm-x86_64/unistd.h	2007-07-03 17:41:47.000000000 -0700
-+++ linux-2.6.22-rc6/include/asm-x86_64/unistd.h	2007-07-03 23:48:16.000000000 -0700
+diff --git a/include/asm-x86_64/unistd.h b/include/asm-x86_64/unistd.h
+index 8696f8a..c644db1 100644
+--- a/include/asm-x86_64/unistd.h
++++ b/include/asm-x86_64/unistd.h
 @@ -630,6 +630,8 @@ __SYSCALL(__NR_signalfd, sys_signalfd)
  __SYSCALL(__NR_timerfd, sys_timerfd)
  #define __NR_eventfd		284
@@ -226,10 +228,10 @@ Index: linux-2.6.22-rc6/include/asm-x86_64/unistd.h
  
  #ifndef __NO_STUBS
  #define __ARCH_WANT_OLD_READDIR
-Index: linux-2.6.22-rc6/include/linux/fs.h
-===================================================================
---- linux-2.6.22-rc6.orig/include/linux/fs.h	2007-07-03 18:00:55.000000000 -0700
-+++ linux-2.6.22-rc6/include/linux/fs.h	2007-07-03 23:48:16.000000000 -0700
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 6a41f4c..b8b312c 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
 @@ -266,6 +266,17 @@ extern int dir_notify_enable;
  #define SYNC_FILE_RANGE_WRITE		2
  #define SYNC_FILE_RANGE_WAIT_AFTER	4
@@ -257,11 +259,11 @@ Index: linux-2.6.22-rc6/include/linux/fs.h
  };
  
  struct seq_file;
-Index: linux-2.6.22-rc6/include/linux/syscalls.h
-===================================================================
---- linux-2.6.22-rc6.orig/include/linux/syscalls.h	2007-07-03 17:41:47.000000000 -0700
-+++ linux-2.6.22-rc6/include/linux/syscalls.h	2007-07-03 23:48:16.000000000 -0700
-@@ -608,6 +608,7 @@ asmlinkage long sys_signalfd(int ufd, si
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index 83d0ec1..7a8b1e3 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -610,6 +610,7 @@ asmlinkage long sys_signalfd(int ufd, sigset_t __user *user_mask, size_t sizemas
  asmlinkage long sys_timerfd(int ufd, int clockid, int flags,
  			    const struct itimerspec __user *utmr);
  asmlinkage long sys_eventfd(unsigned int count);
