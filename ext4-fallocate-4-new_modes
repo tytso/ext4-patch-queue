@@ -9,13 +9,13 @@ on fallocate.
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
 Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 
-Index: linux-2.6.22-rc4/include/linux/fs.h
+Index: linux-2.6.22/include/linux/fs.h
 ===================================================================
---- linux-2.6.22-rc4.orig/include/linux/fs.h
-+++ linux-2.6.22-rc4/include/linux/fs.h
-@@ -267,15 +267,16 @@ extern int dir_notify_enable;
+--- linux-2.6.22.orig/include/linux/fs.h
++++ linux-2.6.22/include/linux/fs.h
+@@ -267,15 +267,17 @@ extern int dir_notify_enable;
  #define SYNC_FILE_RANGE_WAIT_AFTER	4
-
+ 
  /*
 - * sys_fallocate modes
 - * Currently sys_fallocate supports two modes:
@@ -27,21 +27,22 @@ Index: linux-2.6.22-rc4/include/linux/fs.h
   */
 -#define FA_ALLOCATE	0x1
 -#define FA_DEALLOCATE	0x2
-+#define FA_FL_DEALLOC	0x01 /* default is allocate */
-+#define FA_FL_KEEP_SIZE	0x02 /* default is extend/shrink size */
-+#define FA_FL_DEL_DATA	0x04 /* default is keep written data on DEALLOC */
++#define FALLOC_FL_DEALLOC	0x01 /* default is allocate */
++#define FALLOC_FL_KEEP_SIZE	0x02 /* default is extend/shrink size */
++#define FALLOC_FL_DEL_DATA	0x04 /* default is keep written data on DEALLOC */
 +
-+#define FA_ALLOCATE	0
-+#define FA_DEALLOCATE	FA_FL_DEALLOC
-+#define FA_RESV_SPACE	FA_FL_KEEP_SIZE
-+#define FA_UNRESV_SPACE	(FA_FL_DEALLOC | FA_FL_KEEP_SIZE | FA_FL_DEL_DATA)
-
++#define FALLOC_ALLOCATE 	0
++#define FALLOC_DEALLOCATE	FALLOC_FL_DEALLOC
++#define FALLOC_RESV_SPACE	FALLOC_FL_KEEP_SIZE
++#define FALLOC_UNRESV_SPACE	(FALLOC_FL_DEALLOC | FALLOC_FL_KEEP_SIZE | \
++				 FALLOC_FL_DEL_DATA)
+ 
  #ifdef __KERNEL__
-
-Index: linux-2.6.22-rc4/fs/open.c
+ 
+Index: linux-2.6.22/fs/open.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/open.c
-+++ linux-2.6.22-rc4/fs/open.c
+--- linux-2.6.22.orig/fs/open.c
++++ linux-2.6.22/fs/open.c
 @@ -356,23 +356,26 @@ asmlinkage long sys_ftruncate64(unsigned
   * sys_fallocate - preallocate blocks or free preallocated blocks
   * @fd: the file descriptor
@@ -56,13 +57,13 @@ Index: linux-2.6.22-rc4/fs/open.c
   * This system call, depending on the mode, preallocates or unallocates blocks
   * for a file. The range of blocks depends on the value of offset and len
 - * arguments provided by the user/application. For FA_ALLOCATE mode, if this
-+ * arguments provided by the user/application. For FA_ALLOCATE and
-+ * FA_RESV_SPACE modes, if the sys_fallocate()
++ * arguments provided by the user/application. For FALLOC_ALLOCATE and
++ * FALLOC_RESV_SPACE modes, if the sys_fallocate()
   * system call succeeds, subsequent writes to the file in the given range
   * (specified by offset & len) should not fail - even if the file system
   * later becomes full. Hence the preallocation done is persistent (valid
 - * even after reopen of the file and remount/reboot).
-+ * even after reopen of the file and remount/reboot). If FA_RESV_SPACE mode
++ * even after reopen of the file and remount/reboot). If FALLOC_RESV_SPACE mode
 + * is passed, the file size will not be changed even if the preallocation
 + * is beyond EOF.
   *
@@ -75,12 +76,12 @@ Index: linux-2.6.22-rc4/fs/open.c
   * Note: Incase the file system does not support preallocation,
   * posix_fallocate() should fall back to the library implementation (i.e.
 @@ -398,7 +401,8 @@ asmlinkage long sys_fallocate(int fd, in
-
+ 
  	/* Return error if mode is not supported */
  	ret = -EOPNOTSUPP;
 -	if (mode != FA_ALLOCATE && mode != FA_DEALLOCATE)
-+	if (!(mode == FA_ALLOCATE || mode == FA_DEALLOCATE ||
-+		mode == FA_RESV_SPACE || mode == FA_UNRESV_SPACE))
++	if (!(mode == FALLOC_ALLOCATE || mode == FALLOC_DEALLOCATE ||
++		mode == FALLOC_RESV_SPACE || mode == FALLOC_UNRESV_SPACE))
  		goto out;
-
+ 
  	ret = -EBADF;
