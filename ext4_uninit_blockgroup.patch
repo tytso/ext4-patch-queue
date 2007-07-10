@@ -1,3 +1,69 @@
+From: Andreas Dilger <adilger@clusterfs.com>
+
+This patch (against 2.6.16.27-0.9 = latest SLES10 kernel) adds
+support for the uninit_groups feature to the kernel.  This speeds up
+e2fsck on most filesystems by a factor of 2-10x in our tests.  It might
+speed up the kernel by a tiny fraction because we don't have to read
+uninitialized bitmaps from disk, but not a huge amount.  We already skip
+reading inode table blocks from disk if they are unused, since 2.6.12 or
+so (and that was a major speedup for file creation).
+
+A separate patch will be sent for the e2fsprogs part of the work.
+
+We keep a high water mark of used inodes for each group to improve e2fsck
+time.  Block and inode bitmaps can be uninitialized on disk via a flag in
+the group descriptor to avoid reading or scanning them at e2fsck time.
+
+A checksum of each group descriptor is used to ensure that corruption in
+the group descriptor's bit flags does not cause incorrect operation.  If the
+checksum is incorrect, then either we refuse to mount (e2fsck will fix this
+at the beginning of pass1), or we mark the group as unusable (0 free inodes
+and 0 free blocks) so the kernel won't try to allocate from there (it may
+be that the UNINIT flags were "cleared" by corruption and we would further
+corrupt the filesystem by using invalid bitmaps).
+
+To enable on a new filesystem:
+- mke2fs -O uninit_groups /dev/XXX
+
+To enable on a new filesystem and not zero out the inode table (faster, and
+good for loopback filesystems, not so great for real world usage until TODO
+is complete):
+- mke2fs -O lazy_bg,uninit_groups /dev/XXX
+
+To enable on existing filesystem (set bg_itable_unused and/or UNINIT flags
+                                  on groups, set csum):
+- tune2fs -O uninit_groups /dev/XXX
+- e2fsck -fy /dev/XXX  (expect a lot of "checksum incorrect" messages)
+
+
+To disable this feature (clear UNINIT flags, csum):
+- tune2fs -O ^uninit_groups /dev/XXX
+- e2fsck -fy /dev/XXX  (expect a lot of "checksum incorrect" messages)
+
+
+TODO:
+- have the kernel launch a thread at mount time to zero out uninitialized
+  inode tables (i.e. no BG_INODE_ZEROED flag set) so that e2fsck doesn't
+  get confused on a newly-formatted filesystem
+- handle larger group descriptor in ext3_group_desc_csum() (this isn't in
+  the SLES10 kernel that I'm doing build/test on)
+- use ext3_init_*_bitmap() functions in resize.c
+- have UNINIT flags affect inode & block placement policy to avoid gratuitous
+  initialization of all group bitmaps
+
+
+I'm forwarding some interesting performance results for running with the
+uninit_groups feature that I posted patches here recently.  The executive
+summary is that fsck time with the patches is directly related to the
+number of inodes in use, instead of being related to the number of inodes
+in the whole filesystem.
+
+In the test results this shaves about 1500s (almost 1/2) of the time off
+e2fsck on an empty filesystem, and the majority of filesystems I looked
+at show only 1-5% of the inodes in use.
+
+
+Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Avantika Mathur <mathur@us.ibm.com>
 ---
 diff -uprN linux-2.6.22-rc4/fs/ext4/balloc.c linux-2.6.22-rc4-patch/fs/ext4/balloc.c
