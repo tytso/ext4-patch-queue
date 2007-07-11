@@ -1,8 +1,19 @@
 From: Jan Kara <jack@suse.cz>
 
-Propagate flags such as S_APPEND, S_IMMUTABLE, etc. from i_flags into
-ext4-specific i_flags. Hence, when someone sets these flags via a different
-interface than ioctl, they are stored correctly.
+ext3: copy i_flags to inode flags on write
+    
+    A patch that stores inode flags such as S_IMMUTABLE, S_APPEND, etc.  from
+    i_flags to EXT3_I(inode)->i_flags when inode is written to disk.  The same
+    thing is done on GETFLAGS ioctl.
+    
+    Quota code changes these flags on quota files (to make it harder for
+    sysadmin to screw himself) and these changes were not correctly propagated
+    into the filesystem (especially, lsattr did not show them and users were
+    wondering...).
+    
+    Propagate flags such as S_APPEND, S_IMMUTABLE, etc.  from i_flags into
+    ext3-specific i_flags.  Hence, when someone sets these flags via a
+    different interface than ioctl, they are stored correctly.
 
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
