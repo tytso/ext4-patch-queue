@@ -1,30 +1,27 @@
-From: Jose R. Santos <jrs@us.ibm.com>
-> On Jun 07, 2007  23:45 -0500, Jose R. Santos wrote:
-> > The jbd2-debug file used to be located in /proc/sys/fs/jbd2-debug, but
-> > create_proc_entry() does not do lookups on file names with more that one
-> > directory deep.  This causes the entry creation to fail and hence, no proc
-> > file is created.  This patch moves the file to /proc/jbd2-degug.
-> > 
-> > The file could be move to /proc/fs/jbd2/jbd2-debug, but it would require
-> > some minor alterations to the jbd-stats patch.
-> 
-> I don't think we really want to be adding top-level files in /proc.
-> What about using the "debugfs" filesystem (not to be confused with
-> the e2fsprogs 'debugfs' command)?
+Date: 	Wed, 11 Jul 2007 13:22:40 -0500
+From: "Jose R. Santos" <jrs@us.ibm.com>
 
-How about this then?  Moved the file to use debugfs as well as having
-the nice effect of removing more lines than what it adds.
+The jbd2-debug file used to be located in /proc/sys/fs/jbd2-debug, but
+create_proc_entry() does not do lookups on file names that are more that one
+directory deep.  This causes the entry creation to fail and hence, no proc
+file is created.
+
+Instead of fixing this on procfs might as well move the jbd2-debug file to
+debugfs which would be the preferred location for this kind of tunable.  The
+new location is now /sys/kernel/debug/jbd2/jbd2-debug.
+
 
 Signed-off-by: Jose R. Santos <jrs@us.ibm.com>
 ---
- fs/jbd2/journal.c    |   62    20 +    42 -    0 !
- include/linux/jbd2.h |    2    1 +     1 -     0 !
- 2 files changed, 21 insertions(+), 43 deletions(-)
+ fs/Kconfig           |   10 +++----
+ fs/jbd2/journal.c    |   67 ++++++++++++++++++++-------------------------------
+ include/linux/jbd2.h |    2 -
+ 3 files changed, 33 insertions(+), 46 deletions(-)
 
-Index: linux-2.6.22-rc4/fs/jbd2/journal.c
+Index: linux-2.6.22/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.22-rc4.orig/fs/jbd2/journal.c	2007-06-11 16:16:18.000000000 -0700
-+++ linux-2.6.22-rc4/fs/jbd2/journal.c	2007-06-11 16:36:10.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/journal.c	2007-07-12 13:03:17.000000000 -0700
++++ linux-2.6.22/fs/jbd2/journal.c	2007-07-12 13:03:36.000000000 -0700
 @@ -35,6 +35,7 @@
  #include <linux/kthread.h>
  #include <linux/poison.h>
@@ -33,12 +30,16 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
  
  #include <asm/uaccess.h>
  #include <asm/page.h>
-@@ -1954,60 +1955,37 @@
-  * /proc tunables
+@@ -1951,64 +1952,50 @@ void jbd2_journal_put_journal_head(struc
+ }
+ 
+ /*
+- * /proc tunables
++ * debugfs tunables
   */
  #if defined(CONFIG_JBD2_DEBUG)
 -int jbd2_journal_enable_debug;
-+u16 jbd2_journal_enable_debug;
++u8 jbd2_journal_enable_debug;
  EXPORT_SYMBOL(jbd2_journal_enable_debug);
  #endif
  
@@ -52,16 +53,23 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
 -			  int count, int *eof, void *data)
 -{
 -	int ret;
--
++struct dentry *jbd2_debugfs_dir, *jbd2_debug;
+ 
 -	ret = sprintf(page + off, "%d\n", jbd2_journal_enable_debug);
 -	*eof = 1;
 -	return ret;
--}
-+struct dentry *jbd2_debugfs_dir, *jbd2_debug;
++static void __init jbd2_create_debugfs_entry(void)
++{
++	jbd2_debugfs_dir = debugfs_create_dir("jbd2", NULL);
++	if (jbd2_debugfs_dir)
++		jbd2_debug = debugfs_create_u8(JBD2_DEBUG_NAME, S_IRUGO,
++					       jbd2_debugfs_dir,
++					       &jbd2_journal_enable_debug);
+ }
  
 -static int write_jbd_debug(struct file *file, const char __user *buffer,
 -			   unsigned long count, void *data)
-+static void __init jbd2_create_debugfs_entry(void)
++static void __exit jbd2_remove_debugfs_entry(void)
  {
 -	char buf[32];
 -
@@ -72,23 +80,26 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
 -	buf[ARRAY_SIZE(buf) - 1] = '\0';
 -	jbd2_journal_enable_debug = simple_strtoul(buf, NULL, 10);
 -	return count;
--}
--
++	if (jbd2_debug)
++		debugfs_remove(jbd2_debug);
++	if (jbd2_debugfs_dir)
++		debugfs_remove(jbd2_debugfs_dir);
+ }
+ 
 -#define JBD_PROC_NAME "sys/fs/jbd2-debug"
--
++#else
+ 
 -static void __init create_jbd_proc_entry(void)
--{
++static void __init jbd2_create_debugfs_entry(void)
+ {
 -	proc_jbd_debug = create_proc_entry(JBD_PROC_NAME, 0644, NULL);
 -	if (proc_jbd_debug) {
 -		/* Why is this so hard? */
 -		proc_jbd_debug->read_proc = read_jbd_debug;
 -		proc_jbd_debug->write_proc = write_jbd_debug;
 -	}
-+	jbd2_debugfs_dir = debugfs_create_dir("jbd2", NULL);
-+	if (jbd2_debugfs_dir)
-+		jbd2_debug = debugfs_create_u16(JBD2_DEBUG_NAME, S_IRUGO,
-+						jbd2_debugfs_dir,
-+						&jbd2_journal_enable_debug);
++	do {
++	} while (0);
  }
  
 -static void __exit jbd2_remove_jbd_proc_entry(void)
@@ -96,22 +107,19 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
  {
 -	if (proc_jbd_debug)
 -		remove_proc_entry(JBD_PROC_NAME, NULL);
-+	if (jbd2_debug)
-+		debugfs_remove(jbd2_debug);
-+	if (jbd2_debugfs_dir)
-+		debugfs_remove(jbd2_debugfs_dir);
++	do {
++	} while (0);
  }
  
- #else
- 
+-#else
+-
 -#define create_jbd_proc_entry() do {} while (0)
 -#define jbd2_remove_jbd_proc_entry() do {} while (0)
-+#define jbd2_create_debugfs_entry() do {} while (0)
-+#define jbd2_remove_debugfs_entry() do {} while (0)
- 
+-
  #endif
  
-@@ -2067,7 +2045,7 @@
+ struct kmem_cache *jbd2_handle_cache;
+@@ -2067,7 +2054,7 @@ static int __init journal_init(void)
  	ret = journal_init_caches();
  	if (ret != 0)
  		jbd2_journal_destroy_caches();
@@ -120,7 +128,7 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
  	return ret;
  }
  
-@@ -2078,7 +2056,7 @@
+@@ -2078,7 +2065,7 @@ static void __exit journal_exit(void)
  	if (n)
  		printk(KERN_EMERG "JBD: leaked %d journal_heads!\n", n);
  #endif
@@ -129,16 +137,44 @@ Index: linux-2.6.22-rc4/fs/jbd2/journal.c
  	jbd2_journal_destroy_caches();
  }
  
-Index: linux-2.6.22-rc4/include/linux/jbd2.h
+Index: linux-2.6.22/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.22-rc4.orig/include/linux/jbd2.h	2007-06-11 16:16:18.000000000 -0700
-+++ linux-2.6.22-rc4/include/linux/jbd2.h	2007-06-11 16:35:25.000000000 -0700
+--- linux-2.6.22.orig/include/linux/jbd2.h	2007-07-12 13:03:17.000000000 -0700
++++ linux-2.6.22/include/linux/jbd2.h	2007-07-12 13:03:36.000000000 -0700
 @@ -57,7 +57,7 @@
   * CONFIG_JBD2_DEBUG is on.
   */
  #define JBD_EXPENSIVE_CHECKING
 -extern int jbd2_journal_enable_debug;
-+extern u16 jbd2_journal_enable_debug;
++extern u8 jbd2_journal_enable_debug;
  
  #define jbd_debug(n, f, a...)						\
  	do {								\
+Index: linux-2.6.22/fs/Kconfig
+===================================================================
+--- linux-2.6.22.orig/fs/Kconfig	2007-07-08 16:32:17.000000000 -0700
++++ linux-2.6.22/fs/Kconfig	2007-07-12 13:03:36.000000000 -0700
+@@ -251,7 +251,7 @@ config JBD2
+ 
+ config JBD2_DEBUG
+ 	bool "JBD2 (ext4dev/ext4) debugging support"
+-	depends on JBD2
++	depends on JBD2 && DEBUG_FS
+ 	help
+ 	  If you are using the ext4dev/ext4 journaled file system (or
+ 	  potentially any other filesystem/device using JBD2), this option
+@@ -260,10 +260,10 @@ config JBD2_DEBUG
+ 	  By default, the debugging output will be turned off.
+ 
+ 	  If you select Y here, then you will be able to turn on debugging
+-	  with "echo N > /proc/sys/fs/jbd2-debug", where N is a number between
+-	  1 and 5. The higher the number, the more debugging output is
+-	  generated.  To turn debugging off again, do
+-	  "echo 0 > /proc/sys/fs/jbd2-debug".
++	  with "echo N > /sys/kernel/debug/jbd2/jbd2-debug", where N is a
++	  number between 1 and 5. The higher the number, the more debugging
++	  output is generated.  To turn debugging off again, do
++	  "echo 0 > /sys/kernel/debug/jbd2/jbd2-debug".
+ 
+ config FS_MBCACHE
+ # Meta block cache for Extended Attributes (ext2/ext3/ext4)

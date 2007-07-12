@@ -6,10 +6,19 @@ Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Girish Shilamkar <girish@clusterfs.com>
 Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 
+---
+ fs/ext4/super.c         |   25 ++++++
+ fs/jbd2/commit.c        |  175 ++++++++++++++++++++++++++++++++++++------------
+ fs/jbd2/journal.c       |   28 +++++++
+ fs/jbd2/recovery.c      |  125 ++++++++++++++++++++++++++++++++--
+ include/linux/ext4_fs.h |    3 
+ include/linux/jbd2.h    |   37 +++++++++-
+ 6 files changed, 338 insertions(+), 55 deletions(-)
+
 Index: linux-2.6.22/fs/ext4/super.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/super.c	2007-07-09 15:41:38.000000000 -0700
-+++ linux-2.6.22/fs/ext4/super.c	2007-07-09 15:42:51.000000000 -0700
+--- linux-2.6.22.orig/fs/ext4/super.c	2007-07-12 13:25:23.000000000 -0700
++++ linux-2.6.22/fs/ext4/super.c	2007-07-12 14:01:51.000000000 -0700
 @@ -721,6 +721,7 @@ enum {
  	Opt_user_xattr, Opt_nouser_xattr, Opt_acl, Opt_noacl,
  	Opt_reservation, Opt_noreservation, Opt_noload, Opt_nobh, Opt_bh,
@@ -65,8 +74,8 @@ Index: linux-2.6.22/fs/ext4/super.c
  	switch (test_opt(sb, DATA_FLAGS)) {
 Index: linux-2.6.22/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.22.orig/fs/jbd2/commit.c	2007-07-09 15:41:56.000000000 -0700
-+++ linux-2.6.22/fs/jbd2/commit.c	2007-07-09 15:42:51.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/commit.c	2007-07-12 13:59:58.000000000 -0700
++++ linux-2.6.22/fs/jbd2/commit.c	2007-07-12 14:01:51.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/mm.h>
  #include <linux/pagemap.h>
@@ -330,8 +339,8 @@ Index: linux-2.6.22/fs/jbd2/commit.c
  		__jbd2_journal_abort_hard(journal);
 Index: linux-2.6.22/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.22.orig/fs/jbd2/journal.c	2007-07-09 15:41:56.000000000 -0700
-+++ linux-2.6.22/fs/jbd2/journal.c	2007-07-09 15:42:51.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/journal.c	2007-07-12 13:59:58.000000000 -0700
++++ linux-2.6.22/fs/jbd2/journal.c	2007-07-12 14:01:51.000000000 -0700
 @@ -66,6 +66,7 @@ EXPORT_SYMBOL(jbd2_journal_update_format
  EXPORT_SYMBOL(jbd2_journal_check_used_features);
  EXPORT_SYMBOL(jbd2_journal_check_available_features);
@@ -376,8 +385,8 @@ Index: linux-2.6.22/fs/jbd2/journal.c
   * int jbd2_journal_update_format () - Update on-disk journal structure.
 Index: linux-2.6.22/fs/jbd2/recovery.c
 ===================================================================
---- linux-2.6.22.orig/fs/jbd2/recovery.c	2007-07-09 15:40:15.000000000 -0700
-+++ linux-2.6.22/fs/jbd2/recovery.c	2007-07-09 15:42:51.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/recovery.c	2007-07-12 12:55:18.000000000 -0700
++++ linux-2.6.22/fs/jbd2/recovery.c	2007-07-12 14:01:51.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/jbd2.h>
  #include <linux/errno.h>
@@ -549,9 +558,9 @@ Index: linux-2.6.22/fs/jbd2/recovery.c
  		if (info->end_transaction != next_commit_ID) {
 Index: linux-2.6.22/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-09 15:41:59.000000000 -0700
-+++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-09 15:44:10.000000000 -0700
-@@ -474,7 +474,8 @@ do {									       \
+--- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-12 14:00:02.000000000 -0700
++++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-12 14:01:51.000000000 -0700
+@@ -484,7 +484,8 @@ do {									       \
  #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
  #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
  #define EXT4_MOUNT_EXTENTS		0x400000 /* Extents support */
@@ -563,8 +572,8 @@ Index: linux-2.6.22/include/linux/ext4_fs.h
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
 Index: linux-2.6.22/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/jbd2.h	2007-07-09 15:41:56.000000000 -0700
-+++ linux-2.6.22/include/linux/jbd2.h	2007-07-09 15:42:51.000000000 -0700
+--- linux-2.6.22.orig/include/linux/jbd2.h	2007-07-12 13:59:58.000000000 -0700
++++ linux-2.6.22/include/linux/jbd2.h	2007-07-12 14:01:51.000000000 -0700
 @@ -148,6 +148,29 @@ typedef struct journal_header_s
  	__be32		h_sequence;
  } journal_header_t;

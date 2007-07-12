@@ -1,16 +1,13 @@
 From: Kalpak Shah <kalpak@clusterfs.com>
 
-This patch is on top of the nanosecond timestamp and i_version_hi
-patches. 
-
-We need to make sure that existing filesystems can also avail the new
-fields that have been added to the inode. We use s_want_extra_isize and
+We need to make sure that existing ext3 filesystems can also avail the new
+fields that have been added to the ext4 inode. We use s_want_extra_isize and
 s_min_extra_isize to decide by how much we should expand the inode. If
-EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE feature is set then we expand by
+EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE feature is set then we expand the inode by
 max(s_want_extra_isize, s_min_extra_isize , sizeof(ext4_inode) -
 EXT4_GOOD_OLD_INODE_SIZE) bytes. Actually it is still an open question
 about whether users should be able to set s_*_extra_isize smaller than
-the known fields or not. 
+the known fields or not.
 
 This patch also adds the functionality to expand inodes to include the
 newly added fields. We start by trying to expand by s_want_extra_isize
@@ -24,18 +21,28 @@ even the external EA block does not have enough space we inform the user
 that some EA would need to be deleted or s_min_extra_isize would have to
 be reduced.
 
-This would be online expansion of inodes. I am also working on adding an
-"expand_inodes" option to e2fsck which will expand all the used inodes.
+This would be online expansion of inodes. expand_extra_isize option will also
+be added to e2fsck which will expand all the inodes and if for any reason
+expansion fails for any inode then the EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE
+feature will be reset.
+
 
 Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Kalpak Shah <kalpak@clusterfs.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
+---
+ fs/ext4/inode.c         |   63 +++++++++++
+ fs/ext4/xattr.c         |  266 ++++++++++++++++++++++++++++++++++++++++++++++--
+ fs/ext4/xattr.h         |   17 +++
+ include/linux/ext4_fs.h |    1 
+ 4 files changed, 339 insertions(+), 8 deletions(-)
+
 Index: linux-2.6.22/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/inode.c	2007-07-09 15:41:46.000000000 -0700
-+++ linux-2.6.22/fs/ext4/inode.c	2007-07-09 15:41:49.000000000 -0700
-@@ -3120,6 +3120,40 @@ ext4_reserve_inode_write(handle_t *handl
+--- linux-2.6.22.orig/fs/ext4/inode.c	2007-07-12 13:25:23.000000000 -0700
++++ linux-2.6.22/fs/ext4/inode.c	2007-07-12 13:25:51.000000000 -0700
+@@ -3120,6 +3120,39 @@ ext4_reserve_inode_write(handle_t *handl
  }
  
  /*
@@ -49,9 +56,8 @@ Index: linux-2.6.22/fs/ext4/inode.c
 +	struct ext4_xattr_ibody_header *header;
 +	struct ext4_xattr_entry *entry;
 +
-+	if (EXT4_I(inode)->i_extra_isize >= new_extra_isize) {
++	if (EXT4_I(inode)->i_extra_isize >= new_extra_isize)
 +		return 0;
-+	}
 +
 +	raw_inode = ext4_raw_inode(&iloc);
 +
@@ -67,43 +73,48 @@ Index: linux-2.6.22/fs/ext4/inode.c
 +		return 0;
 +	}
 +
-+	/* try to expand with EA present */
++	/* try to expand with EAs present */
 +	return ext4_expand_extra_isize_ea(inode, new_extra_isize,
-+						raw_inode, handle);
++					  raw_inode, handle);
 +}
 +
 +/*
   * What we do here is to mark the in-core inode as clean with respect to inode
   * dirtiness (it may still be data-dirty).
   * This means that the in-core inode may be reaped by prune_icache
-@@ -3143,10 +3177,33 @@ ext4_reserve_inode_write(handle_t *handl
+@@ -3143,10 +3176,38 @@ ext4_reserve_inode_write(handle_t *handl
  int ext4_mark_inode_dirty(handle_t *handle, struct inode *inode)
  {
  	struct ext4_iloc iloc;
 -	int err;
++	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
++	static unsigned int mnt_count;
 +	int err, ret;
-+	static int expand_message;
  
  	might_sleep();
  	err = ext4_reserve_inode_write(handle, inode, &iloc);
-+	if (EXT4_I(inode)->i_extra_isize <
-+	    EXT4_SB(inode->i_sb)->s_want_extra_isize &&
++	if (EXT4_I(inode)->i_extra_isize < sbi->s_want_extra_isize &&
 +	    !(EXT4_I(inode)->i_state & EXT4_STATE_NO_EXPAND)) {
-+		/* We need extra buffer credits since we may write into EA block
-+		 * with this same handle */
++		/*
++		 * We need extra buffer credits since we may write into EA block
++		 * with this same handle. If journal_extend fails, then it will
++		 * only result in a minor loss of functionality for that inode.
++		 * If this is felt to be critical, then e2fsck should be run to
++		 * force a large enough s_min_extra_isize.
++		 */
 +		if ((jbd2_journal_extend(handle,
 +			     EXT4_DATA_TRANS_BLOCKS(inode->i_sb))) == 0) {
 +			ret = ext4_expand_extra_isize(inode,
-+				EXT4_SB(inode->i_sb)->s_want_extra_isize,
-+				iloc, handle);
++						      sbi->s_want_extra_isize,
++						      iloc, handle);
 +			if (ret) {
 +				EXT4_I(inode)->i_state |= EXT4_STATE_NO_EXPAND;
-+				if (!expand_message) {
++				if (mnt_count != sbi->s_es->s_mnt_count) {
 +					ext4_warning(inode->i_sb, __FUNCTION__,
 +					"Unable to expand inode %lu. Delete"
 +					" some EAs or run e2fsck.",
 +					inode->i_ino);
-+					expand_message = 1;
++					mnt_count = sbi->s_es->s_mnt_count;
 +				}
 +			}
 +		}
@@ -113,8 +124,8 @@ Index: linux-2.6.22/fs/ext4/inode.c
  	return err;
 Index: linux-2.6.22/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-09 15:41:46.000000000 -0700
-+++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-09 15:41:49.000000000 -0700
+--- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-12 13:25:20.000000000 -0700
++++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-12 13:25:27.000000000 -0700
 @@ -202,6 +202,7 @@ struct ext4_group_desc
  #define EXT4_STATE_JDATA		0x00000001 /* journaled data exists */
  #define EXT4_STATE_NEW			0x00000002 /* inode is newly created */
@@ -125,8 +136,8 @@ Index: linux-2.6.22/include/linux/ext4_fs.h
  struct ext4_new_group_input {
 Index: linux-2.6.22/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/xattr.c	2007-07-09 15:41:46.000000000 -0700
-+++ linux-2.6.22/fs/ext4/xattr.c	2007-07-09 15:41:49.000000000 -0700
+--- linux-2.6.22.orig/fs/ext4/xattr.c	2007-07-12 13:18:24.000000000 -0700
++++ linux-2.6.22/fs/ext4/xattr.c	2007-07-12 13:25:51.000000000 -0700
 @@ -66,13 +66,6 @@
  #define BFIRST(bh) ENTRY(BHDR(bh)+1)
  #define IS_LAST_ENTRY(entry) (*(__u32 *)(entry) == 0)
@@ -141,11 +152,15 @@ Index: linux-2.6.22/fs/ext4/xattr.c
  #ifdef EXT4_XATTR_DEBUG
  # define ea_idebug(inode, f...) do { \
  		printk(KERN_DEBUG "inode %s:%lu: ", \
-@@ -508,6 +501,20 @@ out:
+@@ -508,6 +501,24 @@ out:
  	return;
  }
  
-+static inline size_t ext4_xattr_free_space(struct ext4_xattr_entry *last,
++/*
++ * Find the available free space for EAs. This also returns the total number of
++ * bytes used by EA entries.
++ */
++static size_t ext4_xattr_free_space(struct ext4_xattr_entry *last,
 +				    size_t *min_offs, void *base, int *total)
 +{
 +	for (; !IS_LAST_ENTRY(last); last = EXT4_XATTR_NEXT(last)) {
@@ -162,15 +177,7 @@ Index: linux-2.6.22/fs/ext4/xattr.c
  struct ext4_xattr_info {
  	int name_index;
  	const char *name;
-@@ -606,6 +613,7 @@ ext4_xattr_set_entry(struct ext4_xattr_i
- 			memmove(s->here, (void *)s->here + size,
- 				(void *)last - (void *)s->here + sizeof(__u32));
- 			memset(last, 0, size);
-+
- 		}
- 	}
- 
-@@ -1014,6 +1022,8 @@ ext4_xattr_set_handle(handle_t *handle, 
+@@ -1014,6 +1025,8 @@ ext4_xattr_set_handle(handle_t *handle, 
  	if (!error) {
  		ext4_xattr_update_super_block(handle, inode->i_sb);
  		inode->i_ctime = ext4_current_time(inode);
@@ -179,10 +186,13 @@ Index: linux-2.6.22/fs/ext4/xattr.c
  		error = ext4_mark_iloc_dirty(handle, inode, &is.iloc);
  		/*
  		 * The bh is consumed by ext4_mark_iloc_dirty, even with
-@@ -1066,6 +1076,239 @@ retry:
- 	return error;
+@@ -1067,6 +1080,245 @@ retry:
  }
  
+ /*
++ * Shift the EA entries in the inode to create space for the increased
++ * i_extra_isize.
++ */
 +static void ext4_xattr_shift_entries(struct ext4_xattr_entry *entry,
 +				     int value_offs_shift, void *to,
 +				     void *from, size_t n, int blocksize)
@@ -205,12 +215,11 @@ Index: linux-2.6.22/fs/ext4/xattr.c
 +}
 +
 +/*
-+ * Expand an inode by new_extra_isize bytes when EA presents.
++ * Expand an inode by new_extra_isize bytes when EAs are present.
 + * Returns 0 on success or negative error number on failure.
-+ *
 + */
 +int ext4_expand_extra_isize_ea(struct inode *inode, int new_extra_isize,
-+			    struct ext4_inode *raw_inode, handle_t *handle)
++			       struct ext4_inode *raw_inode, handle_t *handle)
 +{
 +	struct ext4_xattr_ibody_header *header;
 +	struct ext4_xattr_entry *entry, *last, *first;
@@ -284,6 +293,7 @@ Index: linux-2.6.22/fs/ext4/xattr.c
 +			if (!tried_min_extra_isize && s_min_extra_isize) {
 +				tried_min_extra_isize++;
 +				new_extra_isize = s_min_extra_isize;
++				brelse(bh);
 +				goto retry;
 +			}
 +			error = -1;
@@ -300,16 +310,19 @@ Index: linux-2.6.22/fs/ext4/xattr.c
 +			.value = NULL,
 +			.value_len = 0,
 +		};
-+		unsigned int total_size, shift_bytes, temp = ~0U;
++		unsigned int total_size;  /* EA entry size + value size */
++		unsigned int shift_bytes; /* No. of bytes to shift EAs by? */
++		unsigned int min_total_size = ~0U;
 +
-+		is = (struct ext4_xattr_ibody_find *) kmalloc(sizeof(struct
-+					 ext4_xattr_ibody_find), GFP_KERNEL);
-+		bs = (struct ext4_xattr_block_find *) kmalloc(sizeof(struct
-+					 ext4_xattr_block_find), GFP_KERNEL);
-+		memset((void *)is, 0, sizeof(struct ext4_xattr_ibody_find));
-+		memset((void *)bs, 0, sizeof(struct ext4_xattr_block_find));
++		is = kzalloc(sizeof(struct ext4_xattr_ibody_find), GFP_KERNEL);
++		bs = kzalloc(sizeof(struct ext4_xattr_block_find), GFP_KERNEL);
++		if (!is || !bs) {
++			error = -ENOMEM;
++			goto cleanup;
++		}
 +
-+		is->s.not_found = bs->s.not_found = -ENODATA;
++		is->s.not_found = -ENODATA;
++		bs->s.not_found = -ENODATA;
 +		is->iloc.bh = NULL;
 +		bs->bh = NULL;
 +
@@ -320,12 +333,12 @@ Index: linux-2.6.22/fs/ext4/xattr.c
 +			total_size =
 +			EXT4_XATTR_SIZE(le32_to_cpu(last->e_value_size)) +
 +					EXT4_XATTR_LEN(last->e_name_len);
-+			if (total_size <= free && total_size < temp) {
++			if (total_size <= free && total_size < min_total_size) {
 +				if (total_size < new_extra_isize) {
 +					small_entry = last;
 +				} else {
 +					entry = last;
-+					temp = total_size;
++					min_total_size = total_size;
 +				}
 +			}
 +		}
@@ -350,11 +363,14 @@ Index: linux-2.6.22/fs/ext4/xattr.c
 +		i.name_index = entry->e_name_index,
 +		buffer = kmalloc(EXT4_XATTR_SIZE(size), GFP_KERNEL);
 +		b_entry_name = kmalloc(entry->e_name_len + 1, GFP_KERNEL);
++		if (!buffer || !b_entry_name) {
++			error = -ENOMEM;
++			goto cleanup;
++		}
 +		/* Save the entry name and the entry value */
-+		memcpy((void *)buffer, (void *)IFIRST(header) + offs,
++		memcpy(buffer, (void *)IFIRST(header) + offs,
 +		       EXT4_XATTR_SIZE(size));
-+		memcpy((void *)b_entry_name, (void *)entry->e_name,
-+		       entry->e_name_len);
++		memcpy(b_entry_name, entry->e_name, entry->e_name_len);
 +		b_entry_name[entry->e_name_len] = '\0';
 +		i.name = b_entry_name;
 +
@@ -399,16 +415,12 @@ Index: linux-2.6.22/fs/ext4/xattr.c
 +	}
 +
 +cleanup:
-+	if (b_entry_name)
-+		kfree(b_entry_name);
-+	if (buffer)
-+		kfree(buffer);
-+	if (is) {
++	kfree(b_entry_name);
++	kfree(buffer);
++	if (is)
 +		brelse(is->iloc.bh);
-+		kfree(is);
-+	}
-+	if (bs)
-+		kfree(bs);
++	kfree(is);
++	kfree(bs);
 +	brelse(bh);
 +	up_write(&EXT4_I(inode)->xattr_sem);
 +	return error;
@@ -416,13 +428,14 @@ Index: linux-2.6.22/fs/ext4/xattr.c
 +
 +
 +
- /*
++/*
   * ext4_xattr_delete_inode()
   *
+  * Free extended attribute resources associated with this inode. This
 Index: linux-2.6.22/fs/ext4/xattr.h
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/xattr.h	2007-07-09 15:41:46.000000000 -0700
-+++ linux-2.6.22/fs/ext4/xattr.h	2007-07-09 15:41:49.000000000 -0700
+--- linux-2.6.22.orig/fs/ext4/xattr.h	2007-07-12 12:46:38.000000000 -0700
++++ linux-2.6.22/fs/ext4/xattr.h	2007-07-12 13:25:27.000000000 -0700
 @@ -56,6 +56,13 @@ struct ext4_xattr_entry {
  #define EXT4_XATTR_SIZE(size) \
  	(((size) + EXT4_XATTR_ROUND) & ~EXT4_XATTR_ROUND)
