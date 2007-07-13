@@ -22,10 +22,13 @@ and incase the kernel/filesystem does not implement it, it should fall
 back to the current implementation of writing zeroes to the new blocks.
 ToDos:
 1. Implementation on other architectures (other than i386, x86_64,
-ppc64 and s390(x)). David Chinner has already posted a patch for ia64.
+   and ppc). Patches for s390(x) and ia64 are already available from
+   previous posts, but it was decided that they should be added later
+   once fallocate is in the mainline. Hence not including those patches
+   in this take.
 2. A generic file system operation to handle fallocate
-(generic_fallocate), for filesystems that do _not_ have the fallocate
-inode operation implemented.
+   (generic_fallocate), for filesystems that do _not_ have the fallocate
+   inode operation implemented.
 3. Changes to glibc,
    a) to support fallocate() system call
    b) to make posix_fallocate() and posix_fallocate64() call fallocate()
@@ -80,24 +83,24 @@ Index: linux-2.6.22/fs/open.c
  /*
 + * sys_fallocate - preallocate blocks or free preallocated blocks
 + * @fd: the file descriptor
-+ * @mode: mode specifies if fallocate should preallocate blocks OR free
-+ *	  (unallocate) preallocated blocks. Currently only FA_ALLOCATE and
-+ *	  FA_DEALLOCATE modes are supported.
-+ * @offset: The offset within file, from where (un)allocation is being
++ * @mode: mode specifies the behavior of allocation.
++ * @offset: The offset within file, from where allocation is being
 + *	    requested. It should not have a negative value.
-+ * @len: The amount (in bytes) of space to be (un)allocated, from the offset.
++ * @len: The amount of space in bytes to be allocated, from the offset.
++ *	 This can not be zero or a negative value.
 + *
-+ * This system call, depending on the mode, preallocates or unallocates blocks
-+ * for a file. The range of blocks depends on the value of offset and len
-+ * arguments provided by the user/application. For FA_ALLOCATE mode, if this
-+ * system call succeeds, subsequent writes to the file in the given range
-+ * (specified by offset & len) should not fail - even if the file system
-+ * later becomes full. Hence the preallocation done is persistent (valid
-+ * even after reopen of the file and remount/reboot).
++ * This system call preallocates space for a file. The range of blocks
++ * allocated depends on the value of offset and len arguments provided
++ * by the user/application. With FALLOC_ALLOCATE or FALLOC_RESV_SPACE
++ * modes, if the system call succeeds, subsequent writes to the file in
++ * the given range (specified by offset & len) should not fail - even if
++ * the file system later becomes full. Hence the preallocation done is
++ * persistent (valid even after reopen of the file and remount/reboot).
 + *
-+ * It is expected that the ->fallocate() inode operation implemented by the
-+ * individual file systems will update the file size and/or ctime/mtime
-+ * depending on the mode and also on the success of the operation.
++ * It is expected that the ->fallocate() inode operation implemented by
++ * the individual file systems will update the file size and/or
++ * ctime/mtime depending on the mode and also on the success of the
++ * operation.
 + *
 + * Note: Incase the file system does not support preallocation,
 + * posix_fallocate() should fall back to the library implementation (i.e.
@@ -110,7 +113,7 @@ Index: linux-2.6.22/fs/open.c
 + * fall back on library implementation of fallocate.
 + *
 + * <TBD> Generic fallocate to be added for file systems that do not
-+ *	 support fallocate it.
++ *	 support fallocate.
 + */
 +asmlinkage long sys_fallocate(int fd, int mode, loff_t offset, loff_t len)
 +{
@@ -123,7 +126,7 @@ Index: linux-2.6.22/fs/open.c
 +
 +	/* Return error if mode is not supported */
 +	ret = -EOPNOTSUPP;
-+	if (mode != FA_ALLOCATE && mode != FA_DEALLOCATE)
++	if (mode != FALLOC_ALLOCATE && mode != FALLOC_RESV_SPACE)
 +		goto out;
 +
 +	ret = -EBADF;
@@ -230,25 +233,29 @@ Index: linux-2.6.22/include/linux/fs.h
 ===================================================================
 --- linux-2.6.22.orig/include/linux/fs.h
 +++ linux-2.6.22/include/linux/fs.h
-@@ -266,6 +266,17 @@ extern int dir_notify_enable;
+@@ -266,6 +266,21 @@ extern int dir_notify_enable;
  #define SYNC_FILE_RANGE_WRITE		2
  #define SYNC_FILE_RANGE_WAIT_AFTER	4
  
 +/*
 + * sys_fallocate modes
 + * Currently sys_fallocate supports two modes:
-+ * FA_ALLOCATE  : This is the preallocate mode, using which an application/user
-+ *		  may request (pre)allocation of blocks.
-+ * FA_DEALLOCATE: This is the deallocate mode, which can be used to free
-+ *		  the preallocated blocks.
++ * FALLOC_ALLOCATE :	This is the preallocate mode, using which an application
++ *			may request reservation of space for a particular file.
++ *			The file size will be changed if the allocation is
++ *			beyond EOF.
++ * FALLOC_RESV_SPACE :	This is same as the above mode, with only one difference
++ *			that the file size will not be modified.
 + */
-+#define FA_ALLOCATE	0x1
-+#define FA_DEALLOCATE	0x2
++#define FALLOC_FL_KEEP_SIZE    0x01 /* default is extend/shrink size */
++
++#define FALLOC_ALLOCATE        0
++#define FALLOC_RESV_SPACE      FALLOC_FL_KEEP_SIZE
 +
  #ifdef __KERNEL__
  
  #include <linux/linkage.h>
-@@ -1138,6 +1149,8 @@ struct inode_operations {
+@@ -1138,6 +1153,8 @@ struct inode_operations {
  	ssize_t (*listxattr) (struct dentry *, char *, size_t);
  	int (*removexattr) (struct dentry *, const char *);
  	void (*truncate_range)(struct inode *, loff_t, loff_t);

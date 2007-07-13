@@ -7,16 +7,16 @@ patch users of ext4 file systems will be able to use fallocate() system
 call for persistent preallocation. Current implementation only supports
 preallocation for regular files (directories not supported as of date)
 with extent maps. This patch does not support block-mapped files currently.
-Only FA_ALLOCATE mode is being supported as of now. Supporting
-FA_DEALLOCATE mode is a <ToDo> item.
+Only FALLOC_ALLOCATE and FALLOC_RESV_SPACE modes are being supported as of
+now.
 
 
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
 
 Index: linux-2.6.22/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/extents.c	2007-07-09 15:24:33.000000000 -0700
-+++ linux-2.6.22/fs/ext4/extents.c	2007-07-09 15:24:39.000000000 -0700
+--- linux-2.6.22.orig/fs/ext4/extents.c
++++ linux-2.6.22/fs/ext4/extents.c
 @@ -282,7 +282,7 @@ static void ext4_ext_show_path(struct in
  		} else if (path->p_ext) {
  			ext_debug("  %d:%d:%llu ",
@@ -372,7 +372,7 @@ Index: linux-2.6.22/fs/ext4/extents.c
  out:
  	if (allocated > max_blocks)
  		allocated = max_blocks;
-@@ -2217,3 +2259,129 @@ int ext4_ext_writepage_trans_blocks(stru
+@@ -2217,3 +2259,130 @@ int ext4_ext_writepage_trans_blocks(stru
  
  	return needed;
  }
@@ -380,9 +380,8 @@ Index: linux-2.6.22/fs/ext4/extents.c
 +/*
 + * preallocate space for a file. This implements ext4's fallocate inode
 + * operation, which gets called from sys_fallocate system call.
-+ * Currently only FA_ALLOCATE mode is supported on extent based files.
-+ * We may have more modes supported in future - like FA_DEALLOCATE, which
-+ * tells fallocate to unallocate previously (pre)allocated blocks.
++ * Currently only FALLOC_ALLOCATE and FALLOC_RESV_SPACE modes are
++ * supported on extent based files.
 + * For block-mapped files, posix_fallocate should fall back to the method
 + * of writing zeroes to the required new blocks (the same behavior which is
 + * expected for file systems which do not support fallocate() system call).
@@ -402,7 +401,8 @@ Index: linux-2.6.22/fs/ext4/extents.c
 +	 * currently supporting (pre)allocate mode for extent-based
 +	 * files _only_
 +	 */
-+	if (mode != FA_ALLOCATE || !(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL))
++	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL) ||
++	    (mode != FALLOC_ALLOCATE && mode != FALLOC_RESV_SPACE))
 +		return -EOPNOTSUPP;
 +
 +	/* preallocation to directories is currently not supported */
@@ -459,6 +459,7 @@ Index: linux-2.6.22/fs/ext4/extents.c
 +		/* Update ctime if new blocks get allocated */
 +		if (nblocks) {
 +			struct timespec now;
++
 +			now = current_fs_time(inode->i_sb);
 +			if (!timespec_equal(&inode->i_ctime, &now))
 +				inode->i_ctime = now;
@@ -477,7 +478,8 @@ Index: linux-2.6.22/fs/ext4/extents.c
 +	 * Time to update the file size.
 +	 * Update only when preallocation was requested beyond the file size.
 +	 */
-+	if ((offset + len) > i_size_read(inode)) {
++	if (mode != FALLOC_RESV_SPACE &&
++	    (offset + len) > i_size_read(inode)) {
 +		if (ret > 0) {
 +			/*
 +			 * if no error, we assume preallocation succeeded
@@ -501,11 +503,10 @@ Index: linux-2.6.22/fs/ext4/extents.c
 +
 +	return ret > 0 ? ret2 : ret;
 +}
-+
 Index: linux-2.6.22/fs/ext4/file.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/file.c	2007-07-09 15:24:33.000000000 -0700
-+++ linux-2.6.22/fs/ext4/file.c	2007-07-09 15:24:39.000000000 -0700
+--- linux-2.6.22.orig/fs/ext4/file.c
++++ linux-2.6.22/fs/ext4/file.c
 @@ -135,5 +135,6 @@ const struct inode_operations ext4_file_
  	.removexattr	= generic_removexattr,
  #endif
@@ -515,8 +516,8 @@ Index: linux-2.6.22/fs/ext4/file.c
  
 Index: linux-2.6.22/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-09 15:24:33.000000000 -0700
-+++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-09 15:24:39.000000000 -0700
+--- linux-2.6.22.orig/include/linux/ext4_fs.h
++++ linux-2.6.22/include/linux/ext4_fs.h
 @@ -102,6 +102,7 @@
  				 EXT4_GOOD_OLD_FIRST_INO : \
  				 (s)->s_first_ino)
@@ -548,8 +549,8 @@ Index: linux-2.6.22/include/linux/ext4_fs.h
  			unsigned long max_blocks, struct buffer_head *bh,
 Index: linux-2.6.22/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/ext4_fs_extents.h	2007-07-09 15:24:33.000000000 -0700
-+++ linux-2.6.22/include/linux/ext4_fs_extents.h	2007-07-09 15:24:39.000000000 -0700
+--- linux-2.6.22.orig/include/linux/ext4_fs_extents.h
++++ linux-2.6.22/include/linux/ext4_fs_extents.h
 @@ -188,6 +188,21 @@ ext4_ext_invalidate_cache(struct inode *
  	EXT4_I(inode)->i_cached_extent.ec_type = EXT4_EXT_CACHE_NO;
  }
