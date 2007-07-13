@@ -1,6 +1,6 @@
 From: David Chinner <dgc@sgi.com>
 
-Manpage for fallocate
+Manpage for fallocate.
 
 Following is the modified version of the manpage originally submitted by
 David Chinner. Please use `nroff -man fallocate.2 | less` to view.
@@ -8,12 +8,12 @@ David Chinner. Please use `nroff -man fallocate.2 | less` to view.
 
 .TH fallocate 2
 .SH NAME
-fallocate \- allocate or remove file space
+fallocate \- manipulate file space
 .SH SYNOPSIS
 .nf
-.B #include <fcntl.h>
+.B #include <linux/falloc.h>
 .PP
-.BI "long fallocate(int " fd ", int " mode ", loff_t " offset ", loff_t " len);
+.BI "long fallocate(int " fd ", int " mode ", loff_t " offset ", loff_t " len ");
 .SH DESCRIPTION
 The
 .B fallocate
@@ -28,28 +28,28 @@ bytes.
 The
 .I mode
 parameter determines the operation to be performed on the given range.
-Currently there are two modes:
+Currently there is only one flag supported for the mode argument.
 .TP
-.B FALLOC_ALLOCATE
+.B FALLOC_FL_KEEP_SIZE
 allocates and initialises to zero the disk space within the given range.
 After a successful call, subsequent writes are guaranteed not to fail because
-of lack of disk space.  If the size of the file is less than
+of lack of disk space.  Even if the size of the file is less than
 .IR offset + len ,
-then the file is increased to this size; otherwise the file size is left
-unchanged.
-.B FALLOC_ALLOCATE
-closely resembles
+the file size is not changed. This allows allocation of zeroed blocks beyond
+the end of file and is useful for optimising append workloads.
+.PP
+If
+.B FALLOC_FL_KEEP_SIZE
+flag is not specified in the mode argument, the default behavior of this system
+call is almost same as when this flag is passed. The only difference is that
+on success, the file size will be changed if the
+.IR offset + len
+is greater than the file size. This default behavior closely resembles
 .BR posix_fallocate (3)
 and is intended as a method of optimally implementing this function.
-.B FALLOC_ALLOCATE
+.PP
+.B fallocate
 may allocate a larger range than that was specified.
-.TP
-.B FALLOC_RESV_SPACE
-provides the same functionality as
-.B FALLOC_ALLOCATE
-except it does not ever change the file size. This allows allocation
-of zero blocks beyond the end of file and is useful for optimising
-append workloads.
 .SH RETURN VALUE
 .B fallocate
 returns zero on success, or an error number on failure.
@@ -102,6 +102,6 @@ The
 .B fallocate
 system call is available since 2.6.XX
 .SH SEE ALSO
-.BR syscall (2),
+.BR posix_fallocate (3),
 .BR posix_fadvise (3),
 .BR ftruncate (3).

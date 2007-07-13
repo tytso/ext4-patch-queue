@@ -26,10 +26,7 @@ ToDos:
    previous posts, but it was decided that they should be added later
    once fallocate is in the mainline. Hence not including those patches
    in this take.
-2. A generic file system operation to handle fallocate
-   (generic_fallocate), for filesystems that do _not_ have the fallocate
-   inode operation implemented.
-3. Changes to glibc,
+2. Changes to glibc,
    a) to support fallocate() system call
    b) to make posix_fallocate() and posix_fallocate64() call fallocate()
 
@@ -77,44 +74,18 @@ Index: linux-2.6.22/fs/open.c
 ===================================================================
 --- linux-2.6.22.orig/fs/open.c
 +++ linux-2.6.22/fs/open.c
-@@ -353,6 +353,92 @@ asmlinkage long sys_ftruncate64(unsigned
+@@ -26,6 +26,7 @@
+ #include <linux/syscalls.h>
+ #include <linux/rcupdate.h>
+ #include <linux/audit.h>
++#include <linux/falloc.h>
+ 
+ int vfs_statfs(struct dentry *dentry, struct kstatfs *buf)
+ {
+@@ -352,6 +353,64 @@ asmlinkage long sys_ftruncate64(unsigned
+ }
  #endif
  
- /*
-+ * sys_fallocate - preallocate blocks or free preallocated blocks
-+ * @fd: the file descriptor
-+ * @mode: mode specifies the behavior of allocation.
-+ * @offset: The offset within file, from where allocation is being
-+ *	    requested. It should not have a negative value.
-+ * @len: The amount of space in bytes to be allocated, from the offset.
-+ *	 This can not be zero or a negative value.
-+ *
-+ * This system call preallocates space for a file. The range of blocks
-+ * allocated depends on the value of offset and len arguments provided
-+ * by the user/application. With FALLOC_ALLOCATE or FALLOC_RESV_SPACE
-+ * modes, if the system call succeeds, subsequent writes to the file in
-+ * the given range (specified by offset & len) should not fail - even if
-+ * the file system later becomes full. Hence the preallocation done is
-+ * persistent (valid even after reopen of the file and remount/reboot).
-+ *
-+ * It is expected that the ->fallocate() inode operation implemented by
-+ * the individual file systems will update the file size and/or
-+ * ctime/mtime depending on the mode and also on the success of the
-+ * operation.
-+ *
-+ * Note: Incase the file system does not support preallocation,
-+ * posix_fallocate() should fall back to the library implementation (i.e.
-+ * allocating zero-filled new blocks to the file).
-+ *
-+ * Return Values
-+ *	0	: On SUCCESS a value of zero is returned.
-+ *	error	: On Failure, an error code will be returned.
-+ * An error code of -ENOSYS or -EOPNOTSUPP should make posix_fallocate()
-+ * fall back on library implementation of fallocate.
-+ *
-+ * <TBD> Generic fallocate to be added for file systems that do not
-+ *	 support fallocate.
-+ */
 +asmlinkage long sys_fallocate(int fd, int mode, loff_t offset, loff_t len)
 +{
 +	struct file *file;
@@ -126,7 +97,7 @@ Index: linux-2.6.22/fs/open.c
 +
 +	/* Return error if mode is not supported */
 +	ret = -EOPNOTSUPP;
-+	if (mode != FALLOC_ALLOCATE && mode != FALLOC_RESV_SPACE)
++	if (mode && !(mode & FALLOC_FL_KEEP_SIZE))
 +		goto out;
 +
 +	ret = -EBADF;
@@ -134,6 +105,13 @@ Index: linux-2.6.22/fs/open.c
 +	if (!file)
 +		goto out;
 +	if (!(file->f_mode & FMODE_WRITE))
++		goto out_fput;
++	/*
++	 * Revalidate the write permissions, in case security policy has
++	 * changed since the files were opened.
++	 */
++	ret = security_file_permission(file, MAY_WRITE);
++	if (ret)
 +		goto out_fput;
 +
 +	inode = file->f_path.dentry->d_inode;
@@ -166,10 +144,9 @@ Index: linux-2.6.22/fs/open.c
 +	return ret;
 +}
 +
-+/*
+ /*
   * access() needs to use the real uid/gid, not the effective uid/gid.
   * We do this by temporarily clearing all FS-related capabilities and
-  * switching the fsuid/fsgid around to the real ones.
 Index: linux-2.6.22/include/asm-i386/unistd.h
 ===================================================================
 --- linux-2.6.22.orig/include/asm-i386/unistd.h
@@ -233,29 +210,7 @@ Index: linux-2.6.22/include/linux/fs.h
 ===================================================================
 --- linux-2.6.22.orig/include/linux/fs.h
 +++ linux-2.6.22/include/linux/fs.h
-@@ -266,6 +266,21 @@ extern int dir_notify_enable;
- #define SYNC_FILE_RANGE_WRITE		2
- #define SYNC_FILE_RANGE_WAIT_AFTER	4
- 
-+/*
-+ * sys_fallocate modes
-+ * Currently sys_fallocate supports two modes:
-+ * FALLOC_ALLOCATE :	This is the preallocate mode, using which an application
-+ *			may request reservation of space for a particular file.
-+ *			The file size will be changed if the allocation is
-+ *			beyond EOF.
-+ * FALLOC_RESV_SPACE :	This is same as the above mode, with only one difference
-+ *			that the file size will not be modified.
-+ */
-+#define FALLOC_FL_KEEP_SIZE    0x01 /* default is extend/shrink size */
-+
-+#define FALLOC_ALLOCATE        0
-+#define FALLOC_RESV_SPACE      FALLOC_FL_KEEP_SIZE
-+
- #ifdef __KERNEL__
- 
- #include <linux/linkage.h>
-@@ -1138,6 +1153,8 @@ struct inode_operations {
+@@ -1138,6 +1138,8 @@ struct inode_operations {
  	ssize_t (*listxattr) (struct dentry *, char *, size_t);
  	int (*removexattr) (struct dentry *, const char *);
  	void (*truncate_range)(struct inode *, loff_t, loff_t);
@@ -292,3 +247,14 @@ Index: linux-2.6.22/arch/x86_64/ia32/sys_ia32.c
 +	return sys_fallocate(fd, mode, ((u64)offset_hi << 32) | offset_lo,
 +			     ((u64)len_hi << 32) | len_lo);
 +}
+Index: linux-2.6.22/include/linux/falloc.h
+===================================================================
+--- /dev/null
++++ linux-2.6.22/include/linux/falloc.h
+@@ -0,0 +1,6 @@
++#ifndef _FALLOC_H_
++#define _FALLOC_H_
++
++#define FALLOC_FL_KEEP_SIZE	0x01 /* default is extend size */
++
++#endif /* _FALLOC_H_ */

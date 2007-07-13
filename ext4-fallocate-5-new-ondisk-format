@@ -10,8 +10,6 @@ was 2^15 - 1). This way we can have better extent-to-block alignment.
 Now, maximum number of blocks we can have in an initialized extent is 2^15
 and in an uninitialized extent is 2^15 - 1.
 
-This patch takes care of Andreas's suggestion of using EXT_INIT_MAX_LEN
-instead of 0x8000 at some places.
 
 Signed-off-by: Amit Arora <aarora@in.ibm.com>
 
@@ -19,7 +17,7 @@ Index: linux-2.6.22/fs/ext4/extents.c
 ===================================================================
 --- linux-2.6.22.orig/fs/ext4/extents.c
 +++ linux-2.6.22/fs/ext4/extents.c
-@@ -1106,7 +1106,7 @@ static int
+@@ -1107,7 +1107,7 @@ static int
  ext4_can_extents_be_merged(struct inode *inode, struct ext4_extent *ex1,
  				struct ext4_extent *ex2)
  {
@@ -28,7 +26,7 @@ Index: linux-2.6.22/fs/ext4/extents.c
  
  	/*
  	 * Make sure that either both extents are uninitialized, or
-@@ -1115,6 +1115,11 @@ ext4_can_extents_be_merged(struct inode 
+@@ -1116,6 +1116,11 @@ ext4_can_extents_be_merged(struct inode 
  	if (ext4_ext_is_uninitialized(ex1) ^ ext4_ext_is_uninitialized(ex2))
  		return 0;
  
@@ -40,7 +38,7 @@ Index: linux-2.6.22/fs/ext4/extents.c
  	ext1_ee_len = ext4_ext_get_actual_len(ex1);
  	ext2_ee_len = ext4_ext_get_actual_len(ex2);
  
-@@ -1127,7 +1132,7 @@ ext4_can_extents_be_merged(struct inode 
+@@ -1128,7 +1133,7 @@ ext4_can_extents_be_merged(struct inode 
  	 * as an RO_COMPAT feature, refuse to merge to extents if
  	 * this can result in the top bit of ee_len being set.
  	 */
@@ -49,7 +47,7 @@ Index: linux-2.6.22/fs/ext4/extents.c
  		return 0;
  #ifdef AGGRESSIVE_TEST
  	if (le16_to_cpu(ex1->ee_len) >= 4)
-@@ -1814,7 +1819,11 @@ ext4_ext_rm_leaf(handle_t *handle, struc
+@@ -1815,7 +1820,11 @@ ext4_ext_rm_leaf(handle_t *handle, struc
  
  		ex->ee_block = cpu_to_le32(block);
  		ex->ee_len = cpu_to_le16(num);
@@ -62,7 +60,7 @@ Index: linux-2.6.22/fs/ext4/extents.c
  			ext4_ext_mark_uninitialized(ex);
  
  		err = ext4_ext_dirty(handle, inode, path + depth);
-@@ -2307,6 +2316,19 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2308,6 +2317,19 @@ int ext4_ext_get_blocks(handle_t *handle
  	/* allocate new block */
  	goal = ext4_ext_find_goal(inode, path, iblock);
  
