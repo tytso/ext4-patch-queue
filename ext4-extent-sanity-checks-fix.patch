@@ -1,0 +1,63 @@
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/extents.c |   14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+Index: linux-2.6.22/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.22.orig/fs/ext4/extents.c	2007-07-16 00:57:16.000000000 -0700
++++ linux-2.6.22/fs/ext4/extents.c	2007-07-16 00:57:22.000000000 -0700
+@@ -239,7 +239,7 @@ static int ext4_ext_space_root_idx(struc
+ 	return size;
+ }
+ 
+-static inline int
++static int
+ ext4_ext_max_entries(struct inode *inode, int depth)
+ {
+ 	int max;
+@@ -263,7 +263,7 @@ static int __ext4_ext_check_header(const
+ 					struct ext4_extent_header *eh,
+ 					int depth)
+ {
+-	const char *error_msg = NULL;
++	const char *error_msg;
+ 	int max = 0;
+ 
+ 	if (unlikely(eh->eh_magic != EXT4_EXT_MAGIC)) {
+@@ -498,7 +498,7 @@ ext4_ext_find_extent(struct inode *inode
+ 	short int depth, i, ppos = 0, alloc = 0;
+ 
+ 	eh = ext_inode_hdr(inode);
+-	i = depth = ext_depth(inode);
++	depth = ext_depth(inode);
+ 	if (ext4_ext_check_header(inode, eh, depth))
+ 		return ERR_PTR(-EIO);
+ 
+@@ -513,6 +513,7 @@ ext4_ext_find_extent(struct inode *inode
+ 	}
+ 	path[0].p_hdr = eh;
+ 
++	i = depth;
+ 	/* walk through the tree */
+ 	while (i) {
+ 		ext_debug("depth %d: num %d, max %d\n",
+@@ -1973,13 +1974,16 @@ int ext4_ext_remove_space(struct inode *
+ 				err = -EIO;
+ 				break;
+ 			}
+-			BUG_ON(i + 1 > depth);
++			if (WARN_ON(i + 1 > depth)) {
++				err = -EIO;
++				break;
++			}
+ 			if (ext4_ext_check_header(inode, ext_block_hdr(bh),
+ 							depth - i - 1)) {
+ 				err = -EIO;
+ 				break;
+ 			}
+-			path[i+1].p_bh = bh;
++			path[i + 1].p_bh = bh;
+ 
+ 			/* save actual number of indexes since this
+ 			 * number is changed at the next iteration */

@@ -7,7 +7,73 @@ The initial patch was posted by Alex Tomas in December 2005
 (http://marc.info/?l=linux-ext4&m=113538565128617&w=2).
 It provides statistics via procfs such as transaction lifetime and size.
 
-[ This probably should be rewritten to use debugfs?   -- Ted]
+ometimes, investigating performance problems, i find useful to have
+stats from jbd about transaction's lifetime, size, etc. here is a
+patch for review and inclusion probably.
+
+for example, stats after creation of 3M files in htree directory:
+
+[root@bob ~]# cat /proc/fs/jbd/sda/history 
+R/C  tid   wait  run   lock  flush log   hndls  block inlog ctime write drop  close
+R    261   8260  2720  0     0     750   9892   8170  8187 
+C    259                                                    750   0     4885  1    
+R    262   20    2200  10    0     770   9836   8170  8187 
+R    263   30    2200  10    0     3070  9812   8170  8187 
+R    264   0     5000  10    0     1340  0      0     0    
+C    261                                                    8240  3212  4957  0    
+R    265   8260  1470  0     0     4640  9854   8170  8187 
+R    266   0     5000  10    0     1460  0      0     0    
+C    262                                                    8210  2989  4868  0    
+R    267   8230  1490  10    0     4440  9875   8171  8188 
+R    268   0     5000  10    0     1260  0      0     0    
+C    263                                                    7710  2937  4908  0    
+R    269   7730  1470  10    0     3330  9841   8170  8187 
+R    270   0     5000  10    0     830   0      0     0    
+C    265                                                    8140  3234  4898  0    
+C    267                                                    720   0     4849  1    
+R    271   8630  2740  20    0     740   9819   8170  8187 
+C    269                                                    800   0     4214  1    
+R    272   40    2170  10    0     830   9716   8170  8187 
+R    273   40    2280  0     0     3530  9799   8170  8187 
+R    274   0     5000  10    0     990   0      0     0    
+
+
+where,
+
+R     - line for transaction's life from T_RUNNING to T_FINISHED
+C     - line for transaction's checkpointing
+tid   - transaction's id
+wait  - for how long we were waiting for new transaction to start
+         (the longest period journal_start() took in this transaction)
+run   - real transaction's lifetime (from T_RUNNING to T_LOCKED
+lock  - how long we were waiting for all handles to close
+         (time the transaction was in T_LOCKED)
+flush - how long it took to flush all data (data=ordered)
+log   - how long it took to write the transaction to the log
+hndls - how many handles got to the transaction
+block - how many blocks got to the transaction
+inlog - how many blocks are written to the log (block + descriptors)
+ctime - how long it took to checkpoint the transaction
+write - how many blocks have been written during checkpointing
+drop  - how many blocks have been dropped during checkpointing
+close - how many running transactions have been closed to checkpoint this one
+
+all times are in msec.
+
+
+[root@bob ~]# cat /proc/fs/jbd/sda/info 
+280 transaction, each upto 8192 blocks
+average: 
+  1633ms waiting for transaction
+  3616ms running transaction
+  5ms transaction was being locked
+  1ms flushing data (in ordered mode)
+  1799ms logging transaction
+  11781 handles per transaction
+  5629 blocks per transaction
+  5641 logged blocks per transaction
+
+
 
 Signed-off-by: Johann Lombardi <johann.lombardi@bull.net>
 --
@@ -22,8 +88,8 @@ Signed-off-by: Johann Lombardi <johann.lombardi@bull.net>
 
 Index: linux-2.6.22/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/jbd2.h	2007-07-12 13:03:36.000000000 -0700
-+++ linux-2.6.22/include/linux/jbd2.h	2007-07-12 13:59:58.000000000 -0700
+--- linux-2.6.22.orig/include/linux/jbd2.h	2007-07-16 00:57:58.000000000 -0700
++++ linux-2.6.22/include/linux/jbd2.h	2007-07-16 00:59:20.000000000 -0700
 @@ -408,6 +408,16 @@ struct handle_s
  };
  
@@ -153,8 +219,8 @@ Index: linux-2.6.22/include/linux/jbd2.h
  	 */
 Index: linux-2.6.22/fs/jbd2/transaction.c
 ===================================================================
---- linux-2.6.22.orig/fs/jbd2/transaction.c	2007-07-12 12:46:38.000000000 -0700
-+++ linux-2.6.22/fs/jbd2/transaction.c	2007-07-12 13:59:58.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/transaction.c	2007-07-16 00:48:03.000000000 -0700
++++ linux-2.6.22/fs/jbd2/transaction.c	2007-07-16 00:59:20.000000000 -0700
 @@ -59,6 +59,8 @@ jbd2_get_transaction(journal_t *journal,
  
  	J_ASSERT(journal->j_running_transaction == NULL);
@@ -187,8 +253,8 @@ Index: linux-2.6.22/fs/jbd2/transaction.c
  	transaction->t_updates++;
 Index: linux-2.6.22/fs/jbd2/checkpoint.c
 ===================================================================
---- linux-2.6.22.orig/fs/jbd2/checkpoint.c	2007-07-12 12:46:38.000000000 -0700
-+++ linux-2.6.22/fs/jbd2/checkpoint.c	2007-07-12 13:59:58.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/checkpoint.c	2007-07-16 00:48:03.000000000 -0700
++++ linux-2.6.22/fs/jbd2/checkpoint.c	2007-07-16 00:59:20.000000000 -0700
 @@ -232,7 +232,8 @@ __flush_batch(journal_t *journal, struct
   * Called under jbd_lock_bh_state(jh2bh(jh)), and drops it
   */
@@ -272,8 +338,8 @@ Index: linux-2.6.22/fs/jbd2/checkpoint.c
  }
 Index: linux-2.6.22/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.22.orig/fs/jbd2/commit.c	2007-07-12 12:46:38.000000000 -0700
-+++ linux-2.6.22/fs/jbd2/commit.c	2007-07-12 13:59:58.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/commit.c	2007-07-16 00:48:03.000000000 -0700
++++ linux-2.6.22/fs/jbd2/commit.c	2007-07-16 00:59:20.000000000 -0700
 @@ -20,6 +20,7 @@
  #include <linux/slab.h>
  #include <linux/mm.h>
@@ -379,8 +445,8 @@ Index: linux-2.6.22/fs/jbd2/commit.c
  	journal->j_commit_sequence = commit_transaction->t_tid;
 Index: linux-2.6.22/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.22.orig/fs/jbd2/journal.c	2007-07-12 13:03:36.000000000 -0700
-+++ linux-2.6.22/fs/jbd2/journal.c	2007-07-12 13:59:58.000000000 -0700
+--- linux-2.6.22.orig/fs/jbd2/journal.c	2007-07-16 00:57:58.000000000 -0700
++++ linux-2.6.22/fs/jbd2/journal.c	2007-07-16 00:59:20.000000000 -0700
 @@ -36,6 +36,7 @@
  #include <linux/poison.h>
  #include <linux/proc_fs.h>

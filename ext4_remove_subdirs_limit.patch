@@ -1,13 +1,3 @@
-From: Kalpak Shah <kalpak@clusterfs.com> Thu May 17 17:21:08 2007
-Hi,
-
-I have rebased this patch to 2.6.22-rc1 so that it can be added to the
-ext4 patch queue. It has been tested by creating more than 65000 subdirs
-and then deleting them and checking the nlinks. The e2fsprogs part of
-this patch was sent earlier by me to linux-ext4 and doesn't need any
-changes, so not submitting it again.
-
-----------------------------------------------------------------------
 This patch adds support to ext4 for allowing more than 65000
 subdirectories. Currently the maximum number of subdirectories is capped
 at 32000.
@@ -19,26 +9,32 @@ directory is empty, as that only counts subdirectories and not regular
 files that might be in there. 
 
 A EXT4_FEATURE_RO_COMPAT_DIR_NLINK flag has been added and it is set if
-the subdir count for any directory crosses 65000.
+the subdir count for any directory crosses 65000. A later fsck will clear
+EXT4_FEATURE_RO_COMPAT_DIR_NLINK if there are no longer any directory
+with >65000 subdirs.
 
 Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Kalpak Shah <kalpak@clusterfs.com>
 
 
 ---
- fs/ext4/namei.c         |   52 +++++++++++++++++++++++++++++++++++-------------
+ fs/ext4/namei.c         |   60 ++++++++++++++++++++++++++++++++++++------------
  include/linux/ext4_fs.h |    4 ++-
- 2 files changed, 41 insertions(+), 15 deletions(-)
+ 2 files changed, 49 insertions(+), 15 deletions(-)
 
 Index: linux-2.6.22/fs/ext4/namei.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/namei.c	2007-07-12 13:25:23.000000000 -0700
-+++ linux-2.6.22/fs/ext4/namei.c	2007-07-12 14:00:02.000000000 -0700
-@@ -1617,6 +1617,27 @@ static int ext4_delete_entry (handle_t *
+--- linux-2.6.22.orig/fs/ext4/namei.c	2007-07-16 00:59:14.000000000 -0700
++++ linux-2.6.22/fs/ext4/namei.c	2007-07-16 01:00:06.000000000 -0700
+@@ -1617,6 +1617,35 @@ static int ext4_delete_entry (handle_t *
  	return -ENOENT;
  }
  
-+static inline void ext4_inc_count(handle_t *handle, struct inode *inode)
++/*
++ * DIR_NLINK feature is set if 1) nlinks > EXT4_LINK_MAX or 2) nlinks == 2,
++ * since this indicates that nlinks count was previously 1.
++ */
++static void ext4_inc_count(handle_t *handle, struct inode *inode)
 +{
 +	inc_nlink(inode);
 +	if (is_dx(inode) && inode->i_nlink > 1) {
@@ -51,7 +47,11 @@ Index: linux-2.6.22/fs/ext4/namei.c
 +	}
 +}
 +
-+static inline void ext4_dec_count(handle_t *handle, struct inode *inode)
++/*
++ * If a directory had nlink == 1, then we should let it be 1. This indicates
++ * directory has >EXT4_LINK_MAX subdirs.
++ */
++static void ext4_dec_count(handle_t *handle, struct inode *inode)
 +{
 +	drop_nlink(inode);
 +	if (S_ISDIR(inode->i_mode) && inode->i_nlink == 0)
@@ -62,7 +62,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  static int ext4_add_nondir(handle_t *handle,
  		struct dentry *dentry, struct inode *inode)
  {
-@@ -1713,7 +1734,7 @@ static int ext4_mkdir(struct inode * dir
+@@ -1713,7 +1742,7 @@ static int ext4_mkdir(struct inode * dir
  	struct ext4_dir_entry_2 * de;
  	int err, retries = 0;
  
@@ -71,7 +71,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  		return -EMLINK;
  
  retry:
-@@ -1736,7 +1757,7 @@ retry:
+@@ -1736,7 +1765,7 @@ retry:
  	inode->i_size = EXT4_I(inode)->i_disksize = inode->i_sb->s_blocksize;
  	dir_block = ext4_bread (handle, inode, 0, 1, &err);
  	if (!dir_block) {
@@ -80,7 +80,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  		ext4_mark_inode_dirty(handle, inode);
  		iput (inode);
  		goto out_stop;
-@@ -1768,7 +1789,7 @@ retry:
+@@ -1768,7 +1797,7 @@ retry:
  		iput (inode);
  		goto out_stop;
  	}
@@ -89,7 +89,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  	ext4_update_dx_flag(dir);
  	ext4_mark_inode_dirty(handle, dir);
  	d_instantiate(dentry, inode);
-@@ -2033,9 +2054,9 @@ static int ext4_rmdir (struct inode * di
+@@ -2033,9 +2062,9 @@ static int ext4_rmdir (struct inode * di
  	retval = ext4_delete_entry(handle, dir, de, bh);
  	if (retval)
  		goto end_rmdir;
@@ -101,7 +101,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  			      inode->i_nlink);
  	clear_nlink(inode);
  	/* There's no need to set i_disksize: the fact that i_nlink is
-@@ -2045,7 +2066,7 @@ static int ext4_rmdir (struct inode * di
+@@ -2045,7 +2074,7 @@ static int ext4_rmdir (struct inode * di
  	ext4_orphan_add(handle, inode);
  	inode->i_ctime = dir->i_ctime = dir->i_mtime = ext4_current_time(inode);
  	ext4_mark_inode_dirty(handle, inode);
@@ -110,7 +110,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  	ext4_update_dx_flag(dir);
  	ext4_mark_inode_dirty(handle, dir);
  
-@@ -2096,7 +2117,7 @@ static int ext4_unlink(struct inode * di
+@@ -2096,7 +2125,7 @@ static int ext4_unlink(struct inode * di
  	dir->i_ctime = dir->i_mtime = ext4_current_time(dir);
  	ext4_update_dx_flag(dir);
  	ext4_mark_inode_dirty(handle, dir);
@@ -119,7 +119,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  	if (!inode->i_nlink)
  		ext4_orphan_add(handle, inode);
  	inode->i_ctime = ext4_current_time(inode);
-@@ -2146,7 +2167,7 @@ retry:
+@@ -2146,7 +2175,7 @@ retry:
  		err = __page_symlink(inode, symname, l,
  				mapping_gfp_mask(inode->i_mapping) & ~__GFP_FS);
  		if (err) {
@@ -128,7 +128,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  			ext4_mark_inode_dirty(handle, inode);
  			iput (inode);
  			goto out_stop;
-@@ -2172,8 +2193,9 @@ static int ext4_link (struct dentry * ol
+@@ -2172,8 +2201,9 @@ static int ext4_link (struct dentry * ol
  	struct inode *inode = old_dentry->d_inode;
  	int err, retries = 0;
  
@@ -139,7 +139,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  	/*
  	 * Return -ENOENT if we've raced with unlink and i_nlink is 0.  Doing
  	 * otherwise has the potential to corrupt the orphan inode list.
-@@ -2191,7 +2213,7 @@ retry:
+@@ -2191,7 +2221,7 @@ retry:
  		handle->h_sync = 1;
  
  	inode->i_ctime = ext4_current_time(inode);
@@ -148,7 +148,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  	atomic_inc(&inode->i_count);
  
  	err = ext4_add_nondir(handle, dentry, inode);
-@@ -2323,7 +2345,7 @@ static int ext4_rename (struct inode * o
+@@ -2323,7 +2353,7 @@ static int ext4_rename (struct inode * o
  	}
  
  	if (new_inode) {
@@ -157,7 +157,7 @@ Index: linux-2.6.22/fs/ext4/namei.c
  		new_inode->i_ctime = ext4_current_time(new_inode);
  	}
  	old_dir->i_ctime = old_dir->i_mtime = ext4_current_time(old_dir);
-@@ -2334,11 +2356,13 @@ static int ext4_rename (struct inode * o
+@@ -2334,11 +2364,13 @@ static int ext4_rename (struct inode * o
  		PARENT_INO(dir_bh->b_data) = cpu_to_le32(new_dir->i_ino);
  		BUFFER_TRACE(dir_bh, "call ext4_journal_dirty_metadata");
  		ext4_journal_dirty_metadata(handle, dir_bh);
@@ -176,8 +176,8 @@ Index: linux-2.6.22/fs/ext4/namei.c
  		}
 Index: linux-2.6.22/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-12 13:25:27.000000000 -0700
-+++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-12 14:00:02.000000000 -0700
+--- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-16 00:59:17.000000000 -0700
++++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-16 01:00:06.000000000 -0700
 @@ -71,7 +71,7 @@
  /*
   * Maximal count of links to a file
@@ -187,7 +187,7 @@ Index: linux-2.6.22/include/linux/ext4_fs.h
  
  /*
   * Macro-instructions used to manage several block sizes
-@@ -694,6 +694,7 @@ static inline int ext4_valid_inum(struct
+@@ -695,6 +695,7 @@ static inline int ext4_valid_inum(struct
  #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
  #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
  #define EXT4_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
@@ -195,7 +195,7 @@ Index: linux-2.6.22/include/linux/ext4_fs.h
  #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
  
  #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
-@@ -712,6 +713,7 @@ static inline int ext4_valid_inum(struct
+@@ -713,6 +714,7 @@ static inline int ext4_valid_inum(struct
  					 EXT4_FEATURE_INCOMPAT_64BIT)
  #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
  					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \

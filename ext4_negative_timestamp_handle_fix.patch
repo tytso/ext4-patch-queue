@@ -6,28 +6,29 @@ If the timestamp is set to before epoch i.e. a negative timestamp then the file 
 Signed-off-by: Kalpak Shah <kalpak@clusterfs.com>
 
 ---
- include/linux/ext4_fs.h |    4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
+ include/linux/ext4_fs.h |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
 
 Index: linux-2.6.22/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-12 13:20:02.000000000 -0700
-+++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-12 13:23:03.000000000 -0700
+--- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-16 00:58:02.000000000 -0700
++++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-16 00:58:50.000000000 -0700
 @@ -400,7 +400,7 @@ do {									       \
  
  #define EXT4_INODE_GET_XTIME(xtime, inode, raw_inode)			       \
  do {									       \
 -	(inode)->xtime.tv_sec = le32_to_cpu((raw_inode)->xtime);	       \
-+	(inode)->xtime.tv_sec = (signed)le32_to_cpu((raw_inode)->xtime);	       \
++	(inode)->xtime.tv_sec = (signed)le32_to_cpu((raw_inode)->xtime);       \
  	if (EXT4_FITS_IN_INODE(raw_inode, EXT4_I(inode), xtime ## _extra))     \
  		ext4_decode_extra_time(&(inode)->xtime,			       \
  				       raw_inode->xtime ## _extra);	       \
-@@ -409,7 +409,7 @@ do {									       \
+@@ -409,7 +409,8 @@ do {									       \
  #define EXT4_EINODE_GET_XTIME(xtime, einode, raw_inode)			       \
  do {									       \
  	if (EXT4_FITS_IN_INODE(raw_inode, einode, xtime))		       \
 -		(einode)->xtime.tv_sec = le32_to_cpu((raw_inode)->xtime);      \
-+		(einode)->xtime.tv_sec = (signed)le32_to_cpu((raw_inode)->xtime);      \
++		(einode)->xtime.tv_sec = 				       \
++			(signed)le32_to_cpu((raw_inode)->xtime);	       \
  	if (EXT4_FITS_IN_INODE(raw_inode, einode, xtime ## _extra))	       \
  		ext4_decode_extra_time(&(einode)->xtime,		       \
  				       raw_inode->xtime ## _extra);	       \
