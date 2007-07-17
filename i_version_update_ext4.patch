@@ -15,9 +15,9 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.22/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/inode.c	2007-07-16 00:59:11.000000000 -0700
-+++ linux-2.6.22/fs/ext4/inode.c	2007-07-16 00:59:14.000000000 -0700
-@@ -3084,6 +3084,7 @@ int ext4_mark_iloc_dirty(handle_t *handl
+--- linux-2.6.22.orig/fs/ext4/inode.c	2007-07-17 13:17:25.000000000 -0700
++++ linux-2.6.22/fs/ext4/inode.c	2007-07-17 13:17:28.000000000 -0700
+@@ -3077,6 +3077,7 @@ int ext4_mark_iloc_dirty(handle_t *handl
  {
  	int err = 0;
  
@@ -27,8 +27,8 @@ Index: linux-2.6.22/fs/ext4/inode.c
  
 Index: linux-2.6.22/fs/ext4/namei.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/namei.c	2007-07-16 00:58:02.000000000 -0700
-+++ linux-2.6.22/fs/ext4/namei.c	2007-07-16 00:59:14.000000000 -0700
+--- linux-2.6.22.orig/fs/ext4/namei.c	2007-07-17 13:16:12.000000000 -0700
++++ linux-2.6.22/fs/ext4/namei.c	2007-07-17 13:17:28.000000000 -0700
 @@ -1287,7 +1287,6 @@ static int add_dirent_to_buf(handle_t *h
  	 */
  	dir->i_mtime = dir->i_ctime = ext4_current_time(dir);
@@ -45,15 +45,15 @@ Index: linux-2.6.22/fs/ext4/namei.c
  			BUFFER_TRACE(bh, "call ext4_journal_dirty_metadata");
  			ext4_journal_dirty_metadata(handle, bh);
  			return 0;
-@@ -2039,7 +2037,6 @@ static int ext4_rmdir (struct inode * di
+@@ -2068,7 +2066,6 @@ static int ext4_rmdir (struct inode * di
  		ext4_warning (inode->i_sb, "ext4_rmdir",
- 			      "empty directory has nlink!=2 (%d)",
+ 			      "empty directory has too many links (%d)",
  			      inode->i_nlink);
 -	inode->i_version++;
  	clear_nlink(inode);
  	/* There's no need to set i_disksize: the fact that i_nlink is
  	 * zero will ensure that the right thing happens during any
-@@ -2284,7 +2281,6 @@ static int ext4_rename (struct inode * o
+@@ -2314,7 +2311,6 @@ static int ext4_rename (struct inode * o
  		if (EXT4_HAS_INCOMPAT_FEATURE(new_dir->i_sb,
  					      EXT4_FEATURE_INCOMPAT_FILETYPE))
  			new_de->file_type = old_de->file_type;
@@ -63,9 +63,9 @@ Index: linux-2.6.22/fs/ext4/namei.c
  		brelse(new_bh);
 Index: linux-2.6.22/fs/ext4/super.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/super.c	2007-07-16 00:58:02.000000000 -0700
-+++ linux-2.6.22/fs/ext4/super.c	2007-07-16 00:59:14.000000000 -0700
-@@ -2846,7 +2846,6 @@ out:
+--- linux-2.6.22.orig/fs/ext4/super.c	2007-07-17 13:16:44.000000000 -0700
++++ linux-2.6.22/fs/ext4/super.c	2007-07-17 13:17:28.000000000 -0700
+@@ -2872,7 +2872,6 @@ out:
  		i_size_write(inode, off+len-towrite);
  		EXT4_I(inode)->i_disksize = inode->i_size;
  	}
