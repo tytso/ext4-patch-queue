@@ -1,0 +1,25 @@
+---
+ include/linux/ext4_fs.h |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+Index: linux-2.6.22/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-16 17:42:00.000000000 -0700
++++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-16 17:42:29.000000000 -0700
+@@ -366,14 +366,14 @@ struct ext4_inode {
+ 	<= (EXT4_GOOD_OLD_INODE_SIZE +			\
+ 	    (einode)->i_extra_isize))			\
+ 
+-static __le32 ext4_encode_extra_time(struct timespec *time)
++static inline __le32 ext4_encode_extra_time(struct timespec *time)
+ {
+        return cpu_to_le32((sizeof(time->tv_sec) > 4 ?
+ 			   time->tv_sec >> 32 : 0) |
+ 			   ((time->tv_nsec << 2) & EXT4_NSEC_MASK));
+ }
+ 
+-static void ext4_decode_extra_time(struct timespec *time, __le32 extra)
++static inline void ext4_decode_extra_time(struct timespec *time, __le32 extra)
+ {
+        if (sizeof(time->tv_sec) > 4)
+ 	       time->tv_sec |= (__u64)(le32_to_cpu(extra) & EXT4_EPOCH_MASK)

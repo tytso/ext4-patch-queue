@@ -1,0 +1,54 @@
+Fixing memory allocation issue with expand inode extra isize patch.
+
+- use GFP_NOFS instead of GFP_KERNEL to prevent fs reenter
+- use kzalloc instead of kmalloc
+- fix memory leak in the success case, at the end of while loop.
+
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/xattr.c |   16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+Index: linux-2.6.22/fs/ext4/xattr.c
+===================================================================
+--- linux-2.6.22.orig/fs/ext4/xattr.c	2007-07-16 17:21:14.000000000 -0700
++++ linux-2.6.22/fs/ext4/xattr.c	2007-07-16 17:22:25.000000000 -0700
+@@ -1204,8 +1204,8 @@ retry:
+ 		unsigned int shift_bytes; /* No. of bytes to shift EAs by? */
+ 		unsigned int min_total_size = ~0U;
+ 
+-		is = kzalloc(sizeof(struct ext4_xattr_ibody_find), GFP_KERNEL);
+-		bs = kzalloc(sizeof(struct ext4_xattr_block_find), GFP_KERNEL);
++		is = kzalloc(sizeof(struct ext4_xattr_ibody_find), GFP_NOFS);
++		bs = kzalloc(sizeof(struct ext4_xattr_block_find), GFP_NOFS);
+ 		if (!is || !bs) {
+ 			error = -ENOMEM;
+ 			goto cleanup;
+@@ -1251,8 +1251,8 @@ retry:
+ 		size = le32_to_cpu(entry->e_value_size);
+ 		entry_size = EXT4_XATTR_LEN(entry->e_name_len);
+ 		i.name_index = entry->e_name_index,
+-		buffer = kmalloc(EXT4_XATTR_SIZE(size), GFP_KERNEL);
+-		b_entry_name = kmalloc(entry->e_name_len + 1, GFP_KERNEL);
++		buffer = kmalloc(EXT4_XATTR_SIZE(size), GFP_NOFS);
++		b_entry_name = kmalloc(entry->e_name_len + 1, GFP_NOFS);
+ 		if (!buffer || !b_entry_name) {
+ 			error = -ENOMEM;
+ 			goto cleanup;
+@@ -1302,7 +1302,15 @@ retry:
+ 		error = ext4_xattr_block_set(handle, inode, &i, bs);
+ 		if (error)
+ 			goto cleanup;
++		kfree(b_entry_name);
++		kfree(buffer);
++		brelse(is->iloc.bh);
++		kfree(is);
++		kfree(bs);
+ 	}
++	brelse(bh);
++	up_write(&EXT4_I(inode)->xattr_sem);
++        return 0;
+ 
+ cleanup:
+ 	kfree(b_entry_name);
