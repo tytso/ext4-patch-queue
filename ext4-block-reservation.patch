@@ -18,10 +18,10 @@ Signed-off-by: Alex Tomas <alex@clusterfs.com>
  include/linux/ext4_fs_sb.h |    5 +
  4 files changed, 185 insertions(+), 3 deletions(-)
 
-Index: linux-2.6.22/fs/ext4/balloc.c
+Index: linux-2.6.23-rc2/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/balloc.c	2007-07-16 00:57:53.000000000 -0700
-+++ linux-2.6.22/fs/ext4/balloc.c	2007-07-16 01:00:32.000000000 -0700
+--- linux-2.6.23-rc2.orig/fs/ext4/balloc.c	2007-08-06 22:18:09.000000000 -0700
++++ linux-2.6.23-rc2/fs/ext4/balloc.c	2007-08-06 22:18:59.000000000 -0700
 @@ -630,8 +630,10 @@ void ext4_free_blocks(handle_t *handle, 
  		return;
  	}
@@ -232,11 +232,11 @@ Index: linux-2.6.22/fs/ext4/balloc.c
 +	sbi->s_reservation_slots = NULL;
 +}
 +
-Index: linux-2.6.22/fs/ext4/super.c
+Index: linux-2.6.23-rc2/fs/ext4/super.c
 ===================================================================
---- linux-2.6.22.orig/fs/ext4/super.c	2007-07-16 01:00:27.000000000 -0700
-+++ linux-2.6.22/fs/ext4/super.c	2007-07-16 01:00:32.000000000 -0700
-@@ -440,6 +440,7 @@ static void ext4_put_super (struct super
+--- linux-2.6.23-rc2.orig/fs/ext4/super.c	2007-08-06 22:18:49.000000000 -0700
++++ linux-2.6.23-rc2/fs/ext4/super.c	2007-08-06 22:18:59.000000000 -0700
+@@ -441,6 +441,7 @@ static void ext4_put_super (struct super
  	struct ext4_super_block *es = sbi->s_es;
  	int i;
  
@@ -244,7 +244,7 @@ Index: linux-2.6.22/fs/ext4/super.c
  	ext4_ext_release(sb);
  	ext4_xattr_put_super(sb);
  	jbd2_journal_destroy(sbi->s_journal);
-@@ -1939,6 +1940,7 @@ static int ext4_fill_super (struct super
+@@ -1948,6 +1949,7 @@ static int ext4_fill_super (struct super
  		"writeback");
  
  	ext4_ext_init(sb);
@@ -252,10 +252,10 @@ Index: linux-2.6.22/fs/ext4/super.c
  
  	lock_kernel();
  	return 0;
-Index: linux-2.6.22/include/linux/ext4_fs.h
+Index: linux-2.6.23-rc2/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/ext4_fs.h	2007-07-16 01:00:10.000000000 -0700
-+++ linux-2.6.22/include/linux/ext4_fs.h	2007-07-16 01:00:32.000000000 -0700
+--- linux-2.6.23-rc2.orig/include/linux/ext4_fs.h	2007-08-06 22:18:46.000000000 -0700
++++ linux-2.6.23-rc2/include/linux/ext4_fs.h	2007-08-06 22:18:59.000000000 -0700
 @@ -203,6 +203,7 @@ struct ext4_group_desc
  #define EXT4_STATE_NEW			0x00000002 /* inode is newly created */
  #define EXT4_STATE_XATTR		0x00000004 /* has in-inode xattrs */
@@ -275,10 +275,10 @@ Index: linux-2.6.22/include/linux/ext4_fs.h
  
  /* dir.c */
  extern int ext4_check_dir_entry(const char *, struct inode *,
-Index: linux-2.6.22/include/linux/ext4_fs_sb.h
+Index: linux-2.6.23-rc2/include/linux/ext4_fs_sb.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/ext4_fs_sb.h	2007-07-16 00:58:02.000000000 -0700
-+++ linux-2.6.22/include/linux/ext4_fs_sb.h	2007-07-16 01:00:32.000000000 -0700
+--- linux-2.6.23-rc2.orig/include/linux/ext4_fs_sb.h	2007-08-06 22:18:09.000000000 -0700
++++ linux-2.6.23-rc2/include/linux/ext4_fs_sb.h	2007-08-06 22:18:59.000000000 -0700
 @@ -24,6 +24,8 @@
  #endif
  #include <linux/rbtree.h>
@@ -288,7 +288,7 @@ Index: linux-2.6.22/include/linux/ext4_fs_sb.h
  /*
   * third extended-fs super-block data in memory
   */
-@@ -65,6 +67,9 @@ struct ext4_sb_info {
+@@ -67,6 +69,9 @@ struct ext4_sb_info {
  	struct rb_root s_rsv_window_root;
  	struct ext4_reserve_window_node s_rsv_window_head;
  

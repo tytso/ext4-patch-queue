@@ -14,21 +14,21 @@ Signed-off-by: Alex Tomas <alex@clusterfs.com>
  include/linux/page-flags.h |    5 +++++
  1 file changed, 5 insertions(+)
 
-Index: linux-2.6.22/include/linux/page-flags.h
+Index: linux-2.6.23-rc2/include/linux/page-flags.h
 ===================================================================
---- linux-2.6.22.orig/include/linux/page-flags.h	2007-07-15 23:23:42.000000000 -0700
-+++ linux-2.6.22/include/linux/page-flags.h	2007-07-16 01:00:29.000000000 -0700
+--- linux-2.6.23-rc2.orig/include/linux/page-flags.h	2007-08-06 22:18:09.000000000 -0700
++++ linux-2.6.23-rc2/include/linux/page-flags.h	2007-08-06 22:18:57.000000000 -0700
 @@ -89,6 +89,7 @@
  #define PG_mappedtodisk		16	/* Has blocks allocated on-disk */
  #define PG_reclaim		17	/* To be reclaimed asap */
  #define PG_buddy		19	/* Page is free, on buddy lists */
 +#define PG_booked		20	/* Has blocks reserved on-disk */
  
- /* PG_owner_priv_1 users should have descriptive aliases */
- #define PG_checked		PG_owner_priv_1 /* Used by some filesystems */
-@@ -221,6 +222,10 @@ static inline void SetPageUptodate(struc
- #define SetPageMappedToDisk(page) set_bit(PG_mappedtodisk, &(page)->flags)
- #define ClearPageMappedToDisk(page) clear_bit(PG_mappedtodisk, &(page)->flags)
+ /* PG_readahead is only used for file reads; PG_reclaim is only for writes */
+ #define PG_readahead		PG_reclaim /* Reminder to do async read-ahead */
+@@ -211,6 +212,10 @@ static inline void SetPageUptodate(struc
+ #define SetPageReadahead(page)	set_bit(PG_readahead, &(page)->flags)
+ #define ClearPageReadahead(page) clear_bit(PG_readahead, &(page)->flags)
  
 +#define PageBooked(page)	test_bit(PG_booked, &(page)->flags)
 +#define SetPageBooked(page)	set_bit(PG_booked, &(page)->flags)
