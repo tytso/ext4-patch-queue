@@ -1,0 +1,55 @@
+Subject: [RFC] basic delayed allocation in VFS
+From: alex@clusterfs.com
+
+Good day,
+
+please review ...
+
+thanks, Alex
+
+
+basic delayed allocation in VFS:
+
+  * block_prepare_write() can be passed special ->get_block() which
+    doesn't allocate blocks, but reserve them and mark bh delayed
+  * a filesystem can use mpage_da_writepages() with other ->get_block()
+    which doesn't defer allocation. mpage_da_writepages() finds all
+    non-allocated blocks and try to allocate them with minimal calls
+    to ->get_block(), then submit IO using __mpage_writepage()
+
+
+Signed-off-by: Alex Tomas <alex@clusterfs.com>
+
+
+---
+ fs/buffer.c           |    3 ++-
+ include/linux/mpage.h |    3 +++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+Index: linux-2.6.23-rc3/fs/buffer.c
+===================================================================
+--- linux-2.6.23-rc3.orig/fs/buffer.c	2007-08-12 21:25:24.000000000 -0700
++++ linux-2.6.23-rc3/fs/buffer.c	2007-08-14 17:27:23.000000000 -0700
+@@ -1645,7 +1645,8 @@ static int __block_write_full_page(struc
+ 			 */
+ 			clear_buffer_dirty(bh);
+ 			set_buffer_uptodate(bh);
+-		} else if (!buffer_mapped(bh) && buffer_dirty(bh)) {
++		} else if ((!buffer_mapped(bh) || buffer_delay(bh))
++				&& buffer_dirty(bh)) {
+ 			WARN_ON(bh->b_size != blocksize);
+ 			err = get_block(inode, block, bh, 1);
+ 			if (err)
+Index: linux-2.6.23-rc3/include/linux/mpage.h
+===================================================================
+--- linux-2.6.23-rc3.orig/include/linux/mpage.h	2007-08-12 21:25:24.000000000 -0700
++++ linux-2.6.23-rc3/include/linux/mpage.h	2007-08-14 17:28:09.000000000 -0700
+@@ -20,5 +20,8 @@ int mpage_writepages(struct address_spac
+ 		struct writeback_control *wbc, get_block_t get_block);
+ int mpage_writepage(struct page *page, get_block_t *get_block,
+ 		struct writeback_control *wbc);
++int mpage_da_writepages(struct address_space *mapping,
++		struct writeback_control *wbc, get_block_t get_block);
++
+ 
+ #endif
