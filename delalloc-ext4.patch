@@ -1,49 +1,218 @@
-Date: 	Thu, 26 Jul 2007 13:00:04 +0400
 From: Alex Tomas <alex@clusterfs.com>
-Subject: [RFC] basic delayed allocation in ext4
-Good day,
-
-please review ...
-
-thanks, Alex
 
 Basic delayed allocation in ext4
 
 Two special ->get_block() methods are introduced:
 
-  * ext4_da_get_block_prep()
-    to be used with ->prepare_write(), defers allocation till flush
-  * ext4_da_get_block_write()
-    to be used with mpage_da_writepages(), allocate blocks and correct on-disk size
+ * ext4_da_get_block_prep()
+   to be used with ->prepare_write(), defers allocation till flush
+ * ext4_da_get_block_write()
+   to be used with mpage_da_writepages(), allocate blocks and correct
+   on-disk size
 
 Current implementation works with data=writeback only, you should
 mount filesystem with delalloc,data=writeback options.
 
 TODO:
-  * reservation
-  * data=ordered
-  * quota
-  * bmap
+ * reservation
+ * data=ordered
+ * quota
+ * bmap
 
 Signed-off-by: Alex Tomas <alex@clusterfs.com>
+Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 
-
-Index: linux-2.6.23-rc3/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.23-rc3.orig/include/linux/ext4_fs.h	2007-08-14 17:25:23.000000000 -0700
-+++ linux-2.6.23-rc3/include/linux/ext4_fs.h	2007-08-14 17:29:27.000000000 -0700
-@@ -487,6 +487,7 @@ do {									       \
- #define EXT4_MOUNT_EXTENTS		0x400000 /* Extents support */
- #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
- #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
-+#define EXT4_MOUNT_DELALLOC		0x2000000 /* Delalloc support */
- /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
- #ifndef _LINUX_EXT2_FS_H
- #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-Index: linux-2.6.23-rc3/fs/ext4/super.c
-===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/super.c	2007-08-14 17:25:23.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/super.c	2007-08-14 17:31:49.000000000 -0700
+diff -Nurp linux-2.6.23-rc3.orig/fs/ext4/inode.c linux-2.6.23-rc3/fs/ext4/inode.c
+--- linux-2.6.23-rc3.orig/fs/ext4/inode.c	2007-08-15 16:53:28.000000000 -0500
++++ linux-2.6.23-rc3/fs/ext4/inode.c	2007-08-15 17:01:39.000000000 -0500
+@@ -39,6 +39,8 @@
+ #include "xattr.h"
+ #include "acl.h"
+ 
++static void ext4_invalidatepage(struct page *page, unsigned long offset);
++
+ /*
+  * Test whether an inode is a fast symlink.
+  */
+@@ -1291,6 +1293,146 @@ static int ext4_journalled_commit_write(
+ }
+ 
+ /*
++ * this is a special callback for ->prepare_write() only
++ * it's intention is to return mapped block or reserve space
++ */
++static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
++				  struct buffer_head *bh_result, int create)
++{
++	int ret = 0;
++
++	BUG_ON(create == 0);
++	BUG_ON(bh_result->b_size != inode->i_sb->s_blocksize);
++
++	/* first, we need to know whether the block is allocated already
++	 * XXX: when the filesystem has a lot of free blocks, we could
++	 * reserve even allocated blocks to save this lookup */
++	ret = ext4_get_blocks_wrap(NULL, inode, iblock, 1,  bh_result, 0, 0);
++	if (ret >= 0) {
++		if (buffer_mapped(bh_result)) {
++			bh_result->b_size = (ret << inode->i_blkbits);
++		} else {
++			/* the block isn't allocated yet, let's reserve space */
++			/* XXX: call reservation here */
++			/*
++			 * XXX: __block_prepare_write() unmaps passed block,
++			 * is it OK?
++			 */
++			map_bh(bh_result, inode->i_sb, 0);
++			set_buffer_new(bh_result);
++			set_buffer_delay(bh_result);
++		}
++		ret = 0;
++	}
++
++	return ret;
++}
++
++
++static int ext4_da_prepare_write(struct file *file, struct page *page,
++				 unsigned from, unsigned to)
++{
++	return block_prepare_write(page, from, to, ext4_da_get_block_prep);
++}
++
++static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
++				   struct buffer_head *bh_result, int create)
++{
++	int ret, needed_blocks = ext4_writepage_trans_blocks(inode);
++	unsigned max_blocks = bh_result->b_size >> inode->i_blkbits;
++	loff_t disksize = EXT4_I(inode)->i_disksize;
++	handle_t *handle = NULL;
++
++	if (create) {
++		handle = ext4_journal_start(inode, needed_blocks);
++		if (IS_ERR(handle)) {
++			ret = PTR_ERR(handle);
++			goto out;
++		}
++	}
++
++	ret = ext4_get_blocks_wrap(handle, inode, iblock, max_blocks,
++				   bh_result, create, 0);
++	if (ret > 0) {
++		bh_result->b_size = (ret << inode->i_blkbits);
++
++		/*
++		 * Update on-disk size along with block allocation
++		 * we don't use 'extend_disksize' as size may change
++		 * within already allocated block -bzzz
++		 */
++		disksize = ((loff_t) iblock + ret) << inode->i_blkbits;
++		if (disksize > i_size_read(inode))
++			disksize = i_size_read(inode);
++		if (disksize > EXT4_I(inode)->i_disksize) {
++			/*
++			 * XXX: replace with spinlock if seen contended -bzzz
++			 */
++			mutex_lock(&EXT4_I(inode)->truncate_mutex);
++			if (disksize > EXT4_I(inode)->i_disksize)
++				EXT4_I(inode)->i_disksize = disksize;
++			mutex_unlock(&EXT4_I(inode)->truncate_mutex);
++
++			if (EXT4_I(inode)->i_disksize == disksize) {
++				if (handle == NULL)
++					handle = ext4_journal_start(inode, 1);
++				if (!IS_ERR(handle))
++					ext4_mark_inode_dirty(handle, inode);
++			}
++		}
++
++		ret = 0;
++	}
++
++out:
++	if (handle && !IS_ERR(handle))
++		ext4_journal_stop(handle);
++
++	return ret;
++}
++
++static int ext4_da_writepages(struct address_space *mapping,
++			      struct writeback_control *wbc)
++{
++	return mpage_da_writepages(mapping, wbc, ext4_da_get_block_write);
++}
++
++static void ext4_da_invalidatepage(struct page *page, unsigned long offset)
++{
++	struct buffer_head *head, *bh;
++	unsigned int curr_off = 0;
++
++	/*
++	 * Drop reserved blocks
++	 */
++	BUG_ON(!PageLocked(page));
++	if (!page_has_buffers(page))
++		goto out;
++
++	head = page_buffers(page);
++	bh = head;
++	do {
++		unsigned int next_off = curr_off + bh->b_size;
++
++		/*
++		 * is this block fully invalidated?
++		 */
++		if (offset <= curr_off && buffer_delay(bh)) {
++			clear_buffer_delay(bh);
++			/* XXX: add real stuff here */
++		}
++		curr_off = next_off;
++		bh = bh->b_this_page;
++	} while (bh != head);
++
++out:
++	ext4_invalidatepage(page, offset);
++
++	return;
++}
++
++
++/*
+  * bmap() is special.  It gets used by applications such as lilo and by
+  * the swapper to find the on-disk block of a specific piece of data.
+  *
+@@ -1741,10 +1883,28 @@ static const struct address_space_operat
+ 	.releasepage	= ext4_releasepage,
+ };
+ 
++static const struct address_space_operations ext4_da_aops = {
++	.readpage	= ext4_readpage,
++	.readpages	= ext4_readpages,
++	.writepage	= ext4_writeback_writepage,
++	.writepages	= ext4_da_writepages,
++	.sync_page	= block_sync_page,
++	.prepare_write	= ext4_da_prepare_write,
++	.commit_write	= generic_commit_write,
++	.bmap		= ext4_bmap,
++	.invalidatepage	= ext4_da_invalidatepage,
++	.releasepage	= ext4_releasepage,
++	.direct_IO	= ext4_direct_IO,
++	.migratepage	= buffer_migrate_page,
++};
++
+ void ext4_set_aops(struct inode *inode)
+ {
+ 	if (ext4_should_order_data(inode))
+ 		inode->i_mapping->a_ops = &ext4_ordered_aops;
++	else if (ext4_should_writeback_data(inode) &&
++		 test_opt(inode->i_sb, DELALLOC))
++		inode->i_mapping->a_ops = &ext4_da_aops;
+ 	else if (ext4_should_writeback_data(inode))
+ 		inode->i_mapping->a_ops = &ext4_writeback_aops;
+ 	else
+diff -Nurp linux-2.6.23-rc3.orig/fs/ext4/super.c linux-2.6.23-rc3/fs/ext4/super.c
+--- linux-2.6.23-rc3.orig/fs/ext4/super.c	2007-08-15 16:53:28.000000000 -0500
++++ linux-2.6.23-rc3/fs/ext4/super.c	2007-08-15 16:53:28.000000000 -0500
 @@ -736,7 +736,7 @@ enum {
  	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
@@ -71,3 +240,14 @@ Index: linux-2.6.23-rc3/fs/ext4/super.c
  		default:
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
+diff -Nurp linux-2.6.23-rc3.orig/include/linux/ext4_fs.h linux-2.6.23-rc3/include/linux/ext4_fs.h
+--- linux-2.6.23-rc3.orig/include/linux/ext4_fs.h	2007-08-15 16:53:28.000000000 -0500
++++ linux-2.6.23-rc3/include/linux/ext4_fs.h	2007-08-15 16:53:28.000000000 -0500
+@@ -487,6 +487,7 @@ do {									       \
+ #define EXT4_MOUNT_EXTENTS		0x400000 /* Extents support */
+ #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
+ #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
++#define EXT4_MOUNT_DELALLOC		0x2000000 /* Delalloc support */
+ /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
+ #ifndef _LINUX_EXT2_FS_H
+ #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
