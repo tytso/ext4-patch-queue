@@ -22,9 +22,16 @@ TODO:
 Signed-off-by: Alex Tomas <alex@clusterfs.com>
 Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 
-diff -Nurp linux-2.6.23-rc3.orig/fs/ext4/inode.c linux-2.6.23-rc3/fs/ext4/inode.c
---- linux-2.6.23-rc3.orig/fs/ext4/inode.c	2007-08-15 16:53:28.000000000 -0500
-+++ linux-2.6.23-rc3/fs/ext4/inode.c	2007-08-15 17:01:39.000000000 -0500
+---
+ fs/ext4/inode.c         |  160 ++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/super.c         |    6 +
+ include/linux/ext4_fs.h |    1 
+ 3 files changed, 166 insertions(+), 1 deletion(-)
+
+Index: linux-2.6.23-rc3/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.23-rc3.orig/fs/ext4/inode.c	2007-08-28 11:08:48.000000000 -0700
++++ linux-2.6.23-rc3/fs/ext4/inode.c	2007-08-28 11:09:01.000000000 -0700
 @@ -39,6 +39,8 @@
  #include "xattr.h"
  #include "acl.h"
@@ -210,10 +217,11 @@ diff -Nurp linux-2.6.23-rc3.orig/fs/ext4/inode.c linux-2.6.23-rc3/fs/ext4/inode.
  	else if (ext4_should_writeback_data(inode))
  		inode->i_mapping->a_ops = &ext4_writeback_aops;
  	else
-diff -Nurp linux-2.6.23-rc3.orig/fs/ext4/super.c linux-2.6.23-rc3/fs/ext4/super.c
---- linux-2.6.23-rc3.orig/fs/ext4/super.c	2007-08-15 16:53:28.000000000 -0500
-+++ linux-2.6.23-rc3/fs/ext4/super.c	2007-08-15 16:53:28.000000000 -0500
-@@ -736,7 +736,7 @@ enum {
+Index: linux-2.6.23-rc3/fs/ext4/super.c
+===================================================================
+--- linux-2.6.23-rc3.orig/fs/ext4/super.c	2007-08-28 11:08:48.000000000 -0700
++++ linux-2.6.23-rc3/fs/ext4/super.c	2007-08-28 11:09:01.000000000 -0700
+@@ -737,7 +737,7 @@ enum {
  	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
@@ -222,7 +230,7 @@ diff -Nurp linux-2.6.23-rc3.orig/fs/ext4/super.c linux-2.6.23-rc3/fs/ext4/super.
  };
  
  static match_table_t tokens = {
-@@ -790,6 +790,7 @@ static match_table_t tokens = {
+@@ -791,6 +791,7 @@ static match_table_t tokens = {
  	{Opt_barrier, "barrier=%u"},
  	{Opt_extents, "extents"},
  	{Opt_noextents, "noextents"},
@@ -230,7 +238,7 @@ diff -Nurp linux-2.6.23-rc3.orig/fs/ext4/super.c linux-2.6.23-rc3/fs/ext4/super.
  	{Opt_err, NULL},
  	{Opt_resize, "resize"},
  };
-@@ -1135,6 +1136,9 @@ clear_qf_name:
+@@ -1136,6 +1137,9 @@ clear_qf_name:
  		case Opt_noextents:
  			clear_opt (sbi->s_mount_opt, EXTENTS);
  			break;
@@ -240,10 +248,11 @@ diff -Nurp linux-2.6.23-rc3.orig/fs/ext4/super.c linux-2.6.23-rc3/fs/ext4/super.
  		default:
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
-diff -Nurp linux-2.6.23-rc3.orig/include/linux/ext4_fs.h linux-2.6.23-rc3/include/linux/ext4_fs.h
---- linux-2.6.23-rc3.orig/include/linux/ext4_fs.h	2007-08-15 16:53:28.000000000 -0500
-+++ linux-2.6.23-rc3/include/linux/ext4_fs.h	2007-08-15 16:53:28.000000000 -0500
-@@ -487,6 +487,7 @@ do {									       \
+Index: linux-2.6.23-rc3/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.23-rc3.orig/include/linux/ext4_fs.h	2007-08-28 11:08:45.000000000 -0700
++++ linux-2.6.23-rc3/include/linux/ext4_fs.h	2007-08-28 11:09:01.000000000 -0700
+@@ -493,6 +493,7 @@ do {									       \
  #define EXT4_MOUNT_EXTENTS		0x400000 /* Extents support */
  #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
  #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
