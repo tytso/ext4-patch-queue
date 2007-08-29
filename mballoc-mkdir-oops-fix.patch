@@ -1,0 +1,44 @@
+From: Eric Sandeen <sandeen@redhat.com>
+To: ext4 development <linux-ext4@vger.kernel.org>
+Subject: [PATCH V2] fix mballoc oopses on mkdir
+
+Tried out Ted's git tree + all pending patches today, and 
+immediately oopsed on a mkdir thanks to this in 
+ext4_mb_new_group_pa()
+
+	BUG_ON(!S_ISREG(ac->ac_inode->i_mode));
+
+(there are 54 BUGs and BUG_ONs in this file...!)
+
+I think something like this patch is needed?
+
+comments from mingming:
+We set the flags to zero here to avoid doing in-core preallocation for directory files later. 
+
+Well, I am not sure whether it's worth the effort to support in-core preallocation for directory files. But I don't see hard reason we cannot do this. My understanding is: this is the new in-core preallocation which does a should not depend on extents or any on-disk format changes.
+
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Sigedn-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+ fs/ext4/extents.c |    6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+Index: linux-2.6.23-rc3/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.23-rc3.orig/fs/ext4/extents.c	2007-08-28 11:09:40.000000000 -0700
++++ linux-2.6.23-rc3/fs/ext4/extents.c	2007-08-29 14:00:08.000000000 -0700
+@@ -2535,7 +2535,11 @@ int ext4_ext_get_blocks(handle_t *handle
+ 	ar.goal = ext4_ext_find_goal(inode, path, iblock);
+ 	ar.logical = iblock;
+ 	ar.len = allocated;
+-	ar.flags = EXT4_MB_HINT_DATA;
++	if (S_ISREG(inode->i_mode))
++		ar.flags = EXT4_MB_HINT_DATA;
++	else
++		/* disable in-core preallocation for non-regular files */
++		ar.flags = 0;
+ 	newblock = ext4_mb_new_blocks(handle, &ar, &err);
+ 	if (!newblock)
+ 		goto out2;
