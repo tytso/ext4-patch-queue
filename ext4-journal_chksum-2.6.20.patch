@@ -1,5 +1,7 @@
+The journal checksum feature adds two new flags i.e
+
 From: Girish Shilamkar <girish@clusterfs.com>
-The journal checksum feature adds two new flags i.e 
+
 JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT and JBD2_FEATURE_COMPAT_CHECKSUM.
 
 JBD2_FEATURE_CHECKSUM flag indicates that the commit block contains the
@@ -20,8 +22,8 @@ Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Girish Shilamkar <girish@clusterfs.com>
 Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
-
 ---
+
  fs/ext4/super.c         |   25 ++++++
  fs/jbd2/commit.c        |  175 ++++++++++++++++++++++++++++++++++++------------
  fs/jbd2/journal.c       |   28 +++++++
@@ -30,10 +32,11 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  include/linux/jbd2.h    |   37 +++++++++-
  6 files changed, 338 insertions(+), 55 deletions(-)
 
-Index: linux-2.6.23-rc2/fs/ext4/super.c
+
+Index: linux-2.6.23-rc5/fs/ext4/super.c
 ===================================================================
---- linux-2.6.23-rc2.orig/fs/ext4/super.c	2007-08-06 22:19:30.000000000 -0700
-+++ linux-2.6.23-rc2/fs/ext4/super.c	2007-08-06 22:21:48.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/ext4/super.c	2007-09-11 18:15:52.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/super.c	2007-09-12 16:11:10.000000000 -0700
 @@ -731,6 +731,7 @@ enum {
  	Opt_user_xattr, Opt_nouser_xattr, Opt_acl, Opt_noacl,
  	Opt_reservation, Opt_noreservation, Opt_noload, Opt_nobh, Opt_bh,
@@ -87,10 +90,10 @@ Index: linux-2.6.23-rc2/fs/ext4/super.c
  	/* We have now updated the journal if required, so we can
  	 * validate the data journaling mode. */
  	switch (test_opt(sb, DATA_FLAGS)) {
-Index: linux-2.6.23-rc2/fs/jbd2/commit.c
+Index: linux-2.6.23-rc5/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.23-rc2.orig/fs/jbd2/commit.c	2007-08-06 22:19:30.000000000 -0700
-+++ linux-2.6.23-rc2/fs/jbd2/commit.c	2007-08-06 22:21:48.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/jbd2/commit.c	2007-09-12 16:09:31.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd2/commit.c	2007-09-12 16:11:10.000000000 -0700
 @@ -20,6 +20,7 @@
  #include <linux/slab.h>
  #include <linux/mm.h>
@@ -352,10 +355,10 @@ Index: linux-2.6.23-rc2/fs/jbd2/commit.c
  
  	if (err)
  		__jbd2_journal_abort_hard(journal);
-Index: linux-2.6.23-rc2/fs/jbd2/journal.c
+Index: linux-2.6.23-rc5/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.23-rc2.orig/fs/jbd2/journal.c	2007-08-06 22:19:30.000000000 -0700
-+++ linux-2.6.23-rc2/fs/jbd2/journal.c	2007-08-06 22:21:48.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/jbd2/journal.c	2007-09-12 16:09:31.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd2/journal.c	2007-09-12 16:11:10.000000000 -0700
 @@ -65,6 +65,7 @@ EXPORT_SYMBOL(jbd2_journal_update_format
  EXPORT_SYMBOL(jbd2_journal_check_used_features);
  EXPORT_SYMBOL(jbd2_journal_check_available_features);
@@ -364,7 +367,7 @@ Index: linux-2.6.23-rc2/fs/jbd2/journal.c
  EXPORT_SYMBOL(jbd2_journal_create);
  EXPORT_SYMBOL(jbd2_journal_load);
  EXPORT_SYMBOL(jbd2_journal_destroy);
-@@ -1273,6 +1274,33 @@ int jbd2_journal_set_features (journal_t
+@@ -1265,6 +1266,33 @@ int jbd2_journal_set_features (journal_t
  	return 1;
  }
  
@@ -398,10 +401,10 @@ Index: linux-2.6.23-rc2/fs/jbd2/journal.c
  
  /**
   * int jbd2_journal_update_format () - Update on-disk journal structure.
-Index: linux-2.6.23-rc2/fs/jbd2/recovery.c
+Index: linux-2.6.23-rc5/fs/jbd2/recovery.c
 ===================================================================
---- linux-2.6.23-rc2.orig/fs/jbd2/recovery.c	2007-08-06 22:19:30.000000000 -0700
-+++ linux-2.6.23-rc2/fs/jbd2/recovery.c	2007-08-06 22:21:48.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/jbd2/recovery.c	2007-09-11 18:15:52.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd2/recovery.c	2007-09-12 16:11:10.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/jbd2.h>
  #include <linux/errno.h>
@@ -571,10 +574,10 @@ Index: linux-2.6.23-rc2/fs/jbd2/recovery.c
  		/* It's really bad news if different passes end up at
  		 * different places (but possible due to IO errors). */
  		if (info->end_transaction != next_commit_ID) {
-Index: linux-2.6.23-rc2/include/linux/ext4_fs.h
+Index: linux-2.6.23-rc5/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.23-rc2.orig/include/linux/ext4_fs.h	2007-08-06 22:19:30.000000000 -0700
-+++ linux-2.6.23-rc2/include/linux/ext4_fs.h	2007-08-06 22:21:48.000000000 -0700
+--- linux-2.6.23-rc5.orig/include/linux/ext4_fs.h	2007-09-12 16:09:55.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/ext4_fs.h	2007-09-12 16:11:10.000000000 -0700
 @@ -482,7 +482,8 @@ do {									       \
  #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
  #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
@@ -585,11 +588,11 @@ Index: linux-2.6.23-rc2/include/linux/ext4_fs.h
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-Index: linux-2.6.23-rc2/include/linux/jbd2.h
+Index: linux-2.6.23-rc5/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.23-rc2.orig/include/linux/jbd2.h	2007-08-06 22:19:30.000000000 -0700
-+++ linux-2.6.23-rc2/include/linux/jbd2.h	2007-08-06 22:21:48.000000000 -0700
-@@ -148,6 +148,29 @@ typedef struct journal_header_s
+--- linux-2.6.23-rc5.orig/include/linux/jbd2.h	2007-09-12 16:09:31.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/jbd2.h	2007-09-12 16:11:10.000000000 -0700
+@@ -161,6 +161,29 @@ typedef struct journal_header_s
  	__be32		h_sequence;
  } journal_header_t;
  
@@ -619,7 +622,7 @@ Index: linux-2.6.23-rc2/include/linux/jbd2.h
  
  /*
   * The block tag: used to describe a single buffer in the journal.
-@@ -241,14 +264,18 @@ typedef struct journal_superblock_s
+@@ -254,14 +277,18 @@ typedef struct journal_superblock_s
  	((j)->j_format_version >= 2 &&					\
  	 ((j)->j_superblock->s_feature_incompat & cpu_to_be32((mask))))
  
@@ -642,7 +645,7 @@ Index: linux-2.6.23-rc2/include/linux/jbd2.h
  
  #ifdef __KERNEL__
  
-@@ -931,6 +958,8 @@ extern int	   jbd2_journal_check_availab
+@@ -944,6 +971,8 @@ extern int	   jbd2_journal_check_availab
  		   (journal_t *, unsigned long, unsigned long, unsigned long);
  extern int	   jbd2_journal_set_features
  		   (journal_t *, unsigned long, unsigned long, unsigned long);

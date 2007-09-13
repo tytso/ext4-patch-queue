@@ -1,15 +1,16 @@
+Support large blocksize up to PAGESIZE (max 64KB) for ext2/3/4
 
-These patches support large blocksize up to PAGESIZE (max 64KB) for ext2/3/4, orginally from Takashi Sato. Just rebase to 2.6.23-rc4. Compile tested. Will try it with Christoph Lameter's large block patch next.
+From: Takashi Sato <sho@tnes.nec.co.jp>
+
+Orginally from Takashi Sato. Just rebase to 2.6.23-rc4.
+Compile tested. Will try it with Christoph Lameter's large block patch next.
 
 
-Subject: [RFC][1/4] ext2/3/4: enlarge blocksize
-From: sho@tnes.nec.co.jp
-Date: Fri, 8 Sep 2006 13:11:44 +0900
 
 On July 7, 2006, sho wrote:
 > On Jun 29, 2006, Andreas wrote:
 > > On Jun 28, 2006  17:50 +0200, Johann Lombardi wrote:
-> > ext2/ext3_dir_entry_2 has a 16-bit entry(rec_len) and it 
+> > ext2/ext3_dir_entry_2 has a 16-bit entry(rec_len) and it
 > > would overflow
 > > with 64KB blocksize.  This patch prevent from overflow by limiting
 > > rec_len to 65532.
@@ -83,49 +84,52 @@ The Patch-set consists of the following 4 patches.
 Signed-off-by: Takashi Sato <sho@tnes.nec.co.jp>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
----
- fs/ext2/super.c         |    2 +-
- fs/ext3/super.c         |    5 ++++-
+
+ fs/ext2/super.c         |    3 ++-
+ fs/ext3/super.c         |    6 +++++-
  fs/ext4/super.c         |    5 +++++
  include/linux/ext2_fs.h |    4 ++--
  include/linux/ext3_fs.h |    4 ++--
  include/linux/ext4_fs.h |    4 ++--
- 6 files changed, 16 insertions(+), 8 deletions(-)
+ 6 files changed, 18 insertions(+), 8 deletions(-)
 
-Index: linux-2.6.23-rc3/fs/ext2/super.c
+
+Index: linux-2.6.23-rc5/fs/ext2/super.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext2/super.c	2007-08-12 21:25:24.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext2/super.c	2007-08-29 15:22:29.000000000 -0700
-@@ -775,7 +775,7 @@ static int ext2_fill_super(struct super_
+--- linux-2.6.23-rc5.orig/fs/ext2/super.c	2007-09-12 16:17:01.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext2/super.c	2007-09-12 16:26:15.000000000 -0700
+@@ -775,7 +775,8 @@ static int ext2_fill_super(struct super_
  		brelse(bh);
  
  		if (!sb_set_blocksize(sb, blocksize)) {
 -			printk(KERN_ERR "EXT2-fs: blocksize too small for device.\n");
-+			printk(KERN_ERR "EXT2-fs: bad blocksize %d.\n", blocksize);
++			printk(KERN_ERR "EXT2-fs: bad blocksize %d.\n",
++				blocksize);
  			goto failed_sbi;
  		}
  
-Index: linux-2.6.23-rc3/fs/ext3/super.c
+Index: linux-2.6.23-rc5/fs/ext3/super.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext3/super.c	2007-08-12 21:25:24.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext3/super.c	2007-08-29 15:22:29.000000000 -0700
-@@ -1549,7 +1549,10 @@ static int ext3_fill_super (struct super
+--- linux-2.6.23-rc5.orig/fs/ext3/super.c	2007-09-12 16:17:01.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext3/super.c	2007-09-12 16:26:32.000000000 -0700
+@@ -1549,7 +1549,11 @@ static int ext3_fill_super (struct super
  		}
  
  		brelse (bh);
 -		sb_set_blocksize(sb, blocksize);
 +		if (!sb_set_blocksize(sb, blocksize)) {
-+			printk(KERN_ERR "EXT3-fs: bad blocksize %d.\n", blocksize);
++			printk(KERN_ERR "EXT3-fs: bad blocksize %d.\n",
++				blocksize);
 +			goto out_fail;
 +		}
  		logic_sb_block = (sb_block * EXT3_MIN_BLOCK_SIZE) / blocksize;
  		offset = (sb_block * EXT3_MIN_BLOCK_SIZE) % blocksize;
  		bh = sb_bread(sb, logic_sb_block);
-Index: linux-2.6.23-rc3/fs/ext4/super.c
+Index: linux-2.6.23-rc5/fs/ext4/super.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/super.c	2007-08-28 11:09:40.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/super.c	2007-08-29 15:24:08.000000000 -0700
-@@ -1626,6 +1626,11 @@ static int ext4_fill_super (struct super
+--- linux-2.6.23-rc5.orig/fs/ext4/super.c	2007-09-12 16:25:17.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/super.c	2007-09-12 16:25:40.000000000 -0700
+@@ -1602,6 +1602,11 @@ static int ext4_fill_super (struct super
  		goto out_fail;
  	}
  
@@ -137,10 +141,10 @@ Index: linux-2.6.23-rc3/fs/ext4/super.c
  	/*
  	 * The ext4 superblock will not be buffer aligned for other than 1kB
  	 * block sizes.  We need to calculate the offset from buffer start.
-Index: linux-2.6.23-rc3/include/linux/ext2_fs.h
+Index: linux-2.6.23-rc5/include/linux/ext2_fs.h
 ===================================================================
---- linux-2.6.23-rc3.orig/include/linux/ext2_fs.h	2007-08-12 21:25:24.000000000 -0700
-+++ linux-2.6.23-rc3/include/linux/ext2_fs.h	2007-08-29 15:22:29.000000000 -0700
+--- linux-2.6.23-rc5.orig/include/linux/ext2_fs.h	2007-09-12 16:17:01.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/ext2_fs.h	2007-09-12 16:25:40.000000000 -0700
 @@ -86,8 +86,8 @@ static inline struct ext2_sb_info *EXT2_
   * Macro-instructions used to manage several block sizes
   */
@@ -152,10 +156,10 @@ Index: linux-2.6.23-rc3/include/linux/ext2_fs.h
  #ifdef __KERNEL__
  # define EXT2_BLOCK_SIZE(s)		((s)->s_blocksize)
  #else
-Index: linux-2.6.23-rc3/include/linux/ext3_fs.h
+Index: linux-2.6.23-rc5/include/linux/ext3_fs.h
 ===================================================================
---- linux-2.6.23-rc3.orig/include/linux/ext3_fs.h	2007-08-12 21:25:24.000000000 -0700
-+++ linux-2.6.23-rc3/include/linux/ext3_fs.h	2007-08-29 15:22:29.000000000 -0700
+--- linux-2.6.23-rc5.orig/include/linux/ext3_fs.h	2007-09-12 16:17:01.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/ext3_fs.h	2007-09-12 16:25:40.000000000 -0700
 @@ -76,8 +76,8 @@
   * Macro-instructions used to manage several block sizes
   */
@@ -167,11 +171,11 @@ Index: linux-2.6.23-rc3/include/linux/ext3_fs.h
  #ifdef __KERNEL__
  # define EXT3_BLOCK_SIZE(s)		((s)->s_blocksize)
  #else
-Index: linux-2.6.23-rc3/include/linux/ext4_fs.h
+Index: linux-2.6.23-rc5/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.23-rc3.orig/include/linux/ext4_fs.h	2007-08-28 11:09:40.000000000 -0700
-+++ linux-2.6.23-rc3/include/linux/ext4_fs.h	2007-08-29 15:22:29.000000000 -0700
-@@ -104,8 +104,8 @@ struct ext4_allocation_request {
+--- linux-2.6.23-rc5.orig/include/linux/ext4_fs.h	2007-09-12 16:25:17.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/ext4_fs.h	2007-09-12 16:25:40.000000000 -0700
+@@ -77,8 +77,8 @@
   * Macro-instructions used to manage several block sizes
   */
  #define EXT4_MIN_BLOCK_SIZE		1024

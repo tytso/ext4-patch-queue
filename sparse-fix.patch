@@ -1,0 +1,58 @@
+ext4: Fix spare warnings
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+
+ fs/ext4/inode.c         |    6 ++++--
+ include/linux/ext4_fs.h |   14 +++++++-------
+ 2 files changed, 11 insertions(+), 9 deletions(-)
+
+
+Index: linux-2.6.23-rc5/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.23-rc5.orig/fs/ext4/inode.c	2007-09-12 16:17:07.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/inode.c	2007-09-12 16:23:32.000000000 -0700
+@@ -3177,12 +3177,14 @@ int ext4_mark_inode_dirty(handle_t *hand
+ 						      iloc, handle);
+ 			if (ret) {
+ 				EXT4_I(inode)->i_state |= EXT4_STATE_NO_EXPAND;
+-				if (mnt_count != sbi->s_es->s_mnt_count) {
++				if (mnt_count !=
++					  le16_to_cpu(sbi->s_es->s_mnt_count)) {
+ 					ext4_warning(inode->i_sb, __FUNCTION__,
+ 					"Unable to expand inode %lu. Delete"
+ 					" some EAs or run e2fsck.",
+ 					inode->i_ino);
+-					mnt_count = sbi->s_es->s_mnt_count;
++					mnt_count =
++					  le16_to_cpu(sbi->s_es->s_mnt_count);
+ 				}
+ 			}
+ 		}
+Index: linux-2.6.23-rc5/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.23-rc5.orig/include/linux/ext4_fs.h	2007-09-12 16:17:07.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/ext4_fs.h	2007-09-12 16:20:38.000000000 -0700
+@@ -595,13 +595,13 @@ struct ext4_super_block {
+ /*150*/	__le32	s_blocks_count_hi;	/* Blocks count */
+ 	__le32	s_r_blocks_count_hi;	/* Reserved blocks count */
+ 	__le32	s_free_blocks_count_hi;	/* Free blocks count */
+-	__u16	s_min_extra_isize;	/* All inodes have at least # bytes */
+-	__u16	s_want_extra_isize; 	/* New inodes should reserve # bytes */
+-	__u32	s_flags;		/* Miscellaneous flags */
+-	__u16   s_raid_stride;		/* RAID stride */
+-	__u16   s_mmp_interval;         /* # seconds to wait in MMP checking */
+-	__u64   s_mmp_block;            /* Block for multi-mount protection */
+-	__u32   s_raid_stripe_width;    /* blocks on all data disks (N*stride)*/
++	__le16	s_min_extra_isize;	/* All inodes have at least # bytes */
++	__le16	s_want_extra_isize; 	/* New inodes should reserve # bytes */
++	__le32	s_flags;		/* Miscellaneous flags */
++	__le16  s_raid_stride;		/* RAID stride */
++	__le16  s_mmp_interval;         /* # seconds to wait in MMP checking */
++	__le64  s_mmp_block;            /* Block for multi-mount protection */
++	__le32  s_raid_stripe_width;    /* blocks on all data disks (N*stride)*/
+ 	__u32   s_reserved[163];        /* Padding to the end of the block */
+ };
+ 

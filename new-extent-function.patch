@@ -6,6 +6,8 @@ ext4_ext_search_left
 ext4_ext_search_right
 
 Signed-off-by: Alex Tomas <alex@clusterfs.com>
+Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
+Signed-off-by: Johann Lombardi <johann@clusterfs.com>
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
@@ -13,10 +15,11 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
  include/linux/ext4_fs_extents.h |    2 
  2 files changed, 144 insertions(+)
 
-Index: linux-2.6.23-rc3/fs/ext4/extents.c
+
+Index: linux-2.6.23-rc5/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/extents.c	2007-08-28 11:09:04.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/extents.c	2007-08-28 11:09:11.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/ext4/extents.c	2007-09-12 16:14:08.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/extents.c	2007-09-12 16:15:53.000000000 -0700
 @@ -1015,6 +1015,148 @@ out:
  }
  
@@ -150,7 +153,7 @@ Index: linux-2.6.23-rc3/fs/ext4/extents.c
 +	if (bh == NULL)
 +		return -EIO;
 +	eh = ext_block_hdr(bh);
-+	if (ext4_ext_check_header(inode, eh, depth)) {
++	if (ext4_ext_check_header(inode, eh, path->p_depth - depth)) {
 +		brelse(bh);
 +		return -EIO;
 +	}
@@ -166,10 +169,10 @@ Index: linux-2.6.23-rc3/fs/ext4/extents.c
   * ext4_ext_next_allocated_block:
   * returns allocated block in subsequent extent or EXT_MAX_BLOCK.
   * NOTE: it considers block number from index entry as
-Index: linux-2.6.23-rc3/include/linux/ext4_fs_extents.h
+Index: linux-2.6.23-rc5/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.23-rc3.orig/include/linux/ext4_fs_extents.h	2007-08-28 11:02:19.000000000 -0700
-+++ linux-2.6.23-rc3/include/linux/ext4_fs_extents.h	2007-08-28 11:09:11.000000000 -0700
+--- linux-2.6.23-rc5.orig/include/linux/ext4_fs_extents.h	2007-09-11 18:15:51.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/ext4_fs_extents.h	2007-09-12 16:14:13.000000000 -0700
 @@ -236,5 +236,7 @@ extern int ext4_ext_insert_extent(handle
  extern int ext4_ext_walk_space(struct inode *, unsigned long, unsigned long, ext_prepare_callback, void *);
  extern struct ext4_ext_path * ext4_ext_find_extent(struct inode *, int, struct ext4_ext_path *);

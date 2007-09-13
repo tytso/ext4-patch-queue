@@ -1,23 +1,25 @@
+This patch adds 64-bit inode version support to ext4. The lower 32 bits
+
 From: Kalpak Shah <kalpak@clusterfs.com>
 
-This patch adds 64-bit inode version support to ext4. The lower 32 bits
 are stored in the osd1.linux1.l_i_version field while the high 32 bits
 are stored in the i_version_hi field newly created in the ext4_inode.
 
 Signed-off-by: Kalpak Shah <kalpak@clusterfs.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
-Signed-off-by: Andreas Dilger <adilger@clusterfs.com> 
-
-
+Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
- fs/ext4/inode.c         |   15 ++++++++++++++-
- include/linux/ext4_fs.h |    4 +++-
- 2 files changed, 17 insertions(+), 2 deletions(-)
 
-Index: linux-2.6.23-rc3/fs/ext4/inode.c
+ fs/ext4/inode.c         |   14 +++++++++++++-
+ include/linux/ext4_fs.h |    4 +++-
+ 2 files changed, 16 insertions(+), 2 deletions(-)
+
+
+Index: linux-2.6.23-rc5/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/inode.c	2007-08-28 11:07:58.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/inode.c	2007-08-28 11:08:45.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/ext4/inode.c	2007-09-12 16:23:32.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/inode.c	2007-09-12 16:49:55.000000000 -0700
 @@ -2704,6 +2704,13 @@ void ext4_read_inode(struct inode * inod
  	EXT4_INODE_GET_XTIME(i_atime, inode, raw_inode);
  	EXT4_EINODE_GET_XTIME(i_crtime, ei, raw_inode);
@@ -32,32 +34,31 @@ Index: linux-2.6.23-rc3/fs/ext4/inode.c
  	if (S_ISREG(inode->i_mode)) {
  		inode->i_op = &ext4_file_inode_operations;
  		inode->i_fop = &ext4_file_operations;
-@@ -2847,8 +2854,14 @@ static int ext4_do_update_inode(handle_t
+@@ -2847,8 +2854,13 @@ static int ext4_do_update_inode(handle_t
  	} else for (block = 0; block < EXT4_N_BLOCKS; block++)
  		raw_inode->i_block[block] = ei->i_data[block];
  
 -	if (ei->i_extra_isize)
 +	raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
 +	if (ei->i_extra_isize) {
-+		if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi)) {
++		if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi))
 +			raw_inode->i_version_hi =
 +				cpu_to_le32(inode->i_version >> 32);
-+		}
  		raw_inode->i_extra_isize = cpu_to_le16(ei->i_extra_isize);
 +	}
  
  	BUFFER_TRACE(bh, "call ext4_journal_dirty_metadata");
  	rc = ext4_journal_dirty_metadata(handle, bh);
-Index: linux-2.6.23-rc3/include/linux/ext4_fs.h
+Index: linux-2.6.23-rc5/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.23-rc3.orig/include/linux/ext4_fs.h	2007-08-28 11:08:41.000000000 -0700
-+++ linux-2.6.23-rc3/include/linux/ext4_fs.h	2007-08-28 11:08:45.000000000 -0700
+--- linux-2.6.23-rc5.orig/include/linux/ext4_fs.h	2007-09-12 16:49:03.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/ext4_fs.h	2007-09-12 16:49:23.000000000 -0700
 @@ -304,7 +304,7 @@ struct ext4_inode {
  	__le32	i_flags;	/* File flags */
  	union {
  		struct {
 -			__u32  l_i_reserved1;
-+			__u32  l_i_version;
++			__le32  l_i_version;
  		} linux1;
  		struct {
  			__u32  h_i_translator;

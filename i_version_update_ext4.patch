@@ -1,23 +1,26 @@
-From: Jean Noel Cordenner <jean-noel.cordenner@bull.net>
-Date: Wed, 4 Jul 2007 10:51:50 +0530
 Subject: [PATCH] This patch is on top of i_version_update_vfs.
- The i_version field of the inode is set on inode creation and incremented when
+
+From: Jean Noel Cordenner <jean-noel.cordenner@bull.net>
+
+The i_version field of the inode is set on inode creation and incremented when
  the inode is being modified.
 
 Signed-off-by: Jean Noel Cordenner <jean-noel.cordenner@bull.net>
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
+
  fs/ext4/inode.c |    1 +
  fs/ext4/namei.c |    4 ----
  fs/ext4/super.c |    1 -
  3 files changed, 1 insertion(+), 5 deletions(-)
 
-Index: linux-2.6.23-rc3/fs/ext4/inode.c
+
+Index: linux-2.6.23-rc5/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/inode.c	2007-08-28 11:08:45.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/inode.c	2007-08-28 11:08:48.000000000 -0700
-@@ -3077,6 +3077,7 @@ int ext4_mark_iloc_dirty(handle_t *handl
+--- linux-2.6.23-rc5.orig/fs/ext4/inode.c	2007-09-12 16:49:55.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/inode.c	2007-09-12 16:50:09.000000000 -0700
+@@ -3076,6 +3076,7 @@ int ext4_mark_iloc_dirty(handle_t *handl
  {
  	int err = 0;
  
@@ -25,11 +28,11 @@ Index: linux-2.6.23-rc3/fs/ext4/inode.c
  	/* the do_update_inode consumes one bh->b_count */
  	get_bh(iloc->bh);
  
-Index: linux-2.6.23-rc3/fs/ext4/namei.c
+Index: linux-2.6.23-rc5/fs/ext4/namei.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/namei.c	2007-08-28 11:07:57.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/namei.c	2007-08-28 11:08:48.000000000 -0700
-@@ -1297,7 +1297,6 @@ static int add_dirent_to_buf(handle_t *h
+--- linux-2.6.23-rc5.orig/fs/ext4/namei.c	2007-09-12 16:48:23.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/namei.c	2007-09-12 16:50:09.000000000 -0700
+@@ -1318,7 +1318,6 @@ static int add_dirent_to_buf(handle_t *h
  	 */
  	dir->i_mtime = dir->i_ctime = ext4_current_time(dir);
  	ext4_update_dx_flag(dir);
@@ -37,7 +40,7 @@ Index: linux-2.6.23-rc3/fs/ext4/namei.c
  	ext4_mark_inode_dirty(handle, dir);
  	BUFFER_TRACE(bh, "call ext4_journal_dirty_metadata");
  	err = ext4_journal_dirty_metadata(handle, bh);
-@@ -1616,7 +1615,6 @@ static int ext4_delete_entry (handle_t *
+@@ -1658,7 +1657,6 @@ static int ext4_delete_entry (handle_t *
  						    le16_to_cpu(de->rec_len));
  			else
  				de->inode = 0;
@@ -45,7 +48,7 @@ Index: linux-2.6.23-rc3/fs/ext4/namei.c
  			BUFFER_TRACE(bh, "call ext4_journal_dirty_metadata");
  			ext4_journal_dirty_metadata(handle, bh);
  			return 0;
-@@ -2078,7 +2076,6 @@ static int ext4_rmdir (struct inode * di
+@@ -2131,7 +2129,6 @@ static int ext4_rmdir (struct inode * di
  		ext4_warning (inode->i_sb, "ext4_rmdir",
  			      "empty directory has too many links (%d)",
  			      inode->i_nlink);
@@ -53,7 +56,7 @@ Index: linux-2.6.23-rc3/fs/ext4/namei.c
  	clear_nlink(inode);
  	/* There's no need to set i_disksize: the fact that i_nlink is
  	 * zero will ensure that the right thing happens during any
-@@ -2324,7 +2321,6 @@ static int ext4_rename (struct inode * o
+@@ -2377,7 +2374,6 @@ static int ext4_rename (struct inode * o
  		if (EXT4_HAS_INCOMPAT_FEATURE(new_dir->i_sb,
  					      EXT4_FEATURE_INCOMPAT_FILETYPE))
  			new_de->file_type = old_de->file_type;
@@ -61,11 +64,11 @@ Index: linux-2.6.23-rc3/fs/ext4/namei.c
  		BUFFER_TRACE(new_bh, "call ext4_journal_dirty_metadata");
  		ext4_journal_dirty_metadata(handle, new_bh);
  		brelse(new_bh);
-Index: linux-2.6.23-rc3/fs/ext4/super.c
+Index: linux-2.6.23-rc5/fs/ext4/super.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/super.c	2007-08-28 11:08:05.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/super.c	2007-08-28 11:08:48.000000000 -0700
-@@ -2993,7 +2993,6 @@ out:
+--- linux-2.6.23-rc5.orig/fs/ext4/super.c	2007-09-12 16:25:40.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/super.c	2007-09-12 16:50:09.000000000 -0700
+@@ -2998,7 +2998,6 @@ out:
  		i_size_write(inode, off+len-towrite);
  		EXT4_I(inode)->i_disksize = inode->i_size;
  	}

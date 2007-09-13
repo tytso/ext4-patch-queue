@@ -1,23 +1,55 @@
+In each group descriptor if we have
+
 From: Andreas Dilger <adilger@clusterfs.com>
+
+EXT4_BG_INODE_UNINIT set in bg_flags:
+	Inode table is not initialized/used in this group. So we can skip
+	the consistency check during fsck.
+EXT4_BG_BLOCK_UNINIT set in bg_flags:
+	No block in the group is used. So we can skip the block bitmap
+	verification for this group.
+
+We also add two new fields to group descriptor as a part of
+uninitialized group patch.
+
+	__le16  bg_itable_unused;       /* Unused inodes count */
+	__le16  bg_checksum;            /* crc16(sb_uuid+group+desc) */
+
+
+bg_itable_unused:
+
+If we have EXT4_BG_INODE_UNINIT not set in bg_flags
+then bg_itable_unused will give the offset within
+the inode table till the inodes are used. This can be
+used by fsck to skip list of inodes that are marked unused.
+
+
+bg_checksum:
+Now that we depend on bg_flags and bg_itable_unused to determine
+the block and inode usage, we need to make sure group descriptor
+is not corrupt. We add checksum to group descriptor to
+detect corruption. If the descriptor is found to be corrupt, we
+mark all the blocks and inodes in the group used.
+
 Signed-off-by: Avantika Mathur <mathur@us.ibm.com>
 Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
-
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
----
  fs/ext4/balloc.c        |   94 +++++++++++++++++++++++++++++++++-
  fs/ext4/group.h         |   29 ++++++++++
  fs/ext4/ialloc.c        |  132 ++++++++++++++++++++++++++++++++++++++++++++----
  fs/ext4/resize.c        |    2 
  fs/ext4/super.c         |   96 ++++++++++++++++++++++++++++++++++
- include/linux/ext4_fs.h |   14 ++++-
- 6 files changed, 352 insertions(+), 15 deletions(-)
+ include/linux/ext4_fs.h |   16 ++++-
+ 6 files changed, 353 insertions(+), 16 deletions(-)
 
-Index: linux-2.6.23-rc3/fs/ext4/balloc.c
+
+Index: linux-2.6.23-rc5/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/balloc.c	2007-08-28 11:02:17.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/balloc.c	2007-08-28 11:08:05.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/ext4/balloc.c	2007-09-11 18:15:52.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/balloc.c	2007-09-12 16:11:59.000000000 -0700
 @@ -20,6 +20,7 @@
  #include <linux/quotaops.h>
  #include <linux/buffer_head.h>
@@ -156,10 +188,10 @@ Index: linux-2.6.23-rc3/fs/ext4/balloc.c
  	spin_unlock(sb_bgl_lock(sbi, group_no));
  	percpu_counter_mod(&sbi->s_freeblocks_counter, -num);
  
-Index: linux-2.6.23-rc3/fs/ext4/group.h
+Index: linux-2.6.23-rc5/fs/ext4/group.h
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.23-rc3/fs/ext4/group.h	2007-08-28 11:08:05.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/group.h	2007-09-12 16:11:59.000000000 -0700
 @@ -0,0 +1,29 @@
 +/*
 + *  linux/fs/ext4/group.h
@@ -190,10 +222,10 @@ Index: linux-2.6.23-rc3/fs/ext4/group.h
 +				       struct buffer_head *bh, int group,
 +				       struct ext4_group_desc *desc);
 +#endif /* _LINUX_EXT4_GROUP_H */
-Index: linux-2.6.23-rc3/fs/ext4/ialloc.c
+Index: linux-2.6.23-rc5/fs/ext4/ialloc.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/ialloc.c	2007-08-12 21:25:24.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/ialloc.c	2007-08-28 11:08:05.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/ext4/ialloc.c	2007-09-11 18:15:52.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/ialloc.c	2007-09-12 16:11:59.000000000 -0700
 @@ -28,6 +28,7 @@
  
  #include "xattr.h"
@@ -389,10 +421,10 @@ Index: linux-2.6.23-rc3/fs/ext4/ialloc.c
  	/* This is the optimal IO size (for stat), not the fs block size */
  	inode->i_blocks = 0;
  	inode->i_mtime = inode->i_atime = inode->i_ctime = ei->i_crtime =
-Index: linux-2.6.23-rc3/fs/ext4/resize.c
+Index: linux-2.6.23-rc5/fs/ext4/resize.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/resize.c	2007-08-12 21:25:24.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/resize.c	2007-08-28 11:08:05.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/ext4/resize.c	2007-09-11 18:15:52.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/resize.c	2007-09-12 16:11:59.000000000 -0700
 @@ -16,6 +16,7 @@
  #include <linux/errno.h>
  #include <linux/slab.h>
@@ -409,10 +441,10 @@ Index: linux-2.6.23-rc3/fs/ext4/resize.c
  
  	/*
  	 * Make the new blocks and inodes valid next.  We do this before
-Index: linux-2.6.23-rc3/fs/ext4/super.c
+Index: linux-2.6.23-rc5/fs/ext4/super.c
 ===================================================================
---- linux-2.6.23-rc3.orig/fs/ext4/super.c	2007-08-28 11:07:57.000000000 -0700
-+++ linux-2.6.23-rc3/fs/ext4/super.c	2007-08-28 11:08:05.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/ext4/super.c	2007-09-12 16:11:10.000000000 -0700
++++ linux-2.6.23-rc5/fs/ext4/super.c	2007-09-12 16:11:59.000000000 -0700
 @@ -43,6 +43,7 @@
  #include "xattr.h"
  #include "acl.h"
@@ -530,10 +562,10 @@ Index: linux-2.6.23-rc3/fs/ext4/super.c
  		first_block += EXT4_BLOCKS_PER_GROUP(sb);
  		gdp = (struct ext4_group_desc *)
  			((__u8 *)gdp + EXT4_DESC_SIZE(sb));
-Index: linux-2.6.23-rc3/include/linux/ext4_fs.h
+Index: linux-2.6.23-rc5/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.23-rc3.orig/include/linux/ext4_fs.h	2007-08-28 11:07:59.000000000 -0700
-+++ linux-2.6.23-rc3/include/linux/ext4_fs.h	2007-08-28 11:08:23.000000000 -0700
+--- linux-2.6.23-rc5.orig/include/linux/ext4_fs.h	2007-09-12 16:11:10.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/ext4_fs.h	2007-09-12 16:12:42.000000000 -0700
 @@ -123,19 +123,25 @@
   */
  struct ext4_group_desc
@@ -546,8 +578,9 @@ Index: linux-2.6.23-rc3/include/linux/ext4_fs.h
  	__le16	bg_free_blocks_count;	/* Free blocks count */
  	__le16	bg_free_inodes_count;	/* Free inodes count */
  	__le16	bg_used_dirs_count;	/* Directories count */
- 	__u16	bg_flags;
+-	__u16	bg_flags;
 -	__u32	bg_reserved[3];
++	__le16	bg_flags;
 +	__u32	bg_reserved[2];
 +	__le16  bg_itable_unused;       /* Unused inodes count */
 +	__le16  bg_checksum;            /* crc16(sb_uuid+group+desc) */
