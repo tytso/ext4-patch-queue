@@ -1,6 +1,6 @@
-Date: Thu, 6 Sep 2007 05:47:15 -0700 (PDT)
+jbd/jbd2: JBD fixes
+
 From: Christoph Lameter <clameter@sgi.com>
-Subject: JBD fixes
 
 Here is the patch that I spoke about Tuesday. It fails to run because
 there are kfree's being performed on the jbd data that was converted from 
@@ -17,22 +17,22 @@ JBD for the large blocksize patchset.
 Signed-off-by: Christoph Lameter <clameter@sgi.com>
 
 ---
- fs/jbd/checkpoint.c   |    2 -
- fs/jbd/commit.c       |    6 +--
- fs/jbd/journal.c      |   97 ++------------------------------------------------
- fs/jbd/transaction.c  |   10 ++---
- fs/jbd2/checkpoint.c  |    2 -
- fs/jbd2/commit.c      |    6 +--
- fs/jbd2/journal.c     |   97 ++------------------------------------------------
- fs/jbd2/transaction.c |   10 ++---
- include/linux/jbd.h   |   19 ++++++++-
- include/linux/jbd2.h  |   19 ++++++++-
- 10 files changed, 58 insertions(+), 210 deletions(-)
+ fs/jbd/checkpoint.c   |    2 
+ fs/jbd/commit.c       |    6 +-
+ fs/jbd/journal.c      |  107 ++++---------------------------------------------
+ fs/jbd/transaction.c  |   10 ++--
+ fs/jbd2/checkpoint.c  |    2 
+ fs/jbd2/commit.c      |    6 +-
+ fs/jbd2/journal.c     |  109 ++++----------------------------------------------
+ fs/jbd2/transaction.c |   18 ++++----
+ include/linux/jbd.h   |   23 +++++++++-
+ include/linux/jbd2.h  |   28 ++++++++++--
+ 10 files changed, 83 insertions(+), 228 deletions(-)
 
 Index: linux-2.6.23-rc5/fs/jbd/journal.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd/journal.c	2007-09-12 16:17:07.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd/journal.c	2007-09-12 16:18:47.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/jbd/journal.c	2007-09-13 13:37:57.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd/journal.c	2007-09-13 13:45:39.000000000 -0700
 @@ -83,7 +83,6 @@ EXPORT_SYMBOL(journal_force_commit);
  
  static int journal_convert_superblock_v1(journal_t *, journal_superblock_t *);
@@ -54,6 +54,42 @@ Index: linux-2.6.23-rc5/fs/jbd/journal.c
  			goto repeat;
  		}
  
+@@ -679,7 +678,7 @@ static journal_t * journal_init_common (
+ 	/* Set up a default-sized revoke table for the new mount. */
+ 	err = journal_init_revoke(journal, JOURNAL_REVOKE_DEFAULT_HASH);
+ 	if (err) {
+-		kfree(journal);
++		jbd_kfree(journal);
+ 		goto fail;
+ 	}
+ 	return journal;
+@@ -728,7 +727,7 @@ journal_t * journal_init_dev(struct bloc
+ 	if (!journal->j_wbuf) {
+ 		printk(KERN_ERR "%s: Cant allocate bhs for commit thread\n",
+ 			__FUNCTION__);
+-		kfree(journal);
++		jbd_kfree(journal);
+ 		journal = NULL;
+ 		goto out;
+ 	}
+@@ -782,7 +781,7 @@ journal_t * journal_init_inode (struct i
+ 	if (!journal->j_wbuf) {
+ 		printk(KERN_ERR "%s: Cant allocate bhs for commit thread\n",
+ 			__FUNCTION__);
+-		kfree(journal);
++		jbd_kfree(journal);
+ 		return NULL;
+ 	}
+ 
+@@ -791,7 +790,7 @@ journal_t * journal_init_inode (struct i
+ 	if (err) {
+ 		printk(KERN_ERR "%s: Cannnot locate journal superblock\n",
+ 		       __FUNCTION__);
+-		kfree(journal);
++		jbd_kfree(journal);
+ 		return NULL;
+ 	}
+ 
 @@ -1095,13 +1094,6 @@ int journal_load(journal_t *journal)
  		}
  	}
@@ -68,6 +104,15 @@ Index: linux-2.6.23-rc5/fs/jbd/journal.c
  	/* Let the recovery code check whether it needs to recover any
  	 * data from the journal. */
  	if (journal_recover(journal))
+@@ -1166,7 +1158,7 @@ void journal_destroy(journal_t *journal)
+ 	if (journal->j_revoke)
+ 		journal_destroy_revoke(journal);
+ 	kfree(journal->j_wbuf);
+-	kfree(journal);
++	jbd_kfree(journal);
+ }
+ 
+ 
 @@ -1615,86 +1607,6 @@ int journal_blocks_per_page(struct inode
  }
  
@@ -181,9 +226,9 @@ Index: linux-2.6.23-rc5/fs/jbd/journal.c
  static int __init journal_init(void)
 Index: linux-2.6.23-rc5/include/linux/jbd.h
 ===================================================================
---- linux-2.6.23-rc5.orig/include/linux/jbd.h	2007-09-12 16:17:07.000000000 -0700
-+++ linux-2.6.23-rc5/include/linux/jbd.h	2007-09-12 16:20:18.000000000 -0700
-@@ -71,9 +71,22 @@ extern int journal_enable_debug;
+--- linux-2.6.23-rc5.orig/include/linux/jbd.h	2007-09-13 13:37:57.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/jbd.h	2007-09-13 13:42:27.000000000 -0700
+@@ -71,9 +71,26 @@ extern int journal_enable_debug;
  #define jbd_debug(f, a...)	/**/
  #endif
  
@@ -193,8 +238,12 @@ Index: linux-2.6.23-rc5/include/linux/jbd.h
 +static inline void *__jbd_kmalloc(const char *where, size_t size,
 +						gfp_t flags, int retry)
 +{
-+	return (void *)__get_free_pages(flags | (retry ? __GFP_NOFAIL : 0),
-+							get_order(size));
++	return kmalloc(size, flags | (retry ? __GFP_NOFAIL : 0));
++}
++
++static inline void jbd_kfree(void *ptr)
++{
++	return kfree(ptr);
 +}
 +
 +static inline void *jbd_alloc(size_t size, gfp_t flags)
@@ -211,9 +260,9 @@ Index: linux-2.6.23-rc5/include/linux/jbd.h
  	__jbd_kmalloc(__FUNCTION__, (size), (flags), journal_oom_retry)
 Index: linux-2.6.23-rc5/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.23-rc5.orig/include/linux/jbd2.h	2007-09-12 16:17:07.000000000 -0700
-+++ linux-2.6.23-rc5/include/linux/jbd2.h	2007-09-12 16:20:06.000000000 -0700
-@@ -71,9 +71,22 @@ extern u8 jbd2_journal_enable_debug;
+--- linux-2.6.23-rc5.orig/include/linux/jbd2.h	2007-09-13 13:37:58.000000000 -0700
++++ linux-2.6.23-rc5/include/linux/jbd2.h	2007-09-13 13:51:49.000000000 -0700
+@@ -71,11 +71,27 @@ extern u8 jbd2_journal_enable_debug;
  #define jbd_debug(f, a...)	/**/
  #endif
  
@@ -223,8 +272,11 @@ Index: linux-2.6.23-rc5/include/linux/jbd2.h
 +static inline void *__jbd2_kmalloc(const char *where, size_t size,
 +						gfp_t flags, int retry)
 +{
-+	return (void *)__get_free_pages(flags | (retry ? __GFP_NOFAIL : 0),
-+							get_order(size));
++	return kmalloc(size, flags | (retry ? __GFP_NOFAIL : 0));
++}
++static inline void jbd2_kfree(void *ptr)
++{
++	return kfree(ptr);
 +}
 +
 +static inline void *jbd2_alloc(size_t size, gfp_t flags)
@@ -237,12 +289,30 @@ Index: linux-2.6.23-rc5/include/linux/jbd2.h
 +	free_pages((unsigned long)ptr, get_order(size));
 +};
  
- #define jbd_kmalloc(size, flags) \
+-#define jbd_kmalloc(size, flags) \
++#define jbd2_kmalloc(size, flags) \
  	__jbd2_kmalloc(__FUNCTION__, (size), (flags), journal_oom_retry)
+ #define jbd_rep_kmalloc(size, flags) \
+ 	__jbd2_kmalloc(__FUNCTION__, (size), (flags), 1)
+@@ -959,12 +975,12 @@ void jbd2_journal_put_journal_head(struc
+  */
+ extern struct kmem_cache *jbd2_handle_cache;
+ 
+-static inline handle_t *jbd_alloc_handle(gfp_t gfp_flags)
++static inline handle_t *jbd2_alloc_handle(gfp_t gfp_flags)
+ {
+ 	return kmem_cache_alloc(jbd2_handle_cache, gfp_flags);
+ }
+ 
+-static inline void jbd_free_handle(handle_t *handle)
++static inline void jbd2_free_handle(handle_t *handle)
+ {
+ 	kmem_cache_free(jbd2_handle_cache, handle);
+ }
 Index: linux-2.6.23-rc5/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd2/journal.c	2007-09-12 16:17:07.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd2/journal.c	2007-09-12 16:18:47.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/jbd2/journal.c	2007-09-13 13:37:57.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd2/journal.c	2007-09-13 14:00:17.000000000 -0700
 @@ -84,7 +84,6 @@ EXPORT_SYMBOL(jbd2_journal_force_commit)
  
  static int journal_convert_superblock_v1(journal_t *, journal_superblock_t *);
@@ -264,6 +334,51 @@ Index: linux-2.6.23-rc5/fs/jbd2/journal.c
  			goto repeat;
  		}
  
+@@ -655,7 +654,7 @@ static journal_t * journal_init_common (
+ 	journal_t *journal;
+ 	int err;
+ 
+-	journal = jbd_kmalloc(sizeof(*journal), GFP_KERNEL);
++	journal = jbd2_kmalloc(sizeof(*journal), GFP_KERNEL);
+ 	if (!journal)
+ 		goto fail;
+ 	memset(journal, 0, sizeof(*journal));
+@@ -680,7 +679,7 @@ static journal_t * journal_init_common (
+ 	/* Set up a default-sized revoke table for the new mount. */
+ 	err = jbd2_journal_init_revoke(journal, JOURNAL_REVOKE_DEFAULT_HASH);
+ 	if (err) {
+-		kfree(journal);
++		jbd2_kfree(journal);
+ 		goto fail;
+ 	}
+ 	return journal;
+@@ -729,7 +728,7 @@ journal_t * jbd2_journal_init_dev(struct
+ 	if (!journal->j_wbuf) {
+ 		printk(KERN_ERR "%s: Cant allocate bhs for commit thread\n",
+ 			__FUNCTION__);
+-		kfree(journal);
++		jbd2_kfree(journal);
+ 		journal = NULL;
+ 		goto out;
+ 	}
+@@ -783,7 +782,7 @@ journal_t * jbd2_journal_init_inode (str
+ 	if (!journal->j_wbuf) {
+ 		printk(KERN_ERR "%s: Cant allocate bhs for commit thread\n",
+ 			__FUNCTION__);
+-		kfree(journal);
++		jbd2_kfree(journal);
+ 		return NULL;
+ 	}
+ 
+@@ -792,7 +791,7 @@ journal_t * jbd2_journal_init_inode (str
+ 	if (err) {
+ 		printk(KERN_ERR "%s: Cannnot locate journal superblock\n",
+ 		       __FUNCTION__);
+-		kfree(journal);
++		jbd2_kfree(journal);
+ 		return NULL;
+ 	}
+ 
 @@ -1096,13 +1095,6 @@ int jbd2_journal_load(journal_t *journal
  		}
  	}
@@ -278,6 +393,15 @@ Index: linux-2.6.23-rc5/fs/jbd2/journal.c
  	/* Let the recovery code check whether it needs to recover any
  	 * data from the journal. */
  	if (jbd2_journal_recover(journal))
+@@ -1167,7 +1159,7 @@ void jbd2_journal_destroy(journal_t *jou
+ 	if (journal->j_revoke)
+ 		jbd2_journal_destroy_revoke(journal);
+ 	kfree(journal->j_wbuf);
+-	kfree(journal);
++	jbd2_kfree(journal);
+ }
+ 
+ 
 @@ -1627,86 +1619,6 @@ size_t journal_tag_bytes(journal_t *jour
  }
  
@@ -391,8 +515,8 @@ Index: linux-2.6.23-rc5/fs/jbd2/journal.c
  static int __init journal_init(void)
 Index: linux-2.6.23-rc5/fs/jbd/commit.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd/commit.c	2007-09-12 16:17:07.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd/commit.c	2007-09-12 16:18:47.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/jbd/commit.c	2007-09-13 13:37:57.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd/commit.c	2007-09-13 13:40:03.000000000 -0700
 @@ -375,7 +375,7 @@ void journal_commit_transaction(journal_
  			struct buffer_head *bh = jh2bh(jh);
  
@@ -421,8 +545,8 @@ Index: linux-2.6.23-rc5/fs/jbd/commit.c
  
 Index: linux-2.6.23-rc5/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd2/commit.c	2007-09-12 16:17:07.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd2/commit.c	2007-09-12 16:18:47.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/jbd2/commit.c	2007-09-13 13:37:57.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd2/commit.c	2007-09-13 13:40:03.000000000 -0700
 @@ -384,7 +384,7 @@ void jbd2_journal_commit_transaction(jou
  			struct buffer_head *bh = jh2bh(jh);
  
@@ -451,14 +575,14 @@ Index: linux-2.6.23-rc5/fs/jbd2/commit.c
  
 Index: linux-2.6.23-rc5/fs/jbd/transaction.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd/transaction.c	2007-09-12 16:17:07.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd/transaction.c	2007-09-12 16:18:47.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/jbd/transaction.c	2007-09-13 13:37:57.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd/transaction.c	2007-09-13 13:46:23.000000000 -0700
 @@ -229,7 +229,7 @@ repeat_locked:
  	spin_unlock(&journal->j_state_lock);
  out:
  	if (unlikely(new_transaction))		/* It's usually NULL */
 -		kfree(new_transaction);
-+		jbd_free(new_transaction, sizeof(*new_transaction));
++		jbd_kfree(new_transaction);
  	return ret;
  }
  
@@ -500,17 +624,43 @@ Index: linux-2.6.23-rc5/fs/jbd/transaction.c
  
 Index: linux-2.6.23-rc5/fs/jbd2/transaction.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd2/transaction.c	2007-09-12 16:17:07.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd2/transaction.c	2007-09-12 16:18:47.000000000 -0700
-@@ -229,7 +229,7 @@ repeat_locked:
+--- linux-2.6.23-rc5.orig/fs/jbd2/transaction.c	2007-09-13 13:37:57.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd2/transaction.c	2007-09-13 13:59:20.000000000 -0700
+@@ -96,7 +96,7 @@ static int start_this_handle(journal_t *
+ 
+ alloc_transaction:
+ 	if (!journal->j_running_transaction) {
+-		new_transaction = jbd_kmalloc(sizeof(*new_transaction),
++		new_transaction = jbd2_kmalloc(sizeof(*new_transaction),
+ 						GFP_NOFS);
+ 		if (!new_transaction) {
+ 			ret = -ENOMEM;
+@@ -229,14 +229,14 @@ repeat_locked:
  	spin_unlock(&journal->j_state_lock);
  out:
  	if (unlikely(new_transaction))		/* It's usually NULL */
 -		kfree(new_transaction);
-+		jbd2_free(new_transaction, sizeof(*new_transaction));
++		jbd2_kfree(new_transaction);
  	return ret;
  }
  
+ /* Allocate a new handle.  This should probably be in a slab... */
+ static handle_t *new_handle(int nblocks)
+ {
+-	handle_t *handle = jbd_alloc_handle(GFP_NOFS);
++	handle_t *handle = jbd2_alloc_handle(GFP_NOFS);
+ 	if (!handle)
+ 		return NULL;
+ 	memset(handle, 0, sizeof(*handle));
+@@ -282,7 +282,7 @@ handle_t *jbd2_journal_start(journal_t *
+ 
+ 	err = start_this_handle(journal, handle);
+ 	if (err < 0) {
+-		jbd_free_handle(handle);
++		jbd2_free_handle(handle);
+ 		current->journal_info = NULL;
+ 		handle = ERR_PTR(err);
+ 	}
 @@ -668,7 +668,7 @@ repeat:
  				JBUFFER_TRACE(jh, "allocate memory for buffer");
  				jbd_unlock_bh_state(bh);
@@ -547,25 +697,34 @@ Index: linux-2.6.23-rc5/fs/jbd2/transaction.c
  	return err;
  }
  
+@@ -1411,7 +1411,7 @@ int jbd2_journal_stop(handle_t *handle)
+ 		spin_unlock(&journal->j_state_lock);
+ 	}
+ 
+-	jbd_free_handle(handle);
++	jbd2_free_handle(handle);
+ 	return err;
+ }
+ 
 Index: linux-2.6.23-rc5/fs/jbd/checkpoint.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd/checkpoint.c	2007-09-12 16:17:07.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd/checkpoint.c	2007-09-12 16:18:47.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/jbd/checkpoint.c	2007-09-13 13:37:57.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd/checkpoint.c	2007-09-14 09:57:21.000000000 -0700
 @@ -693,5 +693,5 @@ void __journal_drop_transaction(journal_
  	J_ASSERT(journal->j_running_transaction != transaction);
  
  	jbd_debug(1, "Dropping transaction %d, all done\n", transaction->t_tid);
 -	kfree(transaction);
-+	jbd_free(transaction, sizeof(*transaction));
++	jbd_kfree(transaction);
  }
 Index: linux-2.6.23-rc5/fs/jbd2/checkpoint.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd2/checkpoint.c	2007-09-12 16:17:07.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd2/checkpoint.c	2007-09-12 16:18:47.000000000 -0700
+--- linux-2.6.23-rc5.orig/fs/jbd2/checkpoint.c	2007-09-13 13:37:57.000000000 -0700
++++ linux-2.6.23-rc5/fs/jbd2/checkpoint.c	2007-09-14 09:57:03.000000000 -0700
 @@ -693,5 +693,5 @@ void __jbd2_journal_drop_transaction(jou
  	J_ASSERT(journal->j_running_transaction != transaction);
  
  	jbd_debug(1, "Dropping transaction %d, all done\n", transaction->t_tid);
 -	kfree(transaction);
-+	jbd2_free(transaction, sizeof(*transaction));
++	jbd2_kfree(transaction);
  }

@@ -1,4 +1,4 @@
-[PATCH] jbd2 stats through procfs
+jbd2: jbd2 stats through procfs
 
 From: Johann Lombardi <johann.lombardi@bull.net>
 
@@ -87,10 +87,10 @@ Signed-off-by: Johann Lombardi <johann.lombardi@bull.net>
  5 files changed, 490 insertions(+), 2 deletions(-)
 
 
-Index: linux-2.6.23-rc5/fs/jbd2/checkpoint.c
+Index: linux-2.6.23-rc6/fs/jbd2/checkpoint.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd2/checkpoint.c	2007-09-12 16:18:47.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd2/checkpoint.c	2007-09-12 16:50:24.000000000 -0700
+--- linux-2.6.23-rc6.orig/fs/jbd2/checkpoint.c	2007-09-14 10:01:50.000000000 -0700
++++ linux-2.6.23-rc6/fs/jbd2/checkpoint.c	2007-09-14 10:06:10.000000000 -0700
 @@ -232,7 +232,8 @@ __flush_batch(journal_t *journal, struct
   * Called under jbd_lock_bh_state(jh2bh(jh)), and drops it
   */
@@ -145,10 +145,10 @@ Index: linux-2.6.23-rc5/fs/jbd2/checkpoint.c
  	assert_spin_locked(&journal->j_list_lock);
  	if (transaction->t_cpnext) {
  		transaction->t_cpnext->t_cpprev = transaction->t_cpprev;
-Index: linux-2.6.23-rc5/fs/jbd2/commit.c
+Index: linux-2.6.23-rc6/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd2/commit.c	2007-09-12 16:24:31.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd2/commit.c	2007-09-12 16:50:24.000000000 -0700
+--- linux-2.6.23-rc6.orig/fs/jbd2/commit.c	2007-09-14 10:03:23.000000000 -0700
++++ linux-2.6.23-rc6/fs/jbd2/commit.c	2007-09-14 10:06:10.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/mm.h>
  #include <linux/pagemap.h>
@@ -252,10 +252,10 @@ Index: linux-2.6.23-rc5/fs/jbd2/commit.c
  	commit_transaction->t_state = T_FINISHED;
  	J_ASSERT(commit_transaction == journal->j_committing_transaction);
  	journal->j_commit_sequence = commit_transaction->t_tid;
-Index: linux-2.6.23-rc5/fs/jbd2/journal.c
+Index: linux-2.6.23-rc6/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd2/journal.c	2007-09-12 16:48:33.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd2/journal.c	2007-09-12 16:50:57.000000000 -0700
+--- linux-2.6.23-rc6.orig/fs/jbd2/journal.c	2007-09-14 10:06:01.000000000 -0700
++++ linux-2.6.23-rc6/fs/jbd2/journal.c	2007-09-14 10:06:10.000000000 -0700
 @@ -36,6 +36,7 @@
  #include <linux/poison.h>
  #include <linux/proc_fs.h>
@@ -572,7 +572,7 @@ Index: linux-2.6.23-rc5/fs/jbd2/journal.c
   * Management for journal control blocks: functions to create and
   * destroy journal_t structures, and to initialise and read existing
 @@ -683,6 +984,9 @@ static journal_t * journal_init_common (
- 		kfree(journal);
+ 		jbd2_kfree(journal);
  		goto fail;
  	}
 +
@@ -651,10 +651,10 @@ Index: linux-2.6.23-rc5/fs/jbd2/journal.c
  	jbd2_journal_destroy_caches();
  }
  
-Index: linux-2.6.23-rc5/fs/jbd2/transaction.c
+Index: linux-2.6.23-rc6/fs/jbd2/transaction.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/jbd2/transaction.c	2007-09-12 16:18:47.000000000 -0700
-+++ linux-2.6.23-rc5/fs/jbd2/transaction.c	2007-09-12 16:50:24.000000000 -0700
+--- linux-2.6.23-rc6.orig/fs/jbd2/transaction.c	2007-09-14 10:01:50.000000000 -0700
++++ linux-2.6.23-rc6/fs/jbd2/transaction.c	2007-09-14 10:06:10.000000000 -0700
 @@ -59,6 +59,8 @@ jbd2_get_transaction(journal_t *journal,
  
  	J_ASSERT(journal->j_running_transaction == NULL);
@@ -685,11 +685,11 @@ Index: linux-2.6.23-rc5/fs/jbd2/transaction.c
  	handle->h_transaction = transaction;
  	transaction->t_outstanding_credits += nblocks;
  	transaction->t_updates++;
-Index: linux-2.6.23-rc5/include/linux/jbd2.h
+Index: linux-2.6.23-rc6/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.23-rc5.orig/include/linux/jbd2.h	2007-09-12 16:23:44.000000000 -0700
-+++ linux-2.6.23-rc5/include/linux/jbd2.h	2007-09-12 16:50:24.000000000 -0700
-@@ -448,6 +448,16 @@ struct handle_s
+--- linux-2.6.23-rc6.orig/include/linux/jbd2.h	2007-09-14 10:03:08.000000000 -0700
++++ linux-2.6.23-rc6/include/linux/jbd2.h	2007-09-14 10:06:10.000000000 -0700
+@@ -451,6 +451,16 @@ struct handle_s
  };
  
  
@@ -706,7 +706,7 @@ Index: linux-2.6.23-rc5/include/linux/jbd2.h
  /* The transaction_t type is the guts of the journaling mechanism.  It
   * tracks a compound transaction through its various states:
   *
-@@ -583,6 +593,21 @@ struct transaction_s
+@@ -586,6 +596,21 @@ struct transaction_s
  	spinlock_t		t_handle_lock;
  
  	/*
@@ -728,7 +728,7 @@ Index: linux-2.6.23-rc5/include/linux/jbd2.h
  	 * Number of outstanding updates running on this transaction
  	 * [t_handle_lock]
  	 */
-@@ -613,6 +638,57 @@ struct transaction_s
+@@ -616,6 +641,57 @@ struct transaction_s
  
  };
  
@@ -786,7 +786,7 @@ Index: linux-2.6.23-rc5/include/linux/jbd2.h
  /**
   * struct journal_s - The journal_s type is the concrete type associated with
   *     journal_t.
-@@ -674,6 +750,12 @@ struct transaction_s
+@@ -677,6 +753,12 @@ struct transaction_s
   * @j_wbufsize: maximum number of buffer_heads allowed in j_wbuf, the
   *	number that will fit in j_blocksize
   * @j_last_sync_writer: most recent pid which did a synchronous write
@@ -799,7 +799,7 @@ Index: linux-2.6.23-rc5/include/linux/jbd2.h
   * @j_private: An opaque pointer to fs-private information.
   */
  
-@@ -866,6 +948,16 @@ struct journal_s
+@@ -869,6 +951,16 @@ struct journal_s
  	pid_t			j_last_sync_writer;
  
  	/*
