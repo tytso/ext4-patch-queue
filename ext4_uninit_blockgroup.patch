@@ -1,20 +1,49 @@
-ext4: Add uninitialized block group support 
+from: Andreas Dilger <adilger@clusterfs.com>
 
-From: Andreas Dilger <adilger@clusterfs.com>
+In pass1 of e2fsck, every inode table in the fileystem is scanned and checked, 
+regardless of whether it is in use.  This is this the most time consuming part 
+of the filesystem check.  The unintialized block group feature can greatly 
+reduce e2fsck time by eliminating checking of uninitialized inodes.  
+
+With this feature, there is a a high water mark of used inodes for each block 
+group.  Block and inode bitmaps can be uninitialized on disk via a flag in the
+group descriptor to avoid reading or scanning them at e2fsck time.  A checksum
+of each group descriptor is used to ensure that corruption in the group
+descriptor's bit flags does not cause incorrect operation.
+
+The feature is enabled through a mkfs option
+
+	mke2fs /dev/ -O uninit_groups
+
+A patch adding support for uninitialized block groups to e2fsprogs tools has 
+been posted to the linux-ext4 mailing list.
+
+The patches have been stress tested with fsstress and fsx.  In performance 
+tests testing e2fsck time, we have seen that e2fsck time on ext3 grows 
+linearly with the total number of inodes in the filesytem.  In ext4 with the 
+uninitialized block groups feature, the e2fsck time is constant, based 
+solely on the number of used inodes rather than the total inode count.  
+Since typical ext4 filesystems only use 1-10% of their inodes, this feature can
+greatly reduce e2fsck time for users.  With performance improvement of 2-20 
+times, depending on how full the filesystem is.
+
+The attached graph shows the major improvements in e2fsck times in filesystems
+with a large total inode count, but few inodes in use.  
 
 In each group descriptor if we have
+
 EXT4_BG_INODE_UNINIT set in bg_flags:
-	Inode table is not initialized/used in this group. So we can skip
-	the consistency check during fsck.
+        Inode table is not initialized/used in this group. So we can skip
+        the consistency check during fsck.
 EXT4_BG_BLOCK_UNINIT set in bg_flags:
-	No block in the group is used. So we can skip the block bitmap
-	verification for this group.
+        No block in the group is used. So we can skip the block bitmap
+        verification for this group.
 
 We also add two new fields to group descriptor as a part of
 uninitialized group patch.
 
-	__le16  bg_itable_unused;       /* Unused inodes count */
-	__le16  bg_checksum;            /* crc16(sb_uuid+group+desc) */
+        __le16  bg_itable_unused;       /* Unused inodes count */
+        __le16  bg_checksum;            /* crc16(sb_uuid+group+desc) */
 
 
 bg_itable_unused:
@@ -32,25 +61,26 @@ is not corrupt. We add checksum to group descriptor to
 detect corruption. If the descriptor is found to be corrupt, we
 mark all the blocks and inodes in the group used.
 
+
 Signed-off-by: Avantika Mathur <mathur@us.ibm.com>
 Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
 ---
-
- fs/ext4/balloc.c        |   94 +++++++++++++++++++++++++++++++++-
+ fs/Kconfig              |    1 
+ fs/ext4/balloc.c        |   92 ++++++++++++++++++++++++++++++--
  fs/ext4/group.h         |   29 ++++++++++
- fs/ext4/ialloc.c        |  132 ++++++++++++++++++++++++++++++++++++++++++++----
+ fs/ext4/ialloc.c        |  138 ++++++++++++++++++++++++++++++++++++++++++++----
  fs/ext4/resize.c        |    2 
- fs/ext4/super.c         |   96 ++++++++++++++++++++++++++++++++++
+ fs/ext4/super.c         |   47 ++++++++++++++++
  include/linux/ext4_fs.h |   16 ++++-
- 6 files changed, 353 insertions(+), 16 deletions(-)
+ 7 files changed, 309 insertions(+), 16 deletions(-)
 
-
-Index: linux-2.6.23-rc5/fs/ext4/balloc.c
+Index: linux-2.6.23-rc6/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/ext4/balloc.c	2007-09-11 18:15:52.000000000 -0700
-+++ linux-2.6.23-rc5/fs/ext4/balloc.c	2007-09-12 16:11:59.000000000 -0700
+--- linux-2.6.23-rc6.orig/fs/ext4/balloc.c	2007-09-19 11:37:33.000000000 -0700
++++ linux-2.6.23-rc6/fs/ext4/balloc.c	2007-09-20 17:25:36.000000000 -0700
 @@ -20,6 +20,7 @@
  #include <linux/quotaops.h>
  #include <linux/buffer_head.h>
@@ -59,7 +89,7 @@ Index: linux-2.6.23-rc5/fs/ext4/balloc.c
  /*
   * balloc.c contains the blocks allocation and deallocation routines
   */
-@@ -42,6 +43,76 @@ void ext4_get_group_no_and_offset(struct
+@@ -42,6 +43,74 @@ void ext4_get_group_no_and_offset(struct
  
  }
  
@@ -76,7 +106,7 @@ Index: linux-2.6.23-rc5/fs/ext4/balloc.c
 +	if (bh) {
 +		J_ASSERT_BH(bh, buffer_locked(bh));
 +
-+		/* If checksum is bad mark all blocks use to prevent allocation,
++		/* If checksum is bad mark all blocks used to prevent allocation
 +		 * essentially implementing a per-group read-only flag. */
 +		if (!ext4_group_desc_csum_verify(sbi, block_group, gdp)) {
 +			ext4_error(sb, __FUNCTION__,
@@ -121,10 +151,8 @@ Index: linux-2.6.23-rc5/fs/ext4/balloc.c
 +			le32_to_cpu(sbi->s_es->s_first_data_block);
 +
 +		/* Set bits for block and inode bitmaps, and inode table */
-+		ext4_set_bit(le32_to_cpu(gdp->bg_block_bitmap) - start,
-+			     bh->b_data);
-+		ext4_set_bit(le32_to_cpu(gdp->bg_inode_bitmap) - start,
-+			     bh->b_data);
++		ext4_set_bit(ext4_block_bitmap(sb, gdp) - start, bh->b_data);
++		ext4_set_bit(ext4_inode_bitmap(sb, gdp) - start, bh->b_data);
 +		for (bit = le32_to_cpu(gdp->bg_inode_table) - start,
 +		     bit_max = bit + sbi->s_itb_per_group; bit < bit_max; bit++)
 +			ext4_set_bit(bit, bh->b_data);
@@ -136,7 +164,7 @@ Index: linux-2.6.23-rc5/fs/ext4/balloc.c
  /*
   * The free blocks are managed by bitmaps.  A file system contains several
   * blocks groups.  Each group contains 1 bitmap block for blocks, 1 bitmap
-@@ -110,16 +181,29 @@ struct ext4_group_desc * ext4_get_group_
+@@ -110,16 +179,29 @@ struct ext4_group_desc * ext4_get_group_
   *
   * Return buffer_head on success or NULL in case of failure.
   */
@@ -153,7 +181,7 @@ Index: linux-2.6.23-rc5/fs/ext4/balloc.c
  		goto error_out;
 -	bh = sb_bread(sb, ext4_block_bitmap(sb, desc));
 +	if (desc->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
-+		bh = sb_getblk(sb, le32_to_cpu(desc->bg_block_bitmap));
++		bh = sb_getblk(sb, ext4_block_bitmap(sb, desc));
 +		if (!buffer_uptodate(bh)) {
 +			lock_buffer(bh);
 +			if (!buffer_uptodate(bh)) {
@@ -164,12 +192,12 @@ Index: linux-2.6.23-rc5/fs/ext4/balloc.c
 +			unlock_buffer(bh);
 +		}
 +	} else {
-+		bh = sb_bread(sb, le32_to_cpu(desc->bg_block_bitmap));
++		bh = sb_bread(sb, ext4_block_bitmap(sb,desc));
 +	}
  	if (!bh)
  		ext4_error (sb, "read_block_bitmap",
  			    "Cannot read block bitmap - "
-@@ -586,6 +670,7 @@ do_more:
+@@ -586,6 +668,7 @@ do_more:
  	desc->bg_free_blocks_count =
  		cpu_to_le16(le16_to_cpu(desc->bg_free_blocks_count) +
  			group_freed);
@@ -177,7 +205,7 @@ Index: linux-2.6.23-rc5/fs/ext4/balloc.c
  	spin_unlock(sb_bgl_lock(sbi, block_group));
  	percpu_counter_mod(&sbi->s_freeblocks_counter, count);
  
-@@ -1644,8 +1729,11 @@ allocated:
+@@ -1644,8 +1727,11 @@ allocated:
  			ret_block, goal_hits, goal_attempts);
  
  	spin_lock(sb_bgl_lock(sbi, group_no));
@@ -189,10 +217,10 @@ Index: linux-2.6.23-rc5/fs/ext4/balloc.c
  	spin_unlock(sb_bgl_lock(sbi, group_no));
  	percpu_counter_mod(&sbi->s_freeblocks_counter, -num);
  
-Index: linux-2.6.23-rc5/fs/ext4/group.h
+Index: linux-2.6.23-rc6/fs/ext4/group.h
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.23-rc5/fs/ext4/group.h	2007-09-12 16:11:59.000000000 -0700
++++ linux-2.6.23-rc6/fs/ext4/group.h	2007-09-20 17:25:36.000000000 -0700
 @@ -0,0 +1,29 @@
 +/*
 + *  linux/fs/ext4/group.h
@@ -223,10 +251,10 @@ Index: linux-2.6.23-rc5/fs/ext4/group.h
 +				       struct buffer_head *bh, int group,
 +				       struct ext4_group_desc *desc);
 +#endif /* _LINUX_EXT4_GROUP_H */
-Index: linux-2.6.23-rc5/fs/ext4/ialloc.c
+Index: linux-2.6.23-rc6/fs/ext4/ialloc.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/ext4/ialloc.c	2007-09-11 18:15:52.000000000 -0700
-+++ linux-2.6.23-rc5/fs/ext4/ialloc.c	2007-09-12 16:11:59.000000000 -0700
+--- linux-2.6.23-rc6.orig/fs/ext4/ialloc.c	2007-09-19 11:37:33.000000000 -0700
++++ linux-2.6.23-rc6/fs/ext4/ialloc.c	2007-09-20 17:25:36.000000000 -0700
 @@ -28,6 +28,7 @@
  
  #include "xattr.h"
@@ -295,7 +323,7 @@ Index: linux-2.6.23-rc5/fs/ext4/ialloc.c
 -
 -	bh = sb_bread(sb, ext4_inode_bitmap(sb, desc));
 +	if (desc->bg_flags & cpu_to_le16(EXT4_BG_INODE_UNINIT)) {
-+		bh = sb_getblk(sb, le32_to_cpu(desc->bg_inode_bitmap));
++		bh = sb_getblk(sb, ext4_inode_bitmap(sb, desc));
 +		if (!buffer_uptodate(bh)) {
 +			lock_buffer(bh);
 +			if (!buffer_uptodate(bh)) {
@@ -306,7 +334,7 @@ Index: linux-2.6.23-rc5/fs/ext4/ialloc.c
 +			unlock_buffer(bh);
 +		}
 +	} else {
-+		bh = sb_bread(sb, le32_to_cpu(desc->bg_inode_bitmap));
++		bh = sb_bread(sb, ext4_inode_bitmap(sb, desc));
 +	}
  	if (!bh)
  		ext4_error(sb, "read_inode_bitmap",
@@ -348,7 +376,7 @@ Index: linux-2.6.23-rc5/fs/ext4/ialloc.c
  		err = -EIO;
  		goto fail;
  	}
-@@ -532,13 +595,64 @@ got:
+@@ -532,13 +595,70 @@ got:
  	BUFFER_TRACE(bh2, "get_write_access");
  	err = ext4_journal_get_write_access(handle, bh2);
  	if (err) goto fail;
@@ -392,12 +420,18 @@ Index: linux-2.6.23-rc5/fs/ext4/ialloc.c
 +	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_GDT_CSUM)) {
 +		if (gdp->bg_flags & cpu_to_le16(EXT4_BG_INODE_UNINIT)) {
 +			gdp->bg_flags &= cpu_to_le16(~EXT4_BG_INODE_UNINIT);
-+			free = EXT4_INODES_PER_GROUP(sb);
++			free = 0;
 +		} else {
 +			free = EXT4_INODES_PER_GROUP(sb) -
 +				le16_to_cpu(gdp->bg_itable_unused);
 +		}
 +
++		/*
++		 * Check the relative inode number against the last used
++		 * relative inode number in this group. if it is greater
++		 * we need to  update the bg_itable_unused count
++		 *
++		 */
 +		if (ino > free)
 +			gdp->bg_itable_unused =
 +				cpu_to_le16(EXT4_INODES_PER_GROUP(sb) - ino);
@@ -413,7 +447,7 @@ Index: linux-2.6.23-rc5/fs/ext4/ialloc.c
  	spin_unlock(sb_bgl_lock(sbi, group));
  	BUFFER_TRACE(bh2, "call ext4_journal_dirty_metadata");
  	err = ext4_journal_dirty_metadata(handle, bh2);
-@@ -560,7 +674,7 @@ got:
+@@ -560,7 +680,7 @@ got:
  		inode->i_gid = current->fsgid;
  	inode->i_mode = mode;
  
@@ -422,10 +456,10 @@ Index: linux-2.6.23-rc5/fs/ext4/ialloc.c
  	/* This is the optimal IO size (for stat), not the fs block size */
  	inode->i_blocks = 0;
  	inode->i_mtime = inode->i_atime = inode->i_ctime = ei->i_crtime =
-Index: linux-2.6.23-rc5/fs/ext4/resize.c
+Index: linux-2.6.23-rc6/fs/ext4/resize.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/ext4/resize.c	2007-09-11 18:15:52.000000000 -0700
-+++ linux-2.6.23-rc5/fs/ext4/resize.c	2007-09-12 16:11:59.000000000 -0700
+--- linux-2.6.23-rc6.orig/fs/ext4/resize.c	2007-09-19 11:37:33.000000000 -0700
++++ linux-2.6.23-rc6/fs/ext4/resize.c	2007-09-20 17:25:36.000000000 -0700
 @@ -16,6 +16,7 @@
  #include <linux/errno.h>
  #include <linux/slab.h>
@@ -442,11 +476,18 @@ Index: linux-2.6.23-rc5/fs/ext4/resize.c
  
  	/*
  	 * Make the new blocks and inodes valid next.  We do this before
-Index: linux-2.6.23-rc5/fs/ext4/super.c
+Index: linux-2.6.23-rc6/fs/ext4/super.c
 ===================================================================
---- linux-2.6.23-rc5.orig/fs/ext4/super.c	2007-09-12 16:11:10.000000000 -0700
-+++ linux-2.6.23-rc5/fs/ext4/super.c	2007-09-12 16:11:59.000000000 -0700
-@@ -43,6 +43,7 @@
+--- linux-2.6.23-rc6.orig/fs/ext4/super.c	2007-09-19 11:37:35.000000000 -0700
++++ linux-2.6.23-rc6/fs/ext4/super.c	2007-09-20 17:25:36.000000000 -0700
+@@ -37,12 +37,14 @@
+ #include <linux/quotaops.h>
+ #include <linux/seq_file.h>
+ #include <linux/log2.h>
++#include <linux/crc16.h>
+ 
+ #include <asm/uaccess.h>
+ 
  #include "xattr.h"
  #include "acl.h"
  #include "namei.h"
@@ -454,60 +495,10 @@ Index: linux-2.6.23-rc5/fs/ext4/super.c
  
  static int ext4_load_journal(struct super_block *, struct ext4_super_block *,
  			     unsigned long journal_devnum);
-@@ -1247,6 +1248,93 @@ static int ext4_setup_super(struct super
+@@ -1237,6 +1239,43 @@ static int ext4_setup_super(struct super
  	return res;
  }
  
-+#if !defined(CONFIG_CRC16)
-+/** CRC table for the CRC-16. The poly is 0x8005 (x16 + x15 + x2 + 1) */
-+__u16 const crc16_table[256] = {
-+	0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301, 0x03C0, 0x0280, 0xC241,
-+	0xC601, 0x06C0, 0x0780, 0xC741, 0x0500, 0xC5C1, 0xC481, 0x0440,
-+	0xCC01, 0x0CC0, 0x0D80, 0xCD41, 0x0F00, 0xCFC1, 0xCE81, 0x0E40,
-+	0x0A00, 0xCAC1, 0xCB81, 0x0B40, 0xC901, 0x09C0, 0x0880, 0xC841,
-+	0xD801, 0x18C0, 0x1980, 0xD941, 0x1B00, 0xDBC1, 0xDA81, 0x1A40,
-+	0x1E00, 0xDEC1, 0xDF81, 0x1F40, 0xDD01, 0x1DC0, 0x1C80, 0xDC41,
-+	0x1400, 0xD4C1, 0xD581, 0x1540, 0xD701, 0x17C0, 0x1680, 0xD641,
-+	0xD201, 0x12C0, 0x1380, 0xD341, 0x1100, 0xD1C1, 0xD081, 0x1040,
-+	0xF001, 0x30C0, 0x3180, 0xF141, 0x3300, 0xF3C1, 0xF281, 0x3240,
-+	0x3600, 0xF6C1, 0xF781, 0x3740, 0xF501, 0x35C0, 0x3480, 0xF441,
-+	0x3C00, 0xFCC1, 0xFD81, 0x3D40, 0xFF01, 0x3FC0, 0x3E80, 0xFE41,
-+	0xFA01, 0x3AC0, 0x3B80, 0xFB41, 0x3900, 0xF9C1, 0xF881, 0x3840,
-+	0x2800, 0xE8C1, 0xE981, 0x2940, 0xEB01, 0x2BC0, 0x2A80, 0xEA41,
-+	0xEE01, 0x2EC0, 0x2F80, 0xEF41, 0x2D00, 0xEDC1, 0xEC81, 0x2C40,
-+	0xE401, 0x24C0, 0x2580, 0xE541, 0x2700, 0xE7C1, 0xE681, 0x2640,
-+	0x2200, 0xE2C1, 0xE381, 0x2340, 0xE101, 0x21C0, 0x2080, 0xE041,
-+	0xA001, 0x60C0, 0x6180, 0xA141, 0x6300, 0xA3C1, 0xA281, 0x6240,
-+	0x6600, 0xA6C1, 0xA781, 0x6740, 0xA501, 0x65C0, 0x6480, 0xA441,
-+	0x6C00, 0xACC1, 0xAD81, 0x6D40, 0xAF01, 0x6FC0, 0x6E80, 0xAE41,
-+	0xAA01, 0x6AC0, 0x6B80, 0xAB41, 0x6900, 0xA9C1, 0xA881, 0x6840,
-+	0x7800, 0xB8C1, 0xB981, 0x7940, 0xBB01, 0x7BC0, 0x7A80, 0xBA41,
-+	0xBE01, 0x7EC0, 0x7F80, 0xBF41, 0x7D00, 0xBDC1, 0xBC81, 0x7C40,
-+	0xB401, 0x74C0, 0x7580, 0xB541, 0x7700, 0xB7C1, 0xB681, 0x7640,
-+	0x7200, 0xB2C1, 0xB381, 0x7340, 0xB101, 0x71C0, 0x7080, 0xB041,
-+	0x5000, 0x90C1, 0x9181, 0x5140, 0x9301, 0x53C0, 0x5280, 0x9241,
-+	0x9601, 0x56C0, 0x5780, 0x9741, 0x5500, 0x95C1, 0x9481, 0x5440,
-+	0x9C01, 0x5CC0, 0x5D80, 0x9D41, 0x5F00, 0x9FC1, 0x9E81, 0x5E40,
-+	0x5A00, 0x9AC1, 0x9B81, 0x5B40, 0x9901, 0x59C0, 0x5880, 0x9841,
-+	0x8801, 0x48C0, 0x4980, 0x8941, 0x4B00, 0x8BC1, 0x8A81, 0x4A40,
-+	0x4E00, 0x8EC1, 0x8F81, 0x4F40, 0x8D01, 0x4DC0, 0x4C80, 0x8C41,
-+	0x4400, 0x84C1, 0x8581, 0x4540, 0x8701, 0x47C0, 0x4680, 0x8641,
-+	0x8201, 0x42C0, 0x4380, 0x8341, 0x4100, 0x81C1, 0x8081, 0x4040
-+};
-+
-+static inline __u16 crc16_byte(__u16 crc, const __u8 data)
-+{
-+	return (crc >> 8) ^ crc16_table[(crc ^ data) & 0xff];
-+}
-+
-+__u16 crc16(__u16 crc, __u8 const *buffer, size_t len)
-+{
-+	while (len--)
-+		crc = crc16_byte(crc, *buffer++);
-+	return crc;
-+}
-+#endif
-+
 +__le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 block_group,
 +			    struct ext4_group_desc *gdp)
 +{
@@ -527,8 +518,8 @@ Index: linux-2.6.23-rc5/fs/ext4/super.c
 +		     cpu_to_le32(EXT4_FEATURE_INCOMPAT_64BIT)) &&
 +		    offset < le16_to_cpu(sbi->s_es->s_desc_size))
 +			crc = crc16(crc, (__u8 *)gdp + offset,
-+				    le16_to_cpu(sbi->s_es->s_desc_size)
-+					- offset);
++				    le16_to_cpu(sbi->s_es->s_desc_size) -
++					offset);
 +	}
 +
 +	return cpu_to_le16(crc);
@@ -539,7 +530,7 @@ Index: linux-2.6.23-rc5/fs/ext4/super.c
 +{
 +	if ((sbi->s_es->s_feature_ro_compat &
 +	     cpu_to_le32(EXT4_FEATURE_RO_COMPAT_GDT_CSUM)) &&
-+	     (gdp->bg_checksum != ext4_group_desc_csum(sbi, block_group, gdp)))
++	    (gdp->bg_checksum != ext4_group_desc_csum(sbi, block_group, gdp)))
 +		return 0;
 +
 +	return 1;
@@ -548,7 +539,7 @@ Index: linux-2.6.23-rc5/fs/ext4/super.c
  /* Called at mount-time, super-block is locked */
  static int ext4_check_descriptors (struct super_block * sb)
  {
-@@ -1301,6 +1389,14 @@ static int ext4_check_descriptors (struc
+@@ -1291,6 +1330,14 @@ static int ext4_check_descriptors (struc
  				    i, inode_table);
  			return 0;
  		}
@@ -563,10 +554,10 @@ Index: linux-2.6.23-rc5/fs/ext4/super.c
  		first_block += EXT4_BLOCKS_PER_GROUP(sb);
  		gdp = (struct ext4_group_desc *)
  			((__u8 *)gdp + EXT4_DESC_SIZE(sb));
-Index: linux-2.6.23-rc5/include/linux/ext4_fs.h
+Index: linux-2.6.23-rc6/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.23-rc5.orig/include/linux/ext4_fs.h	2007-09-12 16:11:10.000000000 -0700
-+++ linux-2.6.23-rc5/include/linux/ext4_fs.h	2007-09-12 16:12:42.000000000 -0700
+--- linux-2.6.23-rc6.orig/include/linux/ext4_fs.h	2007-09-20 17:25:34.000000000 -0700
++++ linux-2.6.23-rc6/include/linux/ext4_fs.h	2007-09-20 17:25:36.000000000 -0700
 @@ -123,19 +123,25 @@
   */
  struct ext4_group_desc
@@ -581,23 +572,23 @@ Index: linux-2.6.23-rc5/include/linux/ext4_fs.h
  	__le16	bg_used_dirs_count;	/* Directories count */
 -	__u16	bg_flags;
 -	__u32	bg_reserved[3];
-+	__le16	bg_flags;
-+	__u32	bg_reserved[2];
-+	__le16  bg_itable_unused;       /* Unused inodes count */
-+	__le16  bg_checksum;            /* crc16(sb_uuid+group+desc) */
++	__u16	bg_flags;		/* EXT4_BG_flags (INODE_UNINIT, etc) */
++	__u32	bg_reserved[2];		/* Likely block/inode bitmap checksum */
++	__le16  bg_itable_unused;	/* Unused inodes count */
++	__le16  bg_checksum;		/* crc16(sb_uuid+group+desc) */
  	__le32	bg_block_bitmap_hi;	/* Blocks bitmap block MSB */
  	__le32	bg_inode_bitmap_hi;	/* Inodes bitmap block MSB */
  	__le32	bg_inode_table_hi;	/* Inodes table block MSB */
  };
  
-+#define EXT4_BG_INODE_UNINIT  0x0001 /* Inode table/bitmap not in use */
-+#define EXT4_BG_BLOCK_UNINIT  0x0002 /* Block bitmap not in use */
-+#define EXT4_BG_INODE_ZEROED  0x0004 /* On-disk itable initialized to zero */
++#define EXT4_BG_INODE_UNINIT	0x0001 /* Inode table/bitmap not in use */
++#define EXT4_BG_BLOCK_UNINIT	0x0002 /* Block bitmap not in use */
++#define EXT4_BG_INODE_ZEROED	0x0004 /* On-disk itable initialized to zero */
 +
  #ifdef __KERNEL__
  #include <linux/ext4_fs_i.h>
  #include <linux/ext4_fs_sb.h>
-@@ -693,6 +699,7 @@ static inline int ext4_valid_inum(struct
+@@ -692,6 +698,7 @@ static inline int ext4_valid_inum(struct
  #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
  #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
  #define EXT4_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
@@ -605,11 +596,23 @@ Index: linux-2.6.23-rc5/include/linux/ext4_fs.h
  #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
  #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
  
-@@ -714,6 +721,7 @@ static inline int ext4_valid_inum(struct
+@@ -711,6 +718,7 @@ static inline int ext4_valid_inum(struct
+ 					 EXT4_FEATURE_INCOMPAT_64BIT)
+ #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
  					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
++					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
  					 EXT4_FEATURE_RO_COMPAT_DIR_NLINK | \
  					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \
-+					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
  					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR)
- 
- /*
+Index: linux-2.6.23-rc6/fs/Kconfig
+===================================================================
+--- linux-2.6.23-rc6.orig/fs/Kconfig	2007-09-19 11:37:34.000000000 -0700
++++ linux-2.6.23-rc6/fs/Kconfig	2007-09-20 17:25:36.000000000 -0700
+@@ -140,6 +140,7 @@ config EXT4DEV_FS
+ 	tristate "Ext4dev/ext4 extended fs support development (EXPERIMENTAL)"
+ 	depends on EXPERIMENTAL
+ 	select JBD2
++	select CRC16
+ 	help
+ 	  Ext4dev is a predecessor filesystem of the next generation
+ 	  extended fs ext4, based on ext3 filesystem code. It will be

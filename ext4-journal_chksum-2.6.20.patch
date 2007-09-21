@@ -36,9 +36,9 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.23-rc6/fs/ext4/super.c
 ===================================================================
---- linux-2.6.23-rc6.orig/fs/ext4/super.c	2007-09-14 10:00:57.000000000 -0700
-+++ linux-2.6.23-rc6/fs/ext4/super.c	2007-09-14 10:03:08.000000000 -0700
-@@ -731,6 +731,7 @@ enum {
+--- linux-2.6.23-rc6.orig/fs/ext4/super.c	2007-09-20 17:25:46.000000000 -0700
++++ linux-2.6.23-rc6/fs/ext4/super.c	2007-09-20 17:25:49.000000000 -0700
+@@ -733,6 +733,7 @@ enum {
  	Opt_user_xattr, Opt_nouser_xattr, Opt_acl, Opt_noacl,
  	Opt_reservation, Opt_noreservation, Opt_noload, Opt_nobh, Opt_bh,
  	Opt_commit, Opt_journal_update, Opt_journal_inum, Opt_journal_dev,
@@ -46,7 +46,7 @@ Index: linux-2.6.23-rc6/fs/ext4/super.c
  	Opt_abort, Opt_data_journal, Opt_data_ordered, Opt_data_writeback,
  	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
-@@ -770,6 +771,8 @@ static match_table_t tokens = {
+@@ -772,6 +773,8 @@ static match_table_t tokens = {
  	{Opt_journal_update, "journal=update"},
  	{Opt_journal_inum, "journal=%u"},
  	{Opt_journal_dev, "journal_dev=%u"},
@@ -55,7 +55,7 @@ Index: linux-2.6.23-rc6/fs/ext4/super.c
  	{Opt_abort, "abort"},
  	{Opt_data_journal, "data=journal"},
  	{Opt_data_ordered, "data=ordered"},
-@@ -957,6 +960,13 @@ static int parse_options (char *options,
+@@ -959,6 +962,13 @@ static int parse_options (char *options,
  				return 0;
  			*journal_devnum = option;
  			break;
@@ -69,7 +69,7 @@ Index: linux-2.6.23-rc6/fs/ext4/super.c
  		case Opt_noload:
  			set_opt (sbi->s_mount_opt, NOLOAD);
  			break;
-@@ -1823,6 +1833,21 @@ static int ext4_fill_super (struct super
+@@ -1875,6 +1885,21 @@ static int ext4_fill_super (struct super
  		goto failed_mount4;
  	}
  
@@ -93,8 +93,8 @@ Index: linux-2.6.23-rc6/fs/ext4/super.c
  	switch (test_opt(sb, DATA_FLAGS)) {
 Index: linux-2.6.23-rc6/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.23-rc6.orig/fs/jbd2/commit.c	2007-09-14 10:01:50.000000000 -0700
-+++ linux-2.6.23-rc6/fs/jbd2/commit.c	2007-09-14 10:03:08.000000000 -0700
+--- linux-2.6.23-rc6.orig/fs/jbd2/commit.c	2007-09-19 11:37:41.000000000 -0700
++++ linux-2.6.23-rc6/fs/jbd2/commit.c	2007-09-20 17:25:49.000000000 -0700
 @@ -20,6 +20,7 @@
  #include <linux/slab.h>
  #include <linux/mm.h>
@@ -358,8 +358,8 @@ Index: linux-2.6.23-rc6/fs/jbd2/commit.c
  		__jbd2_journal_abort_hard(journal);
 Index: linux-2.6.23-rc6/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.23-rc6.orig/fs/jbd2/journal.c	2007-09-14 10:01:50.000000000 -0700
-+++ linux-2.6.23-rc6/fs/jbd2/journal.c	2007-09-14 10:03:08.000000000 -0700
+--- linux-2.6.23-rc6.orig/fs/jbd2/journal.c	2007-09-19 14:23:45.000000000 -0700
++++ linux-2.6.23-rc6/fs/jbd2/journal.c	2007-09-20 17:25:49.000000000 -0700
 @@ -65,6 +65,7 @@ EXPORT_SYMBOL(jbd2_journal_update_format
  EXPORT_SYMBOL(jbd2_journal_check_used_features);
  EXPORT_SYMBOL(jbd2_journal_check_available_features);
@@ -404,8 +404,8 @@ Index: linux-2.6.23-rc6/fs/jbd2/journal.c
   * int jbd2_journal_update_format () - Update on-disk journal structure.
 Index: linux-2.6.23-rc6/fs/jbd2/recovery.c
 ===================================================================
---- linux-2.6.23-rc6.orig/fs/jbd2/recovery.c	2007-09-14 10:00:57.000000000 -0700
-+++ linux-2.6.23-rc6/fs/jbd2/recovery.c	2007-09-14 10:03:08.000000000 -0700
+--- linux-2.6.23-rc6.orig/fs/jbd2/recovery.c	2007-09-19 11:37:35.000000000 -0700
++++ linux-2.6.23-rc6/fs/jbd2/recovery.c	2007-09-20 17:25:49.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/jbd2.h>
  #include <linux/errno.h>
@@ -577,9 +577,9 @@ Index: linux-2.6.23-rc6/fs/jbd2/recovery.c
  		if (info->end_transaction != next_commit_ID) {
 Index: linux-2.6.23-rc6/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.23-rc6.orig/include/linux/ext4_fs.h	2007-09-14 10:03:05.000000000 -0700
-+++ linux-2.6.23-rc6/include/linux/ext4_fs.h	2007-09-14 10:03:08.000000000 -0700
-@@ -482,7 +482,8 @@ do {									       \
+--- linux-2.6.23-rc6.orig/include/linux/ext4_fs.h	2007-09-20 17:25:46.000000000 -0700
++++ linux-2.6.23-rc6/include/linux/ext4_fs.h	2007-09-20 17:25:49.000000000 -0700
+@@ -488,7 +488,8 @@ do {									       \
  #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
  #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
  #define EXT4_MOUNT_EXTENTS		0x400000 /* Extents support */
@@ -591,9 +591,9 @@ Index: linux-2.6.23-rc6/include/linux/ext4_fs.h
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
 Index: linux-2.6.23-rc6/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.23-rc6.orig/include/linux/jbd2.h	2007-09-14 10:01:49.000000000 -0700
-+++ linux-2.6.23-rc6/include/linux/jbd2.h	2007-09-14 10:03:08.000000000 -0700
-@@ -164,6 +164,29 @@ typedef struct journal_header_s
+--- linux-2.6.23-rc6.orig/include/linux/jbd2.h	2007-09-19 11:37:41.000000000 -0700
++++ linux-2.6.23-rc6/include/linux/jbd2.h	2007-09-20 17:25:49.000000000 -0700
+@@ -149,6 +149,29 @@ typedef struct journal_header_s
  	__be32		h_sequence;
  } journal_header_t;
  
@@ -623,7 +623,7 @@ Index: linux-2.6.23-rc6/include/linux/jbd2.h
  
  /*
   * The block tag: used to describe a single buffer in the journal.
-@@ -257,14 +280,18 @@ typedef struct journal_superblock_s
+@@ -242,14 +265,18 @@ typedef struct journal_superblock_s
  	((j)->j_format_version >= 2 &&					\
  	 ((j)->j_superblock->s_feature_incompat & cpu_to_be32((mask))))
  
@@ -646,7 +646,7 @@ Index: linux-2.6.23-rc6/include/linux/jbd2.h
  
  #ifdef __KERNEL__
  
-@@ -947,6 +974,8 @@ extern int	   jbd2_journal_check_availab
+@@ -932,6 +959,8 @@ extern int	   jbd2_journal_check_availab
  		   (journal_t *, unsigned long, unsigned long, unsigned long);
  extern int	   jbd2_journal_set_features
  		   (journal_t *, unsigned long, unsigned long, unsigned long);
