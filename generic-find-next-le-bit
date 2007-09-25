@@ -1,24 +1,26 @@
 Introduce ext4_find_next_bit
 
-From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+This gets used by the ext4 multi block allocator patches.
 
 Also add generic_find_next_le_bit
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Cc: <linux-ext4@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
 ---
 
- include/asm-generic/bitops/ext2-non-atomic.h |    2 +
- include/asm-generic/bitops/le.h              |    3 +
- include/asm-powerpc/bitops.h                 |    4 ++
+ include/asm-generic/bitops/ext2-non-atomic.h |    2 
+ include/asm-generic/bitops/le.h              |    4 +
+ include/asm-powerpc/bitops.h                 |    4 +
  include/linux/ext4_fs.h                      |    1 
- lib/find_next_bit.c                          |   44 +++++++++++++++++++++++++++
- 5 files changed, 54 insertions(+)
+ lib/find_next_bit.c                          |   44 +++++++++++++++++
+ 5 files changed, 55 insertions(+)
 
-
-Index: linux-2.6.23-rc5/include/asm-generic/bitops/ext2-non-atomic.h
-===================================================================
---- linux-2.6.23-rc5.orig/include/asm-generic/bitops/ext2-non-atomic.h	2007-08-31 23:08:24.000000000 -0700
-+++ linux-2.6.23-rc5/include/asm-generic/bitops/ext2-non-atomic.h	2007-09-12 16:14:17.000000000 -0700
+diff -puN include/asm-generic/bitops/ext2-non-atomic.h~introduce-ext4_find_next_bit include/asm-generic/bitops/ext2-non-atomic.h
+--- a/include/asm-generic/bitops/ext2-non-atomic.h~introduce-ext4_find_next_bit
++++ a/include/asm-generic/bitops/ext2-non-atomic.h
 @@ -14,5 +14,7 @@
  	generic_find_first_zero_le_bit((unsigned long *)(addr), (size))
  #define ext2_find_next_zero_bit(addr, size, off) \
@@ -27,19 +29,19 @@ Index: linux-2.6.23-rc5/include/asm-generic/bitops/ext2-non-atomic.h
 +	generic_find_next_le_bit((unsigned long *)(addr), (size), (off))
  
  #endif /* _ASM_GENERIC_BITOPS_EXT2_NON_ATOMIC_H_ */
-Index: linux-2.6.23-rc5/include/asm-generic/bitops/le.h
-===================================================================
---- linux-2.6.23-rc5.orig/include/asm-generic/bitops/le.h	2007-08-31 23:08:24.000000000 -0700
-+++ linux-2.6.23-rc5/include/asm-generic/bitops/le.h	2007-09-12 16:14:17.000000000 -0700
-@@ -20,6 +20,7 @@
+diff -puN include/asm-generic/bitops/le.h~introduce-ext4_find_next_bit include/asm-generic/bitops/le.h
+--- a/include/asm-generic/bitops/le.h~introduce-ext4_find_next_bit
++++ a/include/asm-generic/bitops/le.h
+@@ -20,6 +20,8 @@
  #define generic___test_and_clear_le_bit(nr, addr) __test_and_clear_bit(nr, addr)
  
  #define generic_find_next_zero_le_bit(addr, size, offset) find_next_zero_bit(addr, size, offset)
-+#define generic_find_next_le_bit(addr, size, offset) find_next_bit(addr, size, offset)
++#define generic_find_next_le_bit(addr, size, offset) \
++			find_next_bit(addr, size, offset)
  
  #elif defined(__BIG_ENDIAN)
  
-@@ -42,6 +43,8 @@
+@@ -42,6 +44,8 @@
  
  extern unsigned long generic_find_next_zero_le_bit(const unsigned long *addr,
  		unsigned long size, unsigned long offset);
@@ -48,10 +50,9 @@ Index: linux-2.6.23-rc5/include/asm-generic/bitops/le.h
  
  #else
  #error "Please fix <asm/byteorder.h>"
-Index: linux-2.6.23-rc5/include/asm-powerpc/bitops.h
-===================================================================
---- linux-2.6.23-rc5.orig/include/asm-powerpc/bitops.h	2007-08-31 23:08:24.000000000 -0700
-+++ linux-2.6.23-rc5/include/asm-powerpc/bitops.h	2007-09-12 16:14:17.000000000 -0700
+diff -puN include/asm-powerpc/bitops.h~introduce-ext4_find_next_bit include/asm-powerpc/bitops.h
+--- a/include/asm-powerpc/bitops.h~introduce-ext4_find_next_bit
++++ a/include/asm-powerpc/bitops.h
 @@ -310,6 +310,8 @@ static __inline__ int test_le_bit(unsign
  unsigned long generic_find_next_zero_le_bit(const unsigned long *addr,
  				    unsigned long size, unsigned long offset);
@@ -66,15 +67,14 @@ Index: linux-2.6.23-rc5/include/asm-powerpc/bitops.h
  	generic_find_next_zero_le_bit((unsigned long*)addr, size, off)
  
 +#define ext2_find_next_bit(addr, size, off) \
-+	generic_find_next_le_bit((unsigned long*)addr, size, off)
++	generic_find_next_le_bit((unsigned long *)addr, size, off)
  /* Bitmap functions for the minix filesystem.  */
  
  #define minix_test_and_set_bit(nr,addr) \
-Index: linux-2.6.23-rc5/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.23-rc5.orig/include/linux/ext4_fs.h	2007-09-12 16:14:11.000000000 -0700
-+++ linux-2.6.23-rc5/include/linux/ext4_fs.h	2007-09-12 16:15:53.000000000 -0700
-@@ -514,6 +514,7 @@ do {									       \
+diff -puN include/linux/ext4_fs.h~introduce-ext4_find_next_bit include/linux/ext4_fs.h
+--- a/include/linux/ext4_fs.h~introduce-ext4_find_next_bit
++++ a/include/linux/ext4_fs.h
+@@ -492,6 +492,7 @@ do {									       \
  #define ext4_test_bit			ext2_test_bit
  #define ext4_find_first_zero_bit	ext2_find_first_zero_bit
  #define ext4_find_next_zero_bit		ext2_find_next_zero_bit
@@ -82,10 +82,9 @@ Index: linux-2.6.23-rc5/include/linux/ext4_fs.h
  
  /*
   * Maximal mount counts between two filesystem checks
-Index: linux-2.6.23-rc5/lib/find_next_bit.c
-===================================================================
---- linux-2.6.23-rc5.orig/lib/find_next_bit.c	2007-08-31 23:08:24.000000000 -0700
-+++ linux-2.6.23-rc5/lib/find_next_bit.c	2007-09-12 16:14:17.000000000 -0700
+diff -puN lib/find_next_bit.c~introduce-ext4_find_next_bit lib/find_next_bit.c
+--- a/lib/find_next_bit.c~introduce-ext4_find_next_bit
++++ a/lib/find_next_bit.c
 @@ -178,4 +178,48 @@ found_middle_swap:
  
  EXPORT_SYMBOL(generic_find_next_zero_le_bit);
@@ -113,7 +112,8 @@ Index: linux-2.6.23-rc5/lib/find_next_bit.c
 +	}
 +
 +	while (size & ~(BITS_PER_LONG - 1)) {
-+		if ((tmp = *(p++)))
++		tmp = *(p++);
++		if (tmp)
 +			goto found_middle_swap;
 +		result += BITS_PER_LONG;
 +		size -= BITS_PER_LONG;
@@ -131,7 +131,7 @@ Index: linux-2.6.23-rc5/lib/find_next_bit.c
 +found_middle_swap:
 +	return result + __ffs(ext2_swab(tmp));
 +}
-+
 +EXPORT_SYMBOL(generic_find_next_le_bit);
 +
  #endif /* __BIG_ENDIAN */
+_
