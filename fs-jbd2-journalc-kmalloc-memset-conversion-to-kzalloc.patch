@@ -1,0 +1,37 @@
+From: Mariusz Kozlowski <m.kozlowski@tuxland.pl>
+
+ fs/jbd2/journal.c | 66771 -> 66719 (-52 bytes)
+ fs/jbd2/journal.o | 199193 -> 199049 (-144 bytes)
+
+Signed-off-by: Mariusz Kozlowski <m.kozlowski@tuxland.pl>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+
+ fs/jbd2/journal.c |    7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff -puN fs/jbd2/journal.c~fs-jbd2-journalc-kmalloc-memset-conversion-to-kzalloc fs/jbd2/journal.c
+--- a/fs/jbd2/journal.c~fs-jbd2-journalc-kmalloc-memset-conversion-to-kzalloc
++++ a/fs/jbd2/journal.c
+@@ -928,17 +928,16 @@ static void journal_init_stats(journal_t
+ {
+ 	int size;
+ 
+-	if (proc_jbd2_stats == NULL)
++	if (!proc_jbd2_stats)
+ 		return;
+ 
+ 	journal->j_history_max = 100;
+ 	size = sizeof(struct transaction_stats_s) * journal->j_history_max;
+-	journal->j_history = kmalloc(size, GFP_KERNEL);
+-	if (journal->j_history == NULL) {
++	journal->j_history = kzalloc(size, GFP_KERNEL);
++	if (!journal->j_history) {
+ 		journal->j_history_max = 0;
+ 		return;
+ 	}
+-	memset(journal->j_history, 0, size);
+ 	spin_lock_init(&journal->j_history_lock);
+ }
+ 
+_
