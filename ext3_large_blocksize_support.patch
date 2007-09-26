@@ -1,0 +1,50 @@
+Support large blocksize up to PAGESIZE (max 64KB) for ext3
+
+From: Takashi Sato <sho@tnes.nec.co.jp>
+
+Originally from Takashi Sato, rebased to 2.6.23-rc6 and tested on 64k page ppc64 box runs fine. It allows to create >4k (8k,16k,32k,64k) block size on arch that support pagesize > 4k. 
+
+These patches support large blocksize up to PAGESIZE (max 64KB).
+
+Signed-off-by: Takashi Sato <sho@tnes.nec.co.jp>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+
+ fs/ext3/super.c         |    6 +++++-
+ include/linux/ext3_fs.h |    4 ++--
+ 6 files changed, 18 insertions(+), 8 deletions(-)
+
+
+Index: linux-2.6.23-rc8/fs/ext3/super.c
+===================================================================
+--- linux-2.6.23-rc8.orig/fs/ext3/super.c	2007-09-26 11:32:10.000000000 -0700
++++ linux-2.6.23-rc8/fs/ext3/super.c	2007-09-26 11:32:43.000000000 -0700
+@@ -1549,7 +1549,11 @@ static int ext3_fill_super (struct super
+ 		}
+ 
+ 		brelse (bh);
+-		sb_set_blocksize(sb, blocksize);
++		if (!sb_set_blocksize(sb, blocksize)) {
++			printk(KERN_ERR "EXT3-fs: bad blocksize %d.\n",
++				blocksize);
++			goto out_fail;
++		}
+ 		logic_sb_block = (sb_block * EXT3_MIN_BLOCK_SIZE) / blocksize;
+ 		offset = (sb_block * EXT3_MIN_BLOCK_SIZE) % blocksize;
+ 		bh = sb_bread(sb, logic_sb_block);
+Index: linux-2.6.23-rc8/include/linux/ext3_fs.h
+===================================================================
+--- linux-2.6.23-rc8.orig/include/linux/ext3_fs.h	2007-09-26 11:32:10.000000000 -0700
++++ linux-2.6.23-rc8/include/linux/ext3_fs.h	2007-09-26 11:32:43.000000000 -0700
+@@ -76,8 +76,8 @@
+  * Macro-instructions used to manage several block sizes
+  */
+ #define EXT3_MIN_BLOCK_SIZE		1024
+-#define	EXT3_MAX_BLOCK_SIZE		4096
+-#define EXT3_MIN_BLOCK_LOG_SIZE		  10
++#define	EXT3_MAX_BLOCK_SIZE		65536
++#define EXT3_MIN_BLOCK_LOG_SIZE		10
+ #ifdef __KERNEL__
+ # define EXT3_BLOCK_SIZE(s)		((s)->s_blocksize)
+ #else
