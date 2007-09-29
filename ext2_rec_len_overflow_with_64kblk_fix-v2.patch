@@ -1,6 +1,7 @@
 ext2: Avoid rec_len overflow with 64KB block size
 
 From: Jan Kara <jack@suse.cz>
+
 Subject: Re: [PATCH 1/3] Avoid rec_len overflow with 64KB block size
 
 With 64KB blocksize, a directory entry can have size 64KB which does not fit
@@ -9,16 +10,17 @@ value when read from / written to disk.
 
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
-
 ---
+
  fs/ext2/dir.c           |   43 +++++++++++++++++++++++++++++++------------
  include/linux/ext2_fs.h |    1 +
  2 files changed, 32 insertions(+), 12 deletions(-)
 
-Index: linux-2.6.23-rc8/fs/ext2/dir.c
-===================================================================
---- linux-2.6.23-rc8.orig/fs/ext2/dir.c	2007-09-26 11:32:09.000000000 -0700
-+++ linux-2.6.23-rc8/fs/ext2/dir.c	2007-09-26 11:32:54.000000000 -0700
+
+diff --git a/fs/ext2/dir.c b/fs/ext2/dir.c
+index 2bf49d7..1329bdb 100644
+--- a/fs/ext2/dir.c
++++ b/fs/ext2/dir.c
 @@ -26,6 +26,24 @@
  
  typedef struct ext2_dir_entry_2 ext2_dirent;
@@ -44,7 +46,7 @@ Index: linux-2.6.23-rc8/fs/ext2/dir.c
  /*
   * ext2 uses block-sized chunks. Arguably, sector-sized ones would be
   * more robust, but we have what we have
-@@ -95,7 +113,7 @@ static void ext2_check_page(struct page 
+@@ -95,7 +113,7 @@ static void ext2_check_page(struct page *page)
  	}
  	for (offs = 0; offs <= limit - EXT2_DIR_REC_LEN(1); offs += rec_len) {
  		p = (ext2_dirent *)(kaddr + offs);
@@ -53,7 +55,7 @@ Index: linux-2.6.23-rc8/fs/ext2/dir.c
  
  		if (rec_len < EXT2_DIR_REC_LEN(1))
  			goto Eshort;
-@@ -193,7 +211,8 @@ static inline int ext2_match (int len, c
+@@ -193,7 +211,8 @@ static inline int ext2_match (int len, const char * const name,
   */
  static inline ext2_dirent *ext2_next_entry(ext2_dirent *p)
  {
@@ -63,7 +65,7 @@ Index: linux-2.6.23-rc8/fs/ext2/dir.c
  }
  
  static inline unsigned 
-@@ -305,7 +324,7 @@ ext2_readdir (struct file * filp, void *
+@@ -305,7 +324,7 @@ ext2_readdir (struct file * filp, void * dirent, filldir_t filldir)
  					return 0;
  				}
  			}
@@ -72,7 +74,7 @@ Index: linux-2.6.23-rc8/fs/ext2/dir.c
  		}
  		ext2_put_page(page);
  	}
-@@ -413,7 +432,7 @@ void ext2_set_link(struct inode *dir, st
+@@ -413,7 +432,7 @@ void ext2_set_link(struct inode *dir, struct ext2_dir_entry_2 *de,
  			struct page *page, struct inode *inode)
  {
  	unsigned from = (char *) de - (char *) page_address(page);
@@ -81,7 +83,7 @@ Index: linux-2.6.23-rc8/fs/ext2/dir.c
  	int err;
  
  	lock_page(page);
-@@ -469,7 +488,7 @@ int ext2_add_link (struct dentry *dentry
+@@ -469,7 +488,7 @@ int ext2_add_link (struct dentry *dentry, struct inode *inode)
  				/* We hit i_size */
  				name_len = 0;
  				rec_len = chunk_size;
@@ -90,7 +92,7 @@ Index: linux-2.6.23-rc8/fs/ext2/dir.c
  				de->inode = 0;
  				goto got_it;
  			}
-@@ -483,7 +502,7 @@ int ext2_add_link (struct dentry *dentry
+@@ -483,7 +502,7 @@ int ext2_add_link (struct dentry *dentry, struct inode *inode)
  			if (ext2_match (namelen, name, de))
  				goto out_unlock;
  			name_len = EXT2_DIR_REC_LEN(de->name_len);
@@ -110,7 +112,7 @@ Index: linux-2.6.23-rc8/fs/ext2/dir.c
  		de = de1;
  	}
  	de->name_len = namelen;
-@@ -536,7 +555,7 @@ int ext2_delete_entry (struct ext2_dir_e
+@@ -536,7 +555,7 @@ int ext2_delete_entry (struct ext2_dir_entry_2 * dir, struct page * page )
  	struct inode *inode = mapping->host;
  	char *kaddr = page_address(page);
  	unsigned from = ((char*)dir - kaddr) & ~(ext2_chunk_size(inode)-1);
@@ -119,7 +121,7 @@ Index: linux-2.6.23-rc8/fs/ext2/dir.c
  	ext2_dirent * pde = NULL;
  	ext2_dirent * de = (ext2_dirent *) (kaddr + from);
  	int err;
-@@ -557,7 +576,7 @@ int ext2_delete_entry (struct ext2_dir_e
+@@ -557,7 +576,7 @@ int ext2_delete_entry (struct ext2_dir_entry_2 * dir, struct page * page )
  	err = mapping->a_ops->prepare_write(NULL, page, from, to);
  	BUG_ON(err);
  	if (pde)
@@ -128,7 +130,7 @@ Index: linux-2.6.23-rc8/fs/ext2/dir.c
  	dir->inode = 0;
  	err = ext2_commit_chunk(page, from, to);
  	inode->i_ctime = inode->i_mtime = CURRENT_TIME_SEC;
-@@ -591,14 +610,14 @@ int ext2_make_empty(struct inode *inode,
+@@ -591,14 +610,14 @@ int ext2_make_empty(struct inode *inode, struct inode *parent)
  	memset(kaddr, 0, chunk_size);
  	de = (struct ext2_dir_entry_2 *)kaddr;
  	de->name_len = 1;
@@ -145,10 +147,10 @@ Index: linux-2.6.23-rc8/fs/ext2/dir.c
  	de->inode = cpu_to_le32(parent->i_ino);
  	memcpy (de->name, "..\0", 4);
  	ext2_set_de_type (de, inode);
-Index: linux-2.6.23-rc8/include/linux/ext2_fs.h
-===================================================================
---- linux-2.6.23-rc8.orig/include/linux/ext2_fs.h	2007-09-26 11:32:43.000000000 -0700
-+++ linux-2.6.23-rc8/include/linux/ext2_fs.h	2007-09-26 11:32:54.000000000 -0700
+diff --git a/include/linux/ext2_fs.h b/include/linux/ext2_fs.h
+index 910a705..41063d5 100644
+--- a/include/linux/ext2_fs.h
++++ b/include/linux/ext2_fs.h
 @@ -557,5 +557,6 @@ enum {
  #define EXT2_DIR_ROUND 			(EXT2_DIR_PAD - 1)
  #define EXT2_DIR_REC_LEN(name_len)	(((name_len) + 8 + EXT2_DIR_ROUND) & \

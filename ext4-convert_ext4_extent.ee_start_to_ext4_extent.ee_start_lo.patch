@@ -1,5 +1,6 @@
-Subject: [PATCH 5/7] ext4: Convert ext4_extent.ee_start to ext4_extent.ee_start_lo
-From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+ext4: Convert ext4_extent.ee_start to ext4_extent.ee_start_lo
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 Convert ext4_extent.ee_start to ext4_extent.ee_start_lo
 This helps in finding BUGs due to direct partial access of
@@ -9,19 +10,20 @@ Also fix direct partial access in ext4 code
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
+
  fs/ext4/extents.c               |    8 +++-----
- fs/ext4/migrate.c               |    2 +-
  include/linux/ext4_fs_extents.h |    2 +-
- 3 files changed, 5 insertions(+), 7 deletions(-)
+ 2 files changed, 4 insertions(+), 6 deletions(-)
+
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 9ccdb85..e852c2c 100644
+index 2be404f..c03056a 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -52,7 +52,7 @@ static ext4_fsblk_t ext_pblock(struct ext4_extent *ex)
  {
  	ext4_fsblk_t block;
-
+ 
 -	block = le32_to_cpu(ex->ee_start);
 +	block = le32_to_cpu(ex->ee_start_lo);
  	block |= ((ext4_fsblk_t) le16_to_cpu(ex->ee_start_hi) << 31) << 1;
@@ -35,8 +37,8 @@ index 9ccdb85..e852c2c 100644
 +	ex->ee_start_lo = cpu_to_le32((unsigned long) (pb & 0xffffffff));
  	ex->ee_start_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1) & 0xffff);
  }
-
-@@ -1551,8 +1551,7 @@ has_space:
+ 
+@@ -1409,8 +1409,7 @@ has_space:
  	eh->eh_entries = cpu_to_le16(le16_to_cpu(eh->eh_entries)+1);
  	nearex = path[depth].p_ext;
  	nearex->ee_block = newext->ee_block;
@@ -44,9 +46,9 @@ index 9ccdb85..e852c2c 100644
 -	nearex->ee_start_hi = newext->ee_start_hi;
 +	ext4_ext_store_pblock(nearex, ext_pblock(newext));
  	nearex->ee_len = newext->ee_len;
-
+ 
  merge:
-@@ -2321,7 +2320,6 @@ int ext4_ext_convert_to_initialized(handle_t *handle, struct inode *inode,
+@@ -2177,7 +2176,6 @@ int ext4_ext_convert_to_initialized(handle_t *handle, struct inode *inode,
  	}
  	/* ex2: iblock to iblock + maxblocks-1 : initialised */
  	ex2->ee_block = cpu_to_le32(iblock);
@@ -54,21 +56,8 @@ index 9ccdb85..e852c2c 100644
  	ext4_ext_store_pblock(ex2, newblock);
  	ex2->ee_len = cpu_to_le16(allocated);
  	if (ex2 != ex)
-diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
-index 5efcdd0..3a597b5 100644
---- a/fs/ext4/migrate.c
-+++ b/fs/ext4/migrate.c
-@@ -24,7 +24,7 @@ struct list_blocks_struct {
- /* will go away */
- static void ext4_ext_store_pblock(struct ext4_extent *ex, ext4_fsblk_t pb)
- {
--	ex->ee_start = cpu_to_le32((unsigned long) (pb & 0xffffffff));
-+	ex->ee_start_lo = cpu_to_le32((unsigned long) (pb & 0xffffffff));
- 	ex->ee_start_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1) & 0xffff);
- }
-
 diff --git a/include/linux/ext4_fs_extents.h b/include/linux/ext4_fs_extents.h
-index 5ed0891..016977b 100644
+index 81406f3..cb2dfbb 100644
 --- a/include/linux/ext4_fs_extents.h
 +++ b/include/linux/ext4_fs_extents.h
 @@ -74,7 +74,7 @@ struct ext4_extent {
@@ -78,8 +67,5 @@ index 5ed0891..016977b 100644
 -	__le32	ee_start;	/* low 32 bits of physical block */
 +	__le32	ee_start_lo;	/* low 32 bits of physical block */
  };
-
+ 
  /*
--- 
-1.5.3.1.91.gd3392-dirty
-

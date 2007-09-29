@@ -1,6 +1,7 @@
+This feature relaxes check restrictions on where each block groups meta
+
 From: Jose R. Santos <jrs@us.ibm.com>
 
-This feature relaxes check restrictions on where each block groups meta
 data is located within the storage media.  This allows for the allocation
 of bitmaps or inode tables outside the block group boundaries in cases
 where bad blocks forces us to look for new blocks which the owning block
@@ -11,15 +12,17 @@ Signed-off-by: Jose R. Santos <jrs@us.ibm.com>
 Cc: <linux-ext4@vger.kernel.org>
 Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
 ---
+
  fs/ext4/super.c         |    9 +++++++--
  include/linux/ext4_fs.h |    4 +++-
  2 files changed, 10 insertions(+), 3 deletions(-)
 
-Index: linux-2.6.23-rc6/fs/ext4/super.c
-===================================================================
---- linux-2.6.23-rc6.orig/fs/ext4/super.c	2007-09-20 17:25:36.000000000 -0700
-+++ linux-2.6.23-rc6/fs/ext4/super.c	2007-09-20 17:25:46.000000000 -0700
-@@ -1287,13 +1287,17 @@ static int ext4_check_descriptors (struc
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index b59610d..619db84 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1287,13 +1287,17 @@ static int ext4_check_descriptors (struct super_block * sb)
  	ext4_fsblk_t inode_table;
  	struct ext4_group_desc * gdp = NULL;
  	int desc_block = 0;
@@ -38,7 +41,7 @@ Index: linux-2.6.23-rc6/fs/ext4/super.c
  			last_block = ext4_blocks_count(sbi->s_es) - 1;
  		else
  			last_block = first_block +
-@@ -1338,7 +1342,8 @@ static int ext4_check_descriptors (struc
+@@ -1338,7 +1342,8 @@ static int ext4_check_descriptors (struct super_block * sb)
  				   le16_to_cpu(gdp->bg_checksum));
  			return 0;
  		}
@@ -48,11 +51,11 @@ Index: linux-2.6.23-rc6/fs/ext4/super.c
  		gdp = (struct ext4_group_desc *)
  			((__u8 *)gdp + EXT4_DESC_SIZE(sb));
  	}
-Index: linux-2.6.23-rc6/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.23-rc6.orig/include/linux/ext4_fs.h	2007-09-20 17:25:36.000000000 -0700
-+++ linux-2.6.23-rc6/include/linux/ext4_fs.h	2007-09-20 17:25:46.000000000 -0700
-@@ -709,13 +709,15 @@ static inline int ext4_valid_inum(struct
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index 9196507..f9881b6 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
+@@ -686,13 +686,15 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  #define EXT4_FEATURE_INCOMPAT_META_BG		0x0010
  #define EXT4_FEATURE_INCOMPAT_EXTENTS		0x0040 /* extents support */
  #define EXT4_FEATURE_INCOMPAT_64BIT		0x0080

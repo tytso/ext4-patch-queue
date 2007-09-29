@@ -1,6 +1,6 @@
 Introduce ext4_find_next_bit
 
-From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+From: \\\"Aneesh Kumar K.V\\\" <aneesh.kumar@linux.vnet.ibm.com>
 
 This gets used by the ext4 multi block allocator patches.
 
@@ -11,16 +11,18 @@ Cc: <linux-ext4@vger.kernel.org>
 Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
 ---
 
- include/asm-generic/bitops/ext2-non-atomic.h |    2 
- include/asm-generic/bitops/le.h              |    4 +
- include/asm-powerpc/bitops.h                 |    4 +
- include/linux/ext4_fs.h                      |    1 
- lib/find_next_bit.c                          |   44 +++++++++++++++++
- 5 files changed, 55 insertions(+)
+ include/asm-generic/bitops/ext2-non-atomic.h |    2 +
+ include/asm-generic/bitops/le.h              |    4 ++
+ include/asm-powerpc/bitops.h                 |    4 ++
+ include/linux/ext4_fs.h                      |    1 +
+ lib/find_next_bit.c                          |   44 ++++++++++++++++++++++++++
+ 5 files changed, 55 insertions(+), 0 deletions(-)
 
-diff -puN include/asm-generic/bitops/ext2-non-atomic.h~introduce-ext4_find_next_bit include/asm-generic/bitops/ext2-non-atomic.h
---- a/include/asm-generic/bitops/ext2-non-atomic.h~introduce-ext4_find_next_bit
-+++ a/include/asm-generic/bitops/ext2-non-atomic.h
+
+diff --git a/include/asm-generic/bitops/ext2-non-atomic.h b/include/asm-generic/bitops/ext2-non-atomic.h
+index 1697404..63cf822 100644
+--- a/include/asm-generic/bitops/ext2-non-atomic.h
++++ b/include/asm-generic/bitops/ext2-non-atomic.h
 @@ -14,5 +14,7 @@
  	generic_find_first_zero_le_bit((unsigned long *)(addr), (size))
  #define ext2_find_next_zero_bit(addr, size, off) \
@@ -29,9 +31,10 @@ diff -puN include/asm-generic/bitops/ext2-non-atomic.h~introduce-ext4_find_next_
 +	generic_find_next_le_bit((unsigned long *)(addr), (size), (off))
  
  #endif /* _ASM_GENERIC_BITOPS_EXT2_NON_ATOMIC_H_ */
-diff -puN include/asm-generic/bitops/le.h~introduce-ext4_find_next_bit include/asm-generic/bitops/le.h
---- a/include/asm-generic/bitops/le.h~introduce-ext4_find_next_bit
-+++ a/include/asm-generic/bitops/le.h
+diff --git a/include/asm-generic/bitops/le.h b/include/asm-generic/bitops/le.h
+index b9c7e5d..80e3bf1 100644
+--- a/include/asm-generic/bitops/le.h
++++ b/include/asm-generic/bitops/le.h
 @@ -20,6 +20,8 @@
  #define generic___test_and_clear_le_bit(nr, addr) __test_and_clear_bit(nr, addr)
  
@@ -50,10 +53,11 @@ diff -puN include/asm-generic/bitops/le.h~introduce-ext4_find_next_bit include/a
  
  #else
  #error "Please fix <asm/byteorder.h>"
-diff -puN include/asm-powerpc/bitops.h~introduce-ext4_find_next_bit include/asm-powerpc/bitops.h
---- a/include/asm-powerpc/bitops.h~introduce-ext4_find_next_bit
-+++ a/include/asm-powerpc/bitops.h
-@@ -310,6 +310,8 @@ static __inline__ int test_le_bit(unsign
+diff --git a/include/asm-powerpc/bitops.h b/include/asm-powerpc/bitops.h
+index 8144a27..60652a3 100644
+--- a/include/asm-powerpc/bitops.h
++++ b/include/asm-powerpc/bitops.h
+@@ -310,6 +310,8 @@ static __inline__ int test_le_bit(unsigned long nr,
  unsigned long generic_find_next_zero_le_bit(const unsigned long *addr,
  				    unsigned long size, unsigned long offset);
  
@@ -62,7 +66,7 @@ diff -puN include/asm-powerpc/bitops.h~introduce-ext4_find_next_bit include/asm-
  /* Bitmap functions for the ext2 filesystem */
  
  #define ext2_set_bit(nr,addr) \
-@@ -329,6 +331,8 @@ unsigned long generic_find_next_zero_le_
+@@ -329,6 +331,8 @@ unsigned long generic_find_next_zero_le_bit(const unsigned long *addr,
  #define ext2_find_next_zero_bit(addr, size, off) \
  	generic_find_next_zero_le_bit((unsigned long*)addr, size, off)
  
@@ -71,10 +75,11 @@ diff -puN include/asm-powerpc/bitops.h~introduce-ext4_find_next_bit include/asm-
  /* Bitmap functions for the minix filesystem.  */
  
  #define minix_test_and_set_bit(nr,addr) \
-diff -puN include/linux/ext4_fs.h~introduce-ext4_find_next_bit include/linux/ext4_fs.h
---- a/include/linux/ext4_fs.h~introduce-ext4_find_next_bit
-+++ a/include/linux/ext4_fs.h
-@@ -492,6 +492,7 @@ do {									       \
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index 37dc0f4..edce61c 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
+@@ -487,6 +487,7 @@ do {									       \
  #define ext4_test_bit			ext2_test_bit
  #define ext4_find_first_zero_bit	ext2_find_first_zero_bit
  #define ext4_find_next_zero_bit		ext2_find_next_zero_bit
@@ -82,9 +87,10 @@ diff -puN include/linux/ext4_fs.h~introduce-ext4_find_next_bit include/linux/ext
  
  /*
   * Maximal mount counts between two filesystem checks
-diff -puN lib/find_next_bit.c~introduce-ext4_find_next_bit lib/find_next_bit.c
---- a/lib/find_next_bit.c~introduce-ext4_find_next_bit
-+++ a/lib/find_next_bit.c
+diff --git a/lib/find_next_bit.c b/lib/find_next_bit.c
+index bda0d71..0306c04 100644
+--- a/lib/find_next_bit.c
++++ b/lib/find_next_bit.c
 @@ -178,4 +178,48 @@ found_middle_swap:
  
  EXPORT_SYMBOL(generic_find_next_zero_le_bit);
@@ -134,4 +140,3 @@ diff -puN lib/find_next_bit.c~introduce-ext4_find_next_bit lib/find_next_bit.c
 +EXPORT_SYMBOL(generic_find_next_le_bit);
 +
  #endif /* __BIG_ENDIAN */
-_

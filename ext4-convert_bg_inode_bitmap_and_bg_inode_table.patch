@@ -1,5 +1,6 @@
-Subject: [PATCH 2/7] ext4: Convert bg_inode_bitmap and bg_inode_table
-From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+ext4: Convert bg_inode_bitmap and bg_inode_table
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 Convert bg_inode_bitmap and bg_inode_table to bg_inode_bitmap_lo
 and bg_inode_table_lo.  This helps in finding BUGs due to
@@ -9,13 +10,15 @@ Also fix one direct partial access
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
+
  fs/ext4/balloc.c        |    2 +-
  fs/ext4/super.c         |   12 ++++++------
  include/linux/ext4_fs.h |    4 ++--
  3 files changed, 9 insertions(+), 9 deletions(-)
 
+
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 2a37635..b717a37 100644
+index d1a8882..7a24b3f 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -103,7 +103,7 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
@@ -28,7 +31,7 @@ index 2a37635..b717a37 100644
  			ext4_set_bit(bit, bh->b_data);
  	}
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index fd2a6a6..60050e2 100644
+index 02a2418..7548408 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -78,17 +78,17 @@ ext4_fsblk_t ext4_block_bitmap(struct super_block *sb,
@@ -41,7 +44,7 @@ index fd2a6a6..60050e2 100644
 -		 (ext4_fsblk_t)le32_to_cpu(bg->bg_inode_bitmap_hi) << 32 : 0);
 +		(ext4_fsblk_t)le32_to_cpu(bg->bg_inode_bitmap_hi) << 32 : 0);
  }
-
+ 
  ext4_fsblk_t ext4_inode_table(struct super_block *sb,
  			      struct ext4_group_desc *bg)
  {
@@ -51,7 +54,7 @@ index fd2a6a6..60050e2 100644
 -		 (ext4_fsblk_t)le32_to_cpu(bg->bg_inode_table_hi) << 32 : 0);
 +		(ext4_fsblk_t)le32_to_cpu(bg->bg_inode_table_hi) << 32 : 0);
  }
-
+ 
  void ext4_block_bitmap_set(struct super_block *sb,
 @@ -102,7 +102,7 @@ void ext4_block_bitmap_set(struct super_block *sb,
  void ext4_inode_bitmap_set(struct super_block *sb,
@@ -72,10 +75,10 @@ index fd2a6a6..60050e2 100644
  		bg->bg_inode_table_hi = cpu_to_le32(blk >> 32);
  }
 diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 89d56c1..411d259 100644
+index c26e30e..5eb4953 100644
 --- a/include/linux/ext4_fs.h
 +++ b/include/linux/ext4_fs.h
-@@ -151,8 +151,8 @@ struct ext4_allocation_request {
+@@ -106,8 +106,8 @@
  struct ext4_group_desc
  {
  	__le32	bg_block_bitmap_lo;	/* Blocks bitmap block */
@@ -86,6 +89,3 @@ index 89d56c1..411d259 100644
  	__le16	bg_free_blocks_count;	/* Free blocks count */
  	__le16	bg_free_inodes_count;	/* Free inodes count */
  	__le16	bg_used_dirs_count;	/* Directories count */
--- 
-1.5.3.1.91.gd3392-dirty
-

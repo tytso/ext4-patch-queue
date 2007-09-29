@@ -6,16 +6,36 @@ Convert kmalloc to kzalloc() and get rid of the memset().
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
+
  fs/ext3/xattr.c      |    3 +--
  fs/jbd/journal.c     |    3 +--
  fs/jbd/transaction.c |    3 +--
  3 files changed, 3 insertions(+), 6 deletions(-)
 
-Index: linux-2.6.23-rc8/fs/jbd/journal.c
-===================================================================
---- linux-2.6.23-rc8.orig/fs/jbd/journal.c	2007-09-26 14:34:57.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd/journal.c	2007-09-26 14:43:32.000000000 -0700
-@@ -653,10 +653,9 @@ static journal_t * journal_init_common (
+
+diff --git a/fs/ext3/xattr.c b/fs/ext3/xattr.c
+index f58cbb2..4083738 100644
+--- a/fs/ext3/xattr.c
++++ b/fs/ext3/xattr.c
+@@ -741,12 +741,11 @@ ext3_xattr_block_set(handle_t *handle, struct inode *inode,
+ 		}
+ 	} else {
+ 		/* Allocate a buffer where we construct the new block. */
+-		s->base = kmalloc(sb->s_blocksize, GFP_KERNEL);
++		s->base = kzalloc(sb->s_blocksize, GFP_KERNEL);
+ 		/* assert(header == s->base) */
+ 		error = -ENOMEM;
+ 		if (s->base == NULL)
+ 			goto cleanup;
+-		memset(s->base, 0, sb->s_blocksize);
+ 		header(s->base)->h_magic = cpu_to_le32(EXT3_XATTR_MAGIC);
+ 		header(s->base)->h_blocks = cpu_to_le32(1);
+ 		header(s->base)->h_refcount = cpu_to_le32(1);
+diff --git a/fs/jbd/journal.c b/fs/jbd/journal.c
+index 8d6d475..e868033 100644
+--- a/fs/jbd/journal.c
++++ b/fs/jbd/journal.c
+@@ -653,10 +653,9 @@ static journal_t * journal_init_common (void)
  	journal_t *journal;
  	int err;
  
@@ -27,11 +47,11 @@ Index: linux-2.6.23-rc8/fs/jbd/journal.c
  
  	init_waitqueue_head(&journal->j_wait_transaction_locked);
  	init_waitqueue_head(&journal->j_wait_logspace);
-Index: linux-2.6.23-rc8/fs/jbd/transaction.c
-===================================================================
---- linux-2.6.23-rc8.orig/fs/jbd/transaction.c	2007-09-26 14:34:57.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd/transaction.c	2007-09-26 14:44:20.000000000 -0700
-@@ -96,13 +96,12 @@ static int start_this_handle(journal_t *
+diff --git a/fs/jbd/transaction.c b/fs/jbd/transaction.c
+index 11d846c..2fd4425 100644
+--- a/fs/jbd/transaction.c
++++ b/fs/jbd/transaction.c
+@@ -96,13 +96,12 @@ static int start_this_handle(journal_t *journal, handle_t *handle)
  
  alloc_transaction:
  	if (!journal->j_running_transaction) {
@@ -46,21 +66,3 @@ Index: linux-2.6.23-rc8/fs/jbd/transaction.c
  	}
  
  	jbd_debug(3, "New handle %p going live.\n", handle);
-Index: linux-2.6.23-rc8/fs/ext3/xattr.c
-===================================================================
---- linux-2.6.23-rc8.orig/fs/ext3/xattr.c	2007-09-26 14:34:57.000000000 -0700
-+++ linux-2.6.23-rc8/fs/ext3/xattr.c	2007-09-26 14:43:32.000000000 -0700
-@@ -741,12 +741,11 @@ ext3_xattr_block_set(handle_t *handle, s
- 		}
- 	} else {
- 		/* Allocate a buffer where we construct the new block. */
--		s->base = kmalloc(sb->s_blocksize, GFP_KERNEL);
-+		s->base = kzalloc(sb->s_blocksize, GFP_KERNEL);
- 		/* assert(header == s->base) */
- 		error = -ENOMEM;
- 		if (s->base == NULL)
- 			goto cleanup;
--		memset(s->base, 0, sb->s_blocksize);
- 		header(s->base)->h_magic = cpu_to_le32(EXT3_XATTR_MAGIC);
- 		header(s->base)->h_blocks = cpu_to_le32(1);
- 		header(s->base)->h_refcount = cpu_to_le32(1);
