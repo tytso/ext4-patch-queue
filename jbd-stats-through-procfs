@@ -83,8 +83,8 @@ Signed-off-by: Johann Lombardi <johann.lombardi@bull.net>
  fs/jbd2/commit.c      |   47 +++++++
  fs/jbd2/journal.c     |  332 ++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/jbd2/transaction.c |    9 +
- include/linux/jbd2.h  |   92 +++++++++++++
- 5 files changed, 488 insertions(+), 2 deletions(-)
+ include/linux/jbd2.h  |   95 ++++++++++++++
+ 5 files changed, 491 insertions(+), 2 deletions(-)
 
 
 Index: linux-2.6.23-rc8/fs/jbd2/checkpoint.c
@@ -246,7 +246,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/commit.c
 Index: linux-2.6.23-rc8/fs/jbd2/journal.c
 ===================================================================
 --- linux-2.6.23-rc8.orig/fs/jbd2/journal.c	2007-10-01 17:15:44.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd2/journal.c	2007-10-01 17:15:48.000000000 -0700
++++ linux-2.6.23-rc8/fs/jbd2/journal.c	2007-10-01 17:48:16.000000000 -0700
 @@ -36,6 +36,7 @@
  #include <linux/poison.h>
  #include <linux/proc_fs.h>
@@ -368,7 +368,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
 +		return -EIO;
 +	size = sizeof(struct transaction_stats_s) * journal->j_history_max;
 +	s->stats = kmalloc(size, GFP_KERNEL);
-+	if (s == NULL) {
++	if (s->stats == NULL) {
 +		kfree(s);
 +		return -EIO;
 +	}
@@ -679,7 +679,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/transaction.c
 Index: linux-2.6.23-rc8/include/linux/jbd2.h
 ===================================================================
 --- linux-2.6.23-rc8.orig/include/linux/jbd2.h	2007-10-01 17:15:43.000000000 -0700
-+++ linux-2.6.23-rc8/include/linux/jbd2.h	2007-10-01 17:15:48.000000000 -0700
++++ linux-2.6.23-rc8/include/linux/jbd2.h	2007-10-01 17:48:16.000000000 -0700
 @@ -436,6 +436,16 @@ struct handle_s
  };
  
@@ -790,7 +790,7 @@ Index: linux-2.6.23-rc8/include/linux/jbd2.h
   * @j_private: An opaque pointer to fs-private information.
   */
  
-@@ -854,6 +936,16 @@ struct journal_s
+@@ -854,6 +936,19 @@ struct journal_s
  	pid_t			j_last_sync_writer;
  
  	/*
@@ -799,6 +799,9 @@ Index: linux-2.6.23-rc8/include/linux/jbd2.h
 +	struct transaction_stats_s *j_history;
 +	int			j_history_max;
 +	int			j_history_cur;
++	/*
++	 * Protect the transactions statistics history
++	 */
 +	spinlock_t		j_history_lock;
 +	struct proc_dir_entry	*j_proc_entry;
 +	struct transaction_stats_s j_stats;
