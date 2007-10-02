@@ -89,8 +89,8 @@ Signed-off-by: Johann Lombardi <johann.lombardi@bull.net>
 
 Index: linux-2.6.23-rc8/fs/jbd2/checkpoint.c
 ===================================================================
---- linux-2.6.23-rc8.orig/fs/jbd2/checkpoint.c	2007-09-24 17:33:10.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd2/checkpoint.c	2007-10-01 17:15:48.000000000 -0700
+--- linux-2.6.23-rc8.orig/fs/jbd2/checkpoint.c	2007-10-01 19:57:04.000000000 -0700
++++ linux-2.6.23-rc8/fs/jbd2/checkpoint.c	2007-10-01 20:00:29.000000000 -0700
 @@ -232,7 +232,8 @@ __flush_batch(journal_t *journal, struct
   * Called under jbd_lock_bh_state(jh2bh(jh)), and drops it
   */
@@ -138,17 +138,17 @@ Index: linux-2.6.23-rc8/fs/jbd2/checkpoint.c
  				retry = 1;
 Index: linux-2.6.23-rc8/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.23-rc8.orig/fs/jbd2/commit.c	2007-10-01 17:15:44.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd2/commit.c	2007-10-01 17:15:48.000000000 -0700
-@@ -21,6 +21,7 @@
+--- linux-2.6.23-rc8.orig/fs/jbd2/commit.c	2007-10-01 20:00:01.000000000 -0700
++++ linux-2.6.23-rc8/fs/jbd2/commit.c	2007-10-01 20:01:18.000000000 -0700
+@@ -20,6 +20,7 @@
+ #include <linux/slab.h>
  #include <linux/mm.h>
  #include <linux/pagemap.h>
- #include <linux/crc32.h>
 +#include <linux/jiffies.h>
  
  /*
   * Default IO end handler for temporary BJ_IO buffer_heads.
-@@ -365,6 +366,7 @@ static inline void write_tag_block(int t
+@@ -290,6 +291,7 @@ static inline void write_tag_block(int t
   */
  void jbd2_journal_commit_transaction(journal_t *journal)
  {
@@ -156,7 +156,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/commit.c
  	transaction_t *commit_transaction;
  	struct journal_head *jh, *new_jh, *descriptor;
  	struct buffer_head **wbuf = journal->j_wbuf;
-@@ -414,6 +416,11 @@ void jbd2_journal_commit_transaction(jou
+@@ -337,6 +339,11 @@ void jbd2_journal_commit_transaction(jou
  	spin_lock(&journal->j_state_lock);
  	commit_transaction->t_state = T_LOCKED;
  
@@ -168,7 +168,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/commit.c
  	spin_lock(&commit_transaction->t_handle_lock);
  	while (commit_transaction->t_updates) {
  		DEFINE_WAIT(wait);
-@@ -484,6 +491,9 @@ void jbd2_journal_commit_transaction(jou
+@@ -407,6 +414,9 @@ void jbd2_journal_commit_transaction(jou
  	 */
  	jbd2_journal_switch_revoke_table(journal);
  
@@ -178,7 +178,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/commit.c
  	commit_transaction->t_state = T_FLUSH;
  	journal->j_committing_transaction = commit_transaction;
  	journal->j_running_transaction = NULL;
-@@ -552,6 +562,11 @@ void jbd2_journal_commit_transaction(jou
+@@ -498,6 +508,11 @@ void jbd2_journal_commit_transaction(jou
  	 */
  	commit_transaction->t_state = T_COMMIT;
  
@@ -190,7 +190,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/commit.c
  	descriptor = NULL;
  	bufs = 0;
  	while (commit_transaction->t_buffers) {
-@@ -710,6 +725,7 @@ start_journal_io:
+@@ -646,6 +661,7 @@ start_journal_io:
  				submit_bh(WRITE, bh);
  			}
  			cond_resched();
@@ -198,7 +198,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/commit.c
  
  			/* Force a new descriptor to be generated next
                             time round the loop. */
-@@ -903,6 +919,7 @@ restart_loop:
+@@ -816,6 +832,7 @@ restart_loop:
  		cp_transaction = jh->b_cp_transaction;
  		if (cp_transaction) {
  			JBUFFER_TRACE(jh, "remove from old cp transaction");
@@ -206,7 +206,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/commit.c
  			__jbd2_journal_remove_checkpoint(jh);
  		}
  
-@@ -977,6 +994,36 @@ restart_loop:
+@@ -890,6 +907,36 @@ restart_loop:
  
  	J_ASSERT(commit_transaction->t_state == T_COMMIT);
  
@@ -245,8 +245,8 @@ Index: linux-2.6.23-rc8/fs/jbd2/commit.c
  	journal->j_commit_sequence = commit_transaction->t_tid;
 Index: linux-2.6.23-rc8/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.23-rc8.orig/fs/jbd2/journal.c	2007-10-01 17:15:44.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd2/journal.c	2007-10-01 17:48:16.000000000 -0700
+--- linux-2.6.23-rc8.orig/fs/jbd2/journal.c	2007-10-01 20:00:01.000000000 -0700
++++ linux-2.6.23-rc8/fs/jbd2/journal.c	2007-10-01 20:00:29.000000000 -0700
 @@ -36,6 +36,7 @@
  #include <linux/poison.h>
  #include <linux/proc_fs.h>
@@ -255,7 +255,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  
  #include <asm/uaccess.h>
  #include <asm/page.h>
-@@ -641,6 +642,306 @@ struct journal_head *jbd2_journal_get_de
+@@ -640,6 +641,306 @@ struct journal_head *jbd2_journal_get_de
  	return jbd2_journal_add_journal_head(bh);
  }
  
@@ -562,7 +562,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  /*
   * Management for journal control blocks: functions to create and
   * destroy journal_t structures, and to initialise and read existing
-@@ -682,6 +983,9 @@ static journal_t * journal_init_common (
+@@ -681,6 +982,9 @@ static journal_t * journal_init_common (
  		kfree(journal);
  		goto fail;
  	}
@@ -572,7 +572,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  	return journal;
  fail:
  	return NULL;
-@@ -732,6 +1036,7 @@ journal_t * jbd2_journal_init_dev(struct
+@@ -731,6 +1035,7 @@ journal_t * jbd2_journal_init_dev(struct
  		journal = NULL;
  		goto out;
  	}
@@ -580,7 +580,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  	journal->j_dev = bdev;
  	journal->j_fs_dev = fs_dev;
  	journal->j_blk_offset = start;
-@@ -774,6 +1079,7 @@ journal_t * jbd2_journal_init_inode (str
+@@ -773,6 +1078,7 @@ journal_t * jbd2_journal_init_inode (str
  
  	journal->j_maxlen = inode->i_size >> inode->i_sb->s_blocksize_bits;
  	journal->j_blocksize = inode->i_sb->s_blocksize;
@@ -588,7 +588,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  
  	/* journal descriptor can store up to n blocks -bzzz */
  	n = journal->j_blocksize / sizeof(journal_block_tag_t);
-@@ -1154,6 +1460,8 @@ void jbd2_journal_destroy(journal_t *jou
+@@ -1153,6 +1459,8 @@ void jbd2_journal_destroy(journal_t *jou
  		brelse(journal->j_sb_buffer);
  	}
  
@@ -597,7 +597,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  	if (journal->j_inode)
  		iput(journal->j_inode);
  	if (journal->j_revoke)
-@@ -1936,6 +2244,28 @@ static void __exit jbd2_remove_debugfs_e
+@@ -1908,6 +2216,28 @@ static void __exit jbd2_remove_debugfs_e
  
  #endif
  
@@ -626,7 +626,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  struct kmem_cache *jbd2_handle_cache;
  
  static int __init journal_init_handle_cache(void)
-@@ -1991,6 +2321,7 @@ static int __init journal_init(void)
+@@ -1963,6 +2293,7 @@ static int __init journal_init(void)
  	if (ret != 0)
  		jbd2_journal_destroy_caches();
  	jbd2_create_debugfs_entry();
@@ -634,7 +634,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  	return ret;
  }
  
-@@ -2002,6 +2333,7 @@ static void __exit journal_exit(void)
+@@ -1974,6 +2305,7 @@ static void __exit journal_exit(void)
  		printk(KERN_EMERG "JBD: leaked %d journal_heads!\n", n);
  #endif
  	jbd2_remove_debugfs_entry();
@@ -644,8 +644,8 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  
 Index: linux-2.6.23-rc8/fs/jbd2/transaction.c
 ===================================================================
---- linux-2.6.23-rc8.orig/fs/jbd2/transaction.c	2007-10-01 17:13:32.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd2/transaction.c	2007-10-01 17:15:48.000000000 -0700
+--- linux-2.6.23-rc8.orig/fs/jbd2/transaction.c	2007-10-01 19:57:04.000000000 -0700
++++ linux-2.6.23-rc8/fs/jbd2/transaction.c	2007-10-01 20:00:29.000000000 -0700
 @@ -59,6 +59,8 @@ jbd2_get_transaction(journal_t *journal,
  
  	J_ASSERT(journal->j_running_transaction == NULL);
@@ -678,9 +678,9 @@ Index: linux-2.6.23-rc8/fs/jbd2/transaction.c
  	transaction->t_updates++;
 Index: linux-2.6.23-rc8/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.23-rc8.orig/include/linux/jbd2.h	2007-10-01 17:15:43.000000000 -0700
-+++ linux-2.6.23-rc8/include/linux/jbd2.h	2007-10-01 17:48:16.000000000 -0700
-@@ -436,6 +436,16 @@ struct handle_s
+--- linux-2.6.23-rc8.orig/include/linux/jbd2.h	2007-10-01 20:00:01.000000000 -0700
++++ linux-2.6.23-rc8/include/linux/jbd2.h	2007-10-01 20:00:29.000000000 -0700
+@@ -409,6 +409,16 @@ struct handle_s
  };
  
  
@@ -697,7 +697,7 @@ Index: linux-2.6.23-rc8/include/linux/jbd2.h
  /* The transaction_t type is the guts of the journaling mechanism.  It
   * tracks a compound transaction through its various states:
   *
-@@ -571,6 +581,21 @@ struct transaction_s
+@@ -544,6 +554,21 @@ struct transaction_s
  	spinlock_t		t_handle_lock;
  
  	/*
@@ -719,7 +719,7 @@ Index: linux-2.6.23-rc8/include/linux/jbd2.h
  	 * Number of outstanding updates running on this transaction
  	 * [t_handle_lock]
  	 */
-@@ -601,6 +626,57 @@ struct transaction_s
+@@ -574,6 +599,57 @@ struct transaction_s
  
  };
  
@@ -777,7 +777,7 @@ Index: linux-2.6.23-rc8/include/linux/jbd2.h
  /**
   * struct journal_s - The journal_s type is the concrete type associated with
   *     journal_t.
-@@ -662,6 +738,12 @@ struct transaction_s
+@@ -635,6 +711,12 @@ struct transaction_s
   * @j_wbufsize: maximum number of buffer_heads allowed in j_wbuf, the
   *	number that will fit in j_blocksize
   * @j_last_sync_writer: most recent pid which did a synchronous write
@@ -790,7 +790,7 @@ Index: linux-2.6.23-rc8/include/linux/jbd2.h
   * @j_private: An opaque pointer to fs-private information.
   */
  
-@@ -854,6 +936,19 @@ struct journal_s
+@@ -827,6 +909,19 @@ struct journal_s
  	pid_t			j_last_sync_writer;
  
  	/*
