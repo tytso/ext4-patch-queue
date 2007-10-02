@@ -2,9 +2,23 @@ Support large blocksize up to PAGESIZE (max 64KB) for ext3
 
 From: Takashi Sato <sho@tnes.nec.co.jp>
 
-Originally from Takashi Sato, rebased to 2.6.23-rc6 and tested on 64k page ppc64 box runs fine. It allows to create >4k (8k,16k,32k,64k) block size on arch that support pagesize > 4k.
+This patch set supports large block size(>4k, <=64k) in ext3
+just enlarging the block size limit. But it is NOT possible to have 64kB
+blocksize on ext3 without some changes to the directory handling
+code.  The reason is that an empty 64kB directory block would have a
+rec_len == (__u16)2^16 == 0, and this would cause an error to be hit in
+the filesystem.  The proposed solution is treat 64k rec_len
+with a an impossible value like rec_len = 0xffff to handle this.
 
-These patches support large blocksize up to PAGESIZE (max 64KB).
+The Patch-set consists of the following 2 patches.
+  [1/2]  ext3: enlarge blocksize
+         - Allow blocksize up to pagesize
+
+  [2/2]  ext3: fix rec_len overflow
+         - prevent rec_len from overflow with 64KB blocksize
+
+Now on 64k page ppc64 box runs with this patch set we could create a 64k
+block size ext3, and able to handle empty directory block.
 
 Signed-off-by: Takashi Sato <sho@tnes.nec.co.jp>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>

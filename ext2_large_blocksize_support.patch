@@ -2,44 +2,23 @@ Support large blocksize up to PAGESIZE (max 64KB) for ext2
 
 From: Takashi Sato <sho@tnes.nec.co.jp>
 
-Originally from Takashi Sato, rebased to 2.6.23-rc6 and tested on 64k page ppc64 box runs fine. It allows to create >4k (8k,16k,32k,64k) block size on arch that support pagesize > 4k.
+This patch set supports large block size(>4k, <=64k) in ext2,
+just enlarging the block size limit. But it is NOT possible to have 64kB
+blocksize on ext2 without some changes to the directory handling
+code.  The reason is that an empty 64kB directory block would have a
+rec_len == (__u16)2^16 == 0, and this would cause an error to be hit in
+the filesystem.  The proposed solution is treat 64k rec_len
+with a an impossible value like rec_len = 0xffff to handle this.
 
-These patches support large blocksize up to PAGESIZE (max 64KB).
-
-I tested I/O performance with 4K-64K blocksize on ext3.
-
-my box:
-  models       :NX-7700i
-  CPU type     :Itanium2
-  number of CPU:1
-  architecture :ia64
-  memory size  :8309152KB
-  disk size    :70007.196(MB)
-
-Results:
-          blocksize    Read(MB/sec)    Write(MB/sec)
-              4K          58.2            59.7
-              8K          64.3            60.7
-             16K          66.8            62.2
-             32K          65.3            60.2
-             64K          65.4            60.4
-
-I don't know why 16K-blocksize marks the highest numbers.  But
-without this patch, >4KB blocksize can't be used at least :)
-
-The Patch-set consists of the following 4 patches.
-  [1/4]  ext2/3/4: enlarge blocksize
+The Patch-set consists of the following 2 patches.
+  [1/2]  ext2: enlarge blocksize
          - Allow blocksize up to pagesize
 
-  [2/4]  ext2: fix rec_len overflow
+  [2/2]  ext2: fix rec_len overflow
          - prevent rec_len from overflow with 64KB blocksize
 
-  [3/4]  ext3: fix rec_len overflow
-         - ditto
-
-  [4/4]  ext4: fix rec_len overflow
-         - ditto
-
+Now on 64k page ppc64 box runs with this patch set we could create a 64k
+block size ext2, and able to handle empty directory block.
 
 Signed-off-by: Takashi Sato <sho@tnes.nec.co.jp>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
