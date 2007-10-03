@@ -1,0 +1,74 @@
+From: Jose R. Santos <jrs@us.ibm.com>
+
+JBD2: debug code cleanup.
+
+Mostly stolen from akpm's JBD cleanup patch.
+
+- use `#ifdef foo' instead of `#if defined(foo)'
+
+- Make journal_enable_debug __read_mostly just for the heck of it
+
+- Make jbd_debugfs_dir and jbd_debug static
+
+- debugfs_remove(NULL) is legal: remove unneeded tests
+
+- remove unnecessary empty loops
+
+Signed-off-by: Jose R. Santos <jrs@us.ibm.com>
+Cc: <linux-ext4@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+
+
+diff -puN fs/jbd2/journal.c~jbd2-debug-code-cleanup fs/jbd2/journal.c
+--- a/fs/jbd2/journal.c~jbd2-debug-code-cleanup
++++ a/fs/jbd2/journal.c
+@@ -2199,16 +2199,14 @@ void jbd2_journal_put_journal_head(struc
+ /*
+  * debugfs tunables
+  */
+-#if defined(CONFIG_JBD2_DEBUG)
+-u8 jbd2_journal_enable_debug;
++#ifdef CONFIG_JBD2_DEBUG
++u8 jbd2_journal_enable_debug __read_mostly;
+ EXPORT_SYMBOL(jbd2_journal_enable_debug);
+-#endif
+-
+-#if defined(CONFIG_JBD2_DEBUG) && defined(CONFIG_DEBUG_FS)
+ 
+ #define JBD2_DEBUG_NAME "jbd2-debug"
+ 
+-struct dentry *jbd2_debugfs_dir, *jbd2_debug;
++static struct dentry *jbd2_debugfs_dir;
++static struct dentry *jbd2_debug;
+ 
+ static void __init jbd2_create_debugfs_entry(void)
+ {
+@@ -2221,24 +2219,18 @@ static void __init jbd2_create_debugfs_e
+ 
+ static void __exit jbd2_remove_debugfs_entry(void)
+ {
+-	if (jbd2_debug)
+-		debugfs_remove(jbd2_debug);
+-	if (jbd2_debugfs_dir)
+-		debugfs_remove(jbd2_debugfs_dir);
++	debugfs_remove(jbd2_debug);
++	debugfs_remove(jbd2_debugfs_dir);
+ }
+ 
+ #else
+ 
+ static void __init jbd2_create_debugfs_entry(void)
+ {
+-	do {
+-	} while (0);
+ }
+ 
+ static void __exit jbd2_remove_debugfs_entry(void)
+ {
+-	do {
+-	} while (0);
+ }
+ 
+ #endif
+_
