@@ -31,13 +31,17 @@ Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Acked-by: Andreas Dilger <adilger@clusterfs.com>
 
-Index: linux-2.6.23-rc7/fs/ext4/resize.c
-===================================================================
---- linux-2.6.23-rc7.orig/fs/ext4/resize.c
-+++ linux-2.6.23-rc7/fs/ext4/resize.c
-@@ -160,6 +160,32 @@ static void mark_bitmap_end(int start_bi
- }
+---
+ fs/ext4/resize.c |   46 +++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 43 insertions(+), 3 deletions(-)
 
+Index: linux-2.6.23-rc9/fs/ext4/resize.c
+===================================================================
+--- linux-2.6.23-rc9.orig/fs/ext4/resize.c	2007-10-03 17:40:15.000000000 -0700
++++ linux-2.6.23-rc9/fs/ext4/resize.c	2007-10-03 17:40:15.000000000 -0700
+@@ -141,6 +141,32 @@ static struct buffer_head *bclean(handle
+ }
+ 
  /*
 + * If we have fewer than thresh credits, extend by EXT4_MAX_TRANS_DATA.
 + * If that fails, restart the transaction & regain write access for the
@@ -68,10 +72,10 @@ Index: linux-2.6.23-rc7/fs/ext4/resize.c
   * Set up the block and inode bitmaps, and the inode table for the new group.
   * This doesn't need to be part of the main transaction, since we are only
   * changing blocks outside the actual filesystem.  We still do journaling to
-@@ -181,8 +207,9 @@ static int setup_new_group_blocks(struct
+@@ -162,8 +188,9 @@ static int setup_new_group_blocks(struct
  	int i;
  	int err = 0, err2;
-
+ 
 -	handle = ext4_journal_start_sb(sb, reserved_gdb + gdblocks +
 -				       2 + sbi->s_itb_per_group);
 +	/* This transaction may be extended/restarted along the way */
@@ -79,30 +83,30 @@ Index: linux-2.6.23-rc7/fs/ext4/resize.c
 +
  	if (IS_ERR(handle))
  		return PTR_ERR(handle);
-
-@@ -209,6 +236,9 @@ static int setup_new_group_blocks(struct
-
+ 
+@@ -190,6 +217,9 @@ static int setup_new_group_blocks(struct
+ 
  		ext4_debug("update backup group %#04lx (+%d)\n", block, bit);
-
+ 
 +		if ((err = extend_or_restart_transaction(handle, 1, bh)))
 +			goto exit_bh;
 +
  		gdb = sb_getblk(sb, block);
  		if (!gdb) {
  			err = -EIO;
-@@ -234,6 +264,9 @@ static int setup_new_group_blocks(struct
-
+@@ -215,6 +245,9 @@ static int setup_new_group_blocks(struct
+ 
  		ext4_debug("clear reserved block %#04lx (+%d)\n", block, bit);
-
+ 
 +		if ((err = extend_or_restart_transaction(handle, 1, bh)))
 +			goto exit_bh;
 +
  		if (IS_ERR(gdb = bclean(handle, sb, block))) {
  			err = PTR_ERR(bh);
  			goto exit_bh;
-@@ -255,6 +288,10 @@ static int setup_new_group_blocks(struct
+@@ -236,6 +269,10 @@ static int setup_new_group_blocks(struct
  		struct buffer_head *it;
-
+ 
  		ext4_debug("clear inode block %#04lx (+%d)\n", block, bit);
 +
 +		if ((err = extend_or_restart_transaction(handle, 1, bh)))
@@ -111,7 +115,7 @@ Index: linux-2.6.23-rc7/fs/ext4/resize.c
  		if (IS_ERR(it = bclean(handle, sb, block))) {
  			err = PTR_ERR(it);
  			goto exit_bh;
-@@ -263,6 +300,10 @@ static int setup_new_group_blocks(struct
+@@ -244,6 +281,10 @@ static int setup_new_group_blocks(struct
  		brelse(it);
  		ext4_set_bit(bit, bh->b_data);
  	}
@@ -122,16 +126,11 @@ Index: linux-2.6.23-rc7/fs/ext4/resize.c
  	mark_bitmap_end(input->blocks_count, EXT4_BLOCKS_PER_GROUP(sb),
  			bh->b_data);
  	ext4_journal_dirty_metadata(handle, bh);
-@@ -290,7 +331,6 @@ exit_journal:
+@@ -271,7 +312,6 @@ exit_journal:
  	return err;
  }
-
+ 
 -
  /*
   * Iterate through the groups which hold BACKUP superblock/GDT copies in an
   * ext4 filesystem.  The counters should be initialized to 1, 5, and 7 before
-
--
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html

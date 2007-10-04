@@ -90,14 +90,14 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
  fs/ext4/balloc.c           |   67 +
  fs/ext4/extents.c          |   45 
  fs/ext4/inode.c            |   14 
- fs/ext4/mballoc.c          | 4378 ++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/mballoc.c          | 4407 ++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/migrate.c          |   10 
  fs/ext4/super.c            |   30 
  fs/ext4/xattr.c            |    4 
  include/linux/ext4_fs.h    |   43 
  include/linux/ext4_fs_i.h  |    4 
  include/linux/ext4_fs_sb.h |   61 +
- 11 files changed, 4621 insertions(+), 37 deletions(-)
+ 11 files changed, 4650 insertions(+), 37 deletions(-)
  create mode 100644 fs/ext4/mballoc.c
 
 
@@ -115,10 +115,10 @@ index d5fd80b..ac6fa8c 100644
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 7a24b3f..321ad1e 100644
+index d4d0376..47f70a8 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
-@@ -494,6 +494,8 @@ void ext4_discard_reservation(struct inode *inode)
+@@ -514,6 +514,8 @@ void ext4_discard_reservation(struct inode *inode)
  	struct ext4_reserve_window_node *rsv;
  	spinlock_t *rsv_lock = &EXT4_SB(inode->i_sb)->s_rsv_window_lock;
  
@@ -127,7 +127,7 @@ index 7a24b3f..321ad1e 100644
  	if (!block_i)
  		return;
  
-@@ -700,19 +702,29 @@ error_return:
+@@ -720,19 +722,29 @@ error_return:
   * @inode:		inode
   * @block:		start physical block to free
   * @count:		number of blocks to count
@@ -163,7 +163,7 @@ index 7a24b3f..321ad1e 100644
  	if (dquot_freed_blocks)
  		DQUOT_FREE_BLOCK(inode, dquot_freed_blocks);
  	return;
-@@ -1490,7 +1502,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+@@ -1510,7 +1522,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
  }
  
  /**
@@ -172,7 +172,7 @@ index 7a24b3f..321ad1e 100644
   * @handle:		handle to this transaction
   * @inode:		file inode
   * @goal:		given target block(filesystem wide)
-@@ -1503,7 +1515,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+@@ -1523,7 +1535,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
   * any specific goal block.
   *
   */
@@ -181,7 +181,7 @@ index 7a24b3f..321ad1e 100644
  			ext4_fsblk_t goal, unsigned long *count, int *errp)
  {
  	struct buffer_head *bitmap_bh = NULL;
-@@ -1767,13 +1779,46 @@ out:
+@@ -1787,13 +1799,46 @@ out:
  }
  
  ext4_fsblk_t ext4_new_block(handle_t *handle, struct inode *inode,
@@ -414,10 +414,10 @@ index 1f3517d..de5619f 100644
  				/*
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
 new file mode 100644
-index 0000000..5ffc80b
+index 0000000..4409c0c
 --- /dev/null
 +++ b/fs/ext4/mballoc.c
-@@ -0,0 +1,4378 @@
+@@ -0,0 +1,4407 @@
 +/*
 + * Copyright (c) 2003-2006, Cluster File Systems, Inc, info@clusterfs.com
 + * Written by Alex Tomas <alex@clusterfs.com>
@@ -454,6 +454,7 @@ index 0000000..5ffc80b
 +#include <linux/pagemap.h>
 +#include <linux/seq_file.h>
 +#include <linux/version.h>
++#include "group.h"
 +
 +/*
 + * MUSTDO:
@@ -1313,6 +1314,13 @@ index 0000000..5ffc80b
 +			continue;
 +		}
 +
++		if (desc->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
++			ext4_init_block_bitmap(sb, bh[i],
++						first_group + i, desc);
++			set_buffer_uptodate(bh[i]);
++			unlock_buffer(bh[i]);
++			continue;
++		}
 +		get_bh(bh[i]);
 +		bh[i]->b_end_io = end_buffer_read_sync;
 +		submit_bh(READ, bh[i]);
@@ -2122,11 +2130,10 @@ index 0000000..5ffc80b
 +static int ext4_mb_good_group(struct ext4_allocation_context *ac,
 +				int group, int cr)
 +{
++	unsigned free, fragments;
++	unsigned i, bits;
++	struct ext4_group_desc *desc;
 +	struct ext4_group_info *grp = EXT4_GROUP_INFO(ac->ac_sb, group);
-+	unsigned free;
-+	unsigned fragments;
-+	unsigned i;
-+	unsigned bits;
 +
 +	BUG_ON(cr < 0 || cr >= 4);
 +	BUG_ON(EXT4_MB_GRP_NEED_INIT(grp));
@@ -2141,6 +2148,11 @@ index 0000000..5ffc80b
 +	switch (cr) {
 +	case 0:
 +		BUG_ON(ac->ac_2order == 0);
++		/* If this group is uninitialized, skip it initially */
++		desc = ext4_get_group_desc(ac->ac_sb, group, NULL);
++		if (desc->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT))
++			return 0;
++
 +		bits = ac->ac_sb->s_blocksize_bits + 1;
 +		for (i = ac->ac_2order; i <= bits; i++)
 +			if (grp->bb_counters[i] > 0)
@@ -2225,6 +2237,7 @@ index 0000000..5ffc80b
 +		ac->ac_criteria = cr;
 +		for (i = 0; i < EXT4_SB(sb)->s_groups_count; group++, i++) {
 +			struct ext4_group_info *grp;
++			struct ext4_group_desc *desc;
 +
 +			if (group == EXT4_SB(sb)->s_groups_count)
 +				group = 0;
@@ -2264,12 +2277,16 @@ index 0000000..5ffc80b
 +			}
 +
 +			ac->ac_groups_scanned++;
-+			if (cr == 0)
++			desc = ext4_get_group_desc(sb, group, NULL);
++			if (cr == 0 || (desc->bg_flags &
++					cpu_to_le16(EXT4_BG_BLOCK_UNINIT) &&
++					ac->ac_2order != 0)) {
 +				ext4_mb_simple_scan_group(ac, &e4b);
-+			else if (cr == 1 && ac->ac_g_ex.fe_len == sbi->s_stripe)
++			} else if (cr == 1 && ac->ac_g_ex.fe_len == sbi->s_stripe) {
 +				ext4_mb_scan_aligned(ac, &e4b);
-+			else
++			} else {
 +				ext4_mb_complex_scan_group(ac, &e4b);
++			}
 +
 +			ext4_unlock_group(sb, group);
 +			ext4_mb_release_desc(&e4b);
@@ -2687,11 +2704,8 @@ index 0000000..5ffc80b
 +
 +static int ext4_mb_init_backend(struct super_block *sb)
 +{
++	int i, j, len, metalen;
 +	struct ext4_sb_info *sbi = EXT4_SB(sb);
-+	int i;
-+	int j;
-+	int len;
-+	int metalen;
 +	int num_meta_group_infos =
 +		(sbi->s_groups_count + EXT4_DESC_PER_BLOCK(sb) - 1) >>
 +			EXT4_DESC_PER_BLOCK_BITS(sb);
@@ -2741,7 +2755,7 @@ index 0000000..5ffc80b
 +			sbi->s_group_info[i >> EXT4_DESC_PER_BLOCK_BITS(sb)];
 +		j = i & (EXT4_DESC_PER_BLOCK(sb) - 1);
 +
-+		meta_group_info[j] = kmalloc(len, GFP_KERNEL);
++		meta_group_info[j] = kzalloc(len, GFP_KERNEL);
 +		if (meta_group_info[j] == NULL) {
 +			printk(KERN_ERR "EXT4-fs: can't allocate buddy mem\n");
 +			i--;
@@ -2753,14 +2767,20 @@ index 0000000..5ffc80b
 +				"EXT4-fs: can't read descriptor %u\n", i);
 +			goto err_freebuddy;
 +		}
-+		memset(meta_group_info[j], 0, len);
 +		set_bit(EXT4_GROUP_INFO_NEED_INIT_BIT,
 +			&meta_group_info[j]->bb_state);
 +
-+		/* initialize bb_free to be able to skip
-+		 * empty groups without initialization */
-+		meta_group_info[j]->bb_free =
-+			le16_to_cpu(desc->bg_free_blocks_count);
++		/*
++		 * initialize bb_free to be able to skip
++		 * empty groups without initialization
++		 */
++		if (desc->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
++			meta_group_info[j]->bb_free =
++				ext4_free_blocks_after_init(sb, i, desc);
++		} else {
++			meta_group_info[j]->bb_free =
++				le16_to_cpu(desc->bg_free_blocks_count);
++		}
 +
 +		INIT_LIST_HEAD(&meta_group_info[j]->bb_prealloc_list);
 +
@@ -3339,9 +3359,17 @@ index 0000000..5ffc80b
 +		    ac->ac_b_ex.fe_len);
 +
 +	spin_lock(sb_bgl_lock(sbi, ac->ac_b_ex.fe_group));
++	if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
++		gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
++		gdp->bg_free_blocks_count =
++			cpu_to_le16(ext4_free_blocks_after_init(sb,
++						ac->ac_b_ex.fe_group,
++						gdp));
++	}
 +	gdp->bg_free_blocks_count =
 +		cpu_to_le16(le16_to_cpu(gdp->bg_free_blocks_count)
 +				- ac->ac_b_ex.fe_len);
++	gdp->bg_checksum = ext4_group_desc_csum(sbi, ac->ac_b_ex.fe_group, gdp);
 +	spin_unlock(sb_bgl_lock(sbi, ac->ac_b_ex.fe_group));
 +	percpu_counter_mod(&sbi->s_freeblocks_counter, - ac->ac_b_ex.fe_len);
 +
@@ -4486,7 +4514,7 @@ index 0000000..5ffc80b
 +#if 0
 +		static int ext4_mballoc_warning = 0;
 +		if (ext4_mballoc_warning++ == 0)
-+			printk(KERN_ERR "EXT3-fs: multiblock request with "
++			printk(KERN_ERR "EXT4-fs: multiblock request with "
 +					"mballoc disabled!\n");
 +		ar->len = 1;
 +#endif
@@ -4773,6 +4801,7 @@ index 0000000..5ffc80b
 +	spin_lock(sb_bgl_lock(sbi, block_group));
 +	gdp->bg_free_blocks_count =
 +		cpu_to_le16(le16_to_cpu(gdp->bg_free_blocks_count) + count);
++	gdp->bg_checksum = ext4_group_desc_csum(sbi, block_group, gdp);
 +	spin_unlock(sb_bgl_lock(sbi, block_group));
 +	percpu_counter_mod(&sbi->s_freeblocks_counter, count);
 +

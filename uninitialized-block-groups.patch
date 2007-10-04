@@ -71,13 +71,13 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
  fs/Kconfig              |    1 
- fs/ext4/balloc.c        |   92 +++++++++++++++++++++++++++++-
- fs/ext4/group.h         |   29 +++++++++
+ fs/ext4/balloc.c        |  112 +++++++++++++++++++++++++++++++++++-
+ fs/ext4/group.h         |   27 +++++++++
  fs/ext4/ialloc.c        |  146 ++++++++++++++++++++++++++++++++++++++++++++---
- fs/ext4/resize.c        |    2 +
+ fs/ext4/resize.c        |   21 +------
  fs/ext4/super.c         |   47 +++++++++++++++
  include/linux/ext4_fs.h |   16 ++++-
- 7 files changed, 317 insertions(+), 16 deletions(-)
+ 7 files changed, 335 insertions(+), 35 deletions(-)
  create mode 100644 fs/ext4/group.h
 
 
@@ -94,7 +94,7 @@ index f9eed6d..97eef97 100644
  	  Ext4dev is a predecessor filesystem of the next generation
  	  extended fs ext4, based on ext3 filesystem code. It will be
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index e53b4af..d1a8882 100644
+index e53b4af..34b1e11 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -20,6 +20,7 @@
@@ -105,7 +105,7 @@ index e53b4af..d1a8882 100644
  /*
   * balloc.c contains the blocks allocation and deallocation routines
   */
-@@ -42,6 +43,74 @@ void ext4_get_group_no_and_offset(struct super_block *sb, ext4_fsblk_t blocknr,
+@@ -42,6 +43,94 @@ void ext4_get_group_no_and_offset(struct super_block *sb, ext4_fsblk_t blocknr,
  
  }
  
@@ -116,7 +116,7 @@ index e53b4af..d1a8882 100644
 +{
 +	unsigned long start;
 +	int bit, bit_max;
-+	unsigned free_blocks;
++	unsigned free_blocks, group_blocks;
 +	struct ext4_sb_info *sbi = EXT4_SB(sb);
 +
 +	if (bh) {
@@ -156,8 +156,20 @@ index e53b4af..d1a8882 100644
 +			bit_max += 1;
 +	}
 +
-+	/* Last and first groups are always initialized */
-+	free_blocks = EXT4_BLOCKS_PER_GROUP(sb) - bit_max;
++	if (block_group == sbi->s_gdb_count - 1) {
++		/*
++		 * Even though mke2fs always initialize first and last group
++		 * if some other tool enabled the EXT4_BG_BLOCK_UNINIT we need
++		 * to make sure we calculate the right free blocks
++		 */
++		group_blocks = ext4_blocks_count(sbi->s_es) -
++			le32_to_cpu(sbi->s_es->s_first_data_block) -
++			(EXT4_BLOCKS_PER_GROUP(sb) * (sbi->s_groups_count -1));
++	} else {
++		group_blocks = EXT4_BLOCKS_PER_GROUP(sb);
++	}
++
++	free_blocks = group_blocks - bit_max;
 +
 +	if (bh) {
 +		for (bit = 0; bit < bit_max; bit++)
@@ -172,15 +184,23 @@ index e53b4af..d1a8882 100644
 +		for (bit = le32_to_cpu(gdp->bg_inode_table) - start,
 +		     bit_max = bit + sbi->s_itb_per_group; bit < bit_max; bit++)
 +			ext4_set_bit(bit, bh->b_data);
++
++		/*
++		 * Also if the number of blocks within the group is less than the
++		 * blocksize * 8 ( which is the size of bitmap ), set rest of the
++		 * block bitmap to 1
++		 */
++		mark_bitmap_end(group_blocks, sb->s_blocksize * 8, bh->b_data);
 +	}
 +
 +	return free_blocks - sbi->s_itb_per_group - 2;
 +}
 +
++
  /*
   * The free blocks are managed by bitmaps.  A file system contains several
   * blocks groups.  Each group contains 1 bitmap block for blocks, 1 bitmap
-@@ -110,16 +179,29 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
+@@ -110,16 +199,29 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
   *
   * Return buffer_head on success or NULL in case of failure.
   */
@@ -213,7 +233,7 @@ index e53b4af..d1a8882 100644
  	if (!bh)
  		ext4_error (sb, "read_block_bitmap",
  			    "Cannot read block bitmap - "
-@@ -586,6 +668,7 @@ do_more:
+@@ -586,6 +688,7 @@ do_more:
  	desc->bg_free_blocks_count =
  		cpu_to_le16(le16_to_cpu(desc->bg_free_blocks_count) +
  			group_freed);
@@ -221,7 +241,7 @@ index e53b4af..d1a8882 100644
  	spin_unlock(sb_bgl_lock(sbi, block_group));
  	percpu_counter_mod(&sbi->s_freeblocks_counter, count);
  
-@@ -1644,8 +1727,11 @@ allocated:
+@@ -1644,8 +1747,11 @@ allocated:
  			ret_block, goal_hits, goal_attempts);
  
  	spin_lock(sb_bgl_lock(sbi, group_no));
@@ -235,10 +255,10 @@ index e53b4af..d1a8882 100644
  
 diff --git a/fs/ext4/group.h b/fs/ext4/group.h
 new file mode 100644
-index 0000000..9310979
+index 0000000..1577910
 --- /dev/null
 +++ b/fs/ext4/group.h
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,27 @@
 +/*
 + *  linux/fs/ext4/group.h
 + *
@@ -249,9 +269,6 @@ index 0000000..9310979
 +
 +#ifndef _LINUX_EXT4_GROUP_H
 +#define _LINUX_EXT4_GROUP_H
-+#if defined(CONFIG_CRC16)
-+#include <linux/crc16.h>
-+#endif
 +
 +extern __le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 group,
 +				   struct ext4_group_desc *gdp);
@@ -267,9 +284,10 @@ index 0000000..9310979
 +extern unsigned ext4_init_inode_bitmap(struct super_block *sb,
 +				       struct buffer_head *bh, int group,
 +				       struct ext4_group_desc *desc);
++extern void mark_bitmap_end(int start_bit, int end_bit, char *bitmap);
 +#endif /* _LINUX_EXT4_GROUP_H */
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index b8b538d..1fa418c 100644
+index b8b538d..e4c421e 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -28,6 +28,7 @@
@@ -289,7 +307,7 @@ index b8b538d..1fa418c 100644
 + * need to use it within a single byte (to ensure we get endianness right).
 + * We can use memset for the rest of the bitmap as there are no other users.
 + */
-+static void mark_bitmap_end(int start_bit, int end_bit, char *bitmap)
++void mark_bitmap_end(int start_bit, int end_bit, char *bitmap)
 +{
 +	int i;
 +
@@ -482,7 +500,7 @@ index b8b538d..1fa418c 100644
  	inode->i_blocks = 0;
  	inode->i_mtime = inode->i_atime = inode->i_ctime = ei->i_crtime =
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index aa11d7d..3359450 100644
+index aa11d7d..19ff743 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
 @@ -16,6 +16,7 @@
@@ -493,7 +511,33 @@ index aa11d7d..3359450 100644
  
  #define outside(b, first, last)	((b) < (first) || (b) >= (last))
  #define inside(b, first, last)	((b) >= (first) && (b) < (last))
-@@ -842,6 +843,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -140,25 +141,6 @@ static struct buffer_head *bclean(handle_t *handle, struct super_block *sb,
+ }
+ 
+ /*
+- * To avoid calling the atomic setbit hundreds or thousands of times, we only
+- * need to use it within a single byte (to ensure we get endianness right).
+- * We can use memset for the rest of the bitmap as there are no other users.
+- */
+-static void mark_bitmap_end(int start_bit, int end_bit, char *bitmap)
+-{
+-	int i;
+-
+-	if (start_bit >= end_bit)
+-		return;
+-
+-	ext4_debug("mark end bits +%d through +%d used\n", start_bit, end_bit);
+-	for (i = start_bit; i < ((start_bit + 7) & ~7UL); i++)
+-		ext4_set_bit(i, bitmap);
+-	if (i < end_bit)
+-		memset(bitmap + (i >> 3), 0xff, (end_bit - i) >> 3);
+-}
+-
+-/*
+  * Set up the block and inode bitmaps, and the inode table for the new group.
+  * This doesn't need to be part of the main transaction, since we are only
+  * changing blocks outside the actual filesystem.  We still do journaling to
+@@ -842,6 +824,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  	ext4_inode_table_set(sb, gdp, input->inode_table); /* LV FIXME */
  	gdp->bg_free_blocks_count = cpu_to_le16(input->free_blocks_count);
  	gdp->bg_free_inodes_count = cpu_to_le16(EXT4_INODES_PER_GROUP(sb));
