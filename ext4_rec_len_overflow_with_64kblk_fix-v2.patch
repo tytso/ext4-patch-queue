@@ -11,17 +11,17 @@ Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
 
- fs/ext4/dir.c           |   12 ++++---
- fs/ext4/namei.c         |   76 ++++++++++++++++++++++-------------------------
+ fs/ext4/dir.c           |   12 +++----
+ fs/ext4/namei.c         |   76 ++++++++++++++++++++++--------------------------
  include/linux/ext4_fs.h |   20 ++++++++++++
  3 files changed, 62 insertions(+), 46 deletions(-)
 
 
-diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
-index 3ab01c0..20b1e28 100644
---- a/fs/ext4/dir.c
-+++ b/fs/ext4/dir.c
-@@ -69,7 +69,7 @@ int ext4_check_dir_entry (const char * function, struct inode * dir,
+Index: linux-2.6.23-rc9/fs/ext4/dir.c
+===================================================================
+--- linux-2.6.23-rc9.orig/fs/ext4/dir.c	2007-10-05 10:13:17.000000000 -0700
++++ linux-2.6.23-rc9/fs/ext4/dir.c	2007-10-05 10:13:35.000000000 -0700
+@@ -67,7 +67,7 @@ int ext4_check_dir_entry (const char * f
  			  unsigned long offset)
  {
  	const char * error_msg = NULL;
@@ -30,7 +30,7 @@ index 3ab01c0..20b1e28 100644
  
  	if (rlen < EXT4_DIR_REC_LEN(1))
  		error_msg = "rec_len is smaller than minimal";
-@@ -176,10 +176,10 @@ revalidate:
+@@ -172,10 +172,10 @@ revalidate:
  				 * least that it is non-zero.  A
  				 * failure will be detected in the
  				 * dirent test below. */
@@ -44,7 +44,7 @@ index 3ab01c0..20b1e28 100644
  			}
  			offset = i;
  			filp->f_pos = (filp->f_pos & ~(sb->s_blocksize - 1))
-@@ -201,7 +201,7 @@ revalidate:
+@@ -197,7 +197,7 @@ revalidate:
  				ret = stored;
  				goto out;
  			}
@@ -53,7 +53,7 @@ index 3ab01c0..20b1e28 100644
  			if (le32_to_cpu(de->inode)) {
  				/* We might block in the next section
  				 * if the data destination is
-@@ -223,7 +223,7 @@ revalidate:
+@@ -219,7 +219,7 @@ revalidate:
  					goto revalidate;
  				stored ++;
  			}
@@ -62,11 +62,11 @@ index 3ab01c0..20b1e28 100644
  		}
  		offset = 0;
  		brelse (bh);
-diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 5fdb862..96e8a85 100644
---- a/fs/ext4/namei.c
-+++ b/fs/ext4/namei.c
-@@ -281,7 +281,7 @@ static struct stats dx_show_leaf(struct dx_hash_info *hinfo, struct ext4_dir_ent
+Index: linux-2.6.23-rc9/fs/ext4/namei.c
+===================================================================
+--- linux-2.6.23-rc9.orig/fs/ext4/namei.c	2007-10-05 10:13:17.000000000 -0700
++++ linux-2.6.23-rc9/fs/ext4/namei.c	2007-10-05 10:13:35.000000000 -0700
+@@ -280,7 +280,7 @@ static struct stats dx_show_leaf(struct 
  			space += EXT4_DIR_REC_LEN(de->name_len);
  			names++;
  		}
@@ -75,7 +75,7 @@ index 5fdb862..96e8a85 100644
  	}
  	printk("(%i)\n", names);
  	return (struct stats) { names, space, 1 };
-@@ -552,7 +552,8 @@ static int ext4_htree_next_block(struct inode *dir, __u32 hash,
+@@ -551,7 +551,8 @@ static int ext4_htree_next_block(struct 
   */
  static inline struct ext4_dir_entry_2 *ext4_next_entry(struct ext4_dir_entry_2 *p)
  {
@@ -85,7 +85,7 @@ index 5fdb862..96e8a85 100644
  }
  
  /*
-@@ -721,7 +722,7 @@ static int dx_make_map (struct ext4_dir_entry_2 *de, int size,
+@@ -720,7 +721,7 @@ static int dx_make_map (struct ext4_dir_
  			cond_resched();
  		}
  		/* XXX: do we need to check rec_len == 0 case? -Chris */
@@ -94,7 +94,7 @@ index 5fdb862..96e8a85 100644
  	}
  	return count;
  }
-@@ -823,7 +824,7 @@ static inline int search_dirblock(struct buffer_head * bh,
+@@ -820,7 +821,7 @@ static inline int search_dirblock(struct
  			return 1;
  		}
  		/* prevent looping on a bad block */
@@ -103,7 +103,7 @@ index 5fdb862..96e8a85 100644
  		if (de_len <= 0)
  			return -1;
  		offset += de_len;
-@@ -1136,7 +1137,7 @@ dx_move_dirents(char *from, char *to, struct dx_map_entry *map, int count)
+@@ -1128,7 +1129,7 @@ dx_move_dirents(char *from, char *to, st
  		rec_len = EXT4_DIR_REC_LEN(de->name_len);
  		memcpy (to, de, rec_len);
  		((struct ext4_dir_entry_2 *) to)->rec_len =
@@ -112,7 +112,7 @@ index 5fdb862..96e8a85 100644
  		de->inode = 0;
  		map++;
  		to += rec_len;
-@@ -1155,13 +1156,12 @@ static struct ext4_dir_entry_2* dx_pack_dirents(char *base, int size)
+@@ -1147,13 +1148,12 @@ static struct ext4_dir_entry_2* dx_pack_
  
  	prev = to = de;
  	while ((char*)de < base + size) {
@@ -128,7 +128,7 @@ index 5fdb862..96e8a85 100644
  			prev = to;
  			to = (struct ext4_dir_entry_2 *) (((char *) to) + rec_len);
  		}
-@@ -1235,8 +1235,8 @@ static struct ext4_dir_entry_2 *do_split(handle_t *handle, struct inode *dir,
+@@ -1227,8 +1227,8 @@ static struct ext4_dir_entry_2 *do_split
  	/* Fancy dance to stay within two buffers */
  	de2 = dx_move_dirents(data1, data2, map + split, count - split);
  	de = dx_pack_dirents(data1,blocksize);
@@ -139,7 +139,7 @@ index 5fdb862..96e8a85 100644
  	dxtrace(dx_show_leaf (hinfo, (struct ext4_dir_entry_2 *) data1, blocksize, 1));
  	dxtrace(dx_show_leaf (hinfo, (struct ext4_dir_entry_2 *) data2, blocksize, 1));
  
-@@ -1307,7 +1307,7 @@ static int add_dirent_to_buf(handle_t *handle, struct dentry *dentry,
+@@ -1297,7 +1297,7 @@ static int add_dirent_to_buf(handle_t *h
  				return -EEXIST;
  			}
  			nlen = EXT4_DIR_REC_LEN(de->name_len);
@@ -148,7 +148,7 @@ index 5fdb862..96e8a85 100644
  			if ((de->inode? rlen - nlen: rlen) >= reclen)
  				break;
  			de = (struct ext4_dir_entry_2 *)((char *)de + rlen);
-@@ -1326,11 +1326,11 @@ static int add_dirent_to_buf(handle_t *handle, struct dentry *dentry,
+@@ -1316,11 +1316,11 @@ static int add_dirent_to_buf(handle_t *h
  
  	/* By now the buffer is marked for journaling */
  	nlen = EXT4_DIR_REC_LEN(de->name_len);
@@ -163,7 +163,7 @@ index 5fdb862..96e8a85 100644
  		de = de1;
  	}
  	de->file_type = EXT4_FT_UNKNOWN;
-@@ -1408,17 +1408,18 @@ static int make_indexed_dir(handle_t *handle, struct dentry *dentry,
+@@ -1397,17 +1397,18 @@ static int make_indexed_dir(handle_t *ha
  
  	/* The 0th block becomes the root, move the dirents out */
  	fde = &root->dotdot;
@@ -186,7 +186,7 @@ index 5fdb862..96e8a85 100644
  	memset (&root->info, 0, sizeof(root->info));
  	root->info.info_length = sizeof(root->info);
  	root->info.hash_version = EXT4_SB(dir->i_sb)->s_def_hash_version;
-@@ -1505,7 +1506,7 @@ static int ext4_add_entry (handle_t *handle, struct dentry *dentry,
+@@ -1487,7 +1488,7 @@ static int ext4_add_entry (handle_t *han
  		return retval;
  	de = (struct ext4_dir_entry_2 *) bh->b_data;
  	de->inode = 0;
@@ -195,7 +195,7 @@ index 5fdb862..96e8a85 100644
  	return add_dirent_to_buf(handle, dentry, inode, de, bh);
  }
  
-@@ -1569,7 +1570,7 @@ static int ext4_dx_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -1550,7 +1551,7 @@ static int ext4_dx_add_entry(handle_t *h
  			goto cleanup;
  		node2 = (struct dx_node *)(bh2->b_data);
  		entries2 = node2->entries;
@@ -204,7 +204,7 @@ index 5fdb862..96e8a85 100644
  		node2->fake.inode = 0;
  		BUFFER_TRACE(frame->bh, "get_write_access");
  		err = ext4_journal_get_write_access(handle, frame->bh);
-@@ -1668,9 +1669,9 @@ static int ext4_delete_entry (handle_t *handle,
+@@ -1648,9 +1649,9 @@ static int ext4_delete_entry (handle_t *
  			BUFFER_TRACE(bh, "get_write_access");
  			ext4_journal_get_write_access(handle, bh);
  			if (pde)
@@ -217,7 +217,7 @@ index 5fdb862..96e8a85 100644
  			else
  				de->inode = 0;
  			dir->i_version++;
-@@ -1678,10 +1679,9 @@ static int ext4_delete_entry (handle_t *handle,
+@@ -1658,10 +1659,9 @@ static int ext4_delete_entry (handle_t *
  			ext4_journal_dirty_metadata(handle, bh);
  			return 0;
  		}
@@ -230,7 +230,7 @@ index 5fdb862..96e8a85 100644
  	}
  	return -ENOENT;
  }
-@@ -1844,13 +1844,12 @@ retry:
+@@ -1824,13 +1824,12 @@ retry:
  	de = (struct ext4_dir_entry_2 *) dir_block->b_data;
  	de->inode = cpu_to_le32(inode->i_ino);
  	de->name_len = 1;
@@ -247,7 +247,7 @@ index 5fdb862..96e8a85 100644
  	de->name_len = 2;
  	strcpy (de->name, "..");
  	ext4_set_de_type(dir->i_sb, de, S_IFDIR);
-@@ -1902,8 +1901,7 @@ static int empty_dir (struct inode * inode)
+@@ -1882,8 +1881,7 @@ static int empty_dir (struct inode * ino
  		return 1;
  	}
  	de = (struct ext4_dir_entry_2 *) bh->b_data;
@@ -257,7 +257,7 @@ index 5fdb862..96e8a85 100644
  	if (le32_to_cpu(de->inode) != inode->i_ino ||
  			!le32_to_cpu(de1->inode) ||
  			strcmp (".", de->name) ||
-@@ -1914,9 +1912,9 @@ static int empty_dir (struct inode * inode)
+@@ -1894,9 +1892,9 @@ static int empty_dir (struct inode * ino
  		brelse (bh);
  		return 1;
  	}
@@ -270,7 +270,7 @@ index 5fdb862..96e8a85 100644
  	while (offset < inode->i_size ) {
  		if (!bh ||
  			(void *) de >= (void *) (bh->b_data+sb->s_blocksize)) {
-@@ -1945,9 +1943,8 @@ static int empty_dir (struct inode * inode)
+@@ -1925,9 +1923,8 @@ static int empty_dir (struct inode * ino
  			brelse (bh);
  			return 0;
  		}
@@ -282,7 +282,7 @@ index 5fdb862..96e8a85 100644
  	}
  	brelse (bh);
  	return 1;
-@@ -2302,8 +2299,7 @@ retry:
+@@ -2282,8 +2279,7 @@ retry:
  }
  
  #define PARENT_INO(buffer) \
@@ -292,11 +292,11 @@ index 5fdb862..96e8a85 100644
  
  /*
   * Anybody can rename anything with this: the permission checks are left to the
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index d15a15e..e1caf0a 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
-@@ -771,6 +771,26 @@ struct ext4_dir_entry_2 {
+Index: linux-2.6.23-rc9/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.23-rc9.orig/include/linux/ext4_fs.h	2007-10-05 10:13:31.000000000 -0700
++++ linux-2.6.23-rc9/include/linux/ext4_fs.h	2007-10-05 10:13:35.000000000 -0700
+@@ -767,6 +767,26 @@ struct ext4_dir_entry_2 {
  #define EXT4_DIR_ROUND			(EXT4_DIR_PAD - 1)
  #define EXT4_DIR_REC_LEN(name_len)	(((name_len) + 8 + EXT4_DIR_ROUND) & \
  					 ~EXT4_DIR_ROUND)

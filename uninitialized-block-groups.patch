@@ -72,19 +72,19 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
  fs/Kconfig              |    1 
  fs/ext4/balloc.c        |  112 +++++++++++++++++++++++++++++++++++-
- fs/ext4/group.h         |   27 +++++++++
- fs/ext4/ialloc.c        |  146 ++++++++++++++++++++++++++++++++++++++++++++---
- fs/ext4/resize.c        |   21 +------
+ fs/ext4/group.h         |   27 ++++++++
+ fs/ext4/ialloc.c        |  146 +++++++++++++++++++++++++++++++++++++++++++++---
+ fs/ext4/resize.c        |   21 ------
  fs/ext4/super.c         |   47 +++++++++++++++
- include/linux/ext4_fs.h |   16 ++++-
+ include/linux/ext4_fs.h |   16 +++--
  7 files changed, 335 insertions(+), 35 deletions(-)
  create mode 100644 fs/ext4/group.h
 
 
-diff --git a/fs/Kconfig b/fs/Kconfig
-index f9eed6d..97eef97 100644
---- a/fs/Kconfig
-+++ b/fs/Kconfig
+Index: linux-2.6.23-rc9/fs/Kconfig
+===================================================================
+--- linux-2.6.23-rc9.orig/fs/Kconfig	2007-10-05 10:20:04.000000000 -0700
++++ linux-2.6.23-rc9/fs/Kconfig	2007-10-05 10:20:20.000000000 -0700
 @@ -140,6 +140,7 @@ config EXT4DEV_FS
  	tristate "Ext4dev/ext4 extended fs support development (EXPERIMENTAL)"
  	depends on EXPERIMENTAL
@@ -93,10 +93,10 @@ index f9eed6d..97eef97 100644
  	help
  	  Ext4dev is a predecessor filesystem of the next generation
  	  extended fs ext4, based on ext3 filesystem code. It will be
-diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index e53b4af..34b1e11 100644
---- a/fs/ext4/balloc.c
-+++ b/fs/ext4/balloc.c
+Index: linux-2.6.23-rc9/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.23-rc9.orig/fs/ext4/balloc.c	2007-10-05 10:20:04.000000000 -0700
++++ linux-2.6.23-rc9/fs/ext4/balloc.c	2007-10-05 10:21:22.000000000 -0700
 @@ -20,6 +20,7 @@
  #include <linux/quotaops.h>
  #include <linux/buffer_head.h>
@@ -105,7 +105,7 @@ index e53b4af..34b1e11 100644
  /*
   * balloc.c contains the blocks allocation and deallocation routines
   */
-@@ -42,6 +43,94 @@ void ext4_get_group_no_and_offset(struct super_block *sb, ext4_fsblk_t blocknr,
+@@ -42,6 +43,94 @@ void ext4_get_group_no_and_offset(struct
  
  }
  
@@ -156,7 +156,7 @@ index e53b4af..34b1e11 100644
 +			bit_max += 1;
 +	}
 +
-+	if (block_group == sbi->s_gdb_count - 1) {
++	if (block_group == sbi->s_groups_count - 1) {
 +		/*
 +		 * Even though mke2fs always initialize first and last group
 +		 * if some other tool enabled the EXT4_BG_BLOCK_UNINIT we need
@@ -186,9 +186,9 @@ index e53b4af..34b1e11 100644
 +			ext4_set_bit(bit, bh->b_data);
 +
 +		/*
-+		 * Also if the number of blocks within the group is less than the
-+		 * blocksize * 8 ( which is the size of bitmap ), set rest of the
-+		 * block bitmap to 1
++		 * Also if the number of blocks within the group is
++		 * less than the blocksize * 8 ( which is the size
++		 * of bitmap ), set rest of the block bitmap to 1
 +		 */
 +		mark_bitmap_end(group_blocks, sb->s_blocksize * 8, bh->b_data);
 +	}
@@ -200,7 +200,7 @@ index e53b4af..34b1e11 100644
  /*
   * The free blocks are managed by bitmaps.  A file system contains several
   * blocks groups.  Each group contains 1 bitmap block for blocks, 1 bitmap
-@@ -110,16 +199,29 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
+@@ -110,16 +199,29 @@ struct ext4_group_desc * ext4_get_group_
   *
   * Return buffer_head on success or NULL in case of failure.
   */
@@ -228,7 +228,7 @@ index e53b4af..34b1e11 100644
 +			unlock_buffer(bh);
 +		}
 +	} else {
-+		bh = sb_bread(sb, ext4_block_bitmap(sb,desc));
++		bh = sb_bread(sb, ext4_block_bitmap(sb, desc));
 +	}
  	if (!bh)
  		ext4_error (sb, "read_block_bitmap",
@@ -253,11 +253,10 @@ index e53b4af..34b1e11 100644
  	spin_unlock(sb_bgl_lock(sbi, group_no));
  	percpu_counter_mod(&sbi->s_freeblocks_counter, -num);
  
-diff --git a/fs/ext4/group.h b/fs/ext4/group.h
-new file mode 100644
-index 0000000..1577910
---- /dev/null
-+++ b/fs/ext4/group.h
+Index: linux-2.6.23-rc9/fs/ext4/group.h
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-2.6.23-rc9/fs/ext4/group.h	2007-10-05 10:20:20.000000000 -0700
 @@ -0,0 +1,27 @@
 +/*
 + *  linux/fs/ext4/group.h
@@ -286,10 +285,10 @@ index 0000000..1577910
 +				       struct ext4_group_desc *desc);
 +extern void mark_bitmap_end(int start_bit, int end_bit, char *bitmap);
 +#endif /* _LINUX_EXT4_GROUP_H */
-diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index b8b538d..e4c421e 100644
---- a/fs/ext4/ialloc.c
-+++ b/fs/ext4/ialloc.c
+Index: linux-2.6.23-rc9/fs/ext4/ialloc.c
+===================================================================
+--- linux-2.6.23-rc9.orig/fs/ext4/ialloc.c	2007-10-05 10:20:04.000000000 -0700
++++ linux-2.6.23-rc9/fs/ext4/ialloc.c	2007-10-05 10:20:20.000000000 -0700
 @@ -28,6 +28,7 @@
  
  #include "xattr.h"
@@ -351,7 +350,7 @@ index b8b538d..e4c421e 100644
  
  /*
   * Read the inode allocation bitmap for a given block_group, reading
-@@ -59,8 +106,20 @@ read_inode_bitmap(struct super_block * sb, unsigned long block_group)
+@@ -59,8 +106,20 @@ read_inode_bitmap(struct super_block * s
  	desc = ext4_get_group_desc(sb, block_group, NULL);
  	if (!desc)
  		goto error_out;
@@ -374,7 +373,7 @@ index b8b538d..e4c421e 100644
  	if (!bh)
  		ext4_error(sb, "read_inode_bitmap",
  			    "Cannot read inode bitmap - "
-@@ -169,6 +228,8 @@ void ext4_free_inode (handle_t *handle, struct inode * inode)
+@@ -169,6 +228,8 @@ void ext4_free_inode (handle_t *handle, 
  			if (is_directory)
  				gdp->bg_used_dirs_count = cpu_to_le16(
  				  le16_to_cpu(gdp->bg_used_dirs_count) - 1);
@@ -383,7 +382,7 @@ index b8b538d..e4c421e 100644
  			spin_unlock(sb_bgl_lock(sbi, block_group));
  			percpu_counter_inc(&sbi->s_freeinodes_counter);
  			if (is_directory)
-@@ -438,7 +499,7 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode * dir, int mode)
+@@ -438,7 +499,7 @@ struct inode *ext4_new_inode(handle_t *h
  	struct ext4_sb_info *sbi;
  	int err = 0;
  	struct inode *ret;
@@ -499,10 +498,10 @@ index b8b538d..e4c421e 100644
  	/* This is the optimal IO size (for stat), not the fs block size */
  	inode->i_blocks = 0;
  	inode->i_mtime = inode->i_atime = inode->i_ctime = ei->i_crtime =
-diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index aa11d7d..19ff743 100644
---- a/fs/ext4/resize.c
-+++ b/fs/ext4/resize.c
+Index: linux-2.6.23-rc9/fs/ext4/resize.c
+===================================================================
+--- linux-2.6.23-rc9.orig/fs/ext4/resize.c	2007-10-05 10:20:04.000000000 -0700
++++ linux-2.6.23-rc9/fs/ext4/resize.c	2007-10-05 10:20:20.000000000 -0700
 @@ -16,6 +16,7 @@
  #include <linux/errno.h>
  #include <linux/slab.h>
@@ -511,7 +510,7 @@ index aa11d7d..19ff743 100644
  
  #define outside(b, first, last)	((b) < (first) || (b) >= (last))
  #define inside(b, first, last)	((b) >= (first) && (b) < (last))
-@@ -140,25 +141,6 @@ static struct buffer_head *bclean(handle_t *handle, struct super_block *sb,
+@@ -140,25 +141,6 @@ static struct buffer_head *bclean(handle
  }
  
  /*
@@ -537,7 +536,7 @@ index aa11d7d..19ff743 100644
   * Set up the block and inode bitmaps, and the inode table for the new group.
   * This doesn't need to be part of the main transaction, since we are only
   * changing blocks outside the actual filesystem.  We still do journaling to
-@@ -842,6 +824,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -842,6 +824,7 @@ int ext4_group_add(struct super_block *s
  	ext4_inode_table_set(sb, gdp, input->inode_table); /* LV FIXME */
  	gdp->bg_free_blocks_count = cpu_to_le16(input->free_blocks_count);
  	gdp->bg_free_inodes_count = cpu_to_le16(EXT4_INODES_PER_GROUP(sb));
@@ -545,10 +544,10 @@ index aa11d7d..19ff743 100644
  
  	/*
  	 * Make the new blocks and inodes valid next.  We do this before
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 420d39d..b59610d 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
+Index: linux-2.6.23-rc9/fs/ext4/super.c
+===================================================================
+--- linux-2.6.23-rc9.orig/fs/ext4/super.c	2007-10-05 10:20:04.000000000 -0700
++++ linux-2.6.23-rc9/fs/ext4/super.c	2007-10-05 10:20:20.000000000 -0700
 @@ -37,12 +37,14 @@
  #include <linux/quotaops.h>
  #include <linux/seq_file.h>
@@ -564,7 +563,7 @@ index 420d39d..b59610d 100644
  
  static int ext4_load_journal(struct super_block *, struct ext4_super_block *,
  			     unsigned long journal_devnum);
-@@ -1237,6 +1239,43 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+@@ -1237,6 +1239,43 @@ static int ext4_setup_super(struct super
  	return res;
  }
  
@@ -608,7 +607,7 @@ index 420d39d..b59610d 100644
  /* Called at mount-time, super-block is locked */
  static int ext4_check_descriptors (struct super_block * sb)
  {
-@@ -1291,6 +1330,14 @@ static int ext4_check_descriptors (struct super_block * sb)
+@@ -1291,6 +1330,14 @@ static int ext4_check_descriptors (struc
  				    i, inode_table);
  			return 0;
  		}
@@ -623,11 +622,11 @@ index 420d39d..b59610d 100644
  		first_block += EXT4_BLOCKS_PER_GROUP(sb);
  		gdp = (struct ext4_group_desc *)
  			((__u8 *)gdp + EXT4_DESC_SIZE(sb));
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 3baeb99..f6f3199 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
-@@ -109,19 +109,25 @@
+Index: linux-2.6.23-rc9/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.23-rc9.orig/include/linux/ext4_fs.h	2007-10-05 10:20:04.000000000 -0700
++++ linux-2.6.23-rc9/include/linux/ext4_fs.h	2007-10-05 10:20:20.000000000 -0700
+@@ -105,19 +105,25 @@
   */
  struct ext4_group_desc
  {
@@ -657,7 +656,7 @@ index 3baeb99..f6f3199 100644
  #ifdef __KERNEL__
  #include <linux/ext4_fs_i.h>
  #include <linux/ext4_fs_sb.h>
-@@ -669,6 +675,7 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
+@@ -665,6 +671,7 @@ static inline int ext4_valid_inum(struct
  #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
  #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
  #define EXT4_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
@@ -665,7 +664,7 @@ index 3baeb99..f6f3199 100644
  #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
  #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
  
-@@ -688,6 +695,7 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
+@@ -684,6 +691,7 @@ static inline int ext4_valid_inum(struct
  					 EXT4_FEATURE_INCOMPAT_64BIT)
  #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
  					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \

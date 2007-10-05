@@ -14,9 +14,16 @@ Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
 ---
 
 
-diff -puN fs/ext4/dir.c~ext4-remove-ifdef-config_ext4_index fs/ext4/dir.c
---- a/fs/ext4/dir.c~ext4-remove-ifdef-config_ext4_index
-+++ a/fs/ext4/dir.c
+---
+ fs/ext4/dir.c           |    7 -------
+ fs/ext4/namei.c         |   20 --------------------
+ include/linux/ext4_fs.h |   14 ++------------
+ 3 files changed, 2 insertions(+), 39 deletions(-)
+
+Index: linux-2.6.23-rc9/fs/ext4/dir.c
+===================================================================
+--- linux-2.6.23-rc9.orig/fs/ext4/dir.c	2007-10-05 10:12:37.000000000 -0700
++++ linux-2.6.23-rc9/fs/ext4/dir.c	2007-10-05 10:13:17.000000000 -0700
 @@ -47,9 +47,7 @@ const struct file_operations ext4_dir_op
  	.compat_ioctl	= ext4_compat_ioctl,
  #endif
@@ -57,9 +64,10 @@ diff -puN fs/ext4/dir.c~ext4-remove-ifdef-config_ext4_index fs/ext4/dir.c
  }
 -
 -#endif
-diff -puN fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index fs/ext4/namei.c
---- a/fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index
-+++ a/fs/ext4/namei.c
+Index: linux-2.6.23-rc9/fs/ext4/namei.c
+===================================================================
+--- linux-2.6.23-rc9.orig/fs/ext4/namei.c	2007-10-05 10:12:37.000000000 -0700
++++ linux-2.6.23-rc9/fs/ext4/namei.c	2007-10-05 10:13:17.000000000 -0700
 @@ -144,7 +144,6 @@ struct dx_map_entry
  	u16 size;
  };
@@ -126,7 +134,7 @@ diff -puN fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index fs/ext4/namei.c
  
  /*
   * Add a new entry into a directory (leaf) block.  If de is non-NULL,
-@@ -1363,7 +1353,6 @@ static int add_dirent_to_buf(handle_t *h
+@@ -1364,7 +1354,6 @@ static int add_dirent_to_buf(handle_t *h
  	return 0;
  }
  
@@ -134,7 +142,7 @@ diff -puN fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index fs/ext4/namei.c
  /*
   * This converts a one block unindexed directory to a 3 block indexed
   * directory, and adds the dentry to the indexed directory.
-@@ -1442,7 +1431,6 @@ static int make_indexed_dir(handle_t *ha
+@@ -1443,7 +1432,6 @@ static int make_indexed_dir(handle_t *ha
  
  	return add_dirent_to_buf(handle, dentry, inode, de, bh);
  }
@@ -142,7 +150,7 @@ diff -puN fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index fs/ext4/namei.c
  
  /*
   *	ext4_add_entry()
-@@ -1463,9 +1451,7 @@ static int ext4_add_entry (handle_t *han
+@@ -1464,9 +1452,7 @@ static int ext4_add_entry (handle_t *han
  	struct ext4_dir_entry_2 *de;
  	struct super_block * sb;
  	int	retval;
@@ -152,7 +160,7 @@ diff -puN fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index fs/ext4/namei.c
  	unsigned blocksize;
  	u32 block, blocks;
  
-@@ -1473,7 +1459,6 @@ static int ext4_add_entry (handle_t *han
+@@ -1474,7 +1460,6 @@ static int ext4_add_entry (handle_t *han
  	blocksize = sb->s_blocksize;
  	if (!dentry->d_name.len)
  		return -EINVAL;
@@ -160,7 +168,7 @@ diff -puN fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index fs/ext4/namei.c
  	if (is_dx(dir)) {
  		retval = ext4_dx_add_entry(handle, dentry, inode);
  		if (!retval || (retval != ERR_BAD_DX_DIR))
-@@ -1482,7 +1467,6 @@ static int ext4_add_entry (handle_t *han
+@@ -1483,7 +1468,6 @@ static int ext4_add_entry (handle_t *han
  		dx_fallback++;
  		ext4_mark_inode_dirty(handle, dir);
  	}
@@ -168,7 +176,7 @@ diff -puN fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index fs/ext4/namei.c
  	blocks = dir->i_size >> sb->s_blocksize_bits;
  	for (block = 0, offset = 0; block < blocks; block++) {
  		bh = ext4_bread(handle, dir, block, 0, &retval);
-@@ -1492,11 +1476,9 @@ static int ext4_add_entry (handle_t *han
+@@ -1493,11 +1477,9 @@ static int ext4_add_entry (handle_t *han
  		if (retval != -ENOSPC)
  			return retval;
  
@@ -180,7 +188,7 @@ diff -puN fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index fs/ext4/namei.c
  		brelse(bh);
  	}
  	bh = ext4_append(handle, dir, &block, &retval);
-@@ -1508,7 +1490,6 @@ static int ext4_add_entry (handle_t *han
+@@ -1509,7 +1491,6 @@ static int ext4_add_entry (handle_t *han
  	return add_dirent_to_buf(handle, dentry, inode, de, bh);
  }
  
@@ -188,7 +196,7 @@ diff -puN fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index fs/ext4/namei.c
  /*
   * Returns 0 for success, or a negative error value
   */
-@@ -1643,7 +1624,6 @@ cleanup:
+@@ -1644,7 +1625,6 @@ cleanup:
  	dx_release(frames);
  	return err;
  }
@@ -196,10 +204,11 @@ diff -puN fs/ext4/namei.c~ext4-remove-ifdef-config_ext4_index fs/ext4/namei.c
  
  /*
   * ext4_delete_entry deletes a directory entry by merging it with the
-diff -puN include/linux/ext4_fs.h~ext4-remove-ifdef-config_ext4_index include/linux/ext4_fs.h
---- a/include/linux/ext4_fs.h~ext4-remove-ifdef-config_ext4_index
-+++ a/include/linux/ext4_fs.h
-@@ -38,10 +38,6 @@
+Index: linux-2.6.23-rc9/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.23-rc9.orig/include/linux/ext4_fs.h	2007-10-05 10:13:13.000000000 -0700
++++ linux-2.6.23-rc9/include/linux/ext4_fs.h	2007-10-05 10:13:17.000000000 -0700
+@@ -36,10 +36,6 @@
  /*max window size: 1024(direct blocks) + 3([t,d]indirect blocks) */
  #define EXT4_MAX_RESERVE_BLOCKS		1027
  #define EXT4_RESERVE_WINDOW_NOT_ALLOCATED 0
@@ -210,7 +219,7 @@ diff -puN include/linux/ext4_fs.h~ext4-remove-ifdef-config_ext4_index include/li
  
  /*
   * Debug code
-@@ -811,17 +807,11 @@ struct ext4_dir_entry_2 {
+@@ -766,17 +762,11 @@ struct ext4_dir_entry_2 {
   * (c) Daniel Phillips, 2001
   */
  
@@ -230,4 +239,3 @@ diff -puN include/linux/ext4_fs.h~ext4-remove-ifdef-config_ext4_index include/li
  
  /* Legal values for the dx_root hash_version field: */
  
-_

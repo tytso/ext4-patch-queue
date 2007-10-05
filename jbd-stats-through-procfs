@@ -87,10 +87,10 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  5 files changed, 490 insertions(+), 2 deletions(-)
 
 
-Index: linux-2.6.23-rc8/fs/jbd2/checkpoint.c
+Index: linux-2.6.23-rc9/fs/jbd2/checkpoint.c
 ===================================================================
---- linux-2.6.23-rc8.orig/fs/jbd2/checkpoint.c	2007-10-01 20:37:45.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd2/checkpoint.c	2007-10-01 20:40:04.000000000 -0700
+--- linux-2.6.23-rc9.orig/fs/jbd2/checkpoint.c	2007-10-05 10:12:35.000000000 -0700
++++ linux-2.6.23-rc9/fs/jbd2/checkpoint.c	2007-10-05 10:13:51.000000000 -0700
 @@ -232,7 +232,8 @@ __flush_batch(journal_t *journal, struct
   * Called under jbd_lock_bh_state(jh2bh(jh)), and drops it
   */
@@ -136,10 +136,10 @@ Index: linux-2.6.23-rc8/fs/jbd2/checkpoint.c
  			if (!retry && lock_need_resched(&journal->j_list_lock)){
  				spin_unlock(&journal->j_list_lock);
  				retry = 1;
-Index: linux-2.6.23-rc8/fs/jbd2/commit.c
+Index: linux-2.6.23-rc9/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.23-rc8.orig/fs/jbd2/commit.c	2007-10-01 20:39:47.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd2/commit.c	2007-10-01 20:40:04.000000000 -0700
+--- linux-2.6.23-rc9.orig/fs/jbd2/commit.c	2007-10-05 10:13:00.000000000 -0700
++++ linux-2.6.23-rc9/fs/jbd2/commit.c	2007-10-05 10:13:51.000000000 -0700
 @@ -20,6 +20,7 @@
  #include <linux/slab.h>
  #include <linux/mm.h>
@@ -243,10 +243,10 @@ Index: linux-2.6.23-rc8/fs/jbd2/commit.c
  	commit_transaction->t_state = T_FINISHED;
  	J_ASSERT(commit_transaction == journal->j_committing_transaction);
  	journal->j_commit_sequence = commit_transaction->t_tid;
-Index: linux-2.6.23-rc8/fs/jbd2/journal.c
+Index: linux-2.6.23-rc9/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.23-rc8.orig/fs/jbd2/journal.c	2007-10-01 20:39:46.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd2/journal.c	2007-10-01 20:44:15.000000000 -0700
+--- linux-2.6.23-rc9.orig/fs/jbd2/journal.c	2007-10-05 10:13:01.000000000 -0700
++++ linux-2.6.23-rc9/fs/jbd2/journal.c	2007-10-05 10:13:51.000000000 -0700
 @@ -36,6 +36,7 @@
  #include <linux/poison.h>
  #include <linux/proc_fs.h>
@@ -596,7 +596,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  	if (journal->j_inode)
  		iput(journal->j_inode);
  	if (journal->j_revoke)
-@@ -1908,6 +2215,28 @@ static void __exit jbd2_remove_debugfs_e
+@@ -1900,6 +2207,28 @@ static void __exit jbd2_remove_debugfs_e
  
  #endif
  
@@ -625,7 +625,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  struct kmem_cache *jbd2_handle_cache;
  
  static int __init journal_init_handle_cache(void)
-@@ -1963,6 +2292,7 @@ static int __init journal_init(void)
+@@ -1955,6 +2284,7 @@ static int __init journal_init(void)
  	if (ret != 0)
  		jbd2_journal_destroy_caches();
  	jbd2_create_debugfs_entry();
@@ -633,7 +633,7 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  	return ret;
  }
  
-@@ -1974,6 +2304,7 @@ static void __exit journal_exit(void)
+@@ -1966,6 +2296,7 @@ static void __exit journal_exit(void)
  		printk(KERN_EMERG "JBD: leaked %d journal_heads!\n", n);
  #endif
  	jbd2_remove_debugfs_entry();
@@ -641,10 +641,10 @@ Index: linux-2.6.23-rc8/fs/jbd2/journal.c
  	jbd2_journal_destroy_caches();
  }
  
-Index: linux-2.6.23-rc8/fs/jbd2/transaction.c
+Index: linux-2.6.23-rc9/fs/jbd2/transaction.c
 ===================================================================
---- linux-2.6.23-rc8.orig/fs/jbd2/transaction.c	2007-10-01 20:37:45.000000000 -0700
-+++ linux-2.6.23-rc8/fs/jbd2/transaction.c	2007-10-01 20:40:04.000000000 -0700
+--- linux-2.6.23-rc9.orig/fs/jbd2/transaction.c	2007-10-05 10:12:59.000000000 -0700
++++ linux-2.6.23-rc9/fs/jbd2/transaction.c	2007-10-05 10:13:51.000000000 -0700
 @@ -59,6 +59,8 @@ jbd2_get_transaction(journal_t *journal,
  
  	J_ASSERT(journal->j_running_transaction == NULL);
@@ -675,10 +675,10 @@ Index: linux-2.6.23-rc8/fs/jbd2/transaction.c
  	handle->h_transaction = transaction;
  	transaction->t_outstanding_credits += nblocks;
  	transaction->t_updates++;
-Index: linux-2.6.23-rc8/include/linux/jbd2.h
+Index: linux-2.6.23-rc9/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.23-rc8.orig/include/linux/jbd2.h	2007-10-01 20:39:46.000000000 -0700
-+++ linux-2.6.23-rc8/include/linux/jbd2.h	2007-10-01 20:40:04.000000000 -0700
+--- linux-2.6.23-rc9.orig/include/linux/jbd2.h	2007-10-05 10:12:59.000000000 -0700
++++ linux-2.6.23-rc9/include/linux/jbd2.h	2007-10-05 10:13:51.000000000 -0700
 @@ -409,6 +409,16 @@ struct handle_s
  };
  
