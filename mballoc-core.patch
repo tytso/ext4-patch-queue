@@ -85,6 +85,22 @@ Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+ fs/ext4/Makefile           |    2 
+ fs/ext4/balloc.c           |   67 +
+ fs/ext4/extents.c          |   45 
+ fs/ext4/inode.c            |   14 
+ fs/ext4/mballoc.c          | 4408 ++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/migrate.c          |   10 
+ fs/ext4/super.c            |   32 
+ fs/ext4/xattr.c            |    4 
+ include/linux/ext4_fs.h    |   43 
+ include/linux/ext4_fs_i.h  |    4 
+ include/linux/ext4_fs_sb.h |   61 +
+ 11 files changed, 4653 insertions(+), 37 deletions(-)
+ create mode 100644 fs/ext4/mballoc.c
+
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index d5fd80b..ac6fa8c 100644
@@ -100,7 +116,7 @@ index d5fd80b..ac6fa8c 100644
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 43e7263..8e13e3a 100644
+index fd2cbe4..89f04c7 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -514,6 +514,8 @@ void ext4_discard_reservation(struct inode *inode)
@@ -148,7 +164,7 @@ index 43e7263..8e13e3a 100644
  	if (dquot_freed_blocks)
  		DQUOT_FREE_BLOCK(inode, dquot_freed_blocks);
  	return;
-@@ -1510,7 +1522,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+@@ -1511,7 +1523,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
  }
  
  /**
@@ -157,7 +173,7 @@ index 43e7263..8e13e3a 100644
   * @handle:		handle to this transaction
   * @inode:		file inode
   * @goal:		given target block(filesystem wide)
-@@ -1523,7 +1535,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+@@ -1524,7 +1536,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
   * any specific goal block.
   *
   */
@@ -166,7 +182,7 @@ index 43e7263..8e13e3a 100644
  			ext4_fsblk_t goal, unsigned long *count, int *errp)
  {
  	struct buffer_head *bitmap_bh = NULL;
-@@ -1787,13 +1799,46 @@ out:
+@@ -1788,13 +1800,46 @@ out:
  }
  
  ext4_fsblk_t ext4_new_block(handle_t *handle, struct inode *inode,
@@ -217,10 +233,10 @@ index 43e7263..8e13e3a 100644
   * ext4_count_free_blocks() -- count filesystem free blocks
   * @sb:		superblock
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 1874121..0ea6122 100644
+index 9fd6a2e..392b76e 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -851,7 +851,7 @@ cleanup:
+@@ -854,7 +854,7 @@ cleanup:
  		for (i = 0; i < depth; i++) {
  			if (!ablocks[i])
  				continue;
@@ -229,7 +245,7 @@ index 1874121..0ea6122 100644
  		}
  	}
  	kfree(ablocks);
-@@ -1799,7 +1799,7 @@ int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
+@@ -1698,7 +1698,7 @@ int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
  	ext_debug("index is empty, remove it, free block %llu\n", leaf);
  	bh = sb_find_get_block(inode->i_sb, leaf);
  	ext4_forget(handle, 1, inode, bh, leaf);
@@ -238,7 +254,7 @@ index 1874121..0ea6122 100644
  	return err;
  }
  
-@@ -1860,8 +1860,10 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -1759,8 +1759,10 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  {
  	struct buffer_head *bh;
  	unsigned short ee_len =  ext4_ext_get_actual_len(ex);
@@ -250,7 +266,7 @@ index 1874121..0ea6122 100644
  #ifdef EXTENTS_STATS
  	{
  		struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
-@@ -1889,7 +1891,7 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -1788,7 +1790,7 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  			bh = sb_find_get_block(inode->i_sb, start + i);
  			ext4_forget(handle, 0, inode, bh, start + i);
  		}
@@ -259,15 +275,15 @@ index 1874121..0ea6122 100644
  	} else if (from == le32_to_cpu(ex->ee_block)
  		   && to <= le32_to_cpu(ex->ee_block) + ee_len - 1) {
  		printk("strange request: removal %lu-%lu from %u:%u\n",
-@@ -2382,6 +2384,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2281,6 +2283,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  	ext4_fsblk_t goal, newblock;
  	int err = 0, depth, ret;
  	unsigned long allocated = 0;
 +	struct ext4_allocation_request ar;
  
  	__clear_bit(BH_New, &bh_result->b_state);
- 	ext_debug("blocks %d/%lu requested for inode %u\n", (int) iblock,
-@@ -2492,8 +2495,15 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 	ext_debug("blocks %lu/%lu requested for inode %u\n",
+@@ -2392,8 +2395,15 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  	if (S_ISREG(inode->i_mode) && (!EXT4_I(inode)->i_block_alloc_info))
  		ext4_init_block_alloc_info(inode);
  
@@ -285,7 +301,7 @@ index 1874121..0ea6122 100644
  
  	/*
  	 * See if request is beyond maximum number of blocks we can have in
-@@ -2516,7 +2526,18 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2416,7 +2426,18 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  		allocated = le16_to_cpu(newex.ee_len);
  	else
  		allocated = max_blocks;
@@ -305,7 +321,7 @@ index 1874121..0ea6122 100644
  	if (!newblock)
  		goto out2;
  	ext_debug("allocate new block: goal %llu, found %llu/%lu\n",
-@@ -2524,14 +2545,17 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2424,14 +2445,17 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  
  	/* try to insert new extent into found leaf and return */
  	ext4_ext_store_pblock(&newex, newblock);
@@ -325,7 +341,7 @@ index 1874121..0ea6122 100644
  		goto out2;
  	}
  
-@@ -2540,6 +2564,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2440,6 +2464,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  
  	/* previous routine could use block we allocated */
  	newblock = ext_pblock(&newex);
@@ -333,7 +349,7 @@ index 1874121..0ea6122 100644
  outnew:
  	__set_bit(BH_New, &bh_result->b_state);
  
-@@ -2591,6 +2616,8 @@ void ext4_ext_truncate(struct inode * inode, struct page *page)
+@@ -2491,6 +2516,8 @@ void ext4_ext_truncate(struct inode * inode, struct page *page)
  	mutex_lock(&EXT4_I(inode)->truncate_mutex);
  	ext4_ext_invalidate_cache(inode);
  
@@ -343,10 +359,10 @@ index 1874121..0ea6122 100644
  	 * TODO: optimization is possible here.
  	 * Probably we need not scan at all,
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 1f3517d..de5619f 100644
+index e431f25..218eec9 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -548,7 +548,7 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
+@@ -550,7 +550,7 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
  	return ret;
  failed_out:
  	for (i = 0; i <index; i++)
@@ -355,7 +371,7 @@ index 1f3517d..de5619f 100644
  	return ret;
  }
  
-@@ -647,9 +647,9 @@ failed:
+@@ -649,9 +649,9 @@ failed:
  		ext4_journal_forget(handle, branch[i].bh);
  	}
  	for (i = 0; i <indirect_blks; i++)
@@ -367,7 +383,7 @@ index 1f3517d..de5619f 100644
  
  	return err;
  }
-@@ -746,9 +746,9 @@ err_out:
+@@ -748,9 +748,9 @@ err_out:
  	for (i = 1; i <= num; i++) {
  		BUFFER_TRACE(where[i].bh, "call jbd2_journal_forget");
  		ext4_journal_forget(handle, where[i].bh);
@@ -379,7 +395,7 @@ index 1f3517d..de5619f 100644
  
  	return err;
  }
-@@ -2097,7 +2097,7 @@ static void ext4_clear_blocks(handle_t *handle, struct inode *inode,
+@@ -2101,7 +2101,7 @@ static void ext4_clear_blocks(handle_t *handle, struct inode *inode,
  		}
  	}
  
@@ -388,7 +404,7 @@ index 1f3517d..de5619f 100644
  }
  
  /**
-@@ -2270,7 +2270,7 @@ static void ext4_free_branches(handle_t *handle, struct inode *inode,
+@@ -2274,7 +2274,7 @@ static void ext4_free_branches(handle_t *handle, struct inode *inode,
  				ext4_journal_test_restart(handle, inode);
  			}
  
@@ -399,10 +415,10 @@ index 1f3517d..de5619f 100644
  				/*
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
 new file mode 100644
-index 0000000..b247ca0
+index 0000000..55d3324
 --- /dev/null
 +++ b/fs/ext4/mballoc.c
-@@ -0,0 +1,4411 @@
+@@ -0,0 +1,4408 @@
 +/*
 + * Copyright (c) 2003-2006, Cluster File Systems, Inc, info@clusterfs.com
 + * Written by Alex Tomas <alex@clusterfs.com>
@@ -754,7 +770,7 @@ index 0000000..b247ca0
 +	atomic_t		pa_count;
 +	unsigned		pa_deleted;
 +	ext4_fsblk_t		pa_pstart;	/* phys. block */
-+	unsigned long		pa_lstart;	/* log. block */
++	ext4_lblk_t		pa_lstart;	/* log. block */
 +	unsigned short		pa_len;		/* len of preallocated chunk */
 +	unsigned short		pa_free;	/* how many blocks are free */
 +	unsigned short		pa_linear;	/* consumed in one direction
@@ -765,7 +781,7 @@ index 0000000..b247ca0
 +
 +
 +struct ext4_free_extent {
-+	unsigned long fe_logical;
++	ext4_lblk_t fe_logical;
 +	ext4_grpblk_t fe_start;
 +	unsigned long fe_group;
 +	unsigned long fe_len;
@@ -2382,13 +2398,13 @@ index 0000000..b247ca0
 +			"%-5u %-5s %-5u %-6u\n";
 +		sprintf(buf2, "%lu/%d/%lu@%lu", hs->result.fe_group,
 +			hs->result.fe_start, hs->result.fe_len,
-+			hs->result.fe_logical);
++			(unsigned long)hs->result.fe_logical);
 +		sprintf(buf, "%lu/%d/%lu@%lu", hs->orig.fe_group,
 +			hs->orig.fe_start, hs->orig.fe_len,
-+			hs->orig.fe_logical);
++			(unsigned long)hs->orig.fe_logical);
 +		sprintf(buf3, "%lu/%d/%lu@%lu", hs->goal.fe_group,
 +			hs->goal.fe_start, hs->goal.fe_len,
-+			hs->goal.fe_logical);
++			(unsigned long)hs->goal.fe_logical);
 +		seq_printf(seq, fmt, hs->pid, hs->ino, buf, buf3, buf2,
 +				hs->found, hs->groups, hs->cr, hs->flags,
 +				hs->merged ? "M" : "", hs->tail,
@@ -2397,10 +2413,10 @@ index 0000000..b247ca0
 +		fmt = "%-5u %-8u %-23s %-23s %-23s\n";
 +		sprintf(buf2, "%lu/%d/%lu@%lu", hs->result.fe_group,
 +			hs->result.fe_start, hs->result.fe_len,
-+			hs->result.fe_logical);
++			(unsigned long)hs->result.fe_logical);
 +		sprintf(buf, "%lu/%d/%lu@%lu", hs->orig.fe_group,
 +			hs->orig.fe_start, hs->orig.fe_len,
-+			hs->orig.fe_logical);
++			(unsigned long)hs->orig.fe_logical);
 +		seq_printf(seq, fmt, hs->pid, hs->ino, buf, "", buf2);
 +	} else if (hs->op == EXT4_MB_HISTORY_DISCARD) {
 +		sprintf(buf2, "%lu/%d/%lu", hs->result.fe_group,
@@ -3395,17 +3411,14 @@ index 0000000..b247ca0
 +static void ext4_mb_normalize_request(struct ext4_allocation_context *ac,
 +				struct ext4_allocation_request *ar)
 +{
++	unsigned long wind;
++	int bsbits, i;
++	ext4_lblk_t end;
++	struct list_head *cur;
++	loff_t size, orig_size;
++	ext4_lblk_t start, orig_start;
 +	struct ext4_inode_info *ei = EXT4_I(ac->ac_inode);
 +	struct ext4_sb_info *sbi = EXT4_SB(ac->ac_sb);
-+	loff_t start;
-+	loff_t end;
-+	loff_t size;
-+	loff_t orig_size;
-+	loff_t orig_start;
-+	loff_t wind;
-+	struct list_head *cur;
-+	int bsbits;
-+	int i;
 +
 +	/* do normalize only data requests, metadata requests
 +	   do not need preallocation */
@@ -4815,7 +4828,7 @@ index 0000000..b247ca0
 +	return;
 +}
 diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
-index 54f2975..3a306b8 100644
+index b6f24d9..b54c084 100644
 --- a/fs/ext4/migrate.c
 +++ b/fs/ext4/migrate.c
 @@ -249,11 +249,11 @@ static int free_dind_blocks(handle_t *handle,
@@ -4860,7 +4873,7 @@ index 54f2975..3a306b8 100644
  	} else {
  
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 0426eb7..5882165 100644
+index 636ae4e..9dc37ba 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -443,6 +443,7 @@ static void ext4_put_super (struct super_block * sb)
@@ -4918,7 +4931,7 @@ index 0426eb7..5882165 100644
  		default:
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
-@@ -1989,6 +2009,7 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
+@@ -1987,6 +2007,7 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
  		"writeback");
  
  	ext4_ext_init(sb);
@@ -4926,7 +4939,7 @@ index 0426eb7..5882165 100644
  
  	lock_kernel();
  	return 0;
-@@ -2971,9 +2992,15 @@ static struct file_system_type ext4dev_fs_type = {
+@@ -2969,9 +2990,15 @@ static struct file_system_type ext4dev_fs_type = {
  
  static int __init init_ext4_fs(void)
  {
@@ -4943,7 +4956,7 @@ index 0426eb7..5882165 100644
  	err = init_inodecache();
  	if (err)
  		goto out1;
-@@ -2985,6 +3012,8 @@ out:
+@@ -2983,6 +3010,8 @@ out:
  	destroy_inodecache();
  out1:
  	exit_ext4_xattr();
@@ -4952,7 +4965,7 @@ index 0426eb7..5882165 100644
  	return err;
  }
  
-@@ -2993,6 +3022,7 @@ static void __exit exit_ext4_fs(void)
+@@ -2991,6 +3020,7 @@ static void __exit exit_ext4_fs(void)
  	unregister_filesystem(&ext4dev_fs_type);
  	destroy_inodecache();
  	exit_ext4_xattr();
@@ -4983,7 +4996,7 @@ index 8638730..d796213 100644
  				goto cleanup;
  			}
 diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 122e876..783c6f3 100644
+index ebff6ae..4a81271 100644
 --- a/include/linux/ext4_fs.h
 +++ b/include/linux/ext4_fs.h
 @@ -20,6 +20,8 @@
@@ -5014,11 +5027,11 @@ index 122e876..783c6f3 100644
 +
 +struct ext4_allocation_request {
 +	struct inode *inode;	/* target inode for block we're allocating */
-+	ext4_fsblk_t logical;	/* logical block in target inode */
++	ext4_lblk_t logical;	/* logical block in target inode */
 +	ext4_fsblk_t goal;	/* phys. target (a hint) */
-+	ext4_fsblk_t lleft;	/* the closest logical allocated block to the left */
++	ext4_lblk_t lleft;	/* the closest logical allocated block to the left */
 +	ext4_fsblk_t pleft;	/* phys. block for ^^^ */
-+	ext4_fsblk_t lright;	/* the closest logical allocated block to the right */
++	ext4_lblk_t lright;	/* the closest logical allocated block to the right */
 +	ext4_fsblk_t pright;	/* phys. block for ^^^ */
 +	unsigned long len;	/* how many blocks we want to allocate */
 +	unsigned long flags;	/* flags. see above EXT4_MB_HINT_* */
@@ -5035,7 +5048,7 @@ index 122e876..783c6f3 100644
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-@@ -880,7 +908,7 @@ extern ext4_fsblk_t ext4_new_block (handle_t *handle, struct inode *inode,
+@@ -881,7 +909,7 @@ extern ext4_fsblk_t ext4_new_block (handle_t *handle, struct inode *inode,
  extern ext4_fsblk_t ext4_new_blocks (handle_t *handle, struct inode *inode,
  			ext4_fsblk_t goal, unsigned long *count, int *errp);
  extern void ext4_free_blocks (handle_t *handle, struct inode *inode,
@@ -5044,7 +5057,7 @@ index 122e876..783c6f3 100644
  extern void ext4_free_blocks_sb (handle_t *handle, struct super_block *sb,
  				 ext4_fsblk_t block, unsigned long count,
  				unsigned long *pdquot_freed_blocks);
-@@ -918,6 +946,19 @@ extern unsigned long ext4_count_dirs (struct super_block *);
+@@ -919,6 +947,19 @@ extern unsigned long ext4_count_dirs (struct super_block *);
  extern void ext4_check_inodes_bitmap (struct super_block *);
  extern unsigned long ext4_count_free (struct buffer_head *, unsigned);
  
@@ -5065,10 +5078,10 @@ index 122e876..783c6f3 100644
  /* inode.c */
  int ext4_forget(handle_t *handle, int is_metadata, struct inode *inode,
 diff --git a/include/linux/ext4_fs_i.h b/include/linux/ext4_fs_i.h
-index 86ddfe2..2317242 100644
+index 9521400..94baea0 100644
 --- a/include/linux/ext4_fs_i.h
 +++ b/include/linux/ext4_fs_i.h
-@@ -153,6 +153,10 @@ struct ext4_inode_info {
+@@ -159,6 +159,10 @@ struct ext4_inode_info {
  	 * struct timespec i_{a,c,m}time in the generic inode.
  	 */
  	struct timespec i_crtime;
@@ -5080,7 +5093,7 @@ index 86ddfe2..2317242 100644
  
  #endif	/* _LINUX_EXT4_FS_I */
 diff --git a/include/linux/ext4_fs_sb.h b/include/linux/ext4_fs_sb.h
-index a978fba..58d5251 100644
+index 86496b1..e24f086 100644
 --- a/include/linux/ext4_fs_sb.h
 +++ b/include/linux/ext4_fs_sb.h
 @@ -89,6 +89,67 @@ struct ext4_sb_info {

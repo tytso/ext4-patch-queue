@@ -15,15 +15,15 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
  fs/ext4/extents.c       |    7 +++--
  fs/ext4/inode.c         |   69 +++++------------------------------------------
- include/linux/ext4_fs.h |   15 +++++++---
- 3 files changed, 23 insertions(+), 68 deletions(-)
+ include/linux/ext4_fs.h |    5 +++
+ 3 files changed, 17 insertions(+), 64 deletions(-)
 
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 8528774..9dd4746 100644
+index 096b7ea..74f2a5f 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2225,6 +2225,10 @@ out:
+@@ -2124,6 +2124,10 @@ out:
  	return err ? err : allocated;
  }
  
@@ -32,17 +32,17 @@ index 8528774..9dd4746 100644
 + * mutex_lock(&EXT4_I(inode)->truncate_mutex);
 + */
  int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
- 			ext4_fsblk_t iblock,
+ 			ext4_lblk_t iblock,
  			unsigned long max_blocks, struct buffer_head *bh_result,
-@@ -2240,7 +2244,6 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
- 	__clear_bit(BH_New, &bh_result->b_state);
- 	ext_debug("blocks %d/%lu requested for inode %u\n", (int) iblock,
- 			max_blocks, (unsigned) inode->i_ino);
+@@ -2140,7 +2144,6 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 	ext_debug("blocks %lu/%lu requested for inode %u\n",
+ 			(unsigned long) iblock, max_blocks,
+ 			(unsigned) inode->i_ino);
 -	mutex_lock(&EXT4_I(inode)->truncate_mutex);
  
  	/* check in cache */
  	goal = ext4_ext_in_cache(inode, iblock, &newex);
-@@ -2414,8 +2417,6 @@ out2:
+@@ -2314,8 +2317,6 @@ out2:
  		ext4_ext_drop_refs(path);
  		kfree(path);
  	}
@@ -52,7 +52,7 @@ index 8528774..9dd4746 100644
  }
  
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 73e347d..1f3517d 100644
+index f097c9c..6ccfba9 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -245,13 +245,6 @@ static inline void add_chain(Indirect *p, struct buffer_head *bh, __le32 *v)
@@ -69,7 +69,7 @@ index 73e347d..1f3517d 100644
  /**
   *	ext4_block_to_path - parse the block number into array of offsets
   *	@inode: inode in question (we are only interested in its superblock)
-@@ -346,10 +339,11 @@ static int ext4_block_to_path(struct inode *inode,
+@@ -347,10 +340,11 @@ static int ext4_block_to_path(struct inode *inode,
   *		(pointer to last triple returned, *@err == 0)
   *	or when it gets an IO error reading an indirect block
   *		(ditto, *@err == -EIO)
@@ -81,9 +81,9 @@ index 73e347d..1f3517d 100644
 + *      Need to be called with
 + *      mutex_lock(&EXT4_I(inode)->truncate_mutex)
   */
- static Indirect *ext4_get_branch(struct inode *inode, int depth, int *offsets,
- 				 Indirect chain[4], int *err)
-@@ -367,9 +361,6 @@ static Indirect *ext4_get_branch(struct inode *inode, int depth, int *offsets,
+ static Indirect *ext4_get_branch(struct inode *inode, int depth,
+ 				 ext4_lblk_t  *offsets,
+@@ -369,9 +363,6 @@ static Indirect *ext4_get_branch(struct inode *inode, int depth,
  		bh = sb_bread(sb, le32_to_cpu(p->key));
  		if (!bh)
  			goto failure;
@@ -93,7 +93,7 @@ index 73e347d..1f3517d 100644
  		add_chain(++p, bh, (__le32*)bh->b_data + *++offsets);
  		/* Reader: end */
  		if (!p->key)
-@@ -377,10 +368,6 @@ static Indirect *ext4_get_branch(struct inode *inode, int depth, int *offsets,
+@@ -379,10 +370,6 @@ static Indirect *ext4_get_branch(struct inode *inode, int depth,
  	}
  	return NULL;
  
@@ -104,7 +104,7 @@ index 73e347d..1f3517d 100644
  failure:
  	*err = -EIO;
  no_block:
-@@ -784,6 +771,10 @@ err_out:
+@@ -786,6 +773,10 @@ err_out:
   * return > 0, # of blocks mapped or allocated.
   * return = 0, if plain lookup failed.
   * return < 0, error case.
@@ -114,8 +114,8 @@ index 73e347d..1f3517d 100644
 + * mutex_lock(&EXT4_I(inode)->truncate_mutex)
   */
  int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
- 		sector_t iblock, unsigned long maxblocks,
-@@ -821,18 +812,6 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+ 		ext4_lblk_t iblock, unsigned long maxblocks,
+@@ -824,18 +815,6 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
  		while (count < maxblocks && count <= blocks_to_boundary) {
  			ext4_fsblk_t blk;
  
@@ -134,7 +134,7 @@ index 73e347d..1f3517d 100644
  			blk = le32_to_cpu(*(chain[depth-1].p + count));
  
  			if (blk == first_block + count)
-@@ -840,44 +819,13 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+@@ -843,44 +822,13 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
  			else
  				break;
  		}
@@ -180,7 +180,7 @@ index 73e347d..1f3517d 100644
  	/*
  	 * Okay, we need to do block allocation.  Lazily initialize the block
  	 * allocation info here if necessary
-@@ -919,7 +867,6 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+@@ -922,7 +870,6 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
  	*/
  	if (!err && extend_disksize && inode->i_size > ei->i_disksize)
  		ei->i_disksize = inode->i_size;
@@ -189,26 +189,22 @@ index 73e347d..1f3517d 100644
  		goto cleanup;
  
 diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 231755d..53c7355 100644
+index fbf5226..b700a9a 100644
 --- a/include/linux/ext4_fs.h
 +++ b/include/linux/ext4_fs.h
-@@ -1086,11 +1086,18 @@ ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+@@ -1068,6 +1068,8 @@ ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
  			unsigned long max_blocks, struct buffer_head *bh,
  			int create, int extend_disksize)
  {
--	if (EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL)
--		return ext4_ext_get_blocks(handle, inode, block, max_blocks,
 +	int retval;
 +	mutex_lock(&EXT4_I(inode)->truncate_mutex);
-+	if (EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL) {
-+		retval = ext4_ext_get_blocks(handle, inode, block, max_blocks,
- 					bh, create, extend_disksize);
--	return ext4_get_blocks_handle(handle, inode, block, max_blocks, bh,
--					create, extend_disksize);
-+	} else {
-+		retval = ext4_get_blocks_handle(handle, inode, block, max_blocks,
-+					bh, create, extend_disksize);
-+	}
+ 	if (EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL) {
+ 		retval = ext4_ext_get_blocks(handle, inode,
+ 						(ext4_lblk_t)block, max_blocks,
+@@ -1077,6 +1079,9 @@ ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+ 						(ext4_lblk_t)block, max_blocks,
+ 						bh, create, extend_disksize);
+ 	}
 +	mutex_unlock(&EXT4_I(inode)->truncate_mutex);
 +
 +	return retval;

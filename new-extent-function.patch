@@ -15,15 +15,15 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
  fs/ext4/extents.c               |  142 +++++++++++++++++++++++++++++++++++++++
- include/linux/ext4_fs_extents.h |    2 +
- 2 files changed, 144 insertions(+), 0 deletions(-)
+ include/linux/ext4_fs_extents.h |    4 +
+ 2 files changed, 146 insertions(+), 0 deletions(-)
 
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 9dd4746..1874121 100644
+index 74f2a5f..9fd6a2e 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -1015,6 +1015,148 @@ out:
+@@ -1018,6 +1018,148 @@ out:
  }
  
  /*
@@ -35,7 +35,7 @@ index 9dd4746..1874121 100644
 + */
 +int
 +ext4_ext_search_left(struct inode *inode, struct ext4_ext_path *path,
-+			ext4_fsblk_t *logical, ext4_fsblk_t *phys)
++			ext4_lblk_t *logical, ext4_fsblk_t *phys)
 +{
 +	struct ext4_extent_idx *ix;
 +	struct ext4_extent *ex;
@@ -78,7 +78,7 @@ index 9dd4746..1874121 100644
 + */
 +int
 +ext4_ext_search_right(struct inode *inode, struct ext4_ext_path *path,
-+			ext4_fsblk_t *logical, ext4_fsblk_t *phys)
++			ext4_lblk_t *logical, ext4_fsblk_t *phys)
 +{
 +	struct buffer_head *bh = NULL;
 +	struct ext4_extent_header *eh;
@@ -173,14 +173,16 @@ index 9dd4746..1874121 100644
   * returns allocated block in subsequent extent or EXT_MAX_BLOCK.
   * NOTE: it considers block number from index entry as
 diff --git a/include/linux/ext4_fs_extents.h b/include/linux/ext4_fs_extents.h
-index d2045a2..149fd4b 100644
+index def6de4..36b9bb0 100644
 --- a/include/linux/ext4_fs_extents.h
 +++ b/include/linux/ext4_fs_extents.h
-@@ -236,5 +236,7 @@ extern int ext4_ext_insert_extent(handle_t *, struct inode *, struct ext4_ext_pa
- extern int ext4_ext_walk_space(struct inode *, unsigned long, unsigned long, ext_prepare_callback, void *);
- extern struct ext4_ext_path * ext4_ext_find_extent(struct inode *, int, struct ext4_ext_path *);
- 
-+extern int ext4_ext_search_left(struct inode *, struct ext4_ext_path *, ext4_fsblk_t *, ext4_fsblk_t *);
-+extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *, ext4_fsblk_t *, ext4_fsblk_t *);
+@@ -221,5 +221,9 @@ extern unsigned int ext4_ext_check_overlap(struct inode *, struct ext4_extent *,
+ extern int ext4_ext_insert_extent(handle_t *, struct inode *, struct ext4_ext_path *, struct ext4_extent *);
+ extern struct ext4_ext_path * ext4_ext_find_extent(struct inode *, ext4_lblk_t,
+ 							struct ext4_ext_path *);
++extern int ext4_ext_search_left(struct inode *, struct ext4_ext_path *,
++						ext4_lblk_t *, ext4_fsblk_t *);
++extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
++						ext4_lblk_t *, ext4_fsblk_t *);
  #endif /* _LINUX_EXT4_EXTENTS */
  

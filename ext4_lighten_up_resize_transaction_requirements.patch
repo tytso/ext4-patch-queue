@@ -15,7 +15,7 @@ Tested with something like:
 [root@newbox ~]# dd if=/dev/zero of=fsfile bs=1024 count=32768
 [root@newbox ~]# mkfs.ext3 -b 1024 fsfile 16384
 [root@newbox ~]# mount -o loop fsfile mnt/
-[root@newbox ~]# resize2fs /dev/loop0 
+[root@newbox ~]# resize2fs /dev/loop0
 resize2fs 1.40.2 (12-Jul-2007)
 Filesystem at /dev/loop0 is mounted on /root/mnt; on-line resizing required
 old desc_blocks = 1, new_desc_blocks = 1
@@ -30,16 +30,17 @@ With the below change, it works.
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Acked-by: Andreas Dilger <adilger@clusterfs.com>
-
 ---
- fs/ext4/resize.c |   46 +++++++++++++++++++++++++++++++++++++++++++---
- 1 file changed, 43 insertions(+), 3 deletions(-)
 
-Index: linux-2.6.23-rc9/fs/ext4/resize.c
-===================================================================
---- linux-2.6.23-rc9.orig/fs/ext4/resize.c	2007-10-03 17:40:15.000000000 -0700
-+++ linux-2.6.23-rc9/fs/ext4/resize.c	2007-10-03 17:40:15.000000000 -0700
-@@ -141,6 +141,32 @@ static struct buffer_head *bclean(handle
+ fs/ext4/resize.c |   46 +++++++++++++++++++++++++++++++++++++++++++---
+ 1 files changed, 43 insertions(+), 3 deletions(-)
+
+
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 5b4bcd3..2ba1b61 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -141,6 +141,32 @@ static struct buffer_head *bclean(handle_t *handle, struct super_block *sb,
  }
  
  /*
@@ -72,7 +73,7 @@ Index: linux-2.6.23-rc9/fs/ext4/resize.c
   * Set up the block and inode bitmaps, and the inode table for the new group.
   * This doesn't need to be part of the main transaction, since we are only
   * changing blocks outside the actual filesystem.  We still do journaling to
-@@ -162,8 +188,9 @@ static int setup_new_group_blocks(struct
+@@ -162,8 +188,9 @@ static int setup_new_group_blocks(struct super_block *sb,
  	int i;
  	int err = 0, err2;
  
@@ -84,7 +85,7 @@ Index: linux-2.6.23-rc9/fs/ext4/resize.c
  	if (IS_ERR(handle))
  		return PTR_ERR(handle);
  
-@@ -190,6 +217,9 @@ static int setup_new_group_blocks(struct
+@@ -190,6 +217,9 @@ static int setup_new_group_blocks(struct super_block *sb,
  
  		ext4_debug("update backup group %#04lx (+%d)\n", block, bit);
  
@@ -94,7 +95,7 @@ Index: linux-2.6.23-rc9/fs/ext4/resize.c
  		gdb = sb_getblk(sb, block);
  		if (!gdb) {
  			err = -EIO;
-@@ -215,6 +245,9 @@ static int setup_new_group_blocks(struct
+@@ -215,6 +245,9 @@ static int setup_new_group_blocks(struct super_block *sb,
  
  		ext4_debug("clear reserved block %#04lx (+%d)\n", block, bit);
  
@@ -104,7 +105,7 @@ Index: linux-2.6.23-rc9/fs/ext4/resize.c
  		if (IS_ERR(gdb = bclean(handle, sb, block))) {
  			err = PTR_ERR(bh);
  			goto exit_bh;
-@@ -236,6 +269,10 @@ static int setup_new_group_blocks(struct
+@@ -236,6 +269,10 @@ static int setup_new_group_blocks(struct super_block *sb,
  		struct buffer_head *it;
  
  		ext4_debug("clear inode block %#04lx (+%d)\n", block, bit);
@@ -115,7 +116,7 @@ Index: linux-2.6.23-rc9/fs/ext4/resize.c
  		if (IS_ERR(it = bclean(handle, sb, block))) {
  			err = PTR_ERR(it);
  			goto exit_bh;
-@@ -244,6 +281,10 @@ static int setup_new_group_blocks(struct
+@@ -244,6 +281,10 @@ static int setup_new_group_blocks(struct super_block *sb,
  		brelse(it);
  		ext4_set_bit(bit, bh->b_data);
  	}

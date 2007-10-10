@@ -45,7 +45,7 @@ index c04c7cc..9e924df 100644
  	}
 diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
 new file mode 100644
-index 0000000..54f2975
+index 0000000..b6f24d9
 --- /dev/null
 +++ b/fs/ext4/migrate.c
 @@ -0,0 +1,630 @@
@@ -68,7 +68,7 @@ index 0000000..54f2975
 +#include <linux/ext4_fs_extents.h>
 +
 +struct list_blocks_struct {
-+	int first_block, last_block;
++	ext4_lblk_t first_block, last_block;
 +	ext4_fsblk_t first_pblock, last_pblock;
 +};
 +
@@ -136,7 +136,7 @@ index 0000000..54f2975
 +	return retval;
 +}
 +static int update_extent_range(handle_t *handle, struct inode *inode,
-+				ext4_fsblk_t pblock, int blk_num,
++				ext4_fsblk_t pblock, ext4_lblk_t blk_num,
 +				struct list_blocks_struct *lb)
 +{
 +	int retval;
@@ -163,13 +163,13 @@ index 0000000..54f2975
 +}
 +
 +static int update_ind_extent_range(handle_t *handle, struct inode *inode,
-+					ext4_fsblk_t pblock, int *blk_nump,
-+					struct list_blocks_struct *lb)
++				   ext4_fsblk_t pblock, ext4_lblk_t *blk_nump,
++				   struct list_blocks_struct *lb)
 +{
 +	struct buffer_head *bh;
 +	__le32 *i_data;
 +	int i, retval = 0;
-+	int blk_count = *blk_nump;
++	ext4_lblk_t blk_count = *blk_nump;
 +	unsigned long max_entries = inode->i_sb->s_blocksize >> 2;
 +
 +	if (!pblock) {
@@ -201,13 +201,13 @@ index 0000000..54f2975
 +
 +}
 +static int update_dind_extent_range(handle_t *handle, struct inode *inode,
-+					ext4_fsblk_t pblock, int *blk_nump,
-+					struct list_blocks_struct *lb)
++				    ext4_fsblk_t pblock, ext4_lblk_t *blk_nump,
++				    struct list_blocks_struct *lb)
 +{
 +	struct buffer_head *bh;
 +	__le32 *i_data;
 +	int i, retval = 0;
-+	int blk_count = *blk_nump;
++	ext4_lblk_t blk_count = *blk_nump;
 +	unsigned long max_entries = inode->i_sb->s_blocksize >> 2;
 +
 +	if (!pblock) {
@@ -242,13 +242,13 @@ index 0000000..54f2975
 +
 +}
 +static int update_tind_extent_range(handle_t *handle, struct inode *inode,
-+					ext4_fsblk_t pblock, int *blk_nump,
-+					struct list_blocks_struct *lb)
++				     ext4_fsblk_t pblock, ext4_lblk_t *blk_nump,
++				     struct list_blocks_struct *lb)
 +{
 +	struct buffer_head *bh;
 +	__le32 *i_data;
 +	int i, retval = 0;
-+	int blk_count = *blk_nump;
++	ext4_lblk_t blk_count = *blk_nump;
 +	unsigned long max_entries = inode->i_sb->s_blocksize >> 2;
 +
 +	if (!pblock) {
@@ -496,7 +496,7 @@ index 0000000..54f2975
 +	handle_t *handle;
 +	int retval = 0, i;
 +	__le32 *i_data;
-+	int blk_count = 0;
++	ext4_lblk_t blk_count = 0;
 +	struct ext4_inode_info *ei;
 +	struct inode *tmp_inode = NULL;
 +	struct list_blocks_struct lb;
@@ -680,7 +680,7 @@ index 0000000..54f2975
 +	return retval;
 +}
 diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 53c7355..37dc0f4 100644
+index b700a9a..e81fa05 100644
 --- a/include/linux/ext4_fs.h
 +++ b/include/linux/ext4_fs.h
 @@ -237,6 +237,7 @@ struct ext4_new_group_data {
@@ -691,7 +691,7 @@ index 53c7355..37dc0f4 100644
  
  /*
   * ioctl commands in 32 bit emulation
-@@ -968,6 +969,9 @@ extern int ext4_ioctl (struct inode *, struct file *, unsigned int,
+@@ -950,6 +951,9 @@ extern int ext4_ioctl (struct inode *, struct file *, unsigned int,
  		       unsigned long);
  extern long ext4_compat_ioctl (struct file *, unsigned int, unsigned long);
  

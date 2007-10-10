@@ -12,18 +12,18 @@ Signed-off-by: Christoph Lameter <clameter@sgi.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
 
- fs/jbd2/commit.c      |    6 +--
- fs/jbd2/journal.c     |   88 ++------------------------------------------------
- fs/jbd2/transaction.c |   14 +++----
+ fs/jbd2/commit.c      |    6 ++-
+ fs/jbd2/journal.c     |   88 ++-----------------------------------------------
+ fs/jbd2/transaction.c |   14 ++++----
  include/linux/jbd2.h  |   18 +++++++---
  4 files changed, 27 insertions(+), 99 deletions(-)
 
 
-Index: linux-2.6.23-rc9/fs/jbd2/commit.c
-===================================================================
---- linux-2.6.23-rc9.orig/fs/jbd2/commit.c	2007-10-05 12:03:43.000000000 -0700
-+++ linux-2.6.23-rc9/fs/jbd2/commit.c	2007-10-05 12:08:26.000000000 -0700
-@@ -384,7 +384,7 @@ void jbd2_journal_commit_transaction(jou
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index c0f59d1..2cac34a 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -384,7 +384,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  			struct buffer_head *bh = jh2bh(jh);
  
  			jbd_lock_bh_state(bh);
@@ -49,11 +49,11 @@ Index: linux-2.6.23-rc9/fs/jbd2/commit.c
  			jh->b_frozen_data = NULL;
  		}
  
-Index: linux-2.6.23-rc9/fs/jbd2/journal.c
-===================================================================
---- linux-2.6.23-rc9.orig/fs/jbd2/journal.c	2007-10-05 12:03:43.000000000 -0700
-+++ linux-2.6.23-rc9/fs/jbd2/journal.c	2007-10-05 12:08:26.000000000 -0700
-@@ -84,7 +84,6 @@ EXPORT_SYMBOL(jbd2_journal_force_commit)
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index f37324a..2d9ecca 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -84,7 +84,6 @@ EXPORT_SYMBOL(jbd2_journal_force_commit);
  
  static int journal_convert_superblock_v1(journal_t *, journal_superblock_t *);
  static void __journal_abort_soft (journal_t *journal, int errno);
@@ -74,7 +74,7 @@ Index: linux-2.6.23-rc9/fs/jbd2/journal.c
  			goto repeat;
  		}
  
-@@ -1096,13 +1095,6 @@ int jbd2_journal_load(journal_t *journal
+@@ -1096,13 +1095,6 @@ int jbd2_journal_load(journal_t *journal)
  		}
  	}
  
@@ -88,7 +88,7 @@ Index: linux-2.6.23-rc9/fs/jbd2/journal.c
  	/* Let the recovery code check whether it needs to recover any
  	 * data from the journal. */
  	if (jbd2_journal_recover(journal))
-@@ -1636,77 +1628,6 @@ void * __jbd2_kmalloc (const char *where
+@@ -1636,77 +1628,6 @@ void * __jbd2_kmalloc (const char *where, size_t size, gfp_t flags, int retry)
  }
  
  /*
@@ -166,7 +166,7 @@ Index: linux-2.6.23-rc9/fs/jbd2/journal.c
   * Journal_head storage management
   */
  static struct kmem_cache *jbd2_journal_head_cache;
-@@ -1893,13 +1814,13 @@ static void __journal_remove_journal_hea
+@@ -1893,13 +1814,13 @@ static void __journal_remove_journal_head(struct buffer_head *bh)
  				printk(KERN_WARNING "%s: freeing "
  						"b_frozen_data\n",
  						__FUNCTION__);
@@ -182,7 +182,7 @@ Index: linux-2.6.23-rc9/fs/jbd2/journal.c
  			}
  			bh->b_private = NULL;
  			jh->b_bh = NULL;	/* debug, really */
-@@ -2040,7 +1961,6 @@ static void jbd2_journal_destroy_caches(
+@@ -2040,7 +1961,6 @@ static void jbd2_journal_destroy_caches(void)
  	jbd2_journal_destroy_revoke_caches();
  	jbd2_journal_destroy_jbd2_journal_head_cache();
  	jbd2_journal_destroy_handle_cache();
@@ -190,10 +190,10 @@ Index: linux-2.6.23-rc9/fs/jbd2/journal.c
  }
  
  static int __init journal_init(void)
-Index: linux-2.6.23-rc9/fs/jbd2/transaction.c
-===================================================================
---- linux-2.6.23-rc9.orig/fs/jbd2/transaction.c	2007-10-05 12:03:43.000000000 -0700
-+++ linux-2.6.23-rc9/fs/jbd2/transaction.c	2007-10-05 12:08:26.000000000 -0700
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index 7946ff4..bd047f9 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
 @@ -236,7 +236,7 @@ out:
  /* Allocate a new handle.  This should probably be in a slab... */
  static handle_t *new_handle(int nblocks)
@@ -203,7 +203,7 @@ Index: linux-2.6.23-rc9/fs/jbd2/transaction.c
  	if (!handle)
  		return NULL;
  	memset(handle, 0, sizeof(*handle));
-@@ -282,7 +282,7 @@ handle_t *jbd2_journal_start(journal_t *
+@@ -282,7 +282,7 @@ handle_t *jbd2_journal_start(journal_t *journal, int nblocks)
  
  	err = start_this_handle(journal, handle);
  	if (err < 0) {
@@ -230,7 +230,7 @@ Index: linux-2.6.23-rc9/fs/jbd2/transaction.c
  
  	JBUFFER_TRACE(jh, "exit");
  	return error;
-@@ -881,7 +881,7 @@ int jbd2_journal_get_undo_access(handle_
+@@ -881,7 +881,7 @@ int jbd2_journal_get_undo_access(handle_t *handle, struct buffer_head *bh)
  
  repeat:
  	if (!jh->b_committed_data) {
@@ -257,10 +257,10 @@ Index: linux-2.6.23-rc9/fs/jbd2/transaction.c
  	return err;
  }
  
-Index: linux-2.6.23-rc9/include/linux/jbd2.h
-===================================================================
---- linux-2.6.23-rc9.orig/include/linux/jbd2.h	2007-10-05 12:03:43.000000000 -0700
-+++ linux-2.6.23-rc9/include/linux/jbd2.h	2007-10-05 12:08:26.000000000 -0700
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 260d6d7..e367792 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
 @@ -72,14 +72,22 @@ extern u8 jbd2_journal_enable_debug;
  #endif
  
@@ -287,7 +287,7 @@ Index: linux-2.6.23-rc9/include/linux/jbd2.h
  #define JBD2_MIN_JOURNAL_BLOCKS 1024
  
  #ifdef __KERNEL__
-@@ -959,12 +967,12 @@ void jbd2_journal_put_journal_head(struc
+@@ -959,12 +967,12 @@ void jbd2_journal_put_journal_head(struct journal_head *jh);
   */
  extern struct kmem_cache *jbd2_handle_cache;
  

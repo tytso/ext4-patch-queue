@@ -1,6 +1,6 @@
-From: Eric Sandeen <sandeen@redhat.com>
-
 ext4: remove #ifdef CONFIG_EXT4_INDEX
+
+From: Eric Sandeen <sandeen@redhat.com>
 
 CONFIG_EXT4_INDEX is not an exposed config option in the kernel, and it is
 unconditionally defined in ext4_fs.h.  tune2fs is already able to turn off
@@ -13,18 +13,17 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
 ---
 
-
----
  fs/ext4/dir.c           |    7 -------
  fs/ext4/namei.c         |   20 --------------------
  include/linux/ext4_fs.h |   14 ++------------
  3 files changed, 2 insertions(+), 39 deletions(-)
 
-Index: linux-2.6.23-rc9/fs/ext4/dir.c
-===================================================================
---- linux-2.6.23-rc9.orig/fs/ext4/dir.c	2007-10-05 10:12:37.000000000 -0700
-+++ linux-2.6.23-rc9/fs/ext4/dir.c	2007-10-05 10:13:17.000000000 -0700
-@@ -47,9 +47,7 @@ const struct file_operations ext4_dir_op
+
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index 3ab01c0..2ba49ff 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -47,9 +47,7 @@ const struct file_operations ext4_dir_operations = {
  	.compat_ioctl	= ext4_compat_ioctl,
  #endif
  	.fsync		= ext4_sync_file,	/* BKL held */
@@ -34,7 +33,7 @@ Index: linux-2.6.23-rc9/fs/ext4/dir.c
  };
  
  
-@@ -107,7 +105,6 @@ static int ext4_readdir(struct file * fi
+@@ -107,7 +105,6 @@ static int ext4_readdir(struct file * filp,
  
  	sb = inode->i_sb;
  
@@ -42,7 +41,7 @@ Index: linux-2.6.23-rc9/fs/ext4/dir.c
  	if (EXT4_HAS_COMPAT_FEATURE(inode->i_sb,
  				    EXT4_FEATURE_COMPAT_DIR_INDEX) &&
  	    ((EXT4_I(inode)->i_flags & EXT4_INDEX_FL) ||
-@@ -123,7 +120,6 @@ static int ext4_readdir(struct file * fi
+@@ -123,7 +120,6 @@ static int ext4_readdir(struct file * filp,
  		 */
  		EXT4_I(filp->f_path.dentry->d_inode)->i_flags &= ~EXT4_INDEX_FL;
  	}
@@ -58,16 +57,16 @@ Index: linux-2.6.23-rc9/fs/ext4/dir.c
  /*
   * These functions convert from the major/minor hash to an f_pos
   * value.
-@@ -518,5 +513,3 @@ static int ext4_release_dir (struct inod
+@@ -518,5 +513,3 @@ static int ext4_release_dir (struct inode * inode, struct file * filp)
  
  	return 0;
  }
 -
 -#endif
-Index: linux-2.6.23-rc9/fs/ext4/namei.c
-===================================================================
---- linux-2.6.23-rc9.orig/fs/ext4/namei.c	2007-10-05 10:12:37.000000000 -0700
-+++ linux-2.6.23-rc9/fs/ext4/namei.c	2007-10-05 10:13:17.000000000 -0700
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 5fdb862..94ee6f3 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
 @@ -144,7 +144,6 @@ struct dx_map_entry
  	u16 size;
  };
@@ -76,7 +75,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  static inline unsigned dx_get_block (struct dx_entry *entry);
  static void dx_set_block (struct dx_entry *entry, unsigned value);
  static inline unsigned dx_get_hash (struct dx_entry *entry);
-@@ -766,8 +765,6 @@ static void dx_insert_block(struct dx_fr
+@@ -766,8 +765,6 @@ static void dx_insert_block(struct dx_frame *frame, u32 hash, u32 block)
  	dx_set_block(new, block);
  	dx_set_count(entries, count + 1);
  }
@@ -85,7 +84,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  
  static void ext4_update_dx_flag(struct inode *inode)
  {
-@@ -869,7 +866,6 @@ static struct buffer_head * ext4_find_en
+@@ -869,7 +866,6 @@ static struct buffer_head * ext4_find_entry (struct dentry *dentry,
  	name = dentry->d_name.name;
  	if (namelen > EXT4_NAME_LEN)
  		return NULL;
@@ -93,7 +92,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  	if (is_dx(dir)) {
  		bh = ext4_dx_find_entry(dentry, res_dir, &err);
  		/*
-@@ -881,7 +877,6 @@ static struct buffer_head * ext4_find_en
+@@ -881,7 +877,6 @@ static struct buffer_head * ext4_find_entry (struct dentry *dentry,
  			return bh;
  		dxtrace(printk("ext4_find_entry: dx failed, falling back\n"));
  	}
@@ -117,7 +116,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  
  static struct dentry *ext4_lookup(struct inode * dir, struct dentry *dentry, struct nameidata *nd)
  {
-@@ -1121,7 +1114,6 @@ static inline void ext4_set_de_type(stru
+@@ -1121,7 +1114,6 @@ static inline void ext4_set_de_type(struct super_block *sb,
  		de->file_type = ext4_type_by_mode[(mode & S_IFMT)>>S_SHIFT];
  }
  
@@ -134,7 +133,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  
  /*
   * Add a new entry into a directory (leaf) block.  If de is non-NULL,
-@@ -1364,7 +1354,6 @@ static int add_dirent_to_buf(handle_t *h
+@@ -1364,7 +1354,6 @@ static int add_dirent_to_buf(handle_t *handle, struct dentry *dentry,
  	return 0;
  }
  
@@ -142,7 +141,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  /*
   * This converts a one block unindexed directory to a 3 block indexed
   * directory, and adds the dentry to the indexed directory.
-@@ -1443,7 +1432,6 @@ static int make_indexed_dir(handle_t *ha
+@@ -1443,7 +1432,6 @@ static int make_indexed_dir(handle_t *handle, struct dentry *dentry,
  
  	return add_dirent_to_buf(handle, dentry, inode, de, bh);
  }
@@ -150,7 +149,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  
  /*
   *	ext4_add_entry()
-@@ -1464,9 +1452,7 @@ static int ext4_add_entry (handle_t *han
+@@ -1464,9 +1452,7 @@ static int ext4_add_entry (handle_t *handle, struct dentry *dentry,
  	struct ext4_dir_entry_2 *de;
  	struct super_block * sb;
  	int	retval;
@@ -160,7 +159,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  	unsigned blocksize;
  	u32 block, blocks;
  
-@@ -1474,7 +1460,6 @@ static int ext4_add_entry (handle_t *han
+@@ -1474,7 +1460,6 @@ static int ext4_add_entry (handle_t *handle, struct dentry *dentry,
  	blocksize = sb->s_blocksize;
  	if (!dentry->d_name.len)
  		return -EINVAL;
@@ -168,7 +167,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  	if (is_dx(dir)) {
  		retval = ext4_dx_add_entry(handle, dentry, inode);
  		if (!retval || (retval != ERR_BAD_DX_DIR))
-@@ -1483,7 +1468,6 @@ static int ext4_add_entry (handle_t *han
+@@ -1483,7 +1468,6 @@ static int ext4_add_entry (handle_t *handle, struct dentry *dentry,
  		dx_fallback++;
  		ext4_mark_inode_dirty(handle, dir);
  	}
@@ -176,7 +175,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  	blocks = dir->i_size >> sb->s_blocksize_bits;
  	for (block = 0, offset = 0; block < blocks; block++) {
  		bh = ext4_bread(handle, dir, block, 0, &retval);
-@@ -1493,11 +1477,9 @@ static int ext4_add_entry (handle_t *han
+@@ -1493,11 +1477,9 @@ static int ext4_add_entry (handle_t *handle, struct dentry *dentry,
  		if (retval != -ENOSPC)
  			return retval;
  
@@ -188,7 +187,7 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  		brelse(bh);
  	}
  	bh = ext4_append(handle, dir, &block, &retval);
-@@ -1509,7 +1491,6 @@ static int ext4_add_entry (handle_t *han
+@@ -1509,7 +1491,6 @@ static int ext4_add_entry (handle_t *handle, struct dentry *dentry,
  	return add_dirent_to_buf(handle, dentry, inode, de, bh);
  }
  
@@ -204,10 +203,10 @@ Index: linux-2.6.23-rc9/fs/ext4/namei.c
  
  /*
   * ext4_delete_entry deletes a directory entry by merging it with the
-Index: linux-2.6.23-rc9/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.23-rc9.orig/include/linux/ext4_fs.h	2007-10-05 10:13:13.000000000 -0700
-+++ linux-2.6.23-rc9/include/linux/ext4_fs.h	2007-10-05 10:13:17.000000000 -0700
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index 3baeb99..151738a 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
 @@ -36,10 +36,6 @@
  /*max window size: 1024(direct blocks) + 3([t,d]indirect blocks) */
  #define EXT4_MAX_RESERVE_BLOCKS		1027
