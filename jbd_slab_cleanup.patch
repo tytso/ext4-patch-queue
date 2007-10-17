@@ -18,11 +18,11 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  4 files changed, 21 insertions(+), 94 deletions(-)
 
 
-diff --git a/fs/jbd/commit.c b/fs/jbd/commit.c
-index a003d50..a263d82 100644
---- a/fs/jbd/commit.c
-+++ b/fs/jbd/commit.c
-@@ -375,7 +375,7 @@ void journal_commit_transaction(journal_t *journal)
+Index: linux-2.6.23/fs/jbd/commit.c
+===================================================================
+--- linux-2.6.23.orig/fs/jbd/commit.c	2007-10-09 13:31:38.000000000 -0700
++++ linux-2.6.23/fs/jbd/commit.c	2007-10-16 17:27:48.000000000 -0700
+@@ -375,7 +375,7 @@ void journal_commit_transaction(journal_
  			struct buffer_head *bh = jh2bh(jh);
  
  			jbd_lock_bh_state(bh);
@@ -48,10 +48,10 @@ index a003d50..a263d82 100644
  			jh->b_frozen_data = NULL;
  		}
  
-diff --git a/fs/jbd/journal.c b/fs/jbd/journal.c
-index 06ab3c1..1e5cf24 100644
---- a/fs/jbd/journal.c
-+++ b/fs/jbd/journal.c
+Index: linux-2.6.23/fs/jbd/journal.c
+===================================================================
+--- linux-2.6.23.orig/fs/jbd/journal.c	2007-10-09 13:31:38.000000000 -0700
++++ linux-2.6.23/fs/jbd/journal.c	2007-10-16 17:27:48.000000000 -0700
 @@ -83,7 +83,6 @@ EXPORT_SYMBOL(journal_force_commit);
  
  static int journal_convert_superblock_v1(journal_t *, journal_superblock_t *);
@@ -87,7 +87,7 @@ index 06ab3c1..1e5cf24 100644
  	/* Let the recovery code check whether it needs to recover any
  	 * data from the journal. */
  	if (journal_recover(journal))
-@@ -1624,77 +1616,6 @@ void * __jbd_kmalloc (const char *where, size_t size, gfp_t flags, int retry)
+@@ -1624,77 +1616,6 @@ void * __jbd_kmalloc (const char *where,
  }
  
  /*
@@ -165,7 +165,7 @@ index 06ab3c1..1e5cf24 100644
   * Journal_head storage management
   */
  static struct kmem_cache *journal_head_cache;
-@@ -1881,13 +1802,13 @@ static void __journal_remove_journal_head(struct buffer_head *bh)
+@@ -1881,13 +1802,13 @@ static void __journal_remove_journal_hea
  				printk(KERN_WARNING "%s: freeing "
  						"b_frozen_data\n",
  						__FUNCTION__);
@@ -189,11 +189,11 @@ index 06ab3c1..1e5cf24 100644
  }
  
  static int __init journal_init(void)
-diff --git a/fs/jbd/transaction.c b/fs/jbd/transaction.c
-index 772b653..571901d 100644
---- a/fs/jbd/transaction.c
-+++ b/fs/jbd/transaction.c
-@@ -668,7 +668,7 @@ repeat:
+Index: linux-2.6.23/fs/jbd/transaction.c
+===================================================================
+--- linux-2.6.23.orig/fs/jbd/transaction.c	2007-10-16 17:09:19.000000000 -0700
++++ linux-2.6.23/fs/jbd/transaction.c	2007-10-16 17:27:48.000000000 -0700
+@@ -675,7 +675,7 @@ repeat:
  				JBUFFER_TRACE(jh, "allocate memory for buffer");
  				jbd_unlock_bh_state(bh);
  				frozen_buffer =
@@ -202,7 +202,7 @@ index 772b653..571901d 100644
  							 GFP_NOFS);
  				if (!frozen_buffer) {
  					printk(KERN_EMERG
-@@ -728,7 +728,7 @@ done:
+@@ -735,7 +735,7 @@ done:
  
  out:
  	if (unlikely(frozen_buffer))	/* It's usually NULL */
@@ -211,7 +211,7 @@ index 772b653..571901d 100644
  
  	JBUFFER_TRACE(jh, "exit");
  	return error;
-@@ -881,7 +881,7 @@ int journal_get_undo_access(handle_t *handle, struct buffer_head *bh)
+@@ -888,7 +888,7 @@ int journal_get_undo_access(handle_t *ha
  
  repeat:
  	if (!jh->b_committed_data) {
@@ -220,7 +220,7 @@ index 772b653..571901d 100644
  		if (!committed_data) {
  			printk(KERN_EMERG "%s: No memory for committed data\n",
  				__FUNCTION__);
-@@ -908,7 +908,7 @@ repeat:
+@@ -915,7 +915,7 @@ repeat:
  out:
  	journal_put_journal_head(jh);
  	if (unlikely(committed_data))
@@ -229,11 +229,11 @@ index 772b653..571901d 100644
  	return err;
  }
  
-diff --git a/include/linux/jbd.h b/include/linux/jbd.h
-index 4527375..1343503 100644
---- a/include/linux/jbd.h
-+++ b/include/linux/jbd.h
-@@ -72,14 +72,21 @@ extern int journal_enable_debug;
+Index: linux-2.6.23/include/linux/jbd.h
+===================================================================
+--- linux-2.6.23.orig/include/linux/jbd.h	2007-10-16 17:09:20.000000000 -0700
++++ linux-2.6.23/include/linux/jbd.h	2007-10-16 17:27:48.000000000 -0700
+@@ -73,14 +73,21 @@ extern int journal_enable_debug;
  #endif
  
  extern void * __jbd_kmalloc (const char *where, size_t size, gfp_t flags, int retry);
