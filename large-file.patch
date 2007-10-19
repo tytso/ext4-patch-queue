@@ -23,10 +23,10 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index d2cc3b6..c9a4755 100644
+index 98dbcb7..479d9b1 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -2712,14 +2712,20 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
+@@ -2778,14 +2778,20 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
  					struct ext4_inode_info *ei)
  {
  	blkcnt_t i_blocks ;
@@ -49,7 +49,7 @@ index d2cc3b6..c9a4755 100644
  	} else {
  		return le32_to_cpu(raw_inode->i_blocks_lo);
  	}
-@@ -2882,8 +2888,9 @@ static int ext4_inode_blocks_set(handle_t *handle,
+@@ -2943,8 +2949,9 @@ static int ext4_inode_blocks_set(handle_t *handle,
  		 * i_blocks can be represnted in a 32 bit variable
  		 * as multiple of 512 bytes
  		 */
@@ -60,7 +60,7 @@ index d2cc3b6..c9a4755 100644
  	} else if (i_blocks <= 0xffffffffffffULL) {
  		/*
  		 * i_blocks can be represented in a 48 bit variable
-@@ -2894,12 +2901,23 @@ static int ext4_inode_blocks_set(handle_t *handle,
+@@ -2955,12 +2962,23 @@ static int ext4_inode_blocks_set(handle_t *handle,
  		if (err)
  			goto  err_out;
  		/* i_block is stored in the split  48 bit fields */
@@ -90,10 +90,10 @@ index d2cc3b6..c9a4755 100644
  err_out:
  	return err;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index c50755a..b9207bf 100644
+index fee3bd7..801c499 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1581,11 +1581,14 @@ static loff_t ext4_max_size(int bits)
+@@ -1660,11 +1660,14 @@ static loff_t ext4_max_size(int bits)
  		upper_limit >>= (bits - 9);
  
  	} else {
@@ -112,7 +112,7 @@ index c50755a..b9207bf 100644
  
  	/* indirect blocks */
 diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 7d38429..f58aa34 100644
+index 8d55c16..71f0569 100644
 --- a/include/linux/ext4_fs.h
 +++ b/include/linux/ext4_fs.h
 @@ -205,8 +205,9 @@ struct ext4_group_desc

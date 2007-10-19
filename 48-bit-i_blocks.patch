@@ -24,10 +24,10 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index f5f64ff..d2cc3b6 100644
+index 39859cf..98dbcb7 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -2708,6 +2708,22 @@ void ext4_get_inode_flags(struct ext4_inode_info *ei)
+@@ -2774,6 +2774,22 @@ void ext4_get_inode_flags(struct ext4_inode_info *ei)
  	if (flags & S_DIRSYNC)
  		ei->i_flags |= EXT4_DIRSYNC_FL;
  }
@@ -50,7 +50,7 @@ index f5f64ff..d2cc3b6 100644
  
  void ext4_read_inode(struct inode * inode)
  {
-@@ -2757,8 +2773,8 @@ void ext4_read_inode(struct inode * inode)
+@@ -2822,8 +2838,8 @@ void ext4_read_inode(struct inode * inode)
  		 * recovery code: that's fine, we're about to complete
  		 * the process of deleting those. */
  	}
@@ -59,8 +59,8 @@ index f5f64ff..d2cc3b6 100644
 +	inode->i_blocks = ext4_inode_blocks(raw_inode, ei);
  	ei->i_file_acl = le32_to_cpu(raw_inode->i_file_acl_lo);
  	if (EXT4_SB(inode->i_sb)->s_es->s_creator_os !=
- 	    cpu_to_le32(EXT4_OS_HURD))
-@@ -2852,6 +2868,43 @@ bad_inode:
+ 	    cpu_to_le32(EXT4_OS_HURD)) {
+@@ -2913,6 +2929,43 @@ bad_inode:
  	return;
  }
  
@@ -104,7 +104,7 @@ index f5f64ff..d2cc3b6 100644
  /*
   * Post the struct inode info into an on-disk inode location in the
   * buffer-cache.  This gobbles the caller's reference to the
-@@ -2907,7 +2960,8 @@ static int ext4_do_update_inode(handle_t *handle,
+@@ -2967,7 +3020,8 @@ static int ext4_do_update_inode(handle_t *handle,
  	EXT4_INODE_SET_XTIME(i_atime, inode, raw_inode);
  	EXT4_EINODE_SET_XTIME(i_crtime, ei, raw_inode);
  
@@ -115,10 +115,10 @@ index f5f64ff..d2cc3b6 100644
  	raw_inode->i_flags = cpu_to_le32(ei->i_flags);
  	if (EXT4_SB(inode->i_sb)->s_es->s_creator_os !=
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index c12a357..c50755a 100644
+index e2bed20..fee3bd7 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1553,17 +1553,50 @@ static void ext4_orphan_cleanup (struct super_block * sb,
+@@ -1632,17 +1632,50 @@ static void ext4_orphan_cleanup (struct super_block * sb,
  
  /*
   * Maximal file size.  There is a direct, and {,double-,triple-}indirect
@@ -175,7 +175,7 @@ index c12a357..c50755a 100644
  
  	res += 1LL << (bits-2);
  	res += 1LL << (2*(bits-2));
-@@ -1571,6 +1604,10 @@ static loff_t ext4_max_size(int bits)
+@@ -1650,6 +1683,10 @@ static loff_t ext4_max_size(int bits)
  	res <<= bits;
  	if (res > upper_limit)
  		res = upper_limit;
@@ -186,7 +186,7 @@ index c12a357..c50755a 100644
  	return res;
  }
  
-@@ -1729,6 +1766,19 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
+@@ -1815,6 +1852,19 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
  		       sb->s_id, le32_to_cpu(features));
  		goto failed_mount;
  	}
@@ -207,7 +207,7 @@ index c12a357..c50755a 100644
  
  	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
 diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index d7f15a4..7d38429 100644
+index 5e972ba..8d55c16 100644
 --- a/include/linux/ext4_fs.h
 +++ b/include/linux/ext4_fs.h
 @@ -310,7 +310,7 @@ struct ext4_inode {
@@ -228,7 +228,7 @@ index d7f15a4..7d38429 100644
  			__le16	l_i_file_acl_high;
  			__le16	l_i_uid_high;	/* these 2 fields */
  			__le16	l_i_gid_high;	/* were reserved2[0] */
-@@ -436,6 +436,7 @@ do {									       \
+@@ -435,6 +435,7 @@ do {									       \
  #if defined(__KERNEL__) || defined(__linux__)
  #define i_reserved1	osd1.linux1.l_i_reserved1
  #define i_file_acl_high	osd2.linux2.l_i_file_acl_high
@@ -236,7 +236,7 @@ index d7f15a4..7d38429 100644
  #define i_uid_low	i_uid
  #define i_gid_low	i_gid
  #define i_uid_high	osd2.linux2.l_i_uid_high
-@@ -706,6 +707,7 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
+@@ -705,6 +706,7 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
  #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
  #define EXT4_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
@@ -244,7 +244,7 @@ index d7f15a4..7d38429 100644
  #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
  #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
  #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
-@@ -717,6 +719,7 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
+@@ -716,6 +718,7 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  #define EXT4_FEATURE_INCOMPAT_META_BG		0x0010
  #define EXT4_FEATURE_INCOMPAT_EXTENTS		0x0040 /* extents support */
  #define EXT4_FEATURE_INCOMPAT_64BIT		0x0080
@@ -252,7 +252,7 @@ index d7f15a4..7d38429 100644
  #define EXT4_FEATURE_INCOMPAT_FLEX_BG		0x0200
  
  #define EXT4_FEATURE_COMPAT_SUPP	EXT2_FEATURE_COMPAT_EXT_ATTR
-@@ -731,7 +734,8 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
+@@ -730,7 +733,8 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
  					 EXT4_FEATURE_RO_COMPAT_DIR_NLINK | \
  					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \

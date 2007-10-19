@@ -30,7 +30,7 @@ Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 0deca61..f097c9c 100644
+index 589b994..75bfc1b 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -39,6 +39,8 @@
@@ -42,7 +42,7 @@ index 0deca61..f097c9c 100644
  /*
   * Test whether an inode is a fast symlink.
   */
-@@ -1294,6 +1296,146 @@ static int ext4_journalled_commit_write(struct file *file,
+@@ -1360,6 +1362,146 @@ static int ext4_journalled_write_end(struct file *file,
  }
  
  /*
@@ -189,7 +189,7 @@ index 0deca61..f097c9c 100644
   * bmap() is special.  It gets used by applications such as lilo and by
   * the swapper to find the on-disk block of a specific piece of data.
   *
-@@ -1744,10 +1886,28 @@ static const struct address_space_operations ext4_journalled_aops = {
+@@ -1810,10 +1952,28 @@ static const struct address_space_operations ext4_journalled_aops = {
  	.releasepage	= ext4_releasepage,
  };
  
@@ -219,10 +219,10 @@ index 0deca61..f097c9c 100644
  		inode->i_mapping->a_ops = &ext4_writeback_aops;
  	else
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index a05efe6..96e2a6d 100644
+index 5458449..9427ff8 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -738,7 +738,7 @@ enum {
+@@ -809,7 +809,7 @@ enum {
  	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
@@ -231,7 +231,7 @@ index a05efe6..96e2a6d 100644
  };
  
  static match_table_t tokens = {
-@@ -792,6 +792,7 @@ static match_table_t tokens = {
+@@ -863,6 +863,7 @@ static match_table_t tokens = {
  	{Opt_barrier, "barrier=%u"},
  	{Opt_extents, "extents"},
  	{Opt_noextents, "noextents"},
@@ -239,7 +239,7 @@ index a05efe6..96e2a6d 100644
  	{Opt_err, NULL},
  	{Opt_resize, "resize"},
  };
-@@ -1137,6 +1138,9 @@ clear_qf_name:
+@@ -1208,6 +1209,9 @@ clear_qf_name:
  		case Opt_noextents:
  			clear_opt (sbi->s_mount_opt, EXTENTS);
  			break;
@@ -250,7 +250,7 @@ index a05efe6..96e2a6d 100644
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
 diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 9d109a8..fbf5226 100644
+index 49e803d..93ea744 100644
 --- a/include/linux/ext4_fs.h
 +++ b/include/linux/ext4_fs.h
 @@ -466,6 +466,7 @@ do {									       \
