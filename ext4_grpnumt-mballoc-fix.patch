@@ -5,15 +5,15 @@ From: Avantika Mathur <mathur@us.ibm.com>
 Signed-off-by: Avantika Mathur <mathur@us.ibm.com>
 ---
 
- fs/ext4/mballoc.c |   77 ++++++++++++++++++++++++++++-------------------------
- 1 files changed, 41 insertions(+), 36 deletions(-)
+ fs/ext4/mballoc.c |   77 ++++++++++++++++++++++++++++--------------------------
+ 1 file changed, 41 insertions(+), 36 deletions(-)
 
 
-diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index c672612..fe7cf9e 100644
---- a/fs/ext4/mballoc.c
-+++ b/fs/ext4/mballoc.c
-@@ -311,7 +311,7 @@ static struct kmem_cache *ext4_pspace_cachep;
+Index: linux-2.6.23/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.23.orig/fs/ext4/mballoc.c	2007-10-23 15:42:40.000000000 -0700
++++ linux-2.6.23/fs/ext4/mballoc.c	2007-10-23 15:42:42.000000000 -0700
+@@ -311,7 +311,7 @@ static struct kmem_cache *ext4_pspace_ca
  #define EXT4_BB_MAX_BLOCKS	30
  
  struct ext4_free_metadata {
@@ -40,7 +40,7 @@ index c672612..fe7cf9e 100644
  };
  #define EXT4_MB_BITMAP(e4b)	((e4b)->bd_bitmap)
  #define EXT4_MB_BUDDY(e4b)	((e4b)->bd_buddy)
-@@ -455,11 +455,12 @@ static void ext4_mb_store_history(struct ext4_allocation_context *ac);
+@@ -455,11 +455,12 @@ static void ext4_mb_store_history(struct
  #define in_range(b, first, len)	((b) >= (first) && (b) <= (first) + (len) - 1)
  
  static struct proc_dir_entry *proc_root_ext4;
@@ -55,7 +55,7 @@ index c672612..fe7cf9e 100644
  static void ext4_mb_poll_new_transaction(struct super_block *, handle_t *);
  static void ext4_mb_free_committed_blocks(struct super_block *);
  static void ext4_mb_return_to_preallocation(struct inode *inode,
-@@ -472,19 +473,21 @@ static int ext4_mb_init_per_dev_proc(struct super_block *sb);
+@@ -472,19 +473,21 @@ static int ext4_mb_init_per_dev_proc(str
  static int ext4_mb_destroy_per_dev_proc(struct super_block *sb);
  
  
@@ -80,7 +80,7 @@ index c672612..fe7cf9e 100644
  {
  	return bit_spin_is_locked(EXT4_GROUP_INFO_LOCKED_BIT,
  					&EXT4_GROUP_INFO(sb, group)->bb_state);
-@@ -590,7 +593,7 @@ static void mb_free_blocks_double(struct inode *inode, struct ext4_buddy *e4b,
+@@ -590,7 +593,7 @@ static void mb_free_blocks_double(struct
  			    le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
  
  			ext4_error(sb, __FUNCTION__, "double-free of inode"
@@ -89,7 +89,7 @@ index c672612..fe7cf9e 100644
  				   inode ? inode->i_ino : 0, blocknr,
  				   first + i, e4b->bd_group);
  		}
-@@ -620,8 +623,8 @@ static void mb_cmp_bitmaps(struct ext4_buddy *e4b, void *bitmap)
+@@ -620,8 +623,8 @@ static void mb_cmp_bitmaps(struct ext4_b
  		b2 = (unsigned char *) bitmap;
  		for (i = 0; i < e4b->bd_sb->s_blocksize; i++) {
  			if (b1[i] != b2[i]) {
@@ -100,7 +100,7 @@ index c672612..fe7cf9e 100644
  					e4b->bd_group, i, i * 8, b1[i], b2[i]);
  				BUG();
  			}
-@@ -738,7 +741,7 @@ static int __mb_check_buddy(struct ext4_buddy *e4b, char *file,
+@@ -738,7 +741,7 @@ static int __mb_check_buddy(struct ext4_
  	grp = EXT4_GROUP_INFO(sb, e4b->bd_group);
  	buddy = mb_find_buddy(e4b, 0, &max);
  	list_for_each(cur, &grp->bb_prealloc_list) {
@@ -109,7 +109,7 @@ index c672612..fe7cf9e 100644
  		struct ext4_prealloc_space *pa;
  		pa = list_entry(cur, struct ext4_prealloc_space, group_list);
  		ext4_get_group_no_and_offset(sb, pa->pstart, &groupnr, &k);
-@@ -812,7 +815,7 @@ static void ext4_mb_mark_free_simple(struct super_block *sb,
+@@ -812,7 +815,7 @@ static void ext4_mb_mark_free_simple(str
  }
  
  static void ext4_mb_generate_buddy(struct super_block *sb,
@@ -118,7 +118,7 @@ index c672612..fe7cf9e 100644
  {
  	struct ext4_group_info *grp = EXT4_GROUP_INFO(sb, group);
  	unsigned short max = EXT4_BLOCKS_PER_GROUP(sb);
-@@ -843,7 +846,8 @@ static void ext4_mb_generate_buddy(struct super_block *sb,
+@@ -843,7 +846,8 @@ static void ext4_mb_generate_buddy(struc
  	grp->bb_fragments = fragments;
  
  	if (free != grp->bb_free) {
@@ -128,7 +128,7 @@ index c672612..fe7cf9e 100644
  			group, free, grp->bb_free);
  		grp->bb_free = free;
  	}
-@@ -881,7 +885,7 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
+@@ -881,7 +885,7 @@ static int ext4_mb_init_cache(struct pag
  	int groups_per_page;
  	int err = 0;
  	int i;
@@ -146,7 +146,7 @@ index c672612..fe7cf9e 100644
  		struct ext4_buddy *e4b)
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
-@@ -1040,7 +1044,7 @@ static int ext4_mb_load_buddy(struct super_block *sb, int group,
+@@ -1040,7 +1044,7 @@ static int ext4_mb_load_buddy(struct sup
  	int poff;
  	struct page *page;
  
@@ -155,7 +155,7 @@ index c672612..fe7cf9e 100644
  
  	blocks_per_page = PAGE_CACHE_SIZE / sb->s_blocksize;
  
-@@ -1229,7 +1233,7 @@ static int mb_free_blocks(struct inode *inode, struct ext4_buddy *e4b,
+@@ -1229,7 +1233,7 @@ static int mb_free_blocks(struct inode *
  			    le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
  
  			ext4_error(sb, __FUNCTION__, "double-free of inode"
@@ -164,7 +164,7 @@ index c672612..fe7cf9e 100644
  				   inode ? inode->i_ino : 0, blocknr, block,
  				   e4b->bd_group);
  		}
-@@ -1559,7 +1563,7 @@ static int ext4_mb_try_best_found(struct ext4_allocation_context *ac,
+@@ -1559,7 +1563,7 @@ static int ext4_mb_try_best_found(struct
  					struct ext4_buddy *e4b)
  {
  	struct ext4_free_extent ex = ac->ac_b_ex;
@@ -173,7 +173,7 @@ index c672612..fe7cf9e 100644
  	int max;
  	int err;
  
-@@ -1585,7 +1589,7 @@ static int ext4_mb_try_best_found(struct ext4_allocation_context *ac,
+@@ -1585,7 +1589,7 @@ static int ext4_mb_try_best_found(struct
  static int ext4_mb_find_by_goal(struct ext4_allocation_context *ac,
  				struct ext4_buddy *e4b)
  {
@@ -182,7 +182,7 @@ index c672612..fe7cf9e 100644
  	int max;
  	int err;
  	struct ext4_sb_info *sbi = EXT4_SB(ac->ac_sb);
-@@ -1754,7 +1758,7 @@ static void ext4_mb_scan_aligned(struct ext4_allocation_context *ac,
+@@ -1754,7 +1758,7 @@ static void ext4_mb_scan_aligned(struct 
  }
  
  static int ext4_mb_good_group(struct ext4_allocation_context *ac,
@@ -191,7 +191,7 @@ index c672612..fe7cf9e 100644
  {
  	unsigned free, fragments;
  	unsigned i, bits;
-@@ -1803,8 +1807,8 @@ static int ext4_mb_good_group(struct ext4_allocation_context *ac,
+@@ -1803,8 +1807,8 @@ static int ext4_mb_good_group(struct ext
  
  static int ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
  {
@@ -202,7 +202,7 @@ index c672612..fe7cf9e 100644
  	int cr;
  	int err = 0;
  	struct ext4_sb_info *sbi;
-@@ -2154,7 +2158,7 @@ static void *ext4_mb_seq_groups_start(struct seq_file *seq, loff_t *pos)
+@@ -2154,7 +2158,7 @@ static void *ext4_mb_seq_groups_start(st
  {
  	struct super_block *sb = seq->private;
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
@@ -211,7 +211,7 @@ index c672612..fe7cf9e 100644
  
  	if (*pos < 0 || *pos >= sbi->s_groups_count)
  		return NULL;
-@@ -2167,7 +2171,7 @@ static void *ext4_mb_seq_groups_next(struct seq_file *seq, void *v, loff_t *pos)
+@@ -2167,7 +2171,7 @@ static void *ext4_mb_seq_groups_next(str
  {
  	struct super_block *sb = seq->private;
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
@@ -220,7 +220,7 @@ index c672612..fe7cf9e 100644
  
  	++*pos;
  	if (*pos < 0 || *pos >= sbi->s_groups_count)
-@@ -3351,12 +3355,13 @@ static int ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
+@@ -3351,12 +3355,13 @@ static int ext4_mb_use_preallocated(stru
   * the function goes through all preallocation in this group and marks them
   * used in in-core bitmap. buddy must be generated from this bitmap
   */
@@ -236,7 +236,7 @@ index c672612..fe7cf9e 100644
  	ext4_grpblk_t start;
  	int preallocated = 0;
  	int count = 0;
-@@ -3382,7 +3387,7 @@ static void ext4_mb_generate_from_pa(struct super_block *sb, void *bitmap, int g
+@@ -3382,7 +3387,7 @@ static void ext4_mb_generate_from_pa(str
  		preallocated += len;
  		count++;
  	}
@@ -245,7 +245,7 @@ index c672612..fe7cf9e 100644
  }
  
  static void ext4_mb_pa_callback(struct rcu_head *head)
-@@ -3615,7 +3620,7 @@ static int ext4_mb_release_inode_pa(struct ext4_buddy *e4b,
+@@ -3615,7 +3620,7 @@ static int ext4_mb_release_inode_pa(stru
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
  	unsigned long end;
  	unsigned long next;
@@ -254,7 +254,7 @@ index c672612..fe7cf9e 100644
  	ext4_grpblk_t bit;
  	sector_t start;
  	int err = 0;
-@@ -3671,7 +3676,7 @@ static int ext4_mb_release_group_pa(struct ext4_buddy *e4b,
+@@ -3671,7 +3676,7 @@ static int ext4_mb_release_group_pa(stru
  {
  	struct ext4_allocation_context ac;
  	struct super_block *sb = e4b->bd_sb;
@@ -263,7 +263,7 @@ index c672612..fe7cf9e 100644
  	ext4_grpblk_t bit;
  
  	ac.ac_op = EXT4_MB_HISTORY_DISCARD;
-@@ -3703,7 +3708,7 @@ static int ext4_mb_release_group_pa(struct ext4_buddy *e4b,
+@@ -3703,7 +3708,7 @@ static int ext4_mb_release_group_pa(stru
   *   1) how many requested
   */
  static int ext4_mb_discard_group_preallocations(struct super_block *sb,
@@ -272,7 +272,7 @@ index c672612..fe7cf9e 100644
  {
  	struct ext4_group_info *grp = EXT4_GROUP_INFO(sb, group);
  	struct buffer_head *bitmap_bh = NULL;
-@@ -3821,7 +3826,7 @@ void ext4_mb_discard_inode_preallocations(struct inode *inode)
+@@ -3821,7 +3826,7 @@ void ext4_mb_discard_inode_preallocation
  	struct super_block *sb = inode->i_sb;
  	struct buffer_head *bitmap_bh = NULL;
  	struct ext4_prealloc_space *pa, *tmp;
@@ -281,7 +281,7 @@ index c672612..fe7cf9e 100644
  	struct list_head list;
  	struct ext4_buddy e4b;
  	int err;
-@@ -4015,7 +4020,7 @@ static int ext4_mb_initialize_context(struct ext4_allocation_context *ac,
+@@ -4015,7 +4020,7 @@ static int ext4_mb_initialize_context(st
  	struct super_block *sb = ar->inode->i_sb;
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
  	struct ext4_super_block *es = sbi->s_es;
@@ -290,7 +290,7 @@ index c672612..fe7cf9e 100644
  	unsigned long len;
  	unsigned long goal;
  	ext4_grpblk_t block;
-@@ -4106,7 +4111,7 @@ static int ext4_mb_release_context(struct ext4_allocation_context *ac)
+@@ -4106,7 +4111,7 @@ static int ext4_mb_release_context(struc
  
  static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
  {
@@ -299,7 +299,7 @@ index c672612..fe7cf9e 100644
  	int ret;
  	int freed = 0;
  
-@@ -4242,7 +4247,7 @@ static void ext4_mb_poll_new_transaction(struct super_block *sb, handle_t *handl
+@@ -4242,7 +4247,7 @@ static void ext4_mb_poll_new_transaction
  }
  
  static int ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
@@ -308,7 +308,7 @@ index c672612..fe7cf9e 100644
  {
  	struct ext4_group_info *db = e4b->bd_info;
  	struct super_block *sb = e4b->bd_sb;
-@@ -4317,7 +4322,7 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4317,7 +4322,7 @@ void ext4_mb_free_blocks(handle_t *handl
  	unsigned long overflow;
  	ext4_grpblk_t bit;
  	struct buffer_head *gd_bh;

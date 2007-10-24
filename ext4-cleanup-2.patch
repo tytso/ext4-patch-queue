@@ -10,15 +10,16 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
  fs/ext4/extents.c       |    6 +++---
  fs/ext4/inode.c         |   14 ++++++++------
+ fs/ext4/super.c         |    3 +++
  include/linux/ext4_fs.h |    2 ++
- 3 files changed, 13 insertions(+), 9 deletions(-)
+ 4 files changed, 16 insertions(+), 9 deletions(-)
 
 
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 392b76e..ce58d45 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -1230,7 +1230,7 @@ static ext4_lblk_t ext4_ext_next_leaf_block(struct inode *inode,
+Index: linux-2.6.23/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.23.orig/fs/ext4/extents.c	2007-10-23 17:35:36.000000000 -0700
++++ linux-2.6.23/fs/ext4/extents.c	2007-10-23 17:37:49.000000000 -0700
+@@ -1088,7 +1088,7 @@ static ext4_lblk_t ext4_ext_next_leaf_bl
   * then we have to correct all indexes above.
   * TODO: do we need to correct tree in all cases?
   */
@@ -27,7 +28,7 @@ index 392b76e..ce58d45 100644
  				struct ext4_ext_path *path)
  {
  	struct ext4_extent_header *eh;
-@@ -1677,7 +1677,7 @@ ext4_ext_in_cache(struct inode *inode, ext4_lblk_t block,
+@@ -1535,7 +1535,7 @@ ext4_ext_in_cache(struct inode *inode, e
   * It's used in truncate case only, thus all requests are for
   * last index in the block only.
   */
@@ -36,7 +37,7 @@ index 392b76e..ce58d45 100644
  			struct ext4_ext_path *path)
  {
  	struct buffer_head *bh;
-@@ -1947,7 +1947,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path *path)
+@@ -1803,7 +1803,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
  	return 1;
  }
  
@@ -45,11 +46,11 @@ index 392b76e..ce58d45 100644
  {
  	struct super_block *sb = inode->i_sb;
  	int depth = ext_depth(inode);
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index a557c5c..8908ab3 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -2159,11 +2159,11 @@ static void ext4_clear_blocks(handle_t *handle, struct inode *inode,
+Index: linux-2.6.23/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.23.orig/fs/ext4/inode.c	2007-10-23 17:35:36.000000000 -0700
++++ linux-2.6.23/fs/ext4/inode.c	2007-10-23 17:40:29.000000000 -0700
+@@ -2052,11 +2052,11 @@ static void ext4_clear_blocks(handle_t *
  	for (p = first; p < last; p++) {
  		u32 nr = le32_to_cpu(*p);
  		if (nr) {
@@ -64,7 +65,7 @@ index a557c5c..8908ab3 100644
  		}
  	}
  
-@@ -2431,8 +2431,10 @@ void ext4_truncate(struct inode *inode)
+@@ -2324,8 +2324,10 @@ void ext4_truncate(struct inode *inode)
  			return;
  	}
  
@@ -77,25 +78,43 @@ index a557c5c..8908ab3 100644
  
  	handle = start_transaction(inode);
  	if (IS_ERR(handle)) {
-@@ -3283,7 +3285,7 @@ ext4_reserve_inode_write(handle_t *handle, struct inode *inode,
+@@ -3163,8 +3165,10 @@ ext4_reserve_inode_write(handle_t *handl
   * Expand an inode by new_extra_isize bytes.
   * Returns 0 on success or negative error number on failure.
   */
 -int ext4_expand_extra_isize(struct inode *inode, unsigned int new_extra_isize,
-+static int ext4_expand_extra_isize(struct inode *inode, unsigned int new_extra_isize,
- 			struct ext4_iloc iloc, handle_t *handle)
+-			struct ext4_iloc iloc, handle_t *handle)
++static int ext4_expand_extra_isize(struct inode *inode,
++				   unsigned int new_extra_isize,
++				   struct ext4_iloc iloc,
++				   handle_t *handle)
  {
  	struct ext4_inode *raw_inode;
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index f6d4b4c..514464d 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
-@@ -928,6 +928,8 @@ extern ext4_fsblk_t ext4_new_block (handle_t *handle, struct inode *inode,
+ 	struct ext4_xattr_ibody_header *header;
+Index: linux-2.6.23/fs/ext4/super.c
+===================================================================
+--- linux-2.6.23.orig/fs/ext4/super.c	2007-10-23 17:36:10.000000000 -0700
++++ linux-2.6.23/fs/ext4/super.c	2007-10-23 17:37:49.000000000 -0700
+@@ -1639,6 +1639,9 @@ static ext4_fsblk_t descriptor_loc(struc
+ 
+ 
+ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
++				__releases(kernel_sem)
++				__acquires(kernel_sem)
++
+ {
+ 	struct buffer_head * bh;
+ 	struct ext4_super_block *es = NULL;
+Index: linux-2.6.23/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.23.orig/include/linux/ext4_fs.h	2007-10-23 17:37:38.000000000 -0700
++++ linux-2.6.23/include/linux/ext4_fs.h	2007-10-23 17:40:05.000000000 -0700
+@@ -893,6 +893,8 @@ extern ext4_fsblk_t ext4_new_block (hand
  			ext4_fsblk_t goal, int *errp);
  extern ext4_fsblk_t ext4_new_blocks (handle_t *handle, struct inode *inode,
  			ext4_fsblk_t goal, unsigned long *count, int *errp);
-+extern ext4_fsblk_t ext4_new_blocks_old (handle_t *handle, struct inode *inode,
++extern ext4_fsblk_t ext4_new_blocks_old(handle_t *handle, struct inode *inode,
 +			ext4_fsblk_t goal, unsigned long *count, int *errp);
  extern void ext4_free_blocks (handle_t *handle, struct inode *inode,
- 			ext4_fsblk_t block, unsigned long count, int metadata);
+ 			ext4_fsblk_t block, unsigned long count);
  extern void ext4_free_blocks_sb (handle_t *handle, struct super_block *sb,
