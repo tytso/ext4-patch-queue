@@ -23,10 +23,10 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
  3 files changed, 119 insertions(+), 11 deletions(-)
 
 
-Index: linux-2.6.23/fs/ext4/inode.c
+Index: linux-2.6.24-rc1/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.23.orig/fs/ext4/inode.c	2007-10-23 15:41:50.000000000 -0700
-+++ linux-2.6.23/fs/ext4/inode.c	2007-10-23 15:41:52.000000000 -0700
+--- linux-2.6.24-rc1.orig/fs/ext4/inode.c	2007-10-24 11:40:09.000000000 -0700
++++ linux-2.6.24-rc1/fs/ext4/inode.c	2007-10-24 11:40:11.000000000 -0700
 @@ -2667,6 +2667,22 @@ void ext4_get_inode_flags(struct ext4_in
  	if (flags & S_DIRSYNC)
  		ei->i_flags |= EXT4_DIRSYNC_FL;
@@ -114,11 +114,11 @@ Index: linux-2.6.23/fs/ext4/inode.c
  	raw_inode->i_dtime = cpu_to_le32(ei->i_dtime);
  	raw_inode->i_flags = cpu_to_le32(ei->i_flags);
  	if (EXT4_SB(inode->i_sb)->s_es->s_creator_os !=
-Index: linux-2.6.23/fs/ext4/super.c
+Index: linux-2.6.24-rc1/fs/ext4/super.c
 ===================================================================
---- linux-2.6.23.orig/fs/ext4/super.c	2007-10-23 15:41:45.000000000 -0700
-+++ linux-2.6.23/fs/ext4/super.c	2007-10-23 15:41:52.000000000 -0700
-@@ -1598,17 +1598,50 @@ static void ext4_orphan_cleanup (struct 
+--- linux-2.6.24-rc1.orig/fs/ext4/super.c	2007-10-24 11:40:09.000000000 -0700
++++ linux-2.6.24-rc1/fs/ext4/super.c	2007-10-24 11:40:11.000000000 -0700
+@@ -1603,17 +1603,50 @@ static void ext4_orphan_cleanup (struct 
  
  /*
   * Maximal file size.  There is a direct, and {,double-,triple-}indirect
@@ -175,7 +175,7 @@ Index: linux-2.6.23/fs/ext4/super.c
  
  	res += 1LL << (bits-2);
  	res += 1LL << (2*(bits-2));
-@@ -1616,6 +1649,10 @@ static loff_t ext4_max_size(int bits)
+@@ -1621,6 +1654,10 @@ static loff_t ext4_max_size(int bits)
  	res <<= bits;
  	if (res > upper_limit)
  		res = upper_limit;
@@ -186,7 +186,7 @@ Index: linux-2.6.23/fs/ext4/super.c
  	return res;
  }
  
-@@ -1784,6 +1821,19 @@ static int ext4_fill_super (struct super
+@@ -1789,6 +1826,19 @@ static int ext4_fill_super (struct super
  		       sb->s_id, le32_to_cpu(features));
  		goto failed_mount;
  	}
@@ -206,10 +206,10 @@ Index: linux-2.6.23/fs/ext4/super.c
  	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
  
  	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
-Index: linux-2.6.23/include/linux/ext4_fs.h
+Index: linux-2.6.24-rc1/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.23.orig/include/linux/ext4_fs.h	2007-10-23 15:41:50.000000000 -0700
-+++ linux-2.6.23/include/linux/ext4_fs.h	2007-10-23 15:41:52.000000000 -0700
+--- linux-2.6.24-rc1.orig/include/linux/ext4_fs.h	2007-10-24 11:40:09.000000000 -0700
++++ linux-2.6.24-rc1/include/linux/ext4_fs.h	2007-10-24 11:40:11.000000000 -0700
 @@ -282,7 +282,7 @@ struct ext4_inode {
  	__le32	i_dtime;	/* Deletion Time */
  	__le16	i_gid;		/* Low 16 bits of Group Id */

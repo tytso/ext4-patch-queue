@@ -34,11 +34,11 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  6 files changed, 338 insertions(+), 55 deletions(-)
 
 
-Index: linux-2.6.23/fs/ext4/super.c
+Index: linux-2.6.24-rc1/fs/ext4/super.c
 ===================================================================
---- linux-2.6.23.orig/fs/ext4/super.c	2007-10-23 15:41:55.000000000 -0700
-+++ linux-2.6.23/fs/ext4/super.c	2007-10-23 15:42:10.000000000 -0700
-@@ -864,6 +864,7 @@ enum {
+--- linux-2.6.24-rc1.orig/fs/ext4/super.c	2007-10-24 11:40:15.000000000 -0700
++++ linux-2.6.24-rc1/fs/ext4/super.c	2007-10-24 11:40:29.000000000 -0700
+@@ -869,6 +869,7 @@ enum {
  	Opt_user_xattr, Opt_nouser_xattr, Opt_acl, Opt_noacl,
  	Opt_reservation, Opt_noreservation, Opt_noload, Opt_nobh, Opt_bh,
  	Opt_commit, Opt_journal_update, Opt_journal_inum, Opt_journal_dev,
@@ -46,7 +46,7 @@ Index: linux-2.6.23/fs/ext4/super.c
  	Opt_abort, Opt_data_journal, Opt_data_ordered, Opt_data_writeback,
  	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
-@@ -903,6 +904,8 @@ static match_table_t tokens = {
+@@ -908,6 +909,8 @@ static match_table_t tokens = {
  	{Opt_journal_update, "journal=update"},
  	{Opt_journal_inum, "journal=%u"},
  	{Opt_journal_dev, "journal_dev=%u"},
@@ -55,7 +55,7 @@ Index: linux-2.6.23/fs/ext4/super.c
  	{Opt_abort, "abort"},
  	{Opt_data_journal, "data=journal"},
  	{Opt_data_ordered, "data=ordered"},
-@@ -1090,6 +1093,13 @@ static int parse_options (char *options,
+@@ -1095,6 +1098,13 @@ static int parse_options (char *options,
  				return 0;
  			*journal_devnum = option;
  			break;
@@ -69,7 +69,7 @@ Index: linux-2.6.23/fs/ext4/super.c
  		case Opt_noload:
  			set_opt (sbi->s_mount_opt, NOLOAD);
  			break;
-@@ -2058,6 +2068,21 @@ static int ext4_fill_super (struct super
+@@ -2063,6 +2073,21 @@ static int ext4_fill_super (struct super
  		goto failed_mount4;
  	}
  
@@ -91,10 +91,10 @@ Index: linux-2.6.23/fs/ext4/super.c
  	/* We have now updated the journal if required, so we can
  	 * validate the data journaling mode. */
  	switch (test_opt(sb, DATA_FLAGS)) {
-Index: linux-2.6.23/fs/jbd2/commit.c
+Index: linux-2.6.24-rc1/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.23.orig/fs/jbd2/commit.c	2007-10-23 15:42:08.000000000 -0700
-+++ linux-2.6.23/fs/jbd2/commit.c	2007-10-23 15:42:10.000000000 -0700
+--- linux-2.6.24-rc1.orig/fs/jbd2/commit.c	2007-10-24 11:40:28.000000000 -0700
++++ linux-2.6.24-rc1/fs/jbd2/commit.c	2007-10-24 11:40:29.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/mm.h>
  #include <linux/pagemap.h>
@@ -356,10 +356,10 @@ Index: linux-2.6.23/fs/jbd2/commit.c
  
  	if (err)
  		jbd2_journal_abort(journal, err);
-Index: linux-2.6.23/fs/jbd2/journal.c
+Index: linux-2.6.24-rc1/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.23.orig/fs/jbd2/journal.c	2007-10-23 15:42:08.000000000 -0700
-+++ linux-2.6.23/fs/jbd2/journal.c	2007-10-23 15:42:10.000000000 -0700
+--- linux-2.6.24-rc1.orig/fs/jbd2/journal.c	2007-10-24 11:40:28.000000000 -0700
++++ linux-2.6.24-rc1/fs/jbd2/journal.c	2007-10-24 11:40:29.000000000 -0700
 @@ -66,6 +66,7 @@ EXPORT_SYMBOL(jbd2_journal_update_format
  EXPORT_SYMBOL(jbd2_journal_check_used_features);
  EXPORT_SYMBOL(jbd2_journal_check_available_features);
@@ -402,10 +402,10 @@ Index: linux-2.6.23/fs/jbd2/journal.c
  
  /**
   * int jbd2_journal_update_format () - Update on-disk journal structure.
-Index: linux-2.6.23/fs/jbd2/recovery.c
+Index: linux-2.6.24-rc1/fs/jbd2/recovery.c
 ===================================================================
---- linux-2.6.23.orig/fs/jbd2/recovery.c	2007-10-23 15:34:20.000000000 -0700
-+++ linux-2.6.23/fs/jbd2/recovery.c	2007-10-23 15:42:10.000000000 -0700
+--- linux-2.6.24-rc1.orig/fs/jbd2/recovery.c	2007-10-23 20:50:57.000000000 -0700
++++ linux-2.6.24-rc1/fs/jbd2/recovery.c	2007-10-24 11:40:29.000000000 -0700
 @@ -21,6 +21,7 @@
  #include <linux/jbd2.h>
  #include <linux/errno.h>
@@ -575,10 +575,10 @@ Index: linux-2.6.23/fs/jbd2/recovery.c
  		/* It's really bad news if different passes end up at
  		 * different places (but possible due to IO errors). */
  		if (info->end_transaction != next_commit_ID) {
-Index: linux-2.6.23/include/linux/ext4_fs.h
+Index: linux-2.6.24-rc1/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.23.orig/include/linux/ext4_fs.h	2007-10-23 15:42:01.000000000 -0700
-+++ linux-2.6.23/include/linux/ext4_fs.h	2007-10-23 15:42:10.000000000 -0700
+--- linux-2.6.24-rc1.orig/include/linux/ext4_fs.h	2007-10-24 11:40:21.000000000 -0700
++++ linux-2.6.24-rc1/include/linux/ext4_fs.h	2007-10-24 11:40:29.000000000 -0700
 @@ -467,7 +467,8 @@ do {									       \
  #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
  #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
@@ -589,10 +589,10 @@ Index: linux-2.6.23/include/linux/ext4_fs.h
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-Index: linux-2.6.23/include/linux/jbd2.h
+Index: linux-2.6.24-rc1/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.23.orig/include/linux/jbd2.h	2007-10-23 15:42:08.000000000 -0700
-+++ linux-2.6.23/include/linux/jbd2.h	2007-10-23 15:42:10.000000000 -0700
+--- linux-2.6.24-rc1.orig/include/linux/jbd2.h	2007-10-24 11:40:28.000000000 -0700
++++ linux-2.6.24-rc1/include/linux/jbd2.h	2007-10-24 11:40:29.000000000 -0700
 @@ -149,6 +149,29 @@ typedef struct journal_header_s
  	__be32		h_sequence;
  } journal_header_t;
