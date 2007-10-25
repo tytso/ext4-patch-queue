@@ -17,17 +17,17 @@ Super block flag EXT4_FEATURE_RO_COMPAT_HUGE_FILE
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
- fs/ext4/inode.c         |   58 +++++++++++++++++++++++++++++++++++++++++++-
- fs/ext4/super.c         |   62 +++++++++++++++++++++++++++++++++++++++++++-----
- include/linux/ext4_fs.h |   10 +++++--
+ fs/ext4/inode.c         |   58 ++++++++++++++++++++++++++++++++++++++++++--
+ fs/ext4/super.c         |   62 ++++++++++++++++++++++++++++++++++++++++++-----
+ include/linux/ext4_fs.h |   10 +++++---
  3 files changed, 119 insertions(+), 11 deletions(-)
 
 
-Index: linux-2.6.24-rc1/fs/ext4/inode.c
-===================================================================
---- linux-2.6.24-rc1.orig/fs/ext4/inode.c	2007-10-24 11:40:09.000000000 -0700
-+++ linux-2.6.24-rc1/fs/ext4/inode.c	2007-10-24 11:40:11.000000000 -0700
-@@ -2667,6 +2667,22 @@ void ext4_get_inode_flags(struct ext4_in
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 5492265..f8c19b7 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2667,6 +2667,22 @@ void ext4_get_inode_flags(struct ext4_inode_info *ei)
  	if (flags & S_DIRSYNC)
  		ei->i_flags |= EXT4_DIRSYNC_FL;
  }
@@ -50,7 +50,7 @@ Index: linux-2.6.24-rc1/fs/ext4/inode.c
  
  void ext4_read_inode(struct inode * inode)
  {
-@@ -2715,8 +2731,8 @@ void ext4_read_inode(struct inode * inod
+@@ -2715,8 +2731,8 @@ void ext4_read_inode(struct inode * inode)
  		 * recovery code: that's fine, we're about to complete
  		 * the process of deleting those. */
  	}
@@ -104,7 +104,7 @@ Index: linux-2.6.24-rc1/fs/ext4/inode.c
  /*
   * Post the struct inode info into an on-disk inode location in the
   * buffer-cache.  This gobbles the caller's reference to the
-@@ -2853,7 +2906,8 @@ static int ext4_do_update_inode(handle_t
+@@ -2853,7 +2906,8 @@ static int ext4_do_update_inode(handle_t *handle,
  	EXT4_INODE_SET_XTIME(i_atime, inode, raw_inode);
  	EXT4_EINODE_SET_XTIME(i_crtime, ei, raw_inode);
  
@@ -114,11 +114,11 @@ Index: linux-2.6.24-rc1/fs/ext4/inode.c
  	raw_inode->i_dtime = cpu_to_le32(ei->i_dtime);
  	raw_inode->i_flags = cpu_to_le32(ei->i_flags);
  	if (EXT4_SB(inode->i_sb)->s_es->s_creator_os !=
-Index: linux-2.6.24-rc1/fs/ext4/super.c
-===================================================================
---- linux-2.6.24-rc1.orig/fs/ext4/super.c	2007-10-24 11:40:09.000000000 -0700
-+++ linux-2.6.24-rc1/fs/ext4/super.c	2007-10-24 11:40:11.000000000 -0700
-@@ -1603,17 +1603,50 @@ static void ext4_orphan_cleanup (struct 
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 14a8e05..8c03170 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1603,17 +1603,50 @@ static void ext4_orphan_cleanup (struct super_block * sb,
  
  /*
   * Maximal file size.  There is a direct, and {,double-,triple-}indirect
@@ -186,7 +186,7 @@ Index: linux-2.6.24-rc1/fs/ext4/super.c
  	return res;
  }
  
-@@ -1789,6 +1826,19 @@ static int ext4_fill_super (struct super
+@@ -1789,6 +1826,19 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
  		       sb->s_id, le32_to_cpu(features));
  		goto failed_mount;
  	}
@@ -206,10 +206,10 @@ Index: linux-2.6.24-rc1/fs/ext4/super.c
  	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
  
  	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
-Index: linux-2.6.24-rc1/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.24-rc1.orig/include/linux/ext4_fs.h	2007-10-24 11:40:09.000000000 -0700
-+++ linux-2.6.24-rc1/include/linux/ext4_fs.h	2007-10-24 11:40:11.000000000 -0700
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index 002ba40..45fd704 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
 @@ -282,7 +282,7 @@ struct ext4_inode {
  	__le32	i_dtime;	/* Deletion Time */
  	__le16	i_gid;		/* Low 16 bits of Group Id */
@@ -236,7 +236,7 @@ Index: linux-2.6.24-rc1/include/linux/ext4_fs.h
  #define i_uid_low	i_uid
  #define i_gid_low	i_gid
  #define i_uid_high	osd2.linux2.l_i_uid_high
-@@ -670,6 +671,7 @@ static inline int ext4_valid_inum(struct
+@@ -670,6 +671,7 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
  #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
  #define EXT4_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
@@ -244,7 +244,7 @@ Index: linux-2.6.24-rc1/include/linux/ext4_fs.h
  #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
  #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
  #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
-@@ -681,6 +683,7 @@ static inline int ext4_valid_inum(struct
+@@ -681,6 +683,7 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  #define EXT4_FEATURE_INCOMPAT_META_BG		0x0010
  #define EXT4_FEATURE_INCOMPAT_EXTENTS		0x0040 /* extents support */
  #define EXT4_FEATURE_INCOMPAT_64BIT		0x0080
@@ -252,7 +252,7 @@ Index: linux-2.6.24-rc1/include/linux/ext4_fs.h
  #define EXT4_FEATURE_INCOMPAT_FLEX_BG		0x0200
  
  #define EXT4_FEATURE_COMPAT_SUPP	EXT2_FEATURE_COMPAT_EXT_ATTR
-@@ -695,7 +698,8 @@ static inline int ext4_valid_inum(struct
+@@ -695,7 +698,8 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
  					 EXT4_FEATURE_RO_COMPAT_DIR_NLINK | \
  					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \

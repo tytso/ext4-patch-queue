@@ -1,0 +1,38 @@
+ext4: Show mballoc and delalloc options
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+Both these options are enabled by default.
+So if they are are not set in mount options
+that means the user explicity disabled them
+using nomablloc and nodelalloc option. Show
+the same in ext4_show_options
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Acked-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+
+ fs/ext4/super.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 73f28ea..f0263c7 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -733,8 +733,14 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+ 		seq_puts(seq, ",barrier=1");
+ 	if (test_opt(sb, NOBH))
+ 		seq_puts(seq, ",nobh");
++
++	/* extents,mballoc and delalloc are enabled by default */
+ 	if (!test_opt(sb, EXTENTS))
+ 		seq_puts(seq, ",noextents");
++	if (!test_opt(sb, MBALLOC))
++		seq_puts(seq, ",nomballoc");
++	if (!test_opt(sb, DELALLOC))
++		seq_puts(seq, ",nodelalloc");
+ 
+ 	if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)
+ 		seq_puts(seq, ",data=journal");
