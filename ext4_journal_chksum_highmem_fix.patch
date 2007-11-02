@@ -1,0 +1,52 @@
+Fix NULL pointer bh->b_data issue seen on NUMA box with journal checksumming.
+From: Mingming Cao <cmm@us.ibm.com>
+
+bh->b_data passed to the crc32_be () function could be NULL pointer, 
+which caused kernel oops immediately when running fsstress with -o 
+journal_checksum. It is because the page is part of highmem on NUMA box.
+We need to kmap the page before access the bh->b_data to calculate
+the checksums.
+ 
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+ fs/jbd2/commit.c |   19 ++++++++++++++++---
+ 1 file changed, 16 insertions(+), 3 deletions(-)
+
+Index: linux-2.6.24-rc1/fs/jbd2/commit.c
+===================================================================
+--- linux-2.6.24-rc1.orig/fs/jbd2/commit.c	2007-11-01 11:15:08.000000000 -0700
++++ linux-2.6.24-rc1/fs/jbd2/commit.c	2007-11-01 12:27:02.000000000 -0700
+@@ -352,6 +352,20 @@ write_out_data:
+ 	journal_do_submit_data(wbuf, bufs);
+ }
+ 
++static inline __u32 jbd2_checksum_data(__u32 crc32_sum, struct buffer_head *bh)
++{
++	struct page *page = bh->b_page;
++	char *addr;
++	__u32 checksum;
++
++	addr = kmap(page);
++	checksum = crc32_be(crc32_sum,
++		(void *)(addr + offset_in_page(bh->b_data)), bh->b_size);
++	kunmap(page);
++
++	return checksum;
++}
++
+ static inline void write_tag_block(int tag_bytes, journal_block_tag_t *tag,
+ 				   unsigned long long block)
+ {
+@@ -715,9 +729,8 @@ start_journal_io:
+ 				 */
+ 				if (JBD2_HAS_COMPAT_FEATURE(journal,
+ 					JBD2_FEATURE_COMPAT_CHECKSUM)) {
+-					crc32_sum = crc32_be(crc32_sum,
+-							(void *)bh->b_data,
+-							bh->b_size);
++					crc32_sum =
++					    jbd2_checksum_data(crc32_sum, bh);
+ 				}
+ 
+ 				lock_buffer(bh);
