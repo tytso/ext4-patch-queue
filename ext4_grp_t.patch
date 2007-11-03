@@ -1,54 +1,54 @@
-Ext4: add ext4_grpnum_t, and change all group variables to this type.
+Ext4: add ext4_group_t, and change all group variables to this type.
 
 From: Avantika Mathur <mathur@us.ibm.com>
 
 In many places variables for block group are of type int, which limits the
 maximum number of block groups to 2^31.  Each block group can have up to
 2^15 blocks, with a 4K block size,  and the max filesystem size is limited to
-2^31 * (2^15 * 2^12) = 2^58  -- or 2156 PB
+2^31 * (2^15 * 2^12) = 2^58  -- or 256 PB
 
-This patch introduces a new type ext4_grpnum_t, of type unsigned long, to
+This patch introduces a new type ext4_group_t, of type unsigned long, to
 represent block group numbers in ext4.
-All occurrences of block group variables are converted to type ext4_grpnum_t.
+All occurrences of block group variables are converted to type ext4_group_t.
 
 Signed-off-by: Avantika Mathur <mathur@us.ibm.com>
 ---
 
- fs/ext4/balloc.c           |   63 +++++++++++++++++++++++---------------------
- fs/ext4/group.h            |    8 +++---
- fs/ext4/ialloc.c           |   45 ++++++++++++++++---------------
- fs/ext4/inode.c            |    5 ++-
- fs/ext4/resize.c           |   12 ++++----
- fs/ext4/super.c            |   20 ++++++--------
- include/linux/ext4_fs.h    |   11 ++++----
- include/linux/ext4_fs_i.h  |    5 +++
- include/linux/ext4_fs_sb.h |    2 +
- 9 files changed, 90 insertions(+), 81 deletions(-)
+ fs/ext4/balloc.c           |   71 +++++++++++++++++++++------------------------
+ fs/ext4/group.h            |    8 +++--
+ fs/ext4/ialloc.c           |   46 +++++++++++++++--------------
+ fs/ext4/inode.c            |    5 +--
+ fs/ext4/resize.c           |   12 +++----
+ fs/ext4/super.c            |   20 +++++-------
+ include/linux/ext4_fs.h    |   11 +++---
+ include/linux/ext4_fs_i.h  |    5 ++-
+ include/linux/ext4_fs_sb.h |    2 -
+ 9 files changed, 92 insertions(+), 88 deletions(-)
 
 
-diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index e906b65..5070480 100644
---- a/fs/ext4/balloc.c
-+++ b/fs/ext4/balloc.c
+Index: linux-2.6.24-rc1/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.24-rc1.orig/fs/ext4/balloc.c	2007-11-02 17:49:53.000000000 -0700
++++ linux-2.6.24-rc1/fs/ext4/balloc.c	2007-11-02 17:50:10.000000000 -0700
 @@ -29,7 +29,7 @@
   * Calculate the block group number and offset, given a block number
   */
  void ext4_get_group_no_and_offset(struct super_block *sb, ext4_fsblk_t blocknr,
 -		unsigned long *blockgrpp, ext4_grpblk_t *offsetp)
-+		ext4_grpnum_t *blockgrpp, ext4_grpblk_t *offsetp)
++		ext4_group_t *blockgrpp, ext4_grpblk_t *offsetp)
  {
  	struct ext4_super_block *es = EXT4_SB(sb)->s_es;
  	ext4_grpblk_t offset;
-@@ -46,7 +46,7 @@ void ext4_get_group_no_and_offset(struct super_block *sb, ext4_fsblk_t blocknr,
+@@ -46,7 +46,7 @@ void ext4_get_group_no_and_offset(struct
  /* Initializes an uninitialized block bitmap if given, and returns the
   * number of blocks free in the group. */
  unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
 -				int block_group, struct ext4_group_desc *gdp)
-+		 ext4_grpnum_t block_group, struct ext4_group_desc *gdp)
++		 ext4_group_t block_group, struct ext4_group_desc *gdp)
  {
  	unsigned long start;
  	int bit, bit_max;
-@@ -60,7 +60,7 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
+@@ -60,7 +60,7 @@ unsigned ext4_init_block_bitmap(struct s
  		 * essentially implementing a per-group read-only flag. */
  		if (!ext4_group_desc_csum_verify(sbi, block_group, gdp)) {
  			ext4_error(sb, __FUNCTION__,
@@ -57,16 +57,16 @@ index e906b65..5070480 100644
  			gdp->bg_free_blocks_count = 0;
  			gdp->bg_free_inodes_count = 0;
  			gdp->bg_itable_unused = 0;
-@@ -153,7 +153,7 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
+@@ -153,7 +153,7 @@ unsigned ext4_init_block_bitmap(struct s
   *			group descriptor
   */
  struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
 -					     unsigned int block_group,
-+					     ext4_grpnum_t block_group,
++					     ext4_group_t block_group,
  					     struct buffer_head ** bh)
  {
  	unsigned long group_desc;
-@@ -164,7 +164,7 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
+@@ -164,7 +164,7 @@ struct ext4_group_desc * ext4_get_group_
  	if (block_group >= sbi->s_groups_count) {
  		ext4_error (sb, "ext4_get_group_desc",
  			    "block_group >= groups_count - "
@@ -75,7 +75,7 @@ index e906b65..5070480 100644
  			    block_group, sbi->s_groups_count);
  
  		return NULL;
-@@ -176,7 +176,7 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
+@@ -176,7 +176,7 @@ struct ext4_group_desc * ext4_get_group_
  	if (!sbi->s_group_desc[group_desc]) {
  		ext4_error (sb, "ext4_get_group_desc",
  			    "Group descriptor not loaded - "
@@ -84,16 +84,16 @@ index e906b65..5070480 100644
  			     block_group, group_desc, offset);
  		return NULL;
  	}
-@@ -209,7 +209,7 @@ block_in_use(ext4_fsblk_t block, struct super_block *sb, unsigned char *map)
+@@ -209,7 +209,7 @@ block_in_use(ext4_fsblk_t block, struct 
   * Return buffer_head on success or NULL in case of failure.
   */
  struct buffer_head *
 -read_block_bitmap(struct super_block *sb, unsigned int block_group)
-+read_block_bitmap(struct super_block *sb, ext4_grpnum_t block_group)
++read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
  {
  	int i;
  	struct ext4_group_desc * desc;
-@@ -237,7 +237,7 @@ read_block_bitmap(struct super_block *sb, unsigned int block_group)
+@@ -237,7 +237,7 @@ read_block_bitmap(struct super_block *sb
  	if (!bh)
  		ext4_error (sb, __FUNCTION__,
  			    "Cannot read block bitmap - "
@@ -116,20 +116,20 @@ index e906b65..5070480 100644
  static int
  goal_in_my_reservation(struct ext4_reserve_window *rsv, ext4_grpblk_t grp_goal,
 -			unsigned int group, struct super_block * sb)
-+			ext4_grpnum_t group, struct super_block *sb)
++			ext4_group_t group, struct super_block *sb)
  {
  	ext4_fsblk_t group_first_block, group_last_block;
  
-@@ -581,7 +581,7 @@ void ext4_free_blocks_sb(handle_t *handle, struct super_block *sb,
+@@ -581,7 +581,7 @@ void ext4_free_blocks_sb(handle_t *handl
  {
  	struct buffer_head *bitmap_bh = NULL;
  	struct buffer_head *gd_bh;
 -	unsigned long block_group;
-+	ext4_grpnum_t block_group;
++	ext4_group_t block_group;
  	ext4_grpblk_t bit;
  	unsigned long i;
  	unsigned long overflow;
-@@ -961,9 +961,10 @@ claim_block(spinlock_t *lock, ext4_grpblk_t block, struct buffer_head *bh)
+@@ -961,9 +961,10 @@ claim_block(spinlock_t *lock, ext4_grpbl
   * ext4_journal_release_buffer(), else we'll run out of credits.
   */
  static ext4_grpblk_t
@@ -137,7 +137,7 @@ index e906b65..5070480 100644
 -			struct buffer_head *bitmap_bh, ext4_grpblk_t grp_goal,
 -			unsigned long *count, struct ext4_reserve_window *my_rsv)
 +ext4_try_to_allocate(struct super_block *sb, handle_t *handle,
-+			ext4_grpnum_t group, struct buffer_head *bitmap_bh,
++			ext4_group_t group, struct buffer_head *bitmap_bh,
 +			ext4_grpblk_t grp_goal, unsigned long *count,
 +			struct ext4_reserve_window *my_rsv)
  {
@@ -148,51 +148,69 @@ index e906b65..5070480 100644
  static int alloc_new_reservation(struct ext4_reserve_window_node *my_rsv,
  		ext4_grpblk_t grp_goal, struct super_block *sb,
 -		unsigned int group, struct buffer_head *bitmap_bh)
-+		ext4_grpnum_t group, struct buffer_head *bitmap_bh)
++		ext4_group_t group, struct buffer_head *bitmap_bh)
  {
  	struct ext4_reserve_window_node *search_head;
  	ext4_fsblk_t group_first_block, group_end_block, start_block;
-@@ -1395,7 +1396,7 @@ static void try_to_extend_reservation(struct ext4_reserve_window_node *my_rsv,
+@@ -1395,7 +1396,7 @@ static void try_to_extend_reservation(st
   */
  static ext4_grpblk_t
  ext4_try_to_allocate_with_rsv(struct super_block *sb, handle_t *handle,
 -			unsigned int group, struct buffer_head *bitmap_bh,
-+			ext4_grpnum_t group, struct buffer_head *bitmap_bh,
++			ext4_group_t group, struct buffer_head *bitmap_bh,
  			ext4_grpblk_t grp_goal,
  			struct ext4_reserve_window_node * my_rsv,
  			unsigned long *count, int *errp)
-@@ -1569,8 +1570,8 @@ ext4_fsblk_t ext4_new_blocks(handle_t *handle, struct inode *inode,
+@@ -1569,12 +1570,12 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
  {
  	struct buffer_head *bitmap_bh = NULL;
  	struct buffer_head *gdp_bh;
 -	unsigned long group_no;
 -	int goal_group;
-+	ext4_grpnum_t group_no;
-+	ext4_grpnum_t goal_group;
++	ext4_group_t group_no;
++	ext4_group_t goal_group;
  	ext4_grpblk_t grp_target_blk;	/* blockgroup relative goal block */
  	ext4_grpblk_t grp_alloc_blk;	/* blockgroup-relative allocated block*/
  	ext4_fsblk_t ret_block;		/* filesyetem-wide allocated block */
-@@ -1588,7 +1589,7 @@ ext4_fsblk_t ext4_new_blocks(handle_t *handle, struct inode *inode,
- #ifdef EXT4FS_DEBUG
- 	static int goal_hits, goal_attempts;
- #endif
+-	int bgi;			/* blockgroup iteration index */
++	ext4_group_t bgi;			/* blockgroup iteration index */
+ 	int fatal = 0, err;
+ 	int performed_allocation = 0;
+ 	ext4_grpblk_t free_blocks;	/* number of free blocks in a group */
+@@ -1585,10 +1586,7 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
+ 	struct ext4_reserve_window_node *my_rsv = NULL;
+ 	struct ext4_block_alloc_info *block_i;
+ 	unsigned short windowsz = 0;
+-#ifdef EXT4FS_DEBUG
+-	static int goal_hits, goal_attempts;
+-#endif
 -	unsigned long ngroups;
-+	ext4_grpnum_t ngroups;
++	ext4_group_t ngroups;
  	unsigned long num = *count;
  
  	*errp = -ENOSPC;
-@@ -1845,8 +1846,8 @@ ext4_fsblk_t ext4_count_free_blocks(struct super_block *sb)
+@@ -1784,9 +1782,6 @@ allocated:
+ 	 * list of some description.  We don't know in advance whether
+ 	 * the caller wants to use it as metadata or data.
+ 	 */
+-	ext4_debug("allocating block %lu. Goal hits %d of %d.\n",
+-			ret_block, goal_hits, goal_attempts);
+-
+ 	spin_lock(sb_bgl_lock(sbi, group_no));
+ 	if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT))
+ 		gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
+@@ -1845,8 +1840,8 @@ ext4_fsblk_t ext4_count_free_blocks(stru
  {
  	ext4_fsblk_t desc_count;
  	struct ext4_group_desc *gdp;
 -	int i;
 -	unsigned long ngroups = EXT4_SB(sb)->s_groups_count;
-+	ext4_grpnum_t i;
-+	ext4_grpnum_t ngroups = EXT4_SB(sb)->s_groups_count;
++	ext4_group_t i;
++	ext4_group_t ngroups = EXT4_SB(sb)->s_groups_count;
  #ifdef EXT4FS_DEBUG
  	struct ext4_super_block *es;
  	ext4_fsblk_t bitmap_count;
-@@ -1870,7 +1871,7 @@ ext4_fsblk_t ext4_count_free_blocks(struct super_block *sb)
+@@ -1870,7 +1865,7 @@ ext4_fsblk_t ext4_count_free_blocks(stru
  			continue;
  
  		x = ext4_count_free(bitmap_bh, sb->s_blocksize);
@@ -201,46 +219,46 @@ index e906b65..5070480 100644
  			i, le16_to_cpu(gdp->bg_free_blocks_count), x);
  		bitmap_count += x;
  	}
-@@ -1894,7 +1895,7 @@ ext4_fsblk_t ext4_count_free_blocks(struct super_block *sb)
+@@ -1894,7 +1889,7 @@ ext4_fsblk_t ext4_count_free_blocks(stru
  #endif
  }
  
 -static inline int test_root(int a, int b)
-+static inline int test_root(ext4_grpnum_t a, int b)
++static inline int test_root(ext4_group_t a, int b)
  {
  	int num = b;
  
-@@ -1903,7 +1904,7 @@ static inline int test_root(int a, int b)
+@@ -1903,7 +1898,7 @@ static inline int test_root(int a, int b
  	return num == a;
  }
  
 -static int ext4_group_sparse(int group)
-+static int ext4_group_sparse(ext4_grpnum_t group)
++static int ext4_group_sparse(ext4_group_t group)
  {
  	if (group <= 1)
  		return 1;
-@@ -1921,7 +1922,7 @@ static int ext4_group_sparse(int group)
+@@ -1921,7 +1916,7 @@ static int ext4_group_sparse(int group)
   *	Return the number of blocks used by the superblock (primary or backup)
   *	in this group.  Currently this will be only 0 or 1.
   */
 -int ext4_bg_has_super(struct super_block *sb, int group)
-+int ext4_bg_has_super(struct super_block *sb, ext4_grpnum_t group)
++int ext4_bg_has_super(struct super_block *sb, ext4_group_t group)
  {
  	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
  				EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER) &&
-@@ -1930,18 +1931,20 @@ int ext4_bg_has_super(struct super_block *sb, int group)
+@@ -1930,18 +1925,20 @@ int ext4_bg_has_super(struct super_block
  	return 1;
  }
  
 -static unsigned long ext4_bg_num_gdb_meta(struct super_block *sb, int group)
 +static unsigned long ext4_bg_num_gdb_meta(struct super_block *sb,
-+					ext4_grpnum_t group)
++					ext4_group_t group)
  {
  	unsigned long metagroup = group / EXT4_DESC_PER_BLOCK(sb);
 -	unsigned long first = metagroup * EXT4_DESC_PER_BLOCK(sb);
 -	unsigned long last = first + EXT4_DESC_PER_BLOCK(sb) - 1;
-+	ext4_grpnum_t first = metagroup * EXT4_DESC_PER_BLOCK(sb);
-+	ext4_grpnum_t last = first + EXT4_DESC_PER_BLOCK(sb) - 1;
++	ext4_group_t first = metagroup * EXT4_DESC_PER_BLOCK(sb);
++	ext4_group_t last = first + EXT4_DESC_PER_BLOCK(sb) - 1;
  
  	if (group == first || group == first + 1 || group == last)
  		return 1;
@@ -249,59 +267,59 @@ index e906b65..5070480 100644
  
 -static unsigned long ext4_bg_num_gdb_nometa(struct super_block *sb, int group)
 +static unsigned long ext4_bg_num_gdb_nometa(struct super_block *sb,
-+					ext4_grpnum_t group)
++					ext4_group_t group)
  {
  	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
  				EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER) &&
-@@ -1959,7 +1962,7 @@ static unsigned long ext4_bg_num_gdb_nometa(struct super_block *sb, int group)
+@@ -1959,7 +1956,7 @@ static unsigned long ext4_bg_num_gdb_nom
   *	(primary or backup) in this group.  In the future there may be a
   *	different number of descriptor blocks in each group.
   */
 -unsigned long ext4_bg_num_gdb(struct super_block *sb, int group)
-+unsigned long ext4_bg_num_gdb(struct super_block *sb, ext4_grpnum_t group)
++unsigned long ext4_bg_num_gdb(struct super_block *sb, ext4_group_t group)
  {
  	unsigned long first_meta_bg =
  			le32_to_cpu(EXT4_SB(sb)->s_es->s_first_meta_bg);
-diff --git a/fs/ext4/group.h b/fs/ext4/group.h
-index 1577910..05776bf 100644
---- a/fs/ext4/group.h
-+++ b/fs/ext4/group.h
-@@ -14,14 +14,16 @@ extern __le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 group,
+Index: linux-2.6.24-rc1/fs/ext4/group.h
+===================================================================
+--- linux-2.6.24-rc1.orig/fs/ext4/group.h	2007-11-02 17:49:53.000000000 -0700
++++ linux-2.6.24-rc1/fs/ext4/group.h	2007-11-02 17:50:10.000000000 -0700
+@@ -14,14 +14,16 @@ extern __le16 ext4_group_desc_csum(struc
  extern int ext4_group_desc_csum_verify(struct ext4_sb_info *sbi, __u32 group,
  				       struct ext4_group_desc *gdp);
  struct buffer_head *read_block_bitmap(struct super_block *sb,
 -				      unsigned int block_group);
-+				      ext4_grpnum_t block_group);
++				      ext4_group_t block_group);
  extern unsigned ext4_init_block_bitmap(struct super_block *sb,
 -				       struct buffer_head *bh, int group,
 +				       struct buffer_head *bh,
-+				       ext4_grpnum_t group,
++				       ext4_group_t group,
  				       struct ext4_group_desc *desc);
  #define ext4_free_blocks_after_init(sb, group, desc)			\
  		ext4_init_block_bitmap(sb, NULL, group, desc)
  extern unsigned ext4_init_inode_bitmap(struct super_block *sb,
 -				       struct buffer_head *bh, int group,
 +				       struct buffer_head *bh,
-+				       ext4_grpnum_t group,
++				       ext4_group_t group,
  				       struct ext4_group_desc *desc);
  extern void mark_bitmap_end(int start_bit, int end_bit, char *bitmap);
  #endif /* _LINUX_EXT4_GROUP_H */
-diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index c61f37f..267a8a0 100644
---- a/fs/ext4/ialloc.c
-+++ b/fs/ext4/ialloc.c
-@@ -64,8 +64,8 @@ void mark_bitmap_end(int start_bit, int end_bit, char *bitmap)
+Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
+===================================================================
+--- linux-2.6.24-rc1.orig/fs/ext4/ialloc.c	2007-11-02 17:49:53.000000000 -0700
++++ linux-2.6.24-rc1/fs/ext4/ialloc.c	2007-11-02 17:50:10.000000000 -0700
+@@ -64,8 +64,8 @@ void mark_bitmap_end(int start_bit, int 
  }
  
  /* Initializes an uninitialized inode bitmap */
 -unsigned ext4_init_inode_bitmap(struct super_block *sb,
 -				struct buffer_head *bh, int block_group,
 +unsigned ext4_init_inode_bitmap(struct super_block *sb, struct buffer_head *bh,
-+				ext4_grpnum_t block_group,
++				ext4_group_t block_group,
  				struct ext4_group_desc *gdp)
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
-@@ -75,7 +75,7 @@ unsigned ext4_init_inode_bitmap(struct super_block *sb,
+@@ -75,7 +75,7 @@ unsigned ext4_init_inode_bitmap(struct s
  	/* If checksum is bad mark all blocks and inodes use to prevent
  	 * allocation, essentially implementing a per-group read-only flag. */
  	if (!ext4_group_desc_csum_verify(sbi, block_group, gdp)) {
@@ -310,21 +328,21 @@ index c61f37f..267a8a0 100644
  			   block_group);
  		gdp->bg_free_blocks_count = 0;
  		gdp->bg_free_inodes_count = 0;
-@@ -98,7 +98,7 @@ unsigned ext4_init_inode_bitmap(struct super_block *sb,
+@@ -98,7 +98,7 @@ unsigned ext4_init_inode_bitmap(struct s
   * Return buffer_head of bitmap on success or NULL.
   */
  static struct buffer_head *
 -read_inode_bitmap(struct super_block * sb, unsigned long block_group)
-+read_inode_bitmap(struct super_block *sb, ext4_grpnum_t block_group)
++read_inode_bitmap(struct super_block *sb, ext4_group_t block_group)
  {
  	struct ext4_group_desc *desc;
  	struct buffer_head *bh = NULL;
-@@ -152,7 +152,7 @@ void ext4_free_inode (handle_t *handle, struct inode * inode)
+@@ -152,7 +152,7 @@ void ext4_free_inode (handle_t *handle, 
  	unsigned long ino;
  	struct buffer_head *bitmap_bh = NULL;
  	struct buffer_head *bh2;
 -	unsigned long block_group;
-+	ext4_grpnum_t block_group;
++	ext4_group_t block_group;
  	unsigned long bit;
  	struct ext4_group_desc * gdp;
  	struct ext4_super_block * es;
@@ -333,79 +351,80 @@ index c61f37f..267a8a0 100644
   * group to find a free inode.
   */
 -static int find_group_dir(struct super_block *sb, struct inode *parent)
-+static ext4_grpnum_t find_group_dir(struct super_block *sb, struct inode *parent)
++static ext4_group_t find_group_dir(struct super_block *sb, struct inode *parent)
  {
 -	int ngroups = EXT4_SB(sb)->s_groups_count;
-+	ext4_grpnum_t ngroups = EXT4_SB(sb)->s_groups_count;
++	ext4_group_t ngroups = EXT4_SB(sb)->s_groups_count;
  	unsigned int freei, avefreei;
  	struct ext4_group_desc *desc, *best_desc = NULL;
 -	int group, best_group = -1;
-+	ext4_grpnum_t group, best_group = -1;
++	ext4_group_t group, best_group = -1;
  
  	freei = percpu_counter_read_positive(&EXT4_SB(sb)->s_freeinodes_counter);
  	avefreei = freei / ngroups;
-@@ -314,12 +314,13 @@ static int find_group_dir(struct super_block *sb, struct inode *parent)
+@@ -314,12 +314,13 @@ static int find_group_dir(struct super_b
  #define INODE_COST 64
  #define BLOCK_COST 256
  
 -static int find_group_orlov(struct super_block *sb, struct inode *parent)
-+static ext4_grpnum_t find_group_orlov(struct super_block *sb,
++static ext4_group_t find_group_orlov(struct super_block *sb,
 +				      struct inode *parent)
  {
 -	int parent_group = EXT4_I(parent)->i_block_group;
-+	ext4_grpnum_t parent_group = EXT4_I(parent)->i_block_group;
++	ext4_group_t parent_group = EXT4_I(parent)->i_block_group;
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
  	struct ext4_super_block *es = sbi->s_es;
 -	int ngroups = sbi->s_groups_count;
-+	ext4_grpnum_t ngroups = sbi->s_groups_count;
++	ext4_group_t ngroups = sbi->s_groups_count;
  	int inodes_per_group = EXT4_INODES_PER_GROUP(sb);
  	unsigned int freei, avefreei;
  	ext4_fsblk_t freeb, avefreeb;
-@@ -327,7 +328,7 @@ static int find_group_orlov(struct super_block *sb, struct inode *parent)
+@@ -327,7 +328,7 @@ static int find_group_orlov(struct super
  	unsigned int ndirs;
  	int max_debt, max_dirs, min_inodes;
  	ext4_grpblk_t min_blocks;
 -	int group = -1, i;
-+	ext4_grpnum_t group = -1, i;
++	ext4_group_t group = -1, i;
  	struct ext4_group_desc *desc;
  
  	freei = percpu_counter_read_positive(&sbi->s_freeinodes_counter);
-@@ -340,7 +341,7 @@ static int find_group_orlov(struct super_block *sb, struct inode *parent)
+@@ -340,7 +341,7 @@ static int find_group_orlov(struct super
  	if ((parent == sb->s_root->d_inode) ||
  	    (EXT4_I(parent)->i_flags & EXT4_TOPDIR_FL)) {
  		int best_ndir = inodes_per_group;
 -		int best_group = -1;
-+		ext4_grpnum_t best_group = -1;
++		ext4_group_t best_group = -1;
  
  		get_random_bytes(&group, sizeof(group));
  		parent_group = (unsigned)group % ngroups;
-@@ -415,12 +416,12 @@ fallback:
+@@ -415,12 +416,13 @@ fallback:
  	return -1;
  }
  
 -static int find_group_other(struct super_block *sb, struct inode *parent)
-+static ext4_grpnum_t find_group_other(struct super_block *sb, struct inode *parent)
++static ext4_group_t find_group_other(struct super_block *sb, 
++					struct inode *parent)
  {
 -	int parent_group = EXT4_I(parent)->i_block_group;
 -	int ngroups = EXT4_SB(sb)->s_groups_count;
-+	ext4_grpnum_t parent_group = EXT4_I(parent)->i_block_group;
-+	ext4_grpnum_t ngroups = EXT4_SB(sb)->s_groups_count;
++	ext4_group_t parent_group = EXT4_I(parent)->i_block_group;
++	ext4_group_t ngroups = EXT4_SB(sb)->s_groups_count;
  	struct ext4_group_desc *desc;
 -	int group, i;
-+	ext4_grpnum_t group, i;
++	ext4_group_t group, i;
  
  	/*
  	 * Try to place the inode in its parent directory
-@@ -487,7 +488,7 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode * dir, int mode)
+@@ -487,7 +489,7 @@ struct inode *ext4_new_inode(handle_t *h
  	struct super_block *sb;
  	struct buffer_head *bitmap_bh = NULL;
  	struct buffer_head *bh2;
 -	int group;
-+	ext4_grpnum_t group;
++	ext4_group_t group;
  	unsigned long ino = 0;
  	struct inode * inode;
  	struct ext4_group_desc * gdp = NULL;
-@@ -583,7 +584,7 @@ got:
+@@ -583,7 +585,7 @@ got:
  	    ino > EXT4_INODES_PER_GROUP(sb)) {
  		ext4_error(sb, __FUNCTION__,
  			   "reserved inode or inode > inodes count - "
@@ -414,94 +433,94 @@ index c61f37f..267a8a0 100644
  			   ino + group * EXT4_INODES_PER_GROUP(sb));
  		err = -EIO;
  		goto fail;
-@@ -777,7 +778,7 @@ fail_drop:
+@@ -777,7 +779,7 @@ fail_drop:
  struct inode *ext4_orphan_get(struct super_block *sb, unsigned long ino)
  {
  	unsigned long max_ino = le32_to_cpu(EXT4_SB(sb)->s_es->s_inodes_count);
 -	unsigned long block_group;
-+	ext4_grpnum_t block_group;
++	ext4_group_t block_group;
  	int bit;
  	struct buffer_head *bitmap_bh = NULL;
  	struct inode *inode = NULL;
-@@ -833,7 +834,7 @@ unsigned long ext4_count_free_inodes (struct super_block * sb)
+@@ -833,7 +835,7 @@ unsigned long ext4_count_free_inodes (st
  {
  	unsigned long desc_count;
  	struct ext4_group_desc *gdp;
 -	int i;
-+	ext4_grpnum_t i;
++	ext4_group_t i;
  #ifdef EXT4FS_DEBUG
  	struct ext4_super_block *es;
  	unsigned long bitmap_count, x;
-@@ -879,7 +880,7 @@ unsigned long ext4_count_free_inodes (struct super_block * sb)
+@@ -879,7 +881,7 @@ unsigned long ext4_count_free_inodes (st
  unsigned long ext4_count_dirs (struct super_block * sb)
  {
  	unsigned long count = 0;
 -	int i;
-+	ext4_grpnum_t i;
++	ext4_group_t i;
  
  	for (i = 0; i < EXT4_SB(sb)->s_groups_count; i++) {
  		struct ext4_group_desc *gdp = ext4_get_group_desc (sb, i, NULL);
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 488f829..c26be4d 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
+Index: linux-2.6.24-rc1/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.24-rc1.orig/fs/ext4/inode.c	2007-11-02 17:50:08.000000000 -0700
++++ linux-2.6.24-rc1/fs/ext4/inode.c	2007-11-02 17:50:10.000000000 -0700
 @@ -2464,7 +2464,8 @@ out_stop:
  static ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
  		unsigned long ino, struct ext4_iloc *iloc)
  {
 -	unsigned long desc, group_desc, block_group;
 +	unsigned long desc, group_desc;
-+	ext4_grpnum_t block_group;
++	ext4_group_t block_group;
  	unsigned long offset;
  	ext4_fsblk_t block;
  	struct buffer_head *bh;
-@@ -2551,7 +2552,7 @@ static int __ext4_get_inode_loc(struct inode *inode,
+@@ -2551,7 +2552,7 @@ static int __ext4_get_inode_loc(struct i
  			struct ext4_group_desc *desc;
  			int inodes_per_buffer;
  			int inode_offset, i;
 -			int block_group;
-+			ext4_grpnum_t block_group;
++			ext4_group_t block_group;
  			int start;
  
  			block_group = (inode->i_ino - 1) /
-diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index bd8a52b..db3c95f 100644
---- a/fs/ext4/resize.c
-+++ b/fs/ext4/resize.c
-@@ -28,7 +28,7 @@ static int verify_group_input(struct super_block *sb,
+Index: linux-2.6.24-rc1/fs/ext4/resize.c
+===================================================================
+--- linux-2.6.24-rc1.orig/fs/ext4/resize.c	2007-11-02 17:49:53.000000000 -0700
++++ linux-2.6.24-rc1/fs/ext4/resize.c	2007-11-02 17:50:10.000000000 -0700
+@@ -28,7 +28,7 @@ static int verify_group_input(struct sup
  	struct ext4_super_block *es = sbi->s_es;
  	ext4_fsblk_t start = ext4_blocks_count(es);
  	ext4_fsblk_t end = start + input->blocks_count;
 -	unsigned group = input->group;
-+	ext4_grpnum_t group = input->group;
++	ext4_group_t group = input->group;
  	ext4_fsblk_t itend = input->inode_table + sbi->s_itb_per_group;
  	unsigned overhead = ext4_bg_has_super(sb, group) ?
  		(1 + ext4_bg_num_gdb(sb, group) +
-@@ -357,7 +357,7 @@ static int verify_reserved_gdb(struct super_block *sb,
+@@ -357,7 +357,7 @@ static int verify_reserved_gdb(struct su
  			       struct buffer_head *primary)
  {
  	const ext4_fsblk_t blk = primary->b_blocknr;
 -	const unsigned long end = EXT4_SB(sb)->s_groups_count;
-+	const ext4_grpnum_t end = EXT4_SB(sb)->s_groups_count;
++	const ext4_group_t end = EXT4_SB(sb)->s_groups_count;
  	unsigned three = 1;
  	unsigned five = 5;
  	unsigned seven = 7;
-@@ -656,12 +656,12 @@ static void update_backups(struct super_block *sb,
+@@ -656,12 +656,12 @@ static void update_backups(struct super_
  			   int blk_off, char *data, int size)
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
 -	const unsigned long last = sbi->s_groups_count;
-+	const ext4_grpnum_t last = sbi->s_groups_count;
++	const ext4_group_t last = sbi->s_groups_count;
  	const int bpg = EXT4_BLOCKS_PER_GROUP(sb);
  	unsigned three = 1;
  	unsigned five = 5;
  	unsigned seven = 7;
 -	unsigned group;
-+	ext4_grpnum_t group;
++	ext4_group_t group;
  	int rest = sb->s_blocksize - size;
  	handle_t *handle;
  	int err = 0, err2;
-@@ -716,7 +716,7 @@ static void update_backups(struct super_block *sb,
+@@ -716,7 +716,7 @@ static void update_backups(struct super_
  exit_err:
  	if (err) {
  		ext4_warning(sb, __FUNCTION__,
@@ -510,29 +529,29 @@ index bd8a52b..db3c95f 100644
  			     "forcing fsck on next reboot", group, err);
  		sbi->s_mount_state &= ~EXT4_VALID_FS;
  		sbi->s_es->s_state &= cpu_to_le16(~EXT4_VALID_FS);
-@@ -952,7 +952,7 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -952,7 +952,7 @@ int ext4_group_extend(struct super_block
  		      ext4_fsblk_t n_blocks_count)
  {
  	ext4_fsblk_t o_blocks_count;
 -	unsigned long o_groups_count;
-+	ext4_grpnum_t o_groups_count;
++	ext4_group_t o_groups_count;
  	ext4_grpblk_t last;
  	ext4_grpblk_t add;
  	struct buffer_head * bh;
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index e251a64..38c2996 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -1364,7 +1364,7 @@ static int ext4_check_descriptors (struct super_block * sb)
+Index: linux-2.6.24-rc1/fs/ext4/super.c
+===================================================================
+--- linux-2.6.24-rc1.orig/fs/ext4/super.c	2007-11-02 17:50:08.000000000 -0700
++++ linux-2.6.24-rc1/fs/ext4/super.c	2007-11-02 17:50:10.000000000 -0700
+@@ -1364,7 +1364,7 @@ static int ext4_check_descriptors (struc
  	struct ext4_group_desc * gdp = NULL;
  	int desc_block = 0;
  	int flexbg_flag = 0;
 -	int i;
-+	ext4_grpnum_t i;
++	ext4_group_t i;
  
  	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG))
  		flexbg_flag = 1;
-@@ -1386,7 +1386,7 @@ static int ext4_check_descriptors (struct super_block * sb)
+@@ -1386,7 +1386,7 @@ static int ext4_check_descriptors (struc
  		if (block_bitmap < first_block || block_bitmap > last_block)
  		{
  			ext4_error (sb, "ext4_check_descriptors",
@@ -541,7 +560,7 @@ index e251a64..38c2996 100644
  				    " not in group (block %llu)!",
  				    i, block_bitmap);
  			return 0;
-@@ -1395,7 +1395,7 @@ static int ext4_check_descriptors (struct super_block * sb)
+@@ -1395,7 +1395,7 @@ static int ext4_check_descriptors (struc
  		if (inode_bitmap < first_block || inode_bitmap > last_block)
  		{
  			ext4_error (sb, "ext4_check_descriptors",
@@ -550,7 +569,7 @@ index e251a64..38c2996 100644
  				    " not in group (block %llu)!",
  				    i, inode_bitmap);
  			return 0;
-@@ -1405,17 +1405,16 @@ static int ext4_check_descriptors (struct super_block * sb)
+@@ -1405,17 +1405,16 @@ static int ext4_check_descriptors (struc
  		    inode_table + sbi->s_itb_per_group - 1 > last_block)
  		{
  			ext4_error (sb, "ext4_check_descriptors",
@@ -572,7 +591,7 @@ index e251a64..38c2996 100644
  			return 0;
  		}
  		if (!flexbg_flag)
-@@ -1429,7 +1428,6 @@ static int ext4_check_descriptors (struct super_block * sb)
+@@ -1429,7 +1428,6 @@ static int ext4_check_descriptors (struc
  	return 1;
  }
  
@@ -580,34 +599,34 @@ index e251a64..38c2996 100644
  /* ext4_orphan_cleanup() walks a singly-linked list of inodes (starting at
   * the superblock) which were deleted from all directories, but held open by
   * a process at the time of a crash.  We walk the list and try to delete these
-@@ -1570,7 +1568,7 @@ static ext4_fsblk_t descriptor_loc(struct super_block *sb,
+@@ -1570,7 +1568,7 @@ static ext4_fsblk_t descriptor_loc(struc
  				ext4_fsblk_t logical_sb_block, int nr)
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
 -	unsigned long bg, first_meta_bg;
-+	ext4_grpnum_t bg, first_meta_bg;
++	ext4_group_t bg, first_meta_bg;
  	int has_super = 0;
  
  	first_meta_bg = le32_to_cpu(sbi->s_es->s_first_meta_bg);
-@@ -2678,7 +2676,7 @@ static int ext4_statfs (struct dentry * dentry, struct kstatfs * buf)
+@@ -2678,7 +2676,7 @@ static int ext4_statfs (struct dentry * 
  	if (test_opt(sb, MINIX_DF)) {
  		sbi->s_overhead_last = 0;
  	} else if (sbi->s_blocks_last != ext4_blocks_count(es)) {
 -		unsigned long ngroups = sbi->s_groups_count, i;
-+		ext4_grpnum_t ngroups = sbi->s_groups_count, i;
++		ext4_group_t ngroups = sbi->s_groups_count, i;
  		ext4_fsblk_t overhead = 0;
  		smp_rmb();
  
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 10f214e..300e21c 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
+Index: linux-2.6.24-rc1/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.24-rc1.orig/include/linux/ext4_fs.h	2007-11-02 17:50:08.000000000 -0700
++++ linux-2.6.24-rc1/include/linux/ext4_fs.h	2007-11-02 17:50:10.000000000 -0700
 @@ -830,7 +830,7 @@ struct ext4_iloc
  {
  	struct buffer_head *bh;
  	unsigned long offset;
 -	unsigned long block_group;
-+	ext4_grpnum_t block_group;
++	ext4_group_t block_group;
  };
  
  static inline struct ext4_inode *ext4_raw_inode(struct ext4_iloc *iloc)
@@ -616,41 +635,41 @@ index 10f214e..300e21c 100644
  /* calculate the first block number of the group */
  static inline ext4_fsblk_t
 -ext4_group_first_block_no(struct super_block *sb, unsigned long group_no)
-+ext4_group_first_block_no(struct super_block *sb, ext4_grpnum_t group_no)
++ext4_group_first_block_no(struct super_block *sb, ext4_group_t group_no)
  {
  	return group_no * (ext4_fsblk_t)EXT4_BLOCKS_PER_GROUP(sb) +
  		le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
-@@ -886,8 +886,9 @@ extern unsigned int ext4_block_group(struct super_block *sb,
+@@ -886,8 +886,9 @@ extern unsigned int ext4_block_group(str
  			ext4_fsblk_t blocknr);
  extern ext4_grpblk_t ext4_block_group_offset(struct super_block *sb,
  			ext4_fsblk_t blocknr);
 -extern int ext4_bg_has_super(struct super_block *sb, int group);
 -extern unsigned long ext4_bg_num_gdb(struct super_block *sb, int group);
-+extern int ext4_bg_has_super(struct super_block *sb, ext4_grpnum_t group);
++extern int ext4_bg_has_super(struct super_block *sb, ext4_group_t group);
 +extern unsigned long ext4_bg_num_gdb(struct super_block *sb,
-+			ext4_grpnum_t group);
++			ext4_group_t group);
  extern ext4_fsblk_t ext4_new_block (handle_t *handle, struct inode *inode,
  			ext4_fsblk_t goal, int *errp);
  extern ext4_fsblk_t ext4_new_blocks (handle_t *handle, struct inode *inode,
-@@ -900,7 +901,7 @@ extern void ext4_free_blocks_sb (handle_t *handle, struct super_block *sb,
+@@ -900,7 +901,7 @@ extern void ext4_free_blocks_sb (handle_
  extern ext4_fsblk_t ext4_count_free_blocks (struct super_block *);
  extern void ext4_check_blocks_bitmap (struct super_block *);
  extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
 -						    unsigned int block_group,
-+						    ext4_grpnum_t block_group,
++						    ext4_group_t block_group,
  						    struct buffer_head ** bh);
  extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
  extern void ext4_init_block_alloc_info(struct inode *);
-diff --git a/include/linux/ext4_fs_i.h b/include/linux/ext4_fs_i.h
-index 6c610b6..9521400 100644
---- a/include/linux/ext4_fs_i.h
-+++ b/include/linux/ext4_fs_i.h
+Index: linux-2.6.24-rc1/include/linux/ext4_fs_i.h
+===================================================================
+--- linux-2.6.24-rc1.orig/include/linux/ext4_fs_i.h	2007-11-02 17:50:08.000000000 -0700
++++ linux-2.6.24-rc1/include/linux/ext4_fs_i.h	2007-11-02 17:50:10.000000000 -0700
 @@ -30,6 +30,9 @@ typedef unsigned long long ext4_fsblk_t;
  /* data type for file logical block number */
  typedef __u32 ext4_lblk_t;
  
 +/* data type for block group number */
-+typedef unsigned long ext4_grpnum_t;
++typedef unsigned long ext4_group_t;
 +
  struct ext4_reserve_window {
  	ext4_fsblk_t	_rsv_start;	/* First byte reserved */
@@ -660,20 +679,20 @@ index 6c610b6..9521400 100644
  	 * near to their parent directory's inode.
  	 */
 -	__u32	i_block_group;
-+	ext4_grpnum_t	i_block_group;
++	ext4_group_t	i_block_group;
  	__u32	i_state;		/* Dynamic state flags for ext4 */
  
  	/* block reservation info */
-diff --git a/include/linux/ext4_fs_sb.h b/include/linux/ext4_fs_sb.h
-index b40e827..daa3d79 100644
---- a/include/linux/ext4_fs_sb.h
-+++ b/include/linux/ext4_fs_sb.h
+Index: linux-2.6.24-rc1/include/linux/ext4_fs_sb.h
+===================================================================
+--- linux-2.6.24-rc1.orig/include/linux/ext4_fs_sb.h	2007-11-02 17:49:53.000000000 -0700
++++ linux-2.6.24-rc1/include/linux/ext4_fs_sb.h	2007-11-02 17:50:10.000000000 -0700
 @@ -35,7 +35,7 @@ struct ext4_sb_info {
  	unsigned long s_itb_per_group;	/* Number of inode table blocks per group */
  	unsigned long s_gdb_count;	/* Number of group descriptor blocks */
  	unsigned long s_desc_per_block;	/* Number of group descriptors per block */
 -	unsigned long s_groups_count;	/* Number of groups in the fs */
-+	ext4_grpnum_t s_groups_count;	/* Number of groups in the fs */
++	ext4_group_t s_groups_count;	/* Number of groups in the fs */
  	unsigned long s_overhead_last;  /* Last calculated overhead */
  	unsigned long s_blocks_last;    /* Last seen block count */
  	struct buffer_head * s_sbh;	/* Buffer containing the super block */
