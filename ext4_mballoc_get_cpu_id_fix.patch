@@ -1,0 +1,28 @@
+Ext4: Use get_cpu()/put_cpu() in preemptible context to acces cpu id.
+From: Mingming Cao <cmm@us.ibm.com>
+
+Fix the warning of
+printk: 369 messages suppressed.
+BUG: using smp_processor_id() in preemptible [00000001] code: fsx-linux/31702
+caller is ext4_mb_new_blocks+0x2aa/0x1319
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+ fs/ext4/mballoc.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+Index: linux-2.6.24-rc1/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.24-rc1.orig/fs/ext4/mballoc.c	2007-11-02 17:22:18.000000000 -0700
++++ linux-2.6.24-rc1/fs/ext4/mballoc.c	2007-11-02 17:23:02.000000000 -0700
+@@ -4006,7 +4006,8 @@ static void ext4_mb_group_or_file(struct
+ 		return;
+ 
+ 	BUG_ON(ac->ac_lg != NULL);
+-	ac->ac_lg = &sbi->s_locality_groups[smp_processor_id()];
++	ac->ac_lg = &sbi->s_locality_groups[get_cpu()];
++	put_cpu();
+ 
+ 	/* we're going to use group allocation */
+ 	ac->ac_flags |= EXT4_MB_HINT_GROUP_ALLOC;
