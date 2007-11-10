@@ -15,8 +15,8 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.24-rc1/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.24-rc1.orig/fs/jbd2/commit.c	2007-11-02 17:51:54.000000000 -0700
-+++ linux-2.6.24-rc1/fs/jbd2/commit.c	2007-11-02 17:51:54.000000000 -0700
+--- linux-2.6.24-rc1.orig/fs/jbd2/commit.c	2007-11-05 15:33:20.000000000 -0800
++++ linux-2.6.24-rc1/fs/jbd2/commit.c	2007-11-05 15:34:52.000000000 -0800
 @@ -350,6 +350,20 @@ write_out_data:
  	journal_do_submit_data(wbuf, bufs);
  }
@@ -27,10 +27,10 @@ Index: linux-2.6.24-rc1/fs/jbd2/commit.c
 +	char *addr;
 +	__u32 checksum;
 +
-+	addr = kmap(page);
++	addr = kmap_atomic(page, KM_USER0);
 +	checksum = crc32_be(crc32_sum,
 +		(void *)(addr + offset_in_page(bh->b_data)), bh->b_size);
-+	kunmap(page);
++	kunmap_atomic(page, KM_USER0);
 +
 +	return checksum;
 +}
