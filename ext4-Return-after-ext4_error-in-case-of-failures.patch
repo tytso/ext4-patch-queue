@@ -11,32 +11,11 @@ ext4_error call
 Reported by: Adrian Bunk <bunk@kernel.org>
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
----
-
- fs/ext4/balloc.c |   12 +++++++++---
- 1 file changed, 9 insertions(+), 3 deletions(-)
-
-
-Index: linux-2.6.24-rc1/fs/ext4/balloc.c
-===================================================================
---- linux-2.6.24-rc1.orig/fs/ext4/balloc.c	2007-11-02 17:50:53.000000000 -0700
-+++ linux-2.6.24-rc1/fs/ext4/balloc.c	2007-11-02 17:51:38.000000000 -0700
-@@ -234,11 +234,13 @@ read_block_bitmap(struct super_block *sb
- 	} else {
- 		bh = sb_bread(sb, bitmap_blk);
- 	}
--	if (!bh)
-+	if (!bh) {
- 		ext4_error (sb, __FUNCTION__,
- 			    "Cannot read block bitmap - "
- 			    "block_group = %lu, block_bitmap = %llu",
- 			    block_group, bitmap_blk);
-+		return NULL;
-+	}
- 
- 	/* check whether block bitmap block number is set */
- 	if (!block_in_use(bitmap_blk, sb, bh->b_data)) {
-@@ -628,11 +630,13 @@ do_more:
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index 9568a57..ff3428e 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -587,11 +587,13 @@ do_more:
  	    in_range(ext4_inode_bitmap(sb, desc), block, count) ||
  	    in_range(block, ext4_inode_table(sb, desc), sbi->s_itb_per_group) ||
  	    in_range(block + count - 1, ext4_inode_table(sb, desc),
@@ -51,7 +30,7 @@ Index: linux-2.6.24-rc1/fs/ext4/balloc.c
  
  	/*
  	 * We are about to start releasing blocks in the bitmap,
-@@ -1731,11 +1735,13 @@ allocated:
+@@ -1690,11 +1692,13 @@ allocated:
  	    in_range(ret_block, ext4_inode_table(sb, gdp),
  		     EXT4_SB(sb)->s_itb_per_group) ||
  	    in_range(ret_block + num - 1, ext4_inode_table(sb, gdp),
