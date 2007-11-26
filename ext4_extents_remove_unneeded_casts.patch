@@ -10,26 +10,30 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 ---
 
-Index: linux-2.6.24-rc1/fs/ext4/extents.c
+---
+ fs/ext4/extents.c |   51 +++++++++++++++++++++++----------------------------
+ 1 file changed, 23 insertions(+), 28 deletions(-)
+
+Index: linux-2.6.24-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.24-rc1.orig/fs/ext4/extents.c
-+++ linux-2.6.24-rc1/fs/ext4/extents.c
+--- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-26 14:28:48.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-26 14:30:37.000000000 -0800
 @@ -374,7 +374,7 @@ ext4_ext_binsearch_idx(struct inode *ino
  	struct ext4_extent_idx *r, *l, *m;
-
-
+ 
+ 
 -	ext_debug("binsearch for %lu(idx):  ", (unsigned long)block);
 +	ext_debug("binsearch for %u(idx):  ", block);
-
+ 
  	l = EXT_FIRST_INDEX(eh) + 1;
  	r = EXT_LAST_INDEX(eh);
 @@ -440,7 +440,7 @@ ext4_ext_binsearch(struct inode *inode,
  		return;
  	}
-
+ 
 -	ext_debug("binsearch for %lu:  ", (unsigned long)block);
 +	ext_debug("binsearch for %u:  ", block);
-
+ 
  	l = EXT_FIRST_EXTENT(eh) + 1;
  	r = EXT_LAST_EXTENT(eh);
 @@ -766,7 +766,7 @@ static int ext4_ext_split(handle_t *hand
@@ -44,7 +48,7 @@ Index: linux-2.6.24-rc1/fs/ext4/extents.c
 @@ -786,9 +786,8 @@ static int ext4_ext_split(handle_t *hand
  		fidx->ei_block = border;
  		ext4_idx_store_pblock(fidx, oldblock);
-
+ 
 -		ext_debug("int.index at %d (block %llu): %lu -> %llu\n", i,
 -				newblock, (unsigned long) le32_to_cpu(border),
 -				oldblock);
@@ -93,12 +97,12 @@ Index: linux-2.6.24-rc1/fs/ext4/extents.c
 @@ -1637,7 +1636,7 @@ ext4_ext_put_gap_in_cache(struct inode *
  		BUG();
  	}
-
+ 
 -	ext_debug(" -> %lu:%lu\n", (unsigned long) lblock, len);
 +	ext_debug(" -> %u:%lu\n", lblock, len);
  	ext4_ext_put_in_cache(inode, lblock, len, 0, EXT4_EXT_CACHE_GAP);
  }
-
+ 
 @@ -1659,11 +1658,9 @@ ext4_ext_in_cache(struct inode *inode, e
  		ex->ee_block = cpu_to_le32(cex->ec_block);
  		ext4_ext_store_pblock(ex, cex->ec_start);
@@ -113,17 +117,17 @@ Index: linux-2.6.24-rc1/fs/ext4/extents.c
 +				cex->ec_block, cex->ec_len, cex->ec_start);
  		return cex->ec_type;
  	}
-
+ 
 @@ -2286,9 +2283,8 @@ int ext4_ext_get_blocks(handle_t *handle
  	struct ext4_allocation_request ar;
-
+ 
  	__clear_bit(BH_New, &bh_result->b_state);
 -	ext_debug("blocks %lu/%lu requested for inode %u\n",
 -			(unsigned long) iblock, max_blocks,
 -			(unsigned) inode->i_ino);
 +	ext_debug("blocks %u/%lu requested for inode %lu\n",
 +			iblock, max_blocks, inode->i_ino);
-
+ 
  	/* check in cache */
  	goal = ext4_ext_in_cache(inode, iblock, &newex);
 @@ -2350,7 +2346,7 @@ int ext4_ext_get_blocks(handle_t *handle
@@ -133,7 +137,7 @@ Index: linux-2.6.24-rc1/fs/ext4/extents.c
 -			ext_debug("%d fit into %lu:%d -> %llu\n", (int) iblock,
 +			ext_debug("%u fit into %lu:%d -> %llu\n", iblock,
  					ee_block, ee_len, newblock);
-
+ 
  			/* Do not put uninitialized extent in the cache */
 @@ -2632,9 +2628,8 @@ retry:
  		if (!ret) {
@@ -146,5 +150,4 @@ Index: linux-2.6.24-rc1/fs/ext4/extents.c
 +				   inode->i_ino, block, max_blocks);
  			ret = -EIO;
  			ext4_mark_inode_dirty(handle, inode);
-
  			ret2 = ext4_journal_stop(handle);
