@@ -104,8 +104,8 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 Index: linux-2.6.24-rc3/fs/ext4/Makefile
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/Makefile	2007-11-20 17:27:31.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/Makefile	2007-11-20 17:28:05.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/Makefile	2007-11-26 14:47:16.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/Makefile	2007-11-26 14:47:25.000000000 -0800
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -117,9 +117,9 @@ Index: linux-2.6.24-rc3/fs/ext4/Makefile
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
 Index: linux-2.6.24-rc3/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/balloc.c	2007-11-20 17:27:31.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/balloc.c	2007-11-20 17:28:05.000000000 -0800
-@@ -514,6 +514,8 @@ void ext4_discard_reservation(struct ino
+--- linux-2.6.24-rc3.orig/fs/ext4/balloc.c	2007-11-26 14:47:00.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/balloc.c	2007-11-26 14:47:25.000000000 -0800
+@@ -577,6 +577,8 @@ void ext4_discard_reservation(struct ino
  	struct ext4_reserve_window_node *rsv;
  	spinlock_t *rsv_lock = &EXT4_SB(inode->i_sb)->s_rsv_window_lock;
  
@@ -128,7 +128,7 @@ Index: linux-2.6.24-rc3/fs/ext4/balloc.c
  	if (!block_i)
  		return;
  
-@@ -722,19 +724,29 @@ error_return:
+@@ -785,19 +787,29 @@ error_return:
   * @inode:		inode
   * @block:		start physical block to free
   * @count:		number of blocks to count
@@ -164,7 +164,7 @@ Index: linux-2.6.24-rc3/fs/ext4/balloc.c
  	if (dquot_freed_blocks)
  		DQUOT_FREE_BLOCK(inode, dquot_freed_blocks);
  	return;
-@@ -1513,7 +1525,7 @@ int ext4_should_retry_alloc(struct super
+@@ -1576,7 +1588,7 @@ int ext4_should_retry_alloc(struct super
  }
  
  /**
@@ -173,7 +173,7 @@ Index: linux-2.6.24-rc3/fs/ext4/balloc.c
   * @handle:		handle to this transaction
   * @inode:		file inode
   * @goal:		given target block(filesystem wide)
-@@ -1526,7 +1538,7 @@ int ext4_should_retry_alloc(struct super
+@@ -1589,7 +1601,7 @@ int ext4_should_retry_alloc(struct super
   * any specific goal block.
   *
   */
@@ -182,7 +182,7 @@ Index: linux-2.6.24-rc3/fs/ext4/balloc.c
  			ext4_fsblk_t goal, unsigned long *count, int *errp)
  {
  	struct buffer_head *bitmap_bh = NULL;
-@@ -1786,13 +1798,46 @@ out:
+@@ -1849,13 +1861,46 @@ out:
  }
  
  ext4_fsblk_t ext4_new_block(handle_t *handle, struct inode *inode,
@@ -234,8 +234,8 @@ Index: linux-2.6.24-rc3/fs/ext4/balloc.c
   * @sb:		superblock
 Index: linux-2.6.24-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-20 17:27:31.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-20 17:28:05.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-26 14:47:24.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-26 14:47:25.000000000 -0800
 @@ -854,7 +854,7 @@ cleanup:
  		for (i = 0; i < depth; i++) {
  			if (!ablocks[i])
@@ -360,8 +360,8 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  	 * Probably we need not scan at all,
 Index: linux-2.6.24-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-11-20 17:27:31.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-11-20 17:28:05.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-11-26 14:47:16.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-11-26 14:47:25.000000000 -0800
 @@ -550,7 +550,7 @@ static int ext4_alloc_blocks(handle_t *h
  	return ret;
  failed_out:
@@ -416,7 +416,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
 Index: linux-2.6.24-rc3/fs/ext4/mballoc.c
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.24-rc3/fs/ext4/mballoc.c	2007-11-20 17:28:05.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/mballoc.c	2007-11-26 14:47:25.000000000 -0800
 @@ -0,0 +1,4408 @@
 +/*
 + * Copyright (c) 2003-2006, Cluster File Systems, Inc, info@clusterfs.com
@@ -4828,8 +4828,8 @@ Index: linux-2.6.24-rc3/fs/ext4/mballoc.c
 +}
 Index: linux-2.6.24-rc3/fs/ext4/migrate.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/migrate.c	2007-11-20 17:27:31.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/migrate.c	2007-11-20 17:28:05.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/migrate.c	2007-11-26 14:47:16.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/migrate.c	2007-11-26 14:47:25.000000000 -0800
 @@ -249,11 +249,11 @@ static int free_dind_blocks(handle_t *ha
  	for (i = 0; i < max_entries; i++) {
  		if (tmp_idata[i]) {
@@ -4873,8 +4873,8 @@ Index: linux-2.6.24-rc3/fs/ext4/migrate.c
  
 Index: linux-2.6.24-rc3/fs/ext4/super.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-11-20 17:27:31.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/super.c	2007-11-20 17:28:39.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-11-26 14:47:15.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/super.c	2007-11-26 14:47:25.000000000 -0800
 @@ -503,6 +503,7 @@ static void ext4_put_super (struct super
  	struct ext4_super_block *es = sbi->s_es;
  	int i;
@@ -4974,8 +4974,8 @@ Index: linux-2.6.24-rc3/fs/ext4/super.c
  MODULE_AUTHOR("Remy Card, Stephen Tweedie, Andrew Morton, Andreas Dilger, Theodore Ts'o and others");
 Index: linux-2.6.24-rc3/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/xattr.c	2007-11-20 17:27:31.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/xattr.c	2007-11-20 17:28:05.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/xattr.c	2007-11-26 14:45:19.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/xattr.c	2007-11-26 14:47:25.000000000 -0800
 @@ -480,7 +480,7 @@ ext4_xattr_release_block(handle_t *handl
  		ea_bdebug(bh, "refcount now=0; freeing");
  		if (ce)
@@ -4996,8 +4996,8 @@ Index: linux-2.6.24-rc3/fs/ext4/xattr.c
  			}
 Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-11-20 17:27:31.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-11-20 17:29:27.000000000 -0800
+--- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-11-26 14:47:22.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-11-26 14:47:25.000000000 -0800
 @@ -20,6 +20,8 @@
  #include <linux/blkdev.h>
  #include <linux/magic.h>
@@ -5078,8 +5078,8 @@ Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
  int ext4_forget(handle_t *handle, int is_metadata, struct inode *inode,
 Index: linux-2.6.24-rc3/include/linux/ext4_fs_i.h
 ===================================================================
---- linux-2.6.24-rc3.orig/include/linux/ext4_fs_i.h	2007-11-20 17:27:31.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/ext4_fs_i.h	2007-11-20 17:28:05.000000000 -0800
+--- linux-2.6.24-rc3.orig/include/linux/ext4_fs_i.h	2007-11-26 14:46:45.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/ext4_fs_i.h	2007-11-26 14:47:25.000000000 -0800
 @@ -158,6 +158,10 @@ struct ext4_inode_info {
  	 * struct timespec i_{a,c,m}time in the generic inode.
  	 */
@@ -5093,8 +5093,8 @@ Index: linux-2.6.24-rc3/include/linux/ext4_fs_i.h
  #endif	/* _LINUX_EXT4_FS_I */
 Index: linux-2.6.24-rc3/include/linux/ext4_fs_sb.h
 ===================================================================
---- linux-2.6.24-rc3.orig/include/linux/ext4_fs_sb.h	2007-11-20 17:27:31.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/ext4_fs_sb.h	2007-11-20 17:28:05.000000000 -0800
+--- linux-2.6.24-rc3.orig/include/linux/ext4_fs_sb.h	2007-11-26 14:46:41.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/ext4_fs_sb.h	2007-11-26 14:47:25.000000000 -0800
 @@ -90,6 +90,67 @@ struct ext4_sb_info {
  	unsigned long s_ext_blocks;
  	unsigned long s_ext_extents;
