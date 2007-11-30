@@ -1,0 +1,47 @@
+From: Chris Snook <csnook@redhat.com>
+
+Remove printk from J_ASSERT to preserve registers during BUG.
+
+Signed-off-by: Chris Snook <csnook@redhat.com>
+Cc: "Stephen C. Tweedie" <sct@redhat.com>
+Cc: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+
+ include/linux/jbd2.h |   16 +---------------
+ 1 file changed, 1 insertion(+), 15 deletions(-)
+
+Index: linux-2.6.24-rc3/include/linux/jbd2.h
+===================================================================
+--- linux-2.6.24-rc3.orig/include/linux/jbd2.h	2007-11-30 12:40:43.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/jbd2.h	2007-11-30 12:52:19.000000000 -0800
+@@ -256,17 +256,7 @@ typedef struct journal_superblock_s
+ #include <linux/fs.h>
+ #include <linux/sched.h>
+ 
+-#define JBD2_ASSERTIONS
+-#ifdef JBD2_ASSERTIONS
+-#define J_ASSERT(assert)						\
+-do {									\
+-	if (!(assert)) {						\
+-		printk (KERN_EMERG					\
+-			"Assertion failure in %s() at %s:%d: \"%s\"\n",	\
+-			__FUNCTION__, __FILE__, __LINE__, # assert);	\
+-		BUG();							\
+-	}								\
+-} while (0)
++#define J_ASSERT(assert)	BUG_ON(!(assert))
+ 
+ #if defined(CONFIG_BUFFER_DEBUG)
+ void buffer_assertion_failure(struct buffer_head *bh);
+@@ -282,10 +272,6 @@ void buffer_assertion_failure(struct buf
+ #define J_ASSERT_JH(jh, expr)	J_ASSERT(expr)
+ #endif
+ 
+-#else
+-#define J_ASSERT(assert)	do { } while (0)
+-#endif		/* JBD2_ASSERTIONS */
+-
+ #if defined(JBD2_PARANOID_IOFAIL)
+ #define J_EXPECT(expr, why...)		J_ASSERT(expr)
+ #define J_EXPECT_BH(bh, expr, why...)	J_ASSERT_BH(bh, expr)

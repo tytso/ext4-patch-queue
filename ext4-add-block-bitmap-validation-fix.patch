@@ -1,0 +1,36 @@
+From: Andrew Morton <akpm@linux-foundation.org>
+
+fs/ext4/balloc.c: In function 'read_block_bitmap':
+fs/ext4/balloc.c:270: warning: format '%d' expects type 'int', but argument 4 has type 'ext4_grpnum_t'
+fs/ext4/balloc.c:287: warning: format '%d' expects type 'int', but argument 4 has type 'ext4_grpnum_t'
+
+Cc: <linux-ext4@vger.kernel.org>
+Cc: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+
+ fs/ext4/balloc.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff -puN fs/ext4/balloc.c~ext4-add-block-bitmap-validation-fix fs/ext4/balloc.c
+--- a/fs/ext4/balloc.c~ext4-add-block-bitmap-validation-fix
++++ a/fs/ext4/balloc.c
+@@ -267,7 +267,7 @@ read_block_bitmap(struct super_block *sb
+ 		ext4_error(sb, __FUNCTION__,
+ 			    "Cannot read block bitmap - "
+ 			    "block_group = %d, block_bitmap = %llu",
+-			    block_group, bitmap_blk);
++			    (int)block_group, (unsigned long long)bitmap_blk);
+ 		return NULL;
+ 	}
+ 	if (bh_uptodate_or_lock(bh))
+@@ -284,7 +284,7 @@ read_block_bitmap(struct super_block *sb
+ 		ext4_error(sb, __FUNCTION__,
+ 			    "Cannot read block bitmap - "
+ 			    "block_group = %d, block_bitmap = %llu",
+-			    block_group, bitmap_blk);
++			    (int)block_group, (unsigned long long)bitmap_blk);
+ 		return NULL;
+ 	}
+ 	if (!ext4_valid_block_bitmap(sb, desc, block_group, bh)) {
+_
