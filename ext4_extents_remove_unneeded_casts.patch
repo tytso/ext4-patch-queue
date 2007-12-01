@@ -16,8 +16,8 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.24-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-26 14:28:48.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-26 14:30:37.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-30 18:25:03.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-30 18:30:31.000000000 -0800
 @@ -374,7 +374,7 @@ ext4_ext_binsearch_idx(struct inode *ino
  	struct ext4_extent_idx *r, *l, *m;
  
@@ -66,7 +66,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  				    path);
  		if (IS_ERR(path))
  			err = PTR_ERR(path);
-@@ -1617,19 +1616,19 @@ ext4_ext_put_gap_in_cache(struct inode *
+@@ -1475,10 +1474,10 @@ ext4_ext_put_gap_in_cache(struct inode *
  	} else if (block < le32_to_cpu(ex->ee_block)) {
  		lblock = block;
  		len = le32_to_cpu(ex->ee_block) - block;
@@ -77,12 +77,14 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
 +		ext_debug("cache gap(before): %u [%u:%u]",
 +				block,
 +				le32_to_cpu(ex->ee_block),
-+				ext4_ext_get_actual_len(ex));
++				 ext4_ext_get_actual_len(ex));
  	} else if (block >= le32_to_cpu(ex->ee_block)
  			+ ext4_ext_get_actual_len(ex)) {
- 		lblock = le32_to_cpu(ex->ee_block)
+ 		ext4_lblk_t next;
+@@ -1486,10 +1485,10 @@ ext4_ext_put_gap_in_cache(struct inode *
  			+ ext4_ext_get_actual_len(ex);
- 		len = ext4_ext_next_allocated_block(path);
+ 
+ 		next = ext4_ext_next_allocated_block(path);
 -		ext_debug("cache gap(after): [%lu:%lu] %lu",
 -				(unsigned long) le32_to_cpu(ex->ee_block),
 -				(unsigned long) ext4_ext_get_actual_len(ex),
@@ -91,10 +93,10 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
 +				le32_to_cpu(ex->ee_block),
 +				ext4_ext_get_actual_len(ex),
 +				block);
- 		BUG_ON(len == lblock);
- 		len = len - lblock;
+ 		BUG_ON(next == lblock);
+ 		len = next - lblock;
  	} else {
-@@ -1637,7 +1636,7 @@ ext4_ext_put_gap_in_cache(struct inode *
+@@ -1497,7 +1496,7 @@ ext4_ext_put_gap_in_cache(struct inode *
  		BUG();
  	}
  
@@ -103,7 +105,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  	ext4_ext_put_in_cache(inode, lblock, len, 0, EXT4_EXT_CACHE_GAP);
  }
  
-@@ -1659,11 +1658,9 @@ ext4_ext_in_cache(struct inode *inode, e
+@@ -1519,11 +1518,9 @@ ext4_ext_in_cache(struct inode *inode, e
  		ex->ee_block = cpu_to_le32(cex->ec_block);
  		ext4_ext_store_pblock(ex, cex->ec_start);
  		ex->ee_len = cpu_to_le16(cex->ec_len);
@@ -118,19 +120,19 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  		return cex->ec_type;
  	}
  
-@@ -2286,9 +2283,8 @@ int ext4_ext_get_blocks(handle_t *handle
- 	struct ext4_allocation_request ar;
+@@ -2142,9 +2139,8 @@ int ext4_ext_get_blocks(handle_t *handle
+ 	unsigned long allocated = 0;
  
  	__clear_bit(BH_New, &bh_result->b_state);
 -	ext_debug("blocks %lu/%lu requested for inode %u\n",
 -			(unsigned long) iblock, max_blocks,
 -			(unsigned) inode->i_ino);
-+	ext_debug("blocks %u/%lu requested for inode %lu\n",
++	ext_debug("blocks %u/%lu requested for inode %u\n",
 +			iblock, max_blocks, inode->i_ino);
+ 	mutex_lock(&EXT4_I(inode)->truncate_mutex);
  
  	/* check in cache */
- 	goal = ext4_ext_in_cache(inode, iblock, &newex);
-@@ -2350,7 +2346,7 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2207,7 +2203,7 @@ int ext4_ext_get_blocks(handle_t *handle
  			newblock = iblock - ee_block + ee_start;
  			/* number of remaining blocks in the extent */
  			allocated = ee_len - (iblock - ee_block);
@@ -139,7 +141,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  					ee_block, ee_len, newblock);
  
  			/* Do not put uninitialized extent in the cache */
-@@ -2632,9 +2628,8 @@ retry:
+@@ -2467,9 +2463,8 @@ retry:
  		if (!ret) {
  			ext4_error(inode->i_sb, "ext4_fallocate",
  				   "ext4_ext_get_blocks returned 0! inode#%lu"

@@ -15,11 +15,11 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
  4 files changed, 19 insertions(+), 10 deletions(-)
 
 
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 096b7ea..eacbe35 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -1088,7 +1088,7 @@ static ext4_lblk_t ext4_ext_next_leaf_block(struct inode *inode,
+Index: linux-2.6.24-rc3/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-30 18:30:31.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-30 18:32:47.000000000 -0800
+@@ -1087,7 +1087,7 @@ static ext4_lblk_t ext4_ext_next_leaf_bl
   * then we have to correct all indexes above.
   * TODO: do we need to correct tree in all cases?
   */
@@ -28,7 +28,7 @@ index 096b7ea..eacbe35 100644
  				struct ext4_ext_path *path)
  {
  	struct ext4_extent_header *eh;
-@@ -1535,7 +1535,7 @@ ext4_ext_in_cache(struct inode *inode, ext4_lblk_t block,
+@@ -1534,7 +1534,7 @@ ext4_ext_in_cache(struct inode *inode, e
   * It's used in truncate case only, thus all requests are for
   * last index in the block only.
   */
@@ -37,20 +37,20 @@ index 096b7ea..eacbe35 100644
  			struct ext4_ext_path *path)
  {
  	struct buffer_head *bh;
-@@ -1803,7 +1803,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path *path)
+@@ -1804,7 +1804,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
  	return 1;
  }
  
--int ext4_ext_remove_space(struct inode *inode, unsigned long start)
-+static int ext4_ext_remove_space(struct inode *inode, unsigned long start)
+-int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
++static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
  {
  	struct super_block *sb = inode->i_sb;
  	int depth = ext_depth(inode);
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index c26be4d..9df9bad 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -2052,11 +2052,11 @@ static void ext4_clear_blocks(handle_t *handle, struct inode *inode,
+Index: linux-2.6.24-rc3/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-11-30 18:31:54.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-11-30 18:32:05.000000000 -0800
+@@ -2052,11 +2052,11 @@ static void ext4_clear_blocks(handle_t *
  	for (p = first; p < last; p++) {
  		u32 nr = le32_to_cpu(*p);
  		if (nr) {
@@ -78,7 +78,7 @@ index c26be4d..9df9bad 100644
  
  	handle = start_transaction(inode);
  	if (IS_ERR(handle)) {
-@@ -3163,8 +3165,10 @@ ext4_reserve_inode_write(handle_t *handle, struct inode *inode,
+@@ -3163,8 +3165,10 @@ ext4_reserve_inode_write(handle_t *handl
   * Expand an inode by new_extra_isize bytes.
   * Returns 0 on success or negative error number on failure.
   */
@@ -91,11 +91,11 @@ index c26be4d..9df9bad 100644
  {
  	struct ext4_inode *raw_inode;
  	struct ext4_xattr_ibody_header *header;
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index c336a89..14a8e05 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -1644,6 +1644,9 @@ static ext4_fsblk_t descriptor_loc(struct super_block *sb,
+Index: linux-2.6.24-rc3/fs/ext4/super.c
+===================================================================
+--- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-11-30 18:31:56.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/super.c	2007-11-30 18:32:05.000000000 -0800
+@@ -1644,6 +1644,9 @@ static ext4_fsblk_t descriptor_loc(struc
  
  
  static int ext4_fill_super (struct super_block *sb, void *data, int silent)
@@ -105,11 +105,11 @@ index c336a89..14a8e05 100644
  {
  	struct buffer_head * bh;
  	struct ext4_super_block *es = NULL;
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index cf4a53c..0d584ac 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
-@@ -893,6 +893,8 @@ extern ext4_fsblk_t ext4_new_block (handle_t *handle, struct inode *inode,
+Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-11-30 18:31:56.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-11-30 18:32:05.000000000 -0800
+@@ -893,6 +893,8 @@ extern ext4_fsblk_t ext4_new_block (hand
  			ext4_fsblk_t goal, int *errp);
  extern ext4_fsblk_t ext4_new_blocks (handle_t *handle, struct inode *inode,
  			ext4_fsblk_t goal, unsigned long *count, int *errp);

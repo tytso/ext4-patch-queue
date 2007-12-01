@@ -21,9 +21,9 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 Index: linux-2.6.24-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-20 17:12:32.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-20 17:23:00.000000000 -0800
-@@ -2124,6 +2124,10 @@ out:
+--- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-30 18:33:09.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-30 18:37:10.000000000 -0800
+@@ -2126,6 +2126,10 @@ out:
  	return err ? err : allocated;
  }
  
@@ -34,15 +34,15 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  			ext4_lblk_t iblock,
  			unsigned long max_blocks, struct buffer_head *bh_result,
-@@ -2140,7 +2144,6 @@ int ext4_ext_get_blocks(handle_t *handle
- 	ext_debug("blocks %lu/%lu requested for inode %u\n",
- 			(unsigned long) iblock, max_blocks,
- 			(unsigned) inode->i_ino);
+@@ -2141,7 +2145,6 @@ int ext4_ext_get_blocks(handle_t *handle
+ 	__clear_bit(BH_New, &bh_result->b_state);
+ 	ext_debug("blocks %u/%lu requested for inode %u\n",
+ 			iblock, max_blocks, inode->i_ino);
 -	mutex_lock(&EXT4_I(inode)->truncate_mutex);
  
  	/* check in cache */
  	goal = ext4_ext_in_cache(inode, iblock, &newex);
-@@ -2314,8 +2317,6 @@ out2:
+@@ -2315,8 +2318,6 @@ out2:
  		ext4_ext_drop_refs(path);
  		kfree(path);
  	}
@@ -53,8 +53,8 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  
 Index: linux-2.6.24-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-11-20 17:20:06.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-11-20 17:23:00.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-11-30 18:33:16.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-11-30 18:34:37.000000000 -0800
 @@ -245,13 +245,6 @@ static inline void add_chain(Indirect *p
  	p->bh = bh;
  }
@@ -190,8 +190,8 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  
 Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-11-20 17:22:48.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-11-20 17:23:00.000000000 -0800
+--- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-11-30 18:33:16.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-11-30 18:34:37.000000000 -0800
 @@ -1118,6 +1118,7 @@ ext4_get_blocks_wrap(handle_t *handle, s
  			int create, int extend_disksize)
  {

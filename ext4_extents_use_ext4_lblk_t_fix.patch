@@ -17,9 +17,9 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.24-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-26 14:30:37.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-26 14:33:19.000000000 -0800
-@@ -1165,7 +1165,7 @@ ext4_ext_search_right(struct inode *inod
+--- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-30 18:19:02.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-30 18:25:03.000000000 -0800
+@@ -1024,7 +1024,7 @@ out:
   * allocated block. Thus, index entries have to be consistent
   * with leaves.
   */
@@ -28,7 +28,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  ext4_ext_next_allocated_block(struct ext4_ext_path *path)
  {
  	int depth;
-@@ -1383,7 +1383,7 @@ unsigned int ext4_ext_check_overlap(stru
+@@ -1242,7 +1242,7 @@ unsigned int ext4_ext_check_overlap(stru
  				    struct ext4_extent *newext,
  				    struct ext4_ext_path *path)
  {
@@ -37,7 +37,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  	unsigned int depth, len1;
  	unsigned int ret = 0;
  
-@@ -1404,7 +1404,7 @@ unsigned int ext4_ext_check_overlap(stru
+@@ -1263,7 +1263,7 @@ unsigned int ext4_ext_check_overlap(stru
  			goto out;
  	}
  
@@ -46,20 +46,20 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  	if (b1 + len1 < b1) {
  		len1 = EXT_MAX_BLOCK - b1;
  		newext->ee_len = cpu_to_le16(len1);
-@@ -1622,15 +1622,17 @@ ext4_ext_put_gap_in_cache(struct inode *
- 				ext4_ext_get_actual_len(ex));
+@@ -1481,15 +1481,17 @@ ext4_ext_put_gap_in_cache(struct inode *
+ 				(unsigned long) ext4_ext_get_actual_len(ex));
  	} else if (block >= le32_to_cpu(ex->ee_block)
  			+ ext4_ext_get_actual_len(ex)) {
 +		ext4_lblk_t next;
-+
  		lblock = le32_to_cpu(ex->ee_block)
  			+ ext4_ext_get_actual_len(ex);
 -		len = ext4_ext_next_allocated_block(path);
++
 +		next = ext4_ext_next_allocated_block(path);
- 		ext_debug("cache gap(after): [%u:%u] %u",
- 				le32_to_cpu(ex->ee_block),
- 				ext4_ext_get_actual_len(ex),
- 				block);
+ 		ext_debug("cache gap(after): [%lu:%lu] %lu",
+ 				(unsigned long) le32_to_cpu(ex->ee_block),
+ 				(unsigned long) ext4_ext_get_actual_len(ex),
+ 				(unsigned long) block);
 -		BUG_ON(len == lblock);
 -		len = len - lblock;
 +		BUG_ON(next == lblock);
@@ -67,7 +67,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  	} else {
  		lblock = len = 0;
  		BUG();
-@@ -1752,7 +1754,7 @@ int ext4_ext_calc_credits_for_insert(str
+@@ -1613,7 +1615,7 @@ int ext4_ext_calc_credits_for_insert(str
  
  static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  				struct ext4_extent *ex,
@@ -76,7 +76,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  {
  	struct buffer_head *bh;
  	unsigned short ee_len =  ext4_ext_get_actual_len(ex);
-@@ -1778,11 +1780,12 @@ static int ext4_remove_blocks(handle_t *
+@@ -1637,11 +1639,12 @@ static int ext4_remove_blocks(handle_t *
  	if (from >= le32_to_cpu(ex->ee_block)
  	    && to == le32_to_cpu(ex->ee_block) + ee_len - 1) {
  		/* tail removal */
@@ -91,8 +91,8 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  		for (i = 0; i < num; i++) {
  			bh = sb_find_get_block(inode->i_sb, start + i);
  			ext4_forget(handle, 0, inode, bh, start + i);
-@@ -1790,10 +1793,10 @@ static int ext4_remove_blocks(handle_t *
- 		ext4_free_blocks(handle, inode, start, num, metadata);
+@@ -1649,10 +1652,10 @@ static int ext4_remove_blocks(handle_t *
+ 		ext4_free_blocks(handle, inode, start, num);
  	} else if (from == le32_to_cpu(ex->ee_block)
  		   && to <= le32_to_cpu(ex->ee_block) + ee_len - 1) {
 -		printk("strange request: removal %lu-%lu from %u:%u\n",
@@ -104,7 +104,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  			from, to, le32_to_cpu(ex->ee_block), ee_len);
  	}
  	return 0;
-@@ -1801,19 +1804,20 @@ static int ext4_remove_blocks(handle_t *
+@@ -1660,19 +1663,20 @@ static int ext4_remove_blocks(handle_t *
  
  static int
  ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
@@ -129,16 +129,16 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  	if (!path[depth].p_hdr)
  		path[depth].p_hdr = ext_block_hdr(path[depth].p_bh);
  	eh = path[depth].p_hdr;
-@@ -1944,7 +1948,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
+@@ -1803,7 +1807,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
  	return 1;
  }
  
--static int ext4_ext_remove_space(struct inode *inode, unsigned long start)
-+static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
+-int ext4_ext_remove_space(struct inode *inode, unsigned long start)
++int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
  {
  	struct super_block *sb = inode->i_sb;
  	int depth = ext_depth(inode);
-@@ -1952,7 +1956,7 @@ static int ext4_ext_remove_space(struct 
+@@ -1811,7 +1815,7 @@ int ext4_ext_remove_space(struct inode *
  	handle_t *handle;
  	int i = 0, err = 0;
  
@@ -147,7 +147,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  
  	/* probably first extent we're gonna free will be last in block */
  	handle = ext4_journal_start(inode, depth + 1);
-@@ -2144,7 +2148,8 @@ static int ext4_ext_convert_to_initializ
+@@ -2003,7 +2007,8 @@ static int ext4_ext_convert_to_initializ
  	struct ext4_extent *ex2 = NULL;
  	struct ext4_extent *ex3 = NULL;
  	struct ext4_extent_header *eh;
@@ -157,7 +157,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  	ext4_fsblk_t newblock;
  	int err = 0;
  	int ret = 0;
-@@ -2487,7 +2492,7 @@ void ext4_ext_truncate(struct inode * in
+@@ -2323,7 +2328,7 @@ void ext4_ext_truncate(struct inode * in
  {
  	struct address_space *mapping = inode->i_mapping;
  	struct super_block *sb = inode->i_sb;
