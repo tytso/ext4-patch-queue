@@ -14,14 +14,16 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Jean Noel Cordenner <jean-noel.cordenner@bull.net>
 ---
  fs/ext4/inode.c         |   18 +++++++++++++++++-
- fs/ext4/super.c         |    8 ++++++--
+ fs/ext4/super.c         |   10 ++++++++--
+ fs/inode.c              |   17 -----------------
  include/linux/ext4_fs.h |    6 +++++-
- 3 files changed, 28 insertions(+), 4 deletions(-)
+ include/linux/fs.h      |   16 +++++++++++++++-
+ 5 files changed, 45 insertions(+), 22 deletions(-)
 
 Index: linux-2.6.24-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-11-20 17:12:32.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-11-20 17:15:45.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-12-03 16:17:20.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-12-03 16:26:40.000000000 -0800
 @@ -2789,6 +2789,13 @@ void ext4_read_inode(struct inode * inod
  	EXT4_INODE_GET_XTIME(i_atime, inode, raw_inode);
  	EXT4_EINODE_GET_XTIME(i_crtime, ei, raw_inode);
@@ -64,9 +66,18 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  
 Index: linux-2.6.24-rc3/fs/ext4/super.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-11-20 17:12:32.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/super.c	2007-11-20 17:18:04.000000000 -0800
-@@ -874,7 +874,7 @@ enum {
+--- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-12-03 16:18:55.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/super.c	2007-12-03 16:27:43.000000000 -0800
+@@ -732,6 +732,8 @@ static int ext4_show_options(struct seq_
+ 		seq_puts(seq, ",nobh");
+ 	if (!test_opt(sb, EXTENTS))
+ 		seq_puts(seq, ",noextents");
++	if (test_opt(sb, I_VERSION))
++		seq_puts(seq, ",i_version");
+ 
+ 	if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)
+ 		seq_puts(seq, ",data=journal");
+@@ -874,7 +876,7 @@ enum {
  	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
@@ -75,7 +86,7 @@ Index: linux-2.6.24-rc3/fs/ext4/super.c
  };
  
  static match_table_t tokens = {
-@@ -928,6 +928,7 @@ static match_table_t tokens = {
+@@ -928,6 +930,7 @@ static match_table_t tokens = {
  	{Opt_barrier, "barrier=%u"},
  	{Opt_extents, "extents"},
  	{Opt_noextents, "noextents"},
@@ -83,7 +94,7 @@ Index: linux-2.6.24-rc3/fs/ext4/super.c
  	{Opt_err, NULL},
  	{Opt_resize, "resize"},
  };
-@@ -1273,6 +1274,10 @@ clear_qf_name:
+@@ -1273,6 +1276,10 @@ clear_qf_name:
  		case Opt_noextents:
  			clear_opt (sbi->s_mount_opt, EXTENTS);
  			break;
@@ -94,7 +105,7 @@ Index: linux-2.6.24-rc3/fs/ext4/super.c
  		default:
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
-@@ -3157,7 +3162,6 @@ out:
+@@ -3157,7 +3164,6 @@ out:
  		i_size_write(inode, off+len-towrite);
  		EXT4_I(inode)->i_disksize = inode->i_size;
  	}
@@ -104,8 +115,8 @@ Index: linux-2.6.24-rc3/fs/ext4/super.c
  	mutex_unlock(&inode->i_mutex);
 Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-11-20 17:12:32.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-11-20 17:19:51.000000000 -0800
+--- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-12-03 16:18:55.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-12-03 16:26:40.000000000 -0800
 @@ -292,7 +292,7 @@ struct ext4_inode {
  	__le32	i_flags;	/* File flags */
  	union {
@@ -140,3 +151,58 @@ Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
+Index: linux-2.6.24-rc3/fs/inode.c
+===================================================================
+--- linux-2.6.24-rc3.orig/fs/inode.c	2007-12-03 16:26:48.000000000 -0800
++++ linux-2.6.24-rc3/fs/inode.c	2007-12-03 16:28:03.000000000 -0800
+@@ -1243,23 +1243,6 @@ void touch_atime(struct vfsmount *mnt, s
+ EXPORT_SYMBOL(touch_atime);
+ 
+ /**
+- *     inode_inc_iversion      -       increments i_version
+- *     @inode: inode that need to be updated
+- *
+- *     Every time the inode is modified, the i_version field
+- *     will be incremented.
+- *     The filesystem has to be mounted with i_version flag
+- *
+- */
+-
+-void inode_inc_iversion(struct inode *inode)
+-{
+-	spin_lock(&inode->i_lock);
+-	inode->i_version++;
+-	spin_unlock(&inode->i_lock);
+-}
+-
+-/**
+  *	file_update_time	-	update mtime and ctime time
+  *	@file: file accessed
+  *
+Index: linux-2.6.24-rc3/include/linux/fs.h
+===================================================================
+--- linux-2.6.24-rc3.orig/include/linux/fs.h	2007-12-03 16:26:48.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/fs.h	2007-12-03 16:28:03.000000000 -0800
+@@ -1396,7 +1396,21 @@ static inline void inode_dec_link_count(
+ 	mark_inode_dirty(inode);
+ }
+ 
+-extern void inode_inc_iversion(struct inode *inode);
++/**
++ * inode_inc_iversion - increments i_version
++ * @inode: inode that need to be updated
++ *
++ * Every time the inode is modified, the i_version field will be incremented.
++ * The filesystem has to be mounted with i_version flag
++ */
++
++static inline void inode_inc_iversion(struct inode *inode)
++{
++       spin_lock(&inode->i_lock);
++       inode->i_version++;
++       spin_unlock(&inode->i_lock);
++}
++
+ extern void touch_atime(struct vfsmount *mnt, struct dentry *dentry);
+ static inline void file_accessed(struct file *file)
+ {
