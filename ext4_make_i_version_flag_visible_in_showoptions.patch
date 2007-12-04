@@ -1,0 +1,24 @@
+ext4:  make i_version flag visible on /proc/mounts
+From: Cordenner jean noel <jean-noel.cordenner@bull.net>
+
+This patch adds the i_version flag in ext4_show_options().
+
+
+
+---
+ fs/ext4/super.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+Index: linux-2.6.24-rc3/fs/ext4/super.c
+===================================================================
+--- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-12-03 15:59:51.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/super.c	2007-12-03 16:00:48.000000000 -0800
+@@ -732,6 +732,8 @@ static int ext4_show_options(struct seq_
+ 		seq_puts(seq, ",nobh");
+ 	if (!test_opt(sb, EXTENTS))
+ 		seq_puts(seq, ",noextents");
++	if (test_opt(sb, I_VERSION))
++		seq_puts(seq, ",i_version");
+ 
+ 	if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)
+ 		seq_puts(seq, ",data=journal");

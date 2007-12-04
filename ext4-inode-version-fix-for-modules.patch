@@ -1,0 +1,70 @@
+From: Eric Sandeen <sandeen@redhat.com>
+fix up vfs inode version patch for modules
+
+ext4 calls inode_inc_iversion(), but it's not exported, so modular ext4
+has trouble.  Any reason not to just make it an inline, as below?
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+
+---
+ fs/inode.c         |   17 -----------------
+ include/linux/fs.h |   16 +++++++++++++++-
+ 2 files changed, 15 insertions(+), 18 deletions(-)
+
+Index: linux-2.6.24-rc3/fs/inode.c
+===================================================================
+--- linux-2.6.24-rc3.orig/fs/inode.c	2007-11-30 18:33:13.000000000 -0800
++++ linux-2.6.24-rc3/fs/inode.c	2007-12-03 16:03:37.000000000 -0800
+@@ -1243,23 +1243,6 @@ void touch_atime(struct vfsmount *mnt, s
+ EXPORT_SYMBOL(touch_atime);
+ 
+ /**
+- *     inode_inc_iversion      -       increments i_version
+- *     @inode: inode that need to be updated
+- *
+- *     Every time the inode is modified, the i_version field
+- *     will be incremented.
+- *     The filesystem has to be mounted with i_version flag
+- *
+- */
+-
+-void inode_inc_iversion(struct inode *inode)
+-{
+-	spin_lock(&inode->i_lock);
+-	inode->i_version++;
+-	spin_unlock(&inode->i_lock);
+-}
+-
+-/**
+  *	file_update_time	-	update mtime and ctime time
+  *	@file: file accessed
+  *
+Index: linux-2.6.24-rc3/include/linux/fs.h
+===================================================================
+--- linux-2.6.24-rc3.orig/include/linux/fs.h	2007-11-30 18:33:13.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/fs.h	2007-12-03 16:03:38.000000000 -0800
+@@ -1396,7 +1396,21 @@ static inline void inode_dec_link_count(
+ 	mark_inode_dirty(inode);
+ }
+ 
+-extern void inode_inc_iversion(struct inode *inode);
++/**
++ * inode_inc_iversion - increments i_version
++ * @inode: inode that need to be updated
++ *
++ * Every time the inode is modified, the i_version field will be incremented.
++ * The filesystem has to be mounted with i_version flag
++ */
++
++static inline void inode_inc_iversion(struct inode *inode)
++{
++       spin_lock(&inode->i_lock);
++       inode->i_version++;
++       spin_unlock(&inode->i_lock);
++}
++
+ extern void touch_atime(struct vfsmount *mnt, struct dentry *dentry);
+ static inline void file_accessed(struct file *file)
+ {

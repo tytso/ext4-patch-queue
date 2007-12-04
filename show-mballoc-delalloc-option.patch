@@ -13,26 +13,23 @@ Acked-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
 
- fs/ext4/super.c |    6 ++++++
- 1 files changed, 6 insertions(+), 0 deletions(-)
+ fs/ext4/super.c |    5 +++++
+ 1 file changed, 5 insertions(+)
 
 
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 73f28ea..f0263c7 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -733,8 +733,14 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
- 		seq_puts(seq, ",barrier=1");
- 	if (test_opt(sb, NOBH))
- 		seq_puts(seq, ",nobh");
-+
-+	/* extents,mballoc and delalloc are enabled by default */
- 	if (!test_opt(sb, EXTENTS))
+Index: linux-2.6.24-rc3/fs/ext4/super.c
+===================================================================
+--- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-12-03 16:03:49.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/super.c	2007-12-03 16:05:45.000000000 -0800
+@@ -737,6 +737,11 @@ static int ext4_show_options(struct seq_
  		seq_puts(seq, ",noextents");
+ 	if (test_opt(sb, I_VERSION))
+ 		seq_puts(seq, ",i_version");
 +	if (!test_opt(sb, MBALLOC))
 +		seq_puts(seq, ",nomballoc");
 +	if (!test_opt(sb, DELALLOC))
 +		seq_puts(seq, ",nodelalloc");
++
  
  	if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)
  		seq_puts(seq, ",data=journal");
