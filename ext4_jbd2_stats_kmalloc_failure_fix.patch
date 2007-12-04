@@ -1,0 +1,31 @@
+ext4: minor fix in jbd2 stats kmalloc failure case
+From: Eric Sandeen <sandeen@redhat.com>
+
+
+The other instance of this problem was caught, but this one got missed:
+Free the correct pointer on s->stats allocation failure in jbd2_seq_info_open
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+
+Index: linux-2.6.24-rc3/fs/jbd2/journal.c
+===================================================================
+--- linux-2.6.24-rc3.orig/fs/jbd2/journal.c
++++ linux-2.6.24-rc3/fs/jbd2/journal.c
+@@ -850,7 +850,7 @@ static int jbd2_seq_info_open(struct ino
+ 		return -EIO;
+ 	size = sizeof(struct transaction_stats_s);
+ 	s->stats = kmalloc(size, GFP_KERNEL);
+-	if (s == NULL) {
++	if (s->stats == NULL) {
+ 		kfree(s);
+ 		return -EIO;
+ 	}
+
+
+-
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
