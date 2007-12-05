@@ -1,0 +1,26 @@
+ext4: Check for the correct error return from
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+ext4_ext_get_blocks returns negative values on error. We should
+check for  <= 0
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+ fs/ext4/extents.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+Index: linux-2.6.24-rc3/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-12-05 10:27:16.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-12-05 10:27:33.000000000 -0800
+@@ -2459,8 +2459,8 @@ retry:
+ 		ret = ext4_ext_get_blocks(handle, inode, block,
+ 					  max_blocks, &map_bh,
+ 					  EXT4_CREATE_UNINITIALIZED_EXT, 0);
+-		WARN_ON(!ret);
+-		if (!ret) {
++		WARN_ON(ret <= 0);
++		if (ret <= 0) {
+ 			ext4_error(inode->i_sb, "ext4_fallocate",
+ 				   "ext4_ext_get_blocks returned 0! inode#%lu"
+ 				   ", block=%u, max_blocks=%lu",

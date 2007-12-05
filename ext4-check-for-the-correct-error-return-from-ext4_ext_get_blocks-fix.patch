@@ -1,0 +1,28 @@
+Subject: ext4-check-for-the-correct-error-return-from-ext4_ext_get_blocks-fix
+From: Andrew Morton <akpm@linux-foundation.org>
+
+Cc: <linux-ext4@vger.kernel.org>
+Cc: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+
+ fs/ext4/extents.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+Index: linux-2.6.24-rc3/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-12-05 10:27:33.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-12-05 10:30:45.000000000 -0800
+@@ -2462,9 +2462,9 @@ retry:
+ 		WARN_ON(ret <= 0);
+ 		if (ret <= 0) {
+ 			ext4_error(inode->i_sb, "ext4_fallocate",
+-				   "ext4_ext_get_blocks returned 0! inode#%lu"
+-				   ", block=%u, max_blocks=%lu",
+-				   inode->i_ino, block, max_blocks);
++				    "ext4_ext_get_blocks returned error: "
++				    "inode#%lu, block=%lu, max_blocks=%lu",
++				    inode->i_ino, block, max_blocks);
+ 			ret = -EIO;
+ 			ext4_mark_inode_dirty(handle, inode);
+ 			ret2 = ext4_journal_stop(handle);
