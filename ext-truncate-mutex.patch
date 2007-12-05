@@ -21,8 +21,8 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 Index: linux-2.6.24-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-12-03 16:06:15.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-12-03 16:06:32.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-12-05 11:42:11.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-12-05 11:42:33.000000000 -0800
 @@ -2126,6 +2126,10 @@ out:
  	return err ? err : allocated;
  }
@@ -53,8 +53,8 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  
 Index: linux-2.6.24-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-12-03 16:06:30.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-12-03 16:06:32.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-12-05 11:42:30.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-12-05 11:42:33.000000000 -0800
 @@ -245,13 +245,6 @@ static inline void add_chain(Indirect *p
  	p->bh = bh;
  }
@@ -69,7 +69,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  /**
   *	ext4_block_to_path - parse the block number into array of offsets
   *	@inode: inode in question (we are only interested in its superblock)
-@@ -347,10 +340,11 @@ static int ext4_block_to_path(struct ino
+@@ -349,10 +342,11 @@ static int ext4_block_to_path(struct ino
   *		(pointer to last triple returned, *@err == 0)
   *	or when it gets an IO error reading an indirect block
   *		(ditto, *@err == -EIO)
@@ -83,7 +83,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
   */
  static Indirect *ext4_get_branch(struct inode *inode, int depth,
  				 ext4_lblk_t  *offsets,
-@@ -369,9 +363,6 @@ static Indirect *ext4_get_branch(struct 
+@@ -371,9 +365,6 @@ static Indirect *ext4_get_branch(struct 
  		bh = sb_bread(sb, le32_to_cpu(p->key));
  		if (!bh)
  			goto failure;
@@ -93,7 +93,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  		add_chain(++p, bh, (__le32*)bh->b_data + *++offsets);
  		/* Reader: end */
  		if (!p->key)
-@@ -379,10 +370,6 @@ static Indirect *ext4_get_branch(struct 
+@@ -381,10 +372,6 @@ static Indirect *ext4_get_branch(struct 
  	}
  	return NULL;
  
@@ -104,7 +104,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  failure:
  	*err = -EIO;
  no_block:
-@@ -786,6 +773,10 @@ err_out:
+@@ -788,6 +775,10 @@ err_out:
   * return > 0, # of blocks mapped or allocated.
   * return = 0, if plain lookup failed.
   * return < 0, error case.
@@ -115,7 +115,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
   */
  int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
  		ext4_lblk_t iblock, unsigned long maxblocks,
-@@ -824,18 +815,6 @@ int ext4_get_blocks_handle(handle_t *han
+@@ -826,18 +817,6 @@ int ext4_get_blocks_handle(handle_t *han
  		while (count < maxblocks && count <= blocks_to_boundary) {
  			ext4_fsblk_t blk;
  
@@ -134,7 +134,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  			blk = le32_to_cpu(*(chain[depth-1].p + count));
  
  			if (blk == first_block + count)
-@@ -843,44 +822,13 @@ int ext4_get_blocks_handle(handle_t *han
+@@ -845,44 +824,13 @@ int ext4_get_blocks_handle(handle_t *han
  			else
  				break;
  		}
@@ -180,7 +180,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  	/*
  	 * Okay, we need to do block allocation.  Lazily initialize the block
  	 * allocation info here if necessary
-@@ -922,7 +870,6 @@ int ext4_get_blocks_handle(handle_t *han
+@@ -924,7 +872,6 @@ int ext4_get_blocks_handle(handle_t *han
  	*/
  	if (!err && extend_disksize && inode->i_size > ei->i_disksize)
  		ei->i_disksize = inode->i_size;
@@ -190,8 +190,8 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  
 Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-12-03 16:06:30.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-12-03 16:06:32.000000000 -0800
+--- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-12-05 11:42:30.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-12-05 11:42:33.000000000 -0800
 @@ -1118,6 +1118,7 @@ ext4_get_blocks_wrap(handle_t *handle, s
  			int create, int extend_disksize)
  {

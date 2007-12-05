@@ -22,9 +22,9 @@ Signed-off-by: Jean Noel Cordenner <jean-noel.cordenner@bull.net>
 
 Index: linux-2.6.24-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-12-03 16:17:20.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-12-03 16:26:40.000000000 -0800
-@@ -2789,6 +2789,13 @@ void ext4_read_inode(struct inode * inod
+--- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-12-05 11:41:41.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-12-05 11:42:22.000000000 -0800
+@@ -2791,6 +2791,13 @@ void ext4_read_inode(struct inode * inod
  	EXT4_INODE_GET_XTIME(i_atime, inode, raw_inode);
  	EXT4_EINODE_GET_XTIME(i_crtime, ei, raw_inode);
  
@@ -38,7 +38,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  	if (S_ISREG(inode->i_mode)) {
  		inode->i_op = &ext4_file_inode_operations;
  		inode->i_fop = &ext4_file_operations;
-@@ -2971,8 +2978,14 @@ static int ext4_do_update_inode(handle_t
+@@ -2973,8 +2980,14 @@ static int ext4_do_update_inode(handle_t
  	} else for (block = 0; block < EXT4_N_BLOCKS; block++)
  		raw_inode->i_block[block] = ei->i_data[block];
  
@@ -54,7 +54,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  
  	BUFFER_TRACE(bh, "call ext4_journal_dirty_metadata");
  	rc = ext4_journal_dirty_metadata(handle, bh);
-@@ -3188,6 +3201,9 @@ int ext4_mark_iloc_dirty(handle_t *handl
+@@ -3201,6 +3214,9 @@ int ext4_mark_iloc_dirty(handle_t *handl
  {
  	int err = 0;
  
@@ -66,8 +66,8 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  
 Index: linux-2.6.24-rc3/fs/ext4/super.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-12-03 16:18:55.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/super.c	2007-12-03 16:27:43.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-12-05 11:42:19.000000000 -0800
++++ linux-2.6.24-rc3/fs/ext4/super.c	2007-12-05 11:42:22.000000000 -0800
 @@ -732,6 +732,8 @@ static int ext4_show_options(struct seq_
  		seq_puts(seq, ",nobh");
  	if (!test_opt(sb, EXTENTS))
@@ -105,7 +105,7 @@ Index: linux-2.6.24-rc3/fs/ext4/super.c
  		default:
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
-@@ -3157,7 +3164,6 @@ out:
+@@ -3197,7 +3204,6 @@ out:
  		i_size_write(inode, off+len-towrite);
  		EXT4_I(inode)->i_disksize = inode->i_size;
  	}
@@ -115,8 +115,8 @@ Index: linux-2.6.24-rc3/fs/ext4/super.c
  	mutex_unlock(&inode->i_mutex);
 Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-12-03 16:18:55.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-12-03 16:26:40.000000000 -0800
+--- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-12-05 11:42:19.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-12-05 11:42:22.000000000 -0800
 @@ -292,7 +292,7 @@ struct ext4_inode {
  	__le32	i_flags;	/* File flags */
  	union {
@@ -153,8 +153,8 @@ Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
 Index: linux-2.6.24-rc3/fs/inode.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/inode.c	2007-12-03 16:26:48.000000000 -0800
-+++ linux-2.6.24-rc3/fs/inode.c	2007-12-03 16:28:03.000000000 -0800
+--- linux-2.6.24-rc3.orig/fs/inode.c	2007-12-05 11:42:21.000000000 -0800
++++ linux-2.6.24-rc3/fs/inode.c	2007-12-05 11:42:22.000000000 -0800
 @@ -1243,23 +1243,6 @@ void touch_atime(struct vfsmount *mnt, s
  EXPORT_SYMBOL(touch_atime);
  
@@ -181,8 +181,8 @@ Index: linux-2.6.24-rc3/fs/inode.c
   *
 Index: linux-2.6.24-rc3/include/linux/fs.h
 ===================================================================
---- linux-2.6.24-rc3.orig/include/linux/fs.h	2007-12-03 16:26:48.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/fs.h	2007-12-03 16:28:03.000000000 -0800
+--- linux-2.6.24-rc3.orig/include/linux/fs.h	2007-12-05 11:42:21.000000000 -0800
++++ linux-2.6.24-rc3/include/linux/fs.h	2007-12-05 11:42:22.000000000 -0800
 @@ -1396,7 +1396,21 @@ static inline void inode_dec_link_count(
  	mark_inode_dirty(inode);
  }
