@@ -1,4 +1,5 @@
 ext4: store maxbytes for bitmapped  files and return EFBIG as appropriate
+
 From: Eric Sandeen <sandeen@redhat.com>
 
 Calculate & store the max offset for bitmapped files, and
@@ -6,46 +7,33 @@ catch too-large seeks, truncates, and writes in ext4, shortening
 or rejecting as appropriate.
 
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
-
 ---
 
----
  fs/ext4/file.c             |   19 ++++++++++++++++++-
  fs/ext4/inode.c            |   15 ++++++++++++++-
  fs/ext4/super.c            |    1 +
  include/linux/ext4_fs_sb.h |    1 +
  4 files changed, 34 insertions(+), 2 deletions(-)
 
-Index: linux-2.6.24-rc3/fs/ext4/super.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-12-05 11:41:21.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/super.c	2007-12-05 11:41:41.000000000 -0800
-@@ -1922,6 +1922,7 @@ static int ext4_fill_super (struct super
- 		}
- 	}
- 
-+	sbi->s_bitmap_maxbytes = ext4_max_bitmap_size(sb->s_blocksize_bits);
- 	sb->s_maxbytes = ext4_max_size(sb->s_blocksize_bits);
- 
- 	if (le32_to_cpu(es->s_rev_level) == EXT4_GOOD_OLD_REV) {
-Index: linux-2.6.24-rc3/fs/ext4/file.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/file.c	2007-11-16 21:16:36.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/file.c	2007-12-05 11:41:41.000000000 -0800
-@@ -56,8 +56,25 @@ ext4_file_write(struct kiocb *iocb, cons
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 1a81cd6..a6b2aa1 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -56,8 +56,25 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  	ssize_t ret;
  	int err;
  
 -	ret = generic_file_aio_write(iocb, iov, nr_segs, pos);
 +	/*
-+ 	 * If we have encountered a bitmap-format file, the size limit
++	 * If we have encountered a bitmap-format file, the size limit
 +	 * is smaller than s_maxbytes, which is for extent-mapped files.
 +	 */
- 
++
 +	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL)) {
 +		struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
 +		size_t length = iov_length(iov, nr_segs);
-+
+ 
 +		if (pos > sbi->s_bitmap_maxbytes)
 +			return -EFBIG;
 +
@@ -59,11 +47,11 @@ Index: linux-2.6.24-rc3/fs/ext4/file.c
  	/*
  	 * Skip flushing if there was an error, or if nothing was written.
  	 */
-Index: linux-2.6.24-rc3/fs/ext4/inode.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-12-05 11:33:25.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-12-05 11:41:41.000000000 -0800
-@@ -314,7 +314,9 @@ static int ext4_block_to_path(struct ino
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 7d61830..3856e3e 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -314,7 +314,9 @@ static int ext4_block_to_path(struct inode *inode,
  		offsets[n++] = i_block & (ptrs - 1);
  		final = ptrs;
  	} else {
@@ -74,7 +62,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  	}
  	if (boundary)
  		*boundary = final - 1 - (i_block & (ptrs - 1));
-@@ -3092,6 +3094,17 @@ int ext4_setattr(struct dentry *dentry, 
+@@ -3092,6 +3094,17 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
  		ext4_journal_stop(handle);
  	}
  
@@ -92,10 +80,22 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  	if (S_ISREG(inode->i_mode) &&
  	    attr->ia_valid & ATTR_SIZE && attr->ia_size < inode->i_size) {
  		handle_t *handle;
-Index: linux-2.6.24-rc3/include/linux/ext4_fs_sb.h
-===================================================================
---- linux-2.6.24-rc3.orig/include/linux/ext4_fs_sb.h	2007-12-05 11:33:20.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/ext4_fs_sb.h	2007-12-05 11:41:41.000000000 -0800
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index d13a3ce..d798041 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1922,6 +1922,7 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
+ 		}
+ 	}
+ 
++	sbi->s_bitmap_maxbytes = ext4_max_bitmap_size(sb->s_blocksize_bits);
+ 	sb->s_maxbytes = ext4_max_size(sb->s_blocksize_bits);
+ 
+ 	if (le32_to_cpu(es->s_rev_level) == EXT4_GOOD_OLD_REV) {
+diff --git a/include/linux/ext4_fs_sb.h b/include/linux/ext4_fs_sb.h
+index f15821c..38a47ec 100644
+--- a/include/linux/ext4_fs_sb.h
++++ b/include/linux/ext4_fs_sb.h
 @@ -38,6 +38,7 @@ struct ext4_sb_info {
  	ext4_group_t s_groups_count;	/* Number of groups in the fs */
  	unsigned long s_overhead_last;  /* Last calculated overhead */

@@ -1,4 +1,5 @@
 ext4 extents: remove unneeded casts
+
 From: Eric Sandeen <sandeen@redhat.com>
 
 There are many casts in extents.c which are not needed,
@@ -7,18 +8,17 @@ are being promoted for no particular reason in printk's.
 
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
-
 ---
 
----
  fs/ext4/extents.c |   51 +++++++++++++++++++++++----------------------------
- 1 file changed, 23 insertions(+), 28 deletions(-)
+ 1 files changed, 23 insertions(+), 28 deletions(-)
 
-Index: linux-2.6.24-rc3/fs/ext4/extents.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/extents.c	2007-11-30 18:25:03.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/extents.c	2007-11-30 18:30:31.000000000 -0800
-@@ -374,7 +374,7 @@ ext4_ext_binsearch_idx(struct inode *ino
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index b4ff8b9..2fbf5cc 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -374,7 +374,7 @@ ext4_ext_binsearch_idx(struct inode *inode,
  	struct ext4_extent_idx *r, *l, *m;
  
  
@@ -36,7 +36,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  
  	l = EXT_FIRST_EXTENT(eh) + 1;
  	r = EXT_LAST_EXTENT(eh);
-@@ -766,7 +766,7 @@ static int ext4_ext_split(handle_t *hand
+@@ -766,7 +766,7 @@ static int ext4_ext_split(handle_t *handle, struct inode *inode,
  	while (k--) {
  		oldblock = newblock;
  		newblock = ablocks[--a];
@@ -45,7 +45,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  		if (!bh) {
  			err = -EIO;
  			goto cleanup;
-@@ -786,9 +786,8 @@ static int ext4_ext_split(handle_t *hand
+@@ -786,9 +786,8 @@ static int ext4_ext_split(handle_t *handle, struct inode *inode,
  		fidx->ei_block = border;
  		ext4_idx_store_pblock(fidx, oldblock);
  
@@ -66,7 +66,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  				    path);
  		if (IS_ERR(path))
  			err = PTR_ERR(path);
-@@ -1475,10 +1474,10 @@ ext4_ext_put_gap_in_cache(struct inode *
+@@ -1475,10 +1474,10 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
  	} else if (block < le32_to_cpu(ex->ee_block)) {
  		lblock = block;
  		len = le32_to_cpu(ex->ee_block) - block;
@@ -81,7 +81,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  	} else if (block >= le32_to_cpu(ex->ee_block)
  			+ ext4_ext_get_actual_len(ex)) {
  		ext4_lblk_t next;
-@@ -1486,10 +1485,10 @@ ext4_ext_put_gap_in_cache(struct inode *
+@@ -1486,10 +1485,10 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
  			+ ext4_ext_get_actual_len(ex);
  
  		next = ext4_ext_next_allocated_block(path);
@@ -96,7 +96,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  		BUG_ON(next == lblock);
  		len = next - lblock;
  	} else {
-@@ -1497,7 +1496,7 @@ ext4_ext_put_gap_in_cache(struct inode *
+@@ -1497,7 +1496,7 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
  		BUG();
  	}
  
@@ -105,7 +105,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  	ext4_ext_put_in_cache(inode, lblock, len, 0, EXT4_EXT_CACHE_GAP);
  }
  
-@@ -1519,11 +1518,9 @@ ext4_ext_in_cache(struct inode *inode, e
+@@ -1519,11 +1518,9 @@ ext4_ext_in_cache(struct inode *inode, ext4_lblk_t block,
  		ex->ee_block = cpu_to_le32(cex->ec_block);
  		ext4_ext_store_pblock(ex, cex->ec_start);
  		ex->ee_len = cpu_to_le16(cex->ec_len);
@@ -120,7 +120,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  		return cex->ec_type;
  	}
  
-@@ -2142,9 +2139,8 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2142,9 +2139,8 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  	unsigned long allocated = 0;
  
  	__clear_bit(BH_New, &bh_result->b_state);
@@ -132,7 +132,7 @@ Index: linux-2.6.24-rc3/fs/ext4/extents.c
  	mutex_lock(&EXT4_I(inode)->truncate_mutex);
  
  	/* check in cache */
-@@ -2207,7 +2203,7 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2207,7 +2203,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  			newblock = iblock - ee_block + ee_start;
  			/* number of remaining blocks in the extent */
  			allocated = ee_len - (iblock - ee_block);

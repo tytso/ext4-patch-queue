@@ -8,14 +8,14 @@ value.
 Signed-off-by: Avantika Mathur <mathur@us.ibm.com>
 ---
 
- fs/ext4/ialloc.c |  101 ++++++++++++++++++++++++++++---------------------------
- 1 file changed, 53 insertions(+), 48 deletions(-)
+ fs/ext4/ialloc.c |  101 ++++++++++++++++++++++++++++--------------------------
+ 1 files changed, 53 insertions(+), 48 deletions(-)
 
 
-Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
-===================================================================
---- linux-2.6.24-rc1.orig/fs/ext4/ialloc.c	2007-11-02 17:50:10.000000000 -0700
-+++ linux-2.6.24-rc1/fs/ext4/ialloc.c	2007-11-02 17:50:12.000000000 -0700
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 64dea86..7b5cfa6 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
 @@ -260,12 +260,14 @@ error_return:
   * For other inodes, search forward from the parent directory\'s block
   * group to find a free inode.
@@ -33,7 +33,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  
  	freei = percpu_counter_read_positive(&EXT4_SB(sb)->s_freeinodes_counter);
  	avefreei = freei / ngroups;
-@@ -279,11 +281,12 @@ static ext4_group_t find_group_dir(struc
+@@ -279,11 +281,12 @@ static ext4_group_t find_group_dir(struct super_block *sb, struct inode *parent)
  		if (!best_desc ||
  		    (le16_to_cpu(desc->bg_free_blocks_count) >
  		     le16_to_cpu(best_desc->bg_free_blocks_count))) {
@@ -48,7 +48,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  }
  
  /*
-@@ -314,8 +317,8 @@ static ext4_group_t find_group_dir(struc
+@@ -314,8 +317,8 @@ static ext4_group_t find_group_dir(struct super_block *sb, struct inode *parent)
  #define INODE_COST 64
  #define BLOCK_COST 256
  
@@ -59,7 +59,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  {
  	ext4_group_t parent_group = EXT4_I(parent)->i_block_group;
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
-@@ -328,7 +331,7 @@ static ext4_group_t find_group_orlov(str
+@@ -328,7 +331,7 @@ static ext4_group_t find_group_orlov(struct super_block *sb,
  	unsigned int ndirs;
  	int max_debt, max_dirs, min_inodes;
  	ext4_grpblk_t min_blocks;
@@ -68,7 +68,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  	struct ext4_group_desc *desc;
  
  	freei = percpu_counter_read_positive(&sbi->s_freeinodes_counter);
-@@ -341,13 +344,14 @@ static ext4_group_t find_group_orlov(str
+@@ -341,13 +344,14 @@ static ext4_group_t find_group_orlov(struct super_block *sb,
  	if ((parent == sb->s_root->d_inode) ||
  	    (EXT4_I(parent)->i_flags & EXT4_TOPDIR_FL)) {
  		int best_ndir = inodes_per_group;
@@ -88,7 +88,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  			if (!desc || !desc->bg_free_inodes_count)
  				continue;
  			if (le16_to_cpu(desc->bg_used_dirs_count) >= best_ndir)
-@@ -356,11 +360,12 @@ static ext4_group_t find_group_orlov(str
+@@ -356,11 +360,12 @@ static ext4_group_t find_group_orlov(struct super_block *sb,
  				continue;
  			if (le16_to_cpu(desc->bg_free_blocks_count) < avefreeb)
  				continue;
@@ -104,7 +104,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  		goto fallback;
  	}
  
-@@ -381,8 +386,8 @@ static ext4_group_t find_group_orlov(str
+@@ -381,8 +386,8 @@ static ext4_group_t find_group_orlov(struct super_block *sb,
  		max_debt = 1;
  
  	for (i = 0; i < ngroups; i++) {
@@ -115,7 +115,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  		if (!desc || !desc->bg_free_inodes_count)
  			continue;
  		if (le16_to_cpu(desc->bg_used_dirs_count) >= max_dirs)
-@@ -391,17 +396,16 @@ static ext4_group_t find_group_orlov(str
+@@ -391,17 +396,16 @@ static ext4_group_t find_group_orlov(struct super_block *sb,
  			continue;
  		if (le16_to_cpu(desc->bg_free_blocks_count) < min_blocks)
  			continue;
@@ -143,7 +143,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  	return -1;
  }
  
--static ext4_group_t find_group_other(struct super_block *sb, 
+-static ext4_group_t find_group_other(struct super_block *sb,
 -					struct inode *parent)
 +static int find_group_other(struct super_block *sb, struct inode *parent,
 +				ext4_group_t *group)
@@ -168,7 +168,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  
  	/*
  	 * We're going to place this inode in a different blockgroup from its
-@@ -442,33 +446,33 @@ static ext4_group_t find_group_other(str
+@@ -442,33 +446,33 @@ static ext4_group_t find_group_other(struct super_block *sb,
  	 *
  	 * So add our directory's i_ino into the starting point for the hash.
  	 */
@@ -213,7 +213,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  	}
  
  	return -1;
-@@ -489,16 +493,17 @@ struct inode *ext4_new_inode(handle_t *h
+@@ -489,16 +493,17 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode * dir, int mode)
  	struct super_block *sb;
  	struct buffer_head *bitmap_bh = NULL;
  	struct buffer_head *bh2;
@@ -234,7 +234,7 @@ Index: linux-2.6.24-rc1/fs/ext4/ialloc.c
  
  	/* Cannot create files in a deleted directory */
  	if (!dir || !dir->i_nlink)
-@@ -514,14 +519,14 @@ struct inode *ext4_new_inode(handle_t *h
+@@ -514,14 +519,14 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode * dir, int mode)
  	es = sbi->s_es;
  	if (S_ISDIR(mode)) {
  		if (test_opt (sb, OLDALLOC))

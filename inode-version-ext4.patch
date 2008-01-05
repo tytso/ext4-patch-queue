@@ -14,6 +14,7 @@ Signed-off-by: Kalpak Shah <kalpak@clusterfs.com>
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Jean Noel Cordenner <jean-noel.cordenner@bull.net>
 ---
+
  fs/ext4/inode.c         |   18 +++++++++++++++++-
  fs/ext4/super.c         |   10 ++++++++--
  fs/inode.c              |   17 -----------------
@@ -21,11 +22,12 @@ Signed-off-by: Jean Noel Cordenner <jean-noel.cordenner@bull.net>
  include/linux/fs.h      |   16 +++++++++++++++-
  5 files changed, 45 insertions(+), 22 deletions(-)
 
-Index: linux-2.6.24-rc3/fs/ext4/inode.c
+
+Index: linux-2.6.24-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/inode.c	2007-12-05 11:41:41.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/inode.c	2007-12-05 11:42:22.000000000 -0800
-@@ -2791,6 +2791,13 @@ void ext4_read_inode(struct inode * inod
+--- linux-2.6.24-rc6.orig/fs/ext4/inode.c	2008-01-04 17:26:13.000000000 -0800
++++ linux-2.6.24-rc6/fs/ext4/inode.c	2008-01-04 17:26:36.000000000 -0800
+@@ -2780,6 +2780,13 @@ void ext4_read_inode(struct inode * inod
  	EXT4_INODE_GET_XTIME(i_atime, inode, raw_inode);
  	EXT4_EINODE_GET_XTIME(i_crtime, ei, raw_inode);
  
@@ -39,7 +41,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  	if (S_ISREG(inode->i_mode)) {
  		inode->i_op = &ext4_file_inode_operations;
  		inode->i_fop = &ext4_file_operations;
-@@ -2973,8 +2980,14 @@ static int ext4_do_update_inode(handle_t
+@@ -2962,8 +2969,14 @@ static int ext4_do_update_inode(handle_t
  	} else for (block = 0; block < EXT4_N_BLOCKS; block++)
  		raw_inode->i_block[block] = ei->i_data[block];
  
@@ -55,7 +57,7 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  
  	BUFFER_TRACE(bh, "call ext4_journal_dirty_metadata");
  	rc = ext4_journal_dirty_metadata(handle, bh);
-@@ -3201,6 +3214,9 @@ int ext4_mark_iloc_dirty(handle_t *handl
+@@ -3190,6 +3203,9 @@ int ext4_mark_iloc_dirty(handle_t *handl
  {
  	int err = 0;
  
@@ -65,10 +67,10 @@ Index: linux-2.6.24-rc3/fs/ext4/inode.c
  	/* the do_update_inode consumes one bh->b_count */
  	get_bh(iloc->bh);
  
-Index: linux-2.6.24-rc3/fs/ext4/super.c
+Index: linux-2.6.24-rc6/fs/ext4/super.c
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-12-05 11:42:19.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/super.c	2007-12-05 11:42:22.000000000 -0800
+--- linux-2.6.24-rc6.orig/fs/ext4/super.c	2008-01-04 17:26:33.000000000 -0800
++++ linux-2.6.24-rc6/fs/ext4/super.c	2008-01-04 17:26:36.000000000 -0800
 @@ -732,6 +732,8 @@ static int ext4_show_options(struct seq_
  		seq_puts(seq, ",nobh");
  	if (!test_opt(sb, EXTENTS))
@@ -114,10 +116,38 @@ Index: linux-2.6.24-rc3/fs/ext4/super.c
  	inode->i_mtime = inode->i_ctime = CURRENT_TIME;
  	ext4_mark_inode_dirty(handle, inode);
  	mutex_unlock(&inode->i_mutex);
-Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
+Index: linux-2.6.24-rc6/fs/inode.c
 ===================================================================
---- linux-2.6.24-rc3.orig/include/linux/ext4_fs.h	2007-12-05 11:42:19.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/ext4_fs.h	2007-12-05 11:42:22.000000000 -0800
+--- linux-2.6.24-rc6.orig/fs/inode.c	2008-01-04 17:26:35.000000000 -0800
++++ linux-2.6.24-rc6/fs/inode.c	2008-01-04 17:26:36.000000000 -0800
+@@ -1243,23 +1243,6 @@ void touch_atime(struct vfsmount *mnt, s
+ EXPORT_SYMBOL(touch_atime);
+ 
+ /**
+- *     inode_inc_iversion      -       increments i_version
+- *     @inode: inode that need to be updated
+- *
+- *     Every time the inode is modified, the i_version field
+- *     will be incremented.
+- *     The filesystem has to be mounted with i_version flag
+- *
+- */
+-
+-void inode_inc_iversion(struct inode *inode)
+-{
+-	spin_lock(&inode->i_lock);
+-	inode->i_version++;
+-	spin_unlock(&inode->i_lock);
+-}
+-
+-/**
+  *	file_update_time	-	update mtime and ctime time
+  *	@file: file accessed
+  *
+Index: linux-2.6.24-rc6/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.24-rc6.orig/include/linux/ext4_fs.h	2008-01-04 17:26:33.000000000 -0800
++++ linux-2.6.24-rc6/include/linux/ext4_fs.h	2008-01-04 17:26:36.000000000 -0800
 @@ -292,7 +292,7 @@ struct ext4_inode {
  	__le32	i_flags;	/* File flags */
  	union {
@@ -152,38 +182,10 @@ Index: linux-2.6.24-rc3/include/linux/ext4_fs.h
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-Index: linux-2.6.24-rc3/fs/inode.c
+Index: linux-2.6.24-rc6/include/linux/fs.h
 ===================================================================
---- linux-2.6.24-rc3.orig/fs/inode.c	2007-12-05 11:42:21.000000000 -0800
-+++ linux-2.6.24-rc3/fs/inode.c	2007-12-05 11:42:22.000000000 -0800
-@@ -1243,23 +1243,6 @@ void touch_atime(struct vfsmount *mnt, s
- EXPORT_SYMBOL(touch_atime);
- 
- /**
-- *     inode_inc_iversion      -       increments i_version
-- *     @inode: inode that need to be updated
-- *
-- *     Every time the inode is modified, the i_version field
-- *     will be incremented.
-- *     The filesystem has to be mounted with i_version flag
-- *
-- */
--
--void inode_inc_iversion(struct inode *inode)
--{
--	spin_lock(&inode->i_lock);
--	inode->i_version++;
--	spin_unlock(&inode->i_lock);
--}
--
--/**
-  *	file_update_time	-	update mtime and ctime time
-  *	@file: file accessed
-  *
-Index: linux-2.6.24-rc3/include/linux/fs.h
-===================================================================
---- linux-2.6.24-rc3.orig/include/linux/fs.h	2007-12-05 11:42:21.000000000 -0800
-+++ linux-2.6.24-rc3/include/linux/fs.h	2007-12-05 11:42:22.000000000 -0800
+--- linux-2.6.24-rc6.orig/include/linux/fs.h	2008-01-04 17:26:35.000000000 -0800
++++ linux-2.6.24-rc6/include/linux/fs.h	2008-01-04 17:26:36.000000000 -0800
 @@ -1396,7 +1396,21 @@ static inline void inode_dec_link_count(
  	mark_inode_dirty(inode);
  }

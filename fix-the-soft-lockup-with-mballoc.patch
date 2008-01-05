@@ -1,0 +1,77 @@
+ext4: Fix the soft lockup with multi block allocator.
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+With the multi block allocator when we don't have prealloc space we discard
+the existing preallocaltion data and try to rebuild the buddy cache. While
+discarding the loop through the group specific prealloc list. If we find any
+particular prealloc space being used we mark the space busy. If we are not
+able to find enough free space and if we have any prealloc space busy we loop
+back again. With non preempted kernel this tight loop resulted in watchdog
+timer triggering soft lockup warning.
+
+
+When we are allocation the block we search the prealloc list and mark the
+prealloc space used via incrementing pa_count value. One after successfully
+allocating the block we need to update the block bitmap and this could
+actually involved a disk io if the bitmap need to read from the disk. This
+actually cause prealloc space to be marked used for quiet a long time. This
+in turn results in the discard logic going on tight loop resulting in watchdog
+timer triggering soft lockup warning.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Acked-by: Alex Tomas <alex.tomas@sun.com>
+---
+
+ fs/ext4/mballoc.c |   16 +++++++---------
+ 1 files changed, 7 insertions(+), 9 deletions(-)
+
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 79a4a06..2ea88a5 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -3729,7 +3729,7 @@ static int ext4_mb_discard_group_preallocations(struct super_block *sb,
+ 	struct list_head list;
+ 	struct ext4_buddy e4b;
+ 	int err;
+-	int busy;
++	int busy = 0;
+ 	int free = 0;
+ 
+ 	mb_debug("discard preallocation for group %lu\n", group);
+@@ -3754,20 +3754,12 @@ static int ext4_mb_discard_group_preallocations(struct super_block *sb,
+ 	INIT_LIST_HEAD(&list);
+ 
+ repeat:
+-	busy = 0;
+ 	ext4_lock_group(sb, group);
+ 	list_for_each_entry_safe(pa, tmp,
+ 				&grp->bb_prealloc_list, pa_group_list) {
+ 		spin_lock(&pa->pa_lock);
+ 		if (atomic_read(&pa->pa_count)) {
+ 			spin_unlock(&pa->pa_lock);
+-			/* FIXME!!
+-			 * It is quiet natural to have the pa being
+-			 * used on other cpus when we are trying free
+-			 * space
+-			printk(KERN_ERR "uh! busy PA\n");
+-			dump_stack();
+-			*/
+ 			busy = 1;
+ 			continue;
+ 		}
+@@ -3790,7 +3782,13 @@ repeat:
+ 
+ 	/* if we still need more blocks and some PAs were used, try again */
+ 	if (free < needed && busy) {
++		busy = 0;
+ 		ext4_unlock_group(sb, group);
++		/*
++		 * We see this quiet rare. But if a particular workload is
++		 * effected by this we may need to add a waitqueue
++		 */
++		schedule_timeout(HZ);
+ 		goto repeat;
+ 	}
+ 

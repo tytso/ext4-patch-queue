@@ -9,14 +9,21 @@ jbd2_time_diff() should still be moved to a common header file.
 
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
-
 ---
 
-Index: linux-2.6.24-rc3/fs/jbd2/checkpoint.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/jbd2/checkpoint.c
-+++ linux-2.6.24-rc3/fs/jbd2/checkpoint.c
-@@ -326,7 +326,7 @@ int jbd2_log_do_checkpoint(journal_t *jo
+ fs/jbd2/checkpoint.c  |    2 +-
+ fs/jbd2/commit.c      |    8 ++++----
+ fs/jbd2/journal.c     |   30 +++++++++++++++++-------------
+ fs/jbd2/transaction.c |    4 ++--
+ include/linux/jbd2.h  |   15 ++++++---------
+ 5 files changed, 30 insertions(+), 29 deletions(-)
+
+
+diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
+index 4fa36ef..1b7f282 100644
+--- a/fs/jbd2/checkpoint.c
++++ b/fs/jbd2/checkpoint.c
+@@ -326,7 +326,7 @@ int jbd2_log_do_checkpoint(journal_t *journal)
  		goto out;
  	transaction = journal->j_checkpoint_transactions;
  	if (transaction->t_chp_stats.cs_chp_time == 0)
@@ -25,100 +32,51 @@ Index: linux-2.6.24-rc3/fs/jbd2/checkpoint.c
  	this_tid = transaction->t_tid;
  restart:
  	/*
-Index: linux-2.6.24-rc3/fs/jbd2/commit.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/jbd2/commit.c
-+++ linux-2.6.24-rc3/fs/jbd2/commit.c
-@@ -340,7 +340,7 @@ void jbd2_journal_commit_transaction(jou
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index f4e6a05..725246b 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -340,7 +340,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	commit_transaction->t_state = T_LOCKED;
-
+ 
  	stats.ts_wait = commit_transaction->t_max_wait;
 -	stats.ts_locked = CURRENT_MSECS;
 +	stats.ts_locked = jiffies;
  	stats.ts_running = jbd2_time_diff(commit_transaction->t_start,
  						stats.ts_locked);
-
-@@ -414,7 +414,7 @@ void jbd2_journal_commit_transaction(jou
+ 
+@@ -414,7 +414,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	 */
  	jbd2_journal_switch_revoke_table(journal);
-
+ 
 -	stats.ts_flushing = CURRENT_MSECS;
 +	stats.ts_flushing = jiffies;
  	stats.ts_locked = jbd2_time_diff(stats.ts_locked, stats.ts_flushing);
-
+ 
  	commit_transaction->t_state = T_FLUSH;
-@@ -508,7 +508,7 @@ void jbd2_journal_commit_transaction(jou
+@@ -508,7 +508,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	 */
  	commit_transaction->t_state = T_COMMIT;
-
+ 
 -	stats.ts_logging = CURRENT_MSECS;
 +	stats.ts_logging = jiffies;
  	stats.ts_flushing = jbd2_time_diff(stats.ts_flushing, stats.ts_logging);
  	stats.ts_blocks = commit_transaction->t_outstanding_credits;
  	stats.ts_blocks_logged = 0;
 @@ -907,7 +907,7 @@ restart_loop:
-
+ 
  	J_ASSERT(commit_transaction->t_state == T_COMMIT);
-
+ 
 -	commit_transaction->t_start = CURRENT_MSECS;
 +	commit_transaction->t_start = jiffies;
  	stats.ts_logging = jbd2_time_diff(stats.ts_logging,
  						commit_transaction->t_start);
-
-Index: linux-2.6.24-rc3/fs/jbd2/transaction.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/jbd2/transaction.c
-+++ linux-2.6.24-rc3/fs/jbd2/transaction.c
-@@ -60,7 +60,7 @@ jbd2_get_transaction(journal_t *journal,
- 	J_ASSERT(journal->j_running_transaction == NULL);
- 	journal->j_running_transaction = transaction;
- 	transaction->t_max_wait = 0;
--	transaction->t_start = CURRENT_MSECS;
-+	transaction->t_start = jiffies;
-
- 	return transaction;
- }
-@@ -87,7 +87,7 @@ static int start_this_handle(journal_t *
- 	int nblocks = handle->h_buffer_credits;
- 	transaction_t *new_transaction = NULL;
- 	int ret = 0;
--	unsigned long ts = CURRENT_MSECS;
-+	unsigned long ts = jiffies;
-
- 	if (nblocks > journal->j_max_transaction_buffers) {
- 		printk(KERN_ERR "JBD: %s wants too many credits (%d > %d)\n",
-Index: linux-2.6.24-rc3/include/linux/jbd2.h
-===================================================================
---- linux-2.6.24-rc3.orig/include/linux/jbd2.h
-+++ linux-2.6.24-rc3/include/linux/jbd2.h
-@@ -626,16 +626,13 @@ struct transaction_stats_s
- #define ts_written		u.chp.cs_written
- #define ts_dropped		u.chp.cs_dropped
-
--#define CURRENT_MSECS		(jiffies_to_msecs(jiffies))
--
--static inline unsigned int
--jbd2_time_diff(unsigned int start, unsigned int end)
-+static inline unsigned long
-+jbd2_time_diff(unsigned long start, unsigned long end)
- {
--	if (unlikely(start > end))
--		end = end + (~0UL - start);
--	else
--		end -= start;
--	return end;
-+	if (end >= start)
-+		return end - start;
-+
-+	return end + (MAX_JIFFY_OFFSET - start);
- }
-
- /**
-Index: linux-2.6.24-rc3/fs/jbd2/journal.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/jbd2/journal.c
-+++ linux-2.6.24-rc3/fs/jbd2/journal.c
-@@ -712,15 +712,19 @@ static int jbd2_seq_history_show(struct 
+ 
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index e2eaeff..0a727d1 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -712,15 +712,19 @@ static int jbd2_seq_history_show(struct seq_file *seq, void *v)
  		return 0;
  	}
  	if (ts->ts_type == JBD2_STATS_RUN)
@@ -143,7 +101,7 @@ Index: linux-2.6.24-rc3/fs/jbd2/journal.c
  				ts->ts_written, ts->ts_dropped,
  				ts->ts_forced_to_close);
  	else
-@@ -812,21 +816,21 @@ static int jbd2_seq_info_show(struct seq
+@@ -812,21 +816,21 @@ static int jbd2_seq_info_show(struct seq_file *seq, void *v)
  	if (s->stats->ts_tid == 0)
  		return 0;
  	seq_printf(seq, "average: \n  %lums waiting for transaction\n",
@@ -172,10 +130,53 @@ Index: linux-2.6.24-rc3/fs/jbd2/journal.c
 +		   s->stats->ts_blocks_logged / s->stats->ts_tid);
  	return 0;
  }
-
-
-
+ 
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index c427e73..f30802a 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -60,7 +60,7 @@ jbd2_get_transaction(journal_t *journal, transaction_t *transaction)
+ 	J_ASSERT(journal->j_running_transaction == NULL);
+ 	journal->j_running_transaction = transaction;
+ 	transaction->t_max_wait = 0;
+-	transaction->t_start = CURRENT_MSECS;
++	transaction->t_start = jiffies;
+ 
+ 	return transaction;
+ }
+@@ -87,7 +87,7 @@ static int start_this_handle(journal_t *journal, handle_t *handle)
+ 	int nblocks = handle->h_buffer_credits;
+ 	transaction_t *new_transaction = NULL;
+ 	int ret = 0;
+-	unsigned long ts = CURRENT_MSECS;
++	unsigned long ts = jiffies;
+ 
+ 	if (nblocks > journal->j_max_transaction_buffers) {
+ 		printk(KERN_ERR "JBD: %s wants too many credits (%d > %d)\n",
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 03162d1..3e31ba5 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -626,16 +626,13 @@ struct transaction_stats_s
+ #define ts_written		u.chp.cs_written
+ #define ts_dropped		u.chp.cs_dropped
+ 
+-#define CURRENT_MSECS		(jiffies_to_msecs(jiffies))
 -
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
+-static inline unsigned int
+-jbd2_time_diff(unsigned int start, unsigned int end)
++static inline unsigned long
++jbd2_time_diff(unsigned long start, unsigned long end)
+ {
+-	if (unlikely(start > end))
+-		end = end + (~0UL - start);
+-	else
+-		end -= start;
+-	return end;
++	if (end >= start)
++		return end - start;
++
++	return end + (MAX_JIFFY_OFFSET - start);
+ }
+ 
+ /**

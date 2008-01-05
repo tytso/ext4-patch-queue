@@ -1,0 +1,305 @@
+ext4: Convert truncate_mutex to read write semaphore.
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+We are currently taking the truncate_mutex for every read. This would have
+performance impact on large CPU configuration. Convert the lock to read write
+semaphore and take read lock when we are trying to read the file.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+
+ fs/ext4/balloc.c          |    2 +-
+ fs/ext4/extents.c         |   13 +++++++------
+ fs/ext4/file.c            |    4 ++--
+ fs/ext4/inode.c           |   40 +++++++++++++++++++++++++++++++++-------
+ fs/ext4/ioctl.c           |    4 ++--
+ fs/ext4/super.c           |    2 +-
+ include/linux/ext4_fs.h   |   25 ++++---------------------
+ include/linux/ext4_fs_i.h |    6 +++---
+ 8 files changed, 53 insertions(+), 43 deletions(-)
+
+
+Index: linux-2.6.24-rc6/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.24-rc6.orig/fs/ext4/balloc.c	2008-01-04 17:13:22.000000000 -0800
++++ linux-2.6.24-rc6/fs/ext4/balloc.c	2008-01-04 17:21:14.000000000 -0800
+@@ -526,7 +526,7 @@ static inline int rsv_is_empty(struct ex
+  * when setting the reservation window size through ioctl before the file
+  * is open for write (needs block allocation).
+  *
+- * Needs truncate_mutex protection prior to call this function.
++ * Needs down_write(i_data_sem) protection prior to call this function.
+  */
+ void ext4_init_block_alloc_info(struct inode *inode)
+ {
+Index: linux-2.6.24-rc6/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.24-rc6.orig/fs/ext4/extents.c	2008-01-04 17:16:15.000000000 -0800
++++ linux-2.6.24-rc6/fs/ext4/extents.c	2008-01-04 17:21:14.000000000 -0800
+@@ -1564,7 +1564,7 @@ static int ext4_ext_rm_idx(handle_t *han
+  * This routine returns max. credits that the extent tree can consume.
+  * It should be OK for low-performance paths like ->writepage()
+  * To allow many writing processes to fit into a single transaction,
+- * the caller should calculate credits under truncate_mutex and
++ * the caller should calculate credits under i_data_sem and
+  * pass the actual path.
+  */
+ int ext4_ext_calc_credits_for_insert(struct inode *inode,
+@@ -2128,7 +2128,8 @@ out:
+ 
+ /*
+  * Need to be called with
+- * mutex_lock(&EXT4_I(inode)->truncate_mutex);
++ * down_read(&EXT4_I(inode)->i_data_sem) if not allocating file system block
++ * (ie, create is zero). Otherwise down_write(&EXT4_I(inode)->i_data_sem)
+  */
+ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 			ext4_lblk_t iblock,
+@@ -2347,7 +2348,7 @@ void ext4_ext_truncate(struct inode * in
+ 	if (page)
+ 		ext4_block_truncate_page(handle, page, mapping, inode->i_size);
+ 
+-	mutex_lock(&EXT4_I(inode)->truncate_mutex);
++	down_write(&EXT4_I(inode)->i_data_sem);
+ 	ext4_ext_invalidate_cache(inode);
+ 
+ 	/*
+@@ -2383,7 +2384,7 @@ out_stop:
+ 	if (inode->i_nlink)
+ 		ext4_orphan_del(handle, inode);
+ 
+-	mutex_unlock(&EXT4_I(inode)->truncate_mutex);
++	up_write(&EXT4_I(inode)->i_data_sem);
+ 	ext4_journal_stop(handle);
+ }
+ 
+@@ -2447,7 +2448,7 @@ long ext4_fallocate(struct inode *inode,
+ 	 * modify 1 super block, 1 block bitmap and 1 group descriptor.
+ 	 */
+ 	credits = EXT4_DATA_TRANS_BLOCKS(inode->i_sb) + 3;
+-	mutex_lock(&EXT4_I(inode)->truncate_mutex)
++	down_write((&EXT4_I(inode)->i_data_sem));
+ retry:
+ 	while (ret >= 0 && ret < max_blocks) {
+ 		block = block + ret;
+@@ -2504,7 +2505,7 @@ retry:
+ 	if (ret == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
+ 		goto retry;
+ 
+-	mutex_unlock(&EXT4_I(inode)->truncate_mutex)
++	up_write((&EXT4_I(inode)->i_data_sem));
+ 	/*
+ 	 * Time to update the file size.
+ 	 * Update only when preallocation was requested beyond the file size.
+Index: linux-2.6.24-rc6/fs/ext4/file.c
+===================================================================
+--- linux-2.6.24-rc6.orig/fs/ext4/file.c	2008-01-04 17:13:22.000000000 -0800
++++ linux-2.6.24-rc6/fs/ext4/file.c	2008-01-04 17:16:29.000000000 -0800
+@@ -37,9 +37,9 @@ static int ext4_release_file (struct ino
+ 	if ((filp->f_mode & FMODE_WRITE) &&
+ 			(atomic_read(&inode->i_writecount) == 1))
+ 	{
+-		mutex_lock(&EXT4_I(inode)->truncate_mutex);
++		down_write(&EXT4_I(inode)->i_data_sem);
+ 		ext4_discard_reservation(inode);
+-		mutex_unlock(&EXT4_I(inode)->truncate_mutex);
++		up_write(&EXT4_I(inode)->i_data_sem);
+ 	}
+ 	if (is_dx(inode) && filp->private_data)
+ 		ext4_htree_free_dir_info(filp->private_data);
+Index: linux-2.6.24-rc6/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.24-rc6.orig/fs/ext4/inode.c	2008-01-04 17:16:15.000000000 -0800
++++ linux-2.6.24-rc6/fs/ext4/inode.c	2008-01-04 17:26:02.000000000 -0800
+@@ -307,7 +307,8 @@ static int ext4_block_to_path(struct ino
+ 		offsets[n++] = i_block & (ptrs - 1);
+ 		final = ptrs;
+ 	} else {
+-		ext4_warning(inode->i_sb, "ext4_block_to_path", "block %u > max",
++		ext4_warning(inode->i_sb, "ext4_block_to_path",
++				"block %lu > max",
+ 				i_block + direct_blocks +
+ 				indirect_blocks + double_blocks);
+ 	}
+@@ -344,7 +345,7 @@ static int ext4_block_to_path(struct ino
+  *	the whole chain, all way to the data (returns %NULL, *err == 0).
+  *
+  *      Need to be called with
+- *      mutex_lock(&EXT4_I(inode)->truncate_mutex)
++ *      down_read(&EXT4_I(inode)->i_data_sem)
+  */
+ static Indirect *ext4_get_branch(struct inode *inode, int depth,
+ 				 ext4_lblk_t  *offsets,
+@@ -776,7 +777,8 @@ err_out:
+  *
+  *
+  * Need to be called with
+- * mutex_lock(&EXT4_I(inode)->truncate_mutex)
++ * down_read(&EXT4_I(inode)->i_data_sem) if not allocating file system block
++ * (ie, create is zero). Otherwise down_write(&EXT4_I(inode)->i_data_sem)
+  */
+ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+ 		ext4_lblk_t iblock, unsigned long maxblocks,
+@@ -864,7 +866,7 @@ int ext4_get_blocks_handle(handle_t *han
+ 		err = ext4_splice_branch(handle, inode, iblock,
+ 					partial, indirect_blks, count);
+ 	/*
+-	 * i_disksize growing is protected by truncate_mutex.  Don't forget to
++	 * i_disksize growing is protected by i_data_sem.  Don't forget to
+ 	 * protect it if you're about to implement concurrent
+ 	 * ext4_get_block() -bzzz
+ 	*/
+@@ -894,6 +896,30 @@ out:
+ 
+ #define DIO_CREDITS (EXT4_RESERVE_TRANS_BLOCKS + 32)
+ 
++int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
++			unsigned long max_blocks, struct buffer_head *bh,
++			int create, int extend_disksize)
++{
++	int retval;
++	if (create) {
++		down_write((&EXT4_I(inode)->i_data_sem));
++	} else {
++		down_read((&EXT4_I(inode)->i_data_sem));
++	}
++	if (EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL) {
++		retval =  ext4_ext_get_blocks(handle, inode, block, max_blocks,
++				bh, create, extend_disksize);
++	} else {
++		retval = ext4_get_blocks_handle(handle, inode, block,
++				max_blocks, bh, create, extend_disksize);
++	}
++	if (create) {
++		up_write((&EXT4_I(inode)->i_data_sem));
++	} else {
++		up_read((&EXT4_I(inode)->i_data_sem));
++	}
++	return retval;
++}
+ static int ext4_get_block(struct inode *inode, sector_t iblock,
+ 			struct buffer_head *bh_result, int create)
+ {
+@@ -1398,7 +1424,7 @@ static int jbd2_journal_dirty_data_fn(ha
+  *	ext4_file_write() -> generic_file_write() -> __alloc_pages() -> ...
+  *
+  * Same applies to ext4_get_block().  We will deadlock on various things like
+- * lock_journal and i_truncate_mutex.
++ * lock_journal and i_data_sem
+  *
+  * Setting PF_MEMALLOC here doesn't work - too many internal memory
+  * allocations fail.
+@@ -2324,7 +2350,7 @@ void ext4_truncate(struct inode *inode)
+ 	 * From here we block out all ext4_get_block() callers who want to
+ 	 * modify the block allocation tree.
+ 	 */
+-	mutex_lock(&ei->truncate_mutex);
++	down_write(&ei->i_data_sem);
+ 
+ 	if (n == 1) {		/* direct blocks */
+ 		ext4_free_data(handle, inode, NULL, i_data+offsets[0],
+@@ -2388,7 +2414,7 @@ do_indirects:
+ 
+ 	ext4_discard_reservation(inode);
+ 
+-	mutex_unlock(&ei->truncate_mutex);
++	up_write(&ei->i_data_sem);
+ 	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
+ 	ext4_mark_inode_dirty(handle, inode);
+ 
+Index: linux-2.6.24-rc6/fs/ext4/ioctl.c
+===================================================================
+--- linux-2.6.24-rc6.orig/fs/ext4/ioctl.c	2008-01-04 17:13:22.000000000 -0800
++++ linux-2.6.24-rc6/fs/ext4/ioctl.c	2008-01-04 17:21:19.000000000 -0800
+@@ -199,7 +199,7 @@ flags_err:
+ 		 * need to allocate reservation structure for this inode
+ 		 * before set the window size
+ 		 */
+-		mutex_lock(&ei->truncate_mutex);
++		down_write(&ei->i_data_sem);
+ 		if (!ei->i_block_alloc_info)
+ 			ext4_init_block_alloc_info(inode);
+ 
+@@ -207,7 +207,7 @@ flags_err:
+ 			struct ext4_reserve_window_node *rsv = &ei->i_block_alloc_info->rsv_window_node;
+ 			rsv->rsv_goal_size = rsv_window_size;
+ 		}
+-		mutex_unlock(&ei->truncate_mutex);
++		up_write(&ei->i_data_sem);
+ 		return 0;
+ 	}
+ 	case EXT4_IOC_GROUP_EXTEND: {
+Index: linux-2.6.24-rc6/fs/ext4/super.c
+===================================================================
+--- linux-2.6.24-rc6.orig/fs/ext4/super.c	2008-01-04 17:13:22.000000000 -0800
++++ linux-2.6.24-rc6/fs/ext4/super.c	2008-01-04 17:21:22.000000000 -0800
+@@ -593,7 +593,7 @@ static void init_once(struct kmem_cache 
+ #ifdef CONFIG_EXT4DEV_FS_XATTR
+ 	init_rwsem(&ei->xattr_sem);
+ #endif
+-	mutex_init(&ei->truncate_mutex);
++	init_rwsem(&ei->i_data_sem);
+ 	inode_init_once(&ei->vfs_inode);
+ }
+ 
+Index: linux-2.6.24-rc6/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.24-rc6.orig/include/linux/ext4_fs.h	2008-01-04 17:16:15.000000000 -0800
++++ linux-2.6.24-rc6/include/linux/ext4_fs.h	2008-01-04 17:25:41.000000000 -0800
+@@ -1106,27 +1106,10 @@ extern void ext4_ext_init(struct super_b
+ extern void ext4_ext_release(struct super_block *);
+ extern long ext4_fallocate(struct inode *inode, int mode, loff_t offset,
+ 			  loff_t len);
+-static inline int
+-ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+-			unsigned long max_blocks, struct buffer_head *bh,
+-			int create, int extend_disksize)
+-{
+-	int retval;
+-	mutex_lock(&EXT4_I(inode)->truncate_mutex);
+-	if (EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL) {
+-		retval = ext4_ext_get_blocks(handle, inode,
+-						(ext4_lblk_t)block, max_blocks,
+-						bh, create, extend_disksize);
+-	} else {
+-		retval = ext4_get_blocks_handle(handle, inode,
+-						(ext4_lblk_t)block, max_blocks,
+-						bh, create, extend_disksize);
+-	}
+-	mutex_unlock(&EXT4_I(inode)->truncate_mutex);
+-	return retval;
+-}
+-
+-
++extern int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode,
++			sector_t block, unsigned long max_blocks,
++			struct buffer_head *bh, int create,
++			int extend_disksize);
+ #endif	/* __KERNEL__ */
+ 
+ #endif	/* _LINUX_EXT4_FS_H */
+Index: linux-2.6.24-rc6/include/linux/ext4_fs_i.h
+===================================================================
+--- linux-2.6.24-rc6.orig/include/linux/ext4_fs_i.h	2008-01-04 17:13:22.000000000 -0800
++++ linux-2.6.24-rc6/include/linux/ext4_fs_i.h	2008-01-04 17:21:14.000000000 -0800
+@@ -139,16 +139,16 @@ struct ext4_inode_info {
+ 	__u16 i_extra_isize;
+ 
+ 	/*
+-	 * truncate_mutex is for serialising ext4_truncate() against
++	 * i_data_sem is for serialising ext4_truncate() against
+ 	 * ext4_getblock().  In the 2.4 ext2 design, great chunks of inode's
+ 	 * data tree are chopped off during truncate. We can't do that in
+ 	 * ext4 because whenever we perform intermediate commits during
+ 	 * truncate, the inode and all the metadata blocks *must* be in a
+ 	 * consistent state which allows truncation of the orphans to restart
+ 	 * during recovery.  Hence we must fix the get_block-vs-truncate race
+-	 * by other means, so we have truncate_mutex.
++	 * by other means, so we have i_data_sem.
+ 	 */
+-	struct mutex truncate_mutex;
++	struct rw_semaphore i_data_sem;
+ 	struct inode vfs_inode;
+ 
+ 	unsigned long i_ext_generation;

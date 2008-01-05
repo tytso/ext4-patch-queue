@@ -7,17 +7,22 @@ by akpm on his review.
 
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
-
 ---
 
-Index: linux-2.6.24-rc3/fs/jbd2/commit.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/jbd2/commit.c
-+++ linux-2.6.24-rc3/fs/jbd2/commit.c
-@@ -339,10 +339,10 @@ void jbd2_journal_commit_transaction(jou
+ fs/jbd2/commit.c     |   44 +++++++++++++++++++++++---------------------
+ fs/jbd2/journal.c    |   47 ++++++++++++++++++++++++-----------------------
+ include/linux/jbd2.h |   14 --------------
+ 3 files changed, 47 insertions(+), 58 deletions(-)
+
+
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index 725246b..8749a86 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -339,10 +339,10 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	spin_lock(&journal->j_state_lock);
  	commit_transaction->t_state = T_LOCKED;
-
+ 
 -	stats.ts_wait = commit_transaction->t_max_wait;
 -	stats.ts_locked = jiffies;
 -	stats.ts_running = jbd2_time_diff(commit_transaction->t_start,
@@ -26,25 +31,25 @@ Index: linux-2.6.24-rc3/fs/jbd2/commit.c
 +	stats.u.run.rs_locked = jiffies;
 +	stats.u.run.rs_running = jbd2_time_diff(commit_transaction->t_start,
 +						stats.u.run.rs_locked);
-
+ 
  	spin_lock(&commit_transaction->t_handle_lock);
  	while (commit_transaction->t_updates) {
-@@ -414,8 +414,9 @@ void jbd2_journal_commit_transaction(jou
+@@ -414,8 +414,9 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	 */
  	jbd2_journal_switch_revoke_table(journal);
-
+ 
 -	stats.ts_flushing = jiffies;
 -	stats.ts_locked = jbd2_time_diff(stats.ts_locked, stats.ts_flushing);
 +	stats.u.run.rs_flushing = jiffies;
 +	stats.u.run.rs_locked = jbd2_time_diff(stats.u.run.rs_locked,
 +					       stats.u.run.rs_flushing);
-
+ 
  	commit_transaction->t_state = T_FLUSH;
  	journal->j_committing_transaction = commit_transaction;
-@@ -508,10 +509,11 @@ void jbd2_journal_commit_transaction(jou
+@@ -508,10 +509,11 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	 */
  	commit_transaction->t_state = T_COMMIT;
-
+ 
 -	stats.ts_logging = jiffies;
 -	stats.ts_flushing = jbd2_time_diff(stats.ts_flushing, stats.ts_logging);
 -	stats.ts_blocks = commit_transaction->t_outstanding_credits;
@@ -54,7 +59,7 @@ Index: linux-2.6.24-rc3/fs/jbd2/commit.c
 +						 stats.u.run.rs_logging);
 +	stats.u.run.rs_blocks = commit_transaction->t_outstanding_credits;
 +	stats.u.run.rs_blocks_logged = 0;
-
+ 
  	descriptor = NULL;
  	bufs = 0;
 @@ -661,7 +663,7 @@ start_journal_io:
@@ -63,17 +68,17 @@ Index: linux-2.6.24-rc3/fs/jbd2/commit.c
  			cond_resched();
 -			stats.ts_blocks_logged += bufs;
 +			stats.u.run.rs_blocks_logged += bufs;
-
+ 
  			/* Force a new descriptor to be generated next
                             time round the loop. */
 @@ -908,7 +910,7 @@ restart_loop:
  	J_ASSERT(commit_transaction->t_state == T_COMMIT);
-
+ 
  	commit_transaction->t_start = jiffies;
 -	stats.ts_logging = jbd2_time_diff(stats.ts_logging,
 +	stats.u.run.rs_logging = jbd2_time_diff(stats.u.run.rs_logging,
  						commit_transaction->t_start);
-
+ 
  	/*
 @@ -916,7 +918,7 @@ restart_loop:
  	 */
@@ -105,13 +110,13 @@ Index: linux-2.6.24-rc3/fs/jbd2/commit.c
 +	journal->j_stats.u.run.rs_blocks += stats.u.run.rs_blocks;
 +	journal->j_stats.u.run.rs_blocks_logged += stats.u.run.rs_blocks_logged;
  	spin_unlock(&journal->j_history_lock);
-
+ 
  	commit_transaction->t_state = T_FINISHED;
-Index: linux-2.6.24-rc3/fs/jbd2/journal.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/jbd2/journal.c
-+++ linux-2.6.24-rc3/fs/jbd2/journal.c
-@@ -714,19 +714,20 @@ static int jbd2_seq_history_show(struct 
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 0a727d1..3667c91 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -714,19 +714,20 @@ static int jbd2_seq_history_show(struct seq_file *seq, void *v)
  	if (ts->ts_type == JBD2_STATS_RUN)
  		seq_printf(seq, "%-4s %-5lu %-5u %-5u %-5u %-5u %-5u "
  				"%-6lu %-5lu %-5lu\n", "R", ts->ts_tid,
@@ -142,7 +147,7 @@ Index: linux-2.6.24-rc3/fs/jbd2/journal.c
  	else
  		J_ASSERT(0);
  	return 0;
-@@ -815,22 +816,22 @@ static int jbd2_seq_info_show(struct seq
+@@ -815,22 +816,22 @@ static int jbd2_seq_info_show(struct seq_file *seq, void *v)
  			s->journal->j_max_transaction_buffers);
  	if (s->stats->ts_tid == 0)
  		return 0;
@@ -177,15 +182,15 @@ Index: linux-2.6.24-rc3/fs/jbd2/journal.c
 +	    s->stats->u.run.rs_blocks_logged / s->stats->ts_tid);
  	return 0;
  }
-
-Index: linux-2.6.24-rc3/include/linux/jbd2.h
-===================================================================
---- linux-2.6.24-rc3.orig/include/linux/jbd2.h
-+++ linux-2.6.24-rc3/include/linux/jbd2.h
+ 
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 3e31ba5..a477e8f 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
 @@ -612,20 +612,6 @@ struct transaction_stats_s
  #define JBD2_STATS_RUN		1
  #define JBD2_STATS_CHECKPOINT	2
-
+ 
 -#define ts_wait			u.run.rs_wait
 -#define ts_running		u.run.rs_running
 -#define ts_locked		u.run.rs_locked
@@ -203,9 +208,3 @@ Index: linux-2.6.24-rc3/include/linux/jbd2.h
  static inline unsigned long
  jbd2_time_diff(unsigned long start, unsigned long end)
  {
-
-
--
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html

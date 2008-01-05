@@ -2,13 +2,13 @@ ext4: fix oops on corrupted ext4 mount
 
 From: Eric Sandeen <sandeen@redhat.com>
 
-When mounting an ext4 filesystem with corrupted s_first_data_block, things 
+When mounting an ext4 filesystem with corrupted s_first_data_block, things
 can go very wrong and oops.
 
-Because blocks_count in ext4_fill_super is a u64, and we must use do_div, 
-the calculation of db_count is done differently than on ext4.  If 
-first_data_block is corrupted such that it is larger than ext4_blocks_count, 
-for example, then the intermediate blocks_count value may go negative, 
+Because blocks_count in ext4_fill_super is a u64, and we must use do_div,
+the calculation of db_count is done differently than on ext4.  If
+first_data_block is corrupted such that it is larger than ext4_blocks_count,
+for example, then the intermediate blocks_count value may go negative,
 but sign-extend to a very large value:
 
         blocks_count = (ext4_blocks_count(es) -
@@ -31,29 +31,28 @@ and in this case db_count will wind up as 0 because the addition overflows
         sbi->s_group_desc = kmalloc(db_count * sizeof (struct buffer_head *),
                                     GFP_KERNEL);
 
-and eventually in ext4_check_descriptors, dereferencing 
+and eventually in ext4_check_descriptors, dereferencing
 sbi->s_group_desc[desc_block] will result in a NULL pointer dereference.
 
-The simplest test seems to be to sanity check s_first_data_block, 
-EXT4_BLOCKS_PER_GROUP, and ext4_blocks_count values to be sure 
+The simplest test seems to be to sanity check s_first_data_block,
+EXT4_BLOCKS_PER_GROUP, and ext4_blocks_count values to be sure
 their combination won't result in a bad intermediate value for
 blocks_count.  We could just check for db_count == 0, but
 catching it at the root cause seems like it provides more info.
 
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Reviewed-by: Mingming Cao <cmm@us.ibm.com>
-
 ---
 
----
  fs/ext4/super.c |   11 +++++++++++
- 1 file changed, 11 insertions(+)
+ 1 files changed, 11 insertions(+), 0 deletions(-)
 
-Index: linux-2.6.24-rc3/fs/ext4/super.c
-===================================================================
---- linux-2.6.24-rc3.orig/fs/ext4/super.c	2007-12-05 11:41:48.000000000 -0800
-+++ linux-2.6.24-rc3/fs/ext4/super.c	2007-12-05 11:41:50.000000000 -0800
-@@ -1997,6 +1997,17 @@ static int ext4_fill_super (struct super
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index a6c835b..7cd1a5f 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1997,6 +1997,17 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
  
  	if (EXT4_BLOCKS_PER_GROUP(sb) == 0)
  		goto cantfind_ext4;
