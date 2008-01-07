@@ -16,16 +16,18 @@ Signed-off-by: Jean Noel Cordenner <jean-noel.cordenner@bull.net>
 Signed-off-by: Kalpak Shah <kalpak@clusterfs.com>
 ---
 
+ fs/afs/dir.c       |    9 +++++----
+ fs/afs/inode.c     |    3 ++-
  fs/inode.c         |   22 ++++++++++++++++++++++
  include/linux/fs.h |    5 ++++-
- 2 files changed, 26 insertions(+), 1 deletions(-)
+ 4 files changed, 33 insertions(+), 6 deletions(-)
 
 
-diff --git a/fs/inode.c b/fs/inode.c
-index ed35383..b48324a 100644
---- a/fs/inode.c
-+++ b/fs/inode.c
-@@ -1243,6 +1243,23 @@ void touch_atime(struct vfsmount *mnt, struct dentry *dentry)
+Index: linux-2.6.24-rc7/fs/inode.c
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/inode.c	2008-01-07 12:06:02.000000000 -0800
++++ linux-2.6.24-rc7/fs/inode.c	2008-01-07 14:04:10.000000000 -0800
+@@ -1243,6 +1243,23 @@ void touch_atime(struct vfsmount *mnt, s
  EXPORT_SYMBOL(touch_atime);
  
  /**
@@ -61,10 +63,10 @@ index ed35383..b48324a 100644
  	if (sync_it)
  		mark_inode_dirty_sync(inode);
  }
-diff --git a/include/linux/fs.h b/include/linux/fs.h
-index b3ec4a4..94cf5d8 100644
---- a/include/linux/fs.h
-+++ b/include/linux/fs.h
+Index: linux-2.6.24-rc7/include/linux/fs.h
+===================================================================
+--- linux-2.6.24-rc7.orig/include/linux/fs.h	2008-01-07 12:06:02.000000000 -0800
++++ linux-2.6.24-rc7/include/linux/fs.h	2008-01-07 14:04:10.000000000 -0800
 @@ -124,6 +124,7 @@ extern int dir_notify_enable;
  #define MS_SHARED	(1<<20)	/* change to shared */
  #define MS_RELATIME	(1<<21)	/* Update atime relative to mtime/ctime. */
@@ -90,7 +92,7 @@ index b3ec4a4..94cf5d8 100644
  	loff_t			i_size;
  #ifdef __NEED_I_SIZE_ORDERED
  	seqcount_t		i_size_seqcount;
-@@ -1394,6 +1396,7 @@ static inline void inode_dec_link_count(struct inode *inode)
+@@ -1394,6 +1396,7 @@ static inline void inode_dec_link_count(
  	mark_inode_dirty(inode);
  }
  
@@ -98,3 +100,48 @@ index b3ec4a4..94cf5d8 100644
  extern void touch_atime(struct vfsmount *mnt, struct dentry *dentry);
  static inline void file_accessed(struct file *file)
  {
+Index: linux-2.6.24-rc7/fs/afs/dir.c
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/afs/dir.c	2008-01-07 14:04:06.000000000 -0800
++++ linux-2.6.24-rc7/fs/afs/dir.c	2008-01-07 14:04:54.000000000 -0800
+@@ -546,11 +546,11 @@ static struct dentry *afs_lookup(struct 
+ 	dentry->d_op = &afs_fs_dentry_operations;
+ 
+ 	d_add(dentry, inode);
+-	_leave(" = 0 { vn=%u u=%u } -> { ino=%lu v=%lu }",
++	_leave(" = 0 { vn=%u u=%u } -> { ino=%lu v=%llu }",
+ 	       fid.vnode,
+ 	       fid.unique,
+ 	       dentry->d_inode->i_ino,
+-	       dentry->d_inode->i_version);
++	       (unsigned long long)dentry->d_inode->i_version);
+ 
+ 	return NULL;
+ }
+@@ -630,9 +630,10 @@ static int afs_d_revalidate(struct dentr
+ 		 * been deleted and replaced, and the original vnode ID has
+ 		 * been reused */
+ 		if (fid.unique != vnode->fid.unique) {
+-			_debug("%s: file deleted (uq %u -> %u I:%lu)",
++			_debug("%s: file deleted (uq %u -> %u I:%llu)",
+ 			       dentry->d_name.name, fid.unique,
+-			       vnode->fid.unique, dentry->d_inode->i_version);
++			       vnode->fid.unique,
++			       (unsigned long long)dentry->d_inode->i_version);
+ 			spin_lock(&vnode->lock);
+ 			set_bit(AFS_VNODE_DELETED, &vnode->flags);
+ 			spin_unlock(&vnode->lock);
+Index: linux-2.6.24-rc7/fs/afs/inode.c
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/afs/inode.c	2008-01-07 14:04:06.000000000 -0800
++++ linux-2.6.24-rc7/fs/afs/inode.c	2008-01-07 14:04:54.000000000 -0800
+@@ -301,7 +301,8 @@ int afs_getattr(struct vfsmount *mnt, st
+ 
+ 	inode = dentry->d_inode;
+ 
+-	_enter("{ ino=%lu v=%lu }", inode->i_ino, inode->i_version);
++	_enter("{ ino=%lu v=%llu }", inode->i_ino,
++		(unsigned long long)inode->i_version);
+ 
+ 	generic_fillattr(inode, stat);
+ 	return 0;
