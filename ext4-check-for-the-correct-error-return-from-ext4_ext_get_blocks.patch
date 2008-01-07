@@ -8,15 +8,15 @@ check for  <= 0
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
- fs/ext4/extents.c |    4 ++--
- 1 files changed, 2 insertions(+), 2 deletions(-)
+ fs/ext4/extents.c |   10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
 
 
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index c576b8e..5a81514 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -2459,8 +2459,8 @@ retry:
+Index: linux-2.6.24-rc7/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/ext4/extents.c	2008-01-07 12:13:37.000000000 -0800
++++ linux-2.6.24-rc7/fs/ext4/extents.c	2008-01-07 12:43:18.000000000 -0800
+@@ -2459,12 +2459,12 @@ retry:
  		ret = ext4_ext_get_blocks(handle, inode, block,
  					  max_blocks, &map_bh,
  					  EXT4_CREATE_UNINITIALIZED_EXT, 0);
@@ -25,5 +25,12 @@ index c576b8e..5a81514 100644
 +		WARN_ON(ret <= 0);
 +		if (ret <= 0) {
  			ext4_error(inode->i_sb, "ext4_fallocate",
- 				   "ext4_ext_get_blocks returned 0! inode#%lu"
- 				   ", block=%u, max_blocks=%lu",
+-				   "ext4_ext_get_blocks returned 0! inode#%lu"
+-				   ", block=%u, max_blocks=%lu",
+-				   inode->i_ino, block, max_blocks);
++				    "ext4_ext_get_blocks returned error: "
++				    "inode#%lu, block=%u, max_blocks=%lu",
++				    inode->i_ino, block, max_blocks);
+ 			ret = -EIO;
+ 			ext4_mark_inode_dirty(handle, inode);
+ 			ret2 = ext4_journal_stop(handle);
