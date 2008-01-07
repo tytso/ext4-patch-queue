@@ -29,10 +29,10 @@ Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
  3 files changed, 166 insertions(+), 1 deletion(-)
 
 
-Index: linux-2.6.24-rc6/fs/ext4/inode.c
+Index: linux-2.6.24-rc7/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.24-rc6.orig/fs/ext4/inode.c	2008-01-04 17:26:36.000000000 -0800
-+++ linux-2.6.24-rc6/fs/ext4/inode.c	2008-01-04 17:26:45.000000000 -0800
+--- linux-2.6.24-rc7.orig/fs/ext4/inode.c	2008-01-07 15:19:26.000000000 -0800
++++ linux-2.6.24-rc7/fs/ext4/inode.c	2008-01-07 15:23:39.000000000 -0800
 @@ -39,6 +39,8 @@
  #include "xattr.h"
  #include "acl.h"
@@ -218,30 +218,30 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
  	else if (ext4_should_writeback_data(inode))
  		inode->i_mapping->a_ops = &ext4_writeback_aops;
  	else
-Index: linux-2.6.24-rc6/fs/ext4/super.c
+Index: linux-2.6.24-rc7/fs/ext4/super.c
 ===================================================================
---- linux-2.6.24-rc6.orig/fs/ext4/super.c	2008-01-04 17:26:36.000000000 -0800
-+++ linux-2.6.24-rc6/fs/ext4/super.c	2008-01-04 17:26:45.000000000 -0800
-@@ -876,7 +876,7 @@ enum {
- 	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
+--- linux-2.6.24-rc7.orig/fs/ext4/super.c	2008-01-07 15:21:27.000000000 -0800
++++ linux-2.6.24-rc7/fs/ext4/super.c	2008-01-07 15:26:07.000000000 -0800
+@@ -880,7 +880,7 @@ enum {
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
--	Opt_grpquota, Opt_extents, Opt_noextents,Opt_i_version,
-+	Opt_grpquota, Opt_extents, Opt_noextents, Opt_i_version, Opt_delalloc,
+ 	Opt_grpquota, Opt_extents, Opt_noextents,Opt_i_version,
+-	Opt_mballoc, Opt_nomballoc, Opt_stripe,
++	Opt_mballoc, Opt_nomballoc, Opt_stripe, Opt_delalloc,
  };
  
  static match_table_t tokens = {
-@@ -931,6 +931,7 @@ static match_table_t tokens = {
- 	{Opt_extents, "extents"},
- 	{Opt_noextents, "noextents"},
- 	{Opt_i_version, "i_version"},
+@@ -938,6 +938,7 @@ static match_table_t tokens = {
+ 	{Opt_mballoc, "mballoc"},
+ 	{Opt_nomballoc, "nomballoc"},
+ 	{Opt_stripe, "stripe=%u"},
 +	{Opt_delalloc, "delalloc"},
  	{Opt_err, NULL},
  	{Opt_resize, "resize"},
  };
-@@ -1280,6 +1281,9 @@ clear_qf_name:
- 			set_opt (sbi->s_mount_opt, I_VERSION);
- 			sb->s_flags |= MS_I_VERSION;
+@@ -1300,6 +1301,9 @@ clear_qf_name:
+ 				return 0;
+ 			sbi->s_stripe = option;
  			break;
 +		case Opt_delalloc:
 +			set_opt (sbi->s_mount_opt, DELALLOC);
@@ -249,15 +249,15 @@ Index: linux-2.6.24-rc6/fs/ext4/super.c
  		default:
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
-Index: linux-2.6.24-rc6/include/linux/ext4_fs.h
+Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.24-rc6.orig/include/linux/ext4_fs.h	2008-01-04 17:26:36.000000000 -0800
-+++ linux-2.6.24-rc6/include/linux/ext4_fs.h	2008-01-04 17:26:45.000000000 -0800
-@@ -473,6 +473,7 @@ do {									       \
- #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
+--- linux-2.6.24-rc7.orig/include/linux/ext4_fs.h	2008-01-07 15:22:38.000000000 -0800
++++ linux-2.6.24-rc7/include/linux/ext4_fs.h	2008-01-07 15:24:19.000000000 -0800
+@@ -502,6 +502,7 @@ do {									       \
  #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
  #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
-+#define EXT4_MOUNT_DELALLOC		0x4000000 /* Delalloc support */
+ #define EXT4_MOUNT_MBALLOC		0x4000000 /* Buddy allocation support */
++#define EXT4_MOUNT_DELALLOC		0x8000000 /* Delalloc support */
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
