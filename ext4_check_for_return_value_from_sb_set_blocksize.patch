@@ -1,0 +1,54 @@
+ext4: Check for return value from sb_set_blocksize
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+
+sb_set_blocksize validates whether the specfied block size can be used by
+the file system. Make sure we fail mounting the file system if the
+blocksize specfied cannot be used.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+
+ fs/ext4/super.c |   15 +++++----------
+ 1 file changed, 5 insertions(+), 10 deletions(-)
+
+
+Index: linux-2.6.24-rc7/fs/ext4/super.c
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/ext4/super.c	2008-01-09 15:04:01.000000000 -0800
++++ linux-2.6.24-rc7/fs/ext4/super.c	2008-01-09 15:04:42.000000000 -0800
+@@ -1782,7 +1782,6 @@ static int ext4_fill_super (struct super
+ 	unsigned long def_mount_opts;
+ 	struct inode *root;
+ 	int blocksize;
+-	int hblock;
+ 	int db_count;
+ 	int i;
+ 	int needs_recovery;
+@@ -1939,20 +1938,16 @@ static int ext4_fill_super (struct super
+ 		goto failed_mount;
+ 	}
+ 
+-	hblock = bdev_hardsect_size(sb->s_bdev);
+ 	if (sb->s_blocksize != blocksize) {
+-		/*
+-		 * Make sure the blocksize for the filesystem is larger
+-		 * than the hardware sectorsize for the machine.
+-		 */
+-		if (blocksize < hblock) {
+-			printk(KERN_ERR "EXT4-fs: blocksize %d too small for "
+-			       "device blocksize %d.\n", blocksize, hblock);
++
++		/* Validate the filesystem blocksize */
++		if (!sb_set_blocksize(sb, blocksize)) {
++			printk(KERN_ERR "EXT4-fs: bad block size %d.\n",
++					blocksize);
+ 			goto failed_mount;
+ 		}
+ 
+ 		brelse (bh);
+-		sb_set_blocksize(sb, blocksize);
+ 		logical_sb_block = sb_block * EXT4_MIN_BLOCK_SIZE;
+ 		offset = do_div(logical_sb_block, blocksize);
+ 		bh = sb_bread(sb, logical_sb_block);
