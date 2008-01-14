@@ -1,0 +1,145 @@
+et4: Get the actual length of extent
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+ext4 use the extent len for encoding whether the extent is intialized or
+not. The helper function ext4_ext_get_actual_len should be used to get the
+actual length of the extent.
+
+Fix the below kernel BUG
+http://bugzilla.kernel.org/show_bug.cgi?id=9732
+
+kernel BUG at fs/ext4/extents.c:1056!
+....
+Call Trace:
+[<ffffffff88366073>] :ext4dev:ext4_ext_get_blocks+0x5ba/0x8c1
+[<ffffffff81053c91>] lock_release_holdtime+0x27/0x49
+[<ffffffff812748f6>] _spin_unlock+0x17/0x20
+[<ffffffff883400a6>] :jbd2:start_this_handle+0x4e0/0x4fe
+[<ffffffff88366564>] :ext4dev:ext4_fallocate+0x175/0x39a
+[<ffffffff81053c91>] lock_release_holdtime+0x27/0x49
+[<ffffffff81056480>] __lock_acquire+0x4e7/0xc4d
+[<ffffffff81053c91>] lock_release_holdtime+0x27/0x49
+[<ffffffff810a8de7>] sys_fallocate+0xe4/0x10d
+[<ffffffff8100c043>] tracesys+0xd5/0xda
+
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+ fs/ext4/extents.c |   26 ++++++++++++++------------
+ 1 file changed, 14 insertions(+), 12 deletions(-)
+
+Index: linux-2.6.24-rc7/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/ext4/extents.c	2008-01-13 19:08:40.000000000 -0800
++++ linux-2.6.24-rc7/fs/ext4/extents.c	2008-01-13 19:08:55.000000000 -0800
+@@ -1029,7 +1029,7 @@ ext4_ext_search_left(struct inode *inode
+ {
+ 	struct ext4_extent_idx *ix;
+ 	struct ext4_extent *ex;
+-	int depth;
++	int depth, ee_len;
+ 
+ 	BUG_ON(path == NULL);
+ 	depth = path->p_depth;
+@@ -1043,6 +1043,7 @@ ext4_ext_search_left(struct inode *inode
+ 	 * first one in the file */
+ 
+ 	ex = path[depth].p_ext;
++	ee_len = ext4_ext_get_actual_len(ex);
+ 	if (*logical < le32_to_cpu(ex->ee_block)) {
+ 		BUG_ON(EXT_FIRST_EXTENT(path[depth].p_hdr) != ex);
+ 		while (--depth >= 0) {
+@@ -1052,10 +1053,10 @@ ext4_ext_search_left(struct inode *inode
+ 		return 0;
+ 	}
+ 
+-	BUG_ON(*logical < le32_to_cpu(ex->ee_block) + le16_to_cpu(ex->ee_len));
++	BUG_ON(*logical < (le32_to_cpu(ex->ee_block) + ee_len));
+ 
+-	*logical = le32_to_cpu(ex->ee_block) + le16_to_cpu(ex->ee_len) - 1;
+-	*phys = ext_pblock(ex) + le16_to_cpu(ex->ee_len) - 1;
++	*logical = le32_to_cpu(ex->ee_block) + ee_len - 1;
++	*phys = ext_pblock(ex) + ee_len - 1;
+ 	return 0;
+ }
+ 
+@@ -1075,7 +1076,7 @@ ext4_ext_search_right(struct inode *inod
+ 	struct ext4_extent_idx *ix;
+ 	struct ext4_extent *ex;
+ 	ext4_fsblk_t block;
+-	int depth;
++	int depth, ee_len;
+ 
+ 	BUG_ON(path == NULL);
+ 	depth = path->p_depth;
+@@ -1089,6 +1090,7 @@ ext4_ext_search_right(struct inode *inod
+ 	 * first one in the file */
+ 
+ 	ex = path[depth].p_ext;
++	ee_len = ext4_ext_get_actual_len(ex);
+ 	if (*logical < le32_to_cpu(ex->ee_block)) {
+ 		BUG_ON(EXT_FIRST_EXTENT(path[depth].p_hdr) != ex);
+ 		while (--depth >= 0) {
+@@ -1100,7 +1102,7 @@ ext4_ext_search_right(struct inode *inod
+ 		return 0;
+ 	}
+ 
+-	BUG_ON(*logical < le32_to_cpu(ex->ee_block) + le16_to_cpu(ex->ee_len));
++	BUG_ON(*logical < (le32_to_cpu(ex->ee_block) + ee_len));
+ 
+ 	if (ex != EXT_LAST_EXTENT(path[depth].p_hdr)) {
+ 		/* next allocated block in this leaf */
+@@ -1315,7 +1317,7 @@ ext4_can_extents_be_merged(struct inode 
+ 	if (ext1_ee_len + ext2_ee_len > max_len)
+ 		return 0;
+ #ifdef AGGRESSIVE_TEST
+-	if (le16_to_cpu(ex1->ee_len) >= 4)
++	if (ext1_ee_len >= 4)
+ 		return 0;
+ #endif
+ 
+@@ -1555,7 +1557,7 @@ has_space:
+ 	nearex = path[depth].p_ext;
+ 	nearex->ee_block = newext->ee_block;
+ 	ext4_ext_store_pblock(nearex, ext_pblock(newext));
+-	nearex->ee_len = newext->ee_len;
++	nearex->ee_len = ext4_ext_get_actual_len(newext);
+ 
+ merge:
+ 	/* try to merge extents to the right */
+@@ -2310,7 +2312,7 @@ int ext4_ext_get_blocks(handle_t *handle
+ 				   - le32_to_cpu(newex.ee_block)
+ 				   + ext_pblock(&newex);
+ 			/* number of remaining blocks in the extent */
+-			allocated = le16_to_cpu(newex.ee_len) -
++			allocated = ext4_ext_get_actual_len(&newex) -
+ 					(iblock - le32_to_cpu(newex.ee_block));
+ 			goto out;
+ 		} else {
+@@ -2426,7 +2428,7 @@ int ext4_ext_get_blocks(handle_t *handle
+ 	newex.ee_len = cpu_to_le16(max_blocks);
+ 	err = ext4_ext_check_overlap(inode, &newex, path);
+ 	if (err)
+-		allocated = le16_to_cpu(newex.ee_len);
++		allocated = ext4_ext_get_actual_len(&newex);
+ 	else
+ 		allocated = max_blocks;
+ 
+@@ -2458,7 +2460,7 @@ int ext4_ext_get_blocks(handle_t *handle
+ 		 * but otherwise we'd need to call it every free() */
+ 		ext4_mb_discard_inode_preallocations(inode);
+ 		ext4_free_blocks(handle, inode, ext_pblock(&newex),
+-					le16_to_cpu(newex.ee_len), 0);
++					ext4_ext_get_actual_len(&newex), 0);
+ 		goto out2;
+ 	}
+ 
+@@ -2467,7 +2469,7 @@ int ext4_ext_get_blocks(handle_t *handle
+ 
+ 	/* previous routine could use block we allocated */
+ 	newblock = ext_pblock(&newex);
+-	allocated = le16_to_cpu(newex.ee_len);
++	allocated = ext4_ext_get_actual_len(&newex);
+ outnew:
+ 	__set_bit(BH_New, &bh_result->b_state);
+ 
