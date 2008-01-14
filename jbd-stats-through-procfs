@@ -83,14 +83,14 @@ Signed-off-by: Eric Sandeen <sandeen@redhat.com>
  fs/jbd2/commit.c      |   49 +++++++
  fs/jbd2/journal.c     |  338 ++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/jbd2/transaction.c |    9 +
- include/linux/jbd2.h  |   78 +++++++++++
- 5 files changed, 482 insertions(+), 2 deletions(-)
+ include/linux/jbd2.h  |   77 +++++++++++
+ 5 files changed, 481 insertions(+), 2 deletions(-)
 
 
 Index: linux-2.6.24-rc7/fs/jbd2/checkpoint.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/jbd2/checkpoint.c	2008-01-07 12:42:56.000000000 -0800
-+++ linux-2.6.24-rc7/fs/jbd2/checkpoint.c	2008-01-07 12:47:02.000000000 -0800
+--- linux-2.6.24-rc7.orig/fs/jbd2/checkpoint.c	2008-01-14 13:01:39.000000000 -0800
++++ linux-2.6.24-rc7/fs/jbd2/checkpoint.c	2008-01-14 13:01:39.000000000 -0800
 @@ -232,7 +232,8 @@ __flush_batch(journal_t *journal, struct
   * Called under jbd_lock_bh_state(jh2bh(jh)), and drops it
   */
@@ -138,8 +138,8 @@ Index: linux-2.6.24-rc7/fs/jbd2/checkpoint.c
  				retry = 1;
 Index: linux-2.6.24-rc7/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/jbd2/commit.c	2008-01-07 12:42:56.000000000 -0800
-+++ linux-2.6.24-rc7/fs/jbd2/commit.c	2008-01-07 12:48:06.000000000 -0800
+--- linux-2.6.24-rc7.orig/fs/jbd2/commit.c	2008-01-14 13:01:39.000000000 -0800
++++ linux-2.6.24-rc7/fs/jbd2/commit.c	2008-01-14 13:01:39.000000000 -0800
 @@ -20,6 +20,7 @@
  #include <linux/slab.h>
  #include <linux/mm.h>
@@ -247,8 +247,8 @@ Index: linux-2.6.24-rc7/fs/jbd2/commit.c
  	journal->j_commit_sequence = commit_transaction->t_tid;
 Index: linux-2.6.24-rc7/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/jbd2/journal.c	2008-01-07 12:06:04.000000000 -0800
-+++ linux-2.6.24-rc7/fs/jbd2/journal.c	2008-01-07 12:48:06.000000000 -0800
+--- linux-2.6.24-rc7.orig/fs/jbd2/journal.c	2008-01-14 12:22:26.000000000 -0800
++++ linux-2.6.24-rc7/fs/jbd2/journal.c	2008-01-14 13:01:39.000000000 -0800
 @@ -36,6 +36,7 @@
  #include <linux/poison.h>
  #include <linux/proc_fs.h>
@@ -652,8 +652,8 @@ Index: linux-2.6.24-rc7/fs/jbd2/journal.c
  
 Index: linux-2.6.24-rc7/fs/jbd2/transaction.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/jbd2/transaction.c	2008-01-07 12:06:04.000000000 -0800
-+++ linux-2.6.24-rc7/fs/jbd2/transaction.c	2008-01-07 12:47:02.000000000 -0800
+--- linux-2.6.24-rc7.orig/fs/jbd2/transaction.c	2008-01-14 12:22:26.000000000 -0800
++++ linux-2.6.24-rc7/fs/jbd2/transaction.c	2008-01-14 13:01:39.000000000 -0800
 @@ -59,6 +59,8 @@ jbd2_get_transaction(journal_t *journal,
  
  	J_ASSERT(journal->j_running_transaction == NULL);
@@ -686,8 +686,8 @@ Index: linux-2.6.24-rc7/fs/jbd2/transaction.c
  	transaction->t_updates++;
 Index: linux-2.6.24-rc7/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.24-rc7.orig/include/linux/jbd2.h	2008-01-07 12:42:56.000000000 -0800
-+++ linux-2.6.24-rc7/include/linux/jbd2.h	2008-01-07 12:48:06.000000000 -0800
+--- linux-2.6.24-rc7.orig/include/linux/jbd2.h	2008-01-14 13:01:39.000000000 -0800
++++ linux-2.6.24-rc7/include/linux/jbd2.h	2008-01-14 13:02:08.000000000 -0800
 @@ -395,6 +395,16 @@ struct handle_s
  };
  
@@ -727,7 +727,7 @@ Index: linux-2.6.24-rc7/include/linux/jbd2.h
  	 * Number of outstanding updates running on this transaction
  	 * [t_handle_lock]
  	 */
-@@ -562,6 +587,40 @@ struct transaction_s
+@@ -562,6 +587,39 @@ struct transaction_s
  
  };
  
@@ -743,8 +743,7 @@ Index: linux-2.6.24-rc7/include/linux/jbd2.h
 +	unsigned long		rs_blocks_logged;
 +};
 +
-+struct transaction_stats_s
-+{
++struct transaction_stats_s {
 +	int 			ts_type;
 +	unsigned long		ts_tid;
 +	union {
@@ -768,7 +767,7 @@ Index: linux-2.6.24-rc7/include/linux/jbd2.h
  /**
   * struct journal_s - The journal_s type is the concrete type associated with
   *     journal_t.
-@@ -623,6 +682,12 @@ struct transaction_s
+@@ -623,6 +681,12 @@ struct transaction_s
   * @j_wbufsize: maximum number of buffer_heads allowed in j_wbuf, the
   *	number that will fit in j_blocksize
   * @j_last_sync_writer: most recent pid which did a synchronous write
@@ -781,7 +780,7 @@ Index: linux-2.6.24-rc7/include/linux/jbd2.h
   * @j_private: An opaque pointer to fs-private information.
   */
  
-@@ -815,6 +880,19 @@ struct journal_s
+@@ -815,6 +879,19 @@ struct journal_s
  	pid_t			j_last_sync_writer;
  
  	/*
