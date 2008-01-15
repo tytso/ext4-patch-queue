@@ -23,16 +23,16 @@ Signed-off-by: Alex Tomas <alex@clusterfs.com>
 Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 ---
 
- fs/ext4/inode.c         |  160 ++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/super.c         |    6 +
+ fs/ext4/inode.c         |  160 +++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/super.c         |    6 +-
  include/linux/ext4_fs.h |    1 
- 3 files changed, 166 insertions(+), 1 deletion(-)
+ 3 files changed, 166 insertions(+), 1 deletions(-)
 
 
-Index: linux-2.6.24-rc7/fs/ext4/inode.c
-===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/inode.c	2008-01-07 16:19:38.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/inode.c	2008-01-07 16:19:49.000000000 -0800
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 2947800..6bb788d 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
 @@ -39,6 +39,8 @@
  #include "xattr.h"
  #include "acl.h"
@@ -42,7 +42,7 @@ Index: linux-2.6.24-rc7/fs/ext4/inode.c
  /*
   * Test whether an inode is a fast symlink.
   */
-@@ -1351,6 +1353,146 @@ static int ext4_journalled_write_end(str
+@@ -1352,6 +1354,146 @@ static int ext4_journalled_write_end(struct file *file,
  }
  
  /*
@@ -189,7 +189,7 @@ Index: linux-2.6.24-rc7/fs/ext4/inode.c
   * bmap() is special.  It gets used by applications such as lilo and by
   * the swapper to find the on-disk block of a specific piece of data.
   *
-@@ -1801,10 +1943,28 @@ static const struct address_space_operat
+@@ -1802,10 +1944,28 @@ static const struct address_space_operations ext4_journalled_aops = {
  	.releasepage	= ext4_releasepage,
  };
  
@@ -218,14 +218,14 @@ Index: linux-2.6.24-rc7/fs/ext4/inode.c
  	else if (ext4_should_writeback_data(inode))
  		inode->i_mapping->a_ops = &ext4_writeback_aops;
  	else
-Index: linux-2.6.24-rc7/fs/ext4/super.c
-===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/super.c	2008-01-07 16:19:41.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/super.c	2008-01-07 16:19:49.000000000 -0800
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 092775f..6822f58 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
 @@ -886,7 +886,7 @@ enum {
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
- 	Opt_grpquota, Opt_extents, Opt_noextents,Opt_i_version,
+ 	Opt_grpquota, Opt_extents, Opt_noextents, Opt_i_version,
 -	Opt_mballoc, Opt_nomballoc, Opt_stripe,
 +	Opt_mballoc, Opt_nomballoc, Opt_stripe, Opt_delalloc,
  };
@@ -249,11 +249,11 @@ Index: linux-2.6.24-rc7/fs/ext4/super.c
  		default:
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
-Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.24-rc7.orig/include/linux/ext4_fs.h	2008-01-07 16:19:38.000000000 -0800
-+++ linux-2.6.24-rc7/include/linux/ext4_fs.h	2008-01-07 16:19:49.000000000 -0800
-@@ -502,6 +502,7 @@ do {									       \
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index 1852313..adc16a9 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
+@@ -521,6 +521,7 @@ do {									       \
  #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
  #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
  #define EXT4_MOUNT_MBALLOC		0x4000000 /* Buddy allocation support */

@@ -12,9 +12,9 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
 
  fs/ext4/dir.c           |   12 ++++---
- fs/ext4/namei.c         |   76 ++++++++++++++++++++++-------------------------
+ fs/ext4/namei.c         |   77 +++++++++++++++++++++++------------------------
  include/linux/ext4_fs.h |   20 ++++++++++++
- 3 files changed, 62 insertions(+), 46 deletions(-)
+ 3 files changed, 63 insertions(+), 46 deletions(-)
 
 
 diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
@@ -63,7 +63,7 @@ index f612bef..145a9c0 100644
  		offset = 0;
  		brelse (bh);
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 94ee6f3..bc3825d 100644
+index 94ee6f3..d9a3a2f 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -280,7 +280,7 @@ static struct stats dx_show_leaf(struct dx_hash_info *hinfo, struct ext4_dir_ent
@@ -80,7 +80,7 @@ index 94ee6f3..bc3825d 100644
  static inline struct ext4_dir_entry_2 *ext4_next_entry(struct ext4_dir_entry_2 *p)
  {
 -	return (struct ext4_dir_entry_2 *)((char*)p + le16_to_cpu(p->rec_len));
-+	return (struct ext4_dir_entry_2 *)((char*)p +
++	return (struct ext4_dir_entry_2 *)((char *)p +
 +		ext4_rec_len_from_disk(p->rec_len));
  }
  
@@ -230,7 +230,7 @@ index 94ee6f3..bc3825d 100644
  	}
  	return -ENOENT;
  }
-@@ -1824,13 +1824,12 @@ retry:
+@@ -1824,13 +1824,13 @@ retry:
  	de = (struct ext4_dir_entry_2 *) dir_block->b_data;
  	de->inode = cpu_to_le32(inode->i_ino);
  	de->name_len = 1;
@@ -243,11 +243,12 @@ index 94ee6f3..bc3825d 100644
 +	de = ext4_next_entry(de);
  	de->inode = cpu_to_le32(dir->i_ino);
 -	de->rec_len = cpu_to_le16(inode->i_sb->s_blocksize-EXT4_DIR_REC_LEN(1));
-+	de->rec_len = ext4_rec_len_to_disk(inode->i_sb->s_blocksize-EXT4_DIR_REC_LEN(1));
++	de->rec_len = ext4_rec_len_to_disk(inode->i_sb->s_blocksize -
++						EXT4_DIR_REC_LEN(1));
  	de->name_len = 2;
  	strcpy (de->name, "..");
  	ext4_set_de_type(dir->i_sb, de, S_IFDIR);
-@@ -1882,8 +1881,7 @@ static int empty_dir (struct inode * inode)
+@@ -1882,8 +1882,7 @@ static int empty_dir (struct inode * inode)
  		return 1;
  	}
  	de = (struct ext4_dir_entry_2 *) bh->b_data;
@@ -257,7 +258,7 @@ index 94ee6f3..bc3825d 100644
  	if (le32_to_cpu(de->inode) != inode->i_ino ||
  			!le32_to_cpu(de1->inode) ||
  			strcmp (".", de->name) ||
-@@ -1894,9 +1892,9 @@ static int empty_dir (struct inode * inode)
+@@ -1894,9 +1893,9 @@ static int empty_dir (struct inode * inode)
  		brelse (bh);
  		return 1;
  	}
@@ -270,7 +271,7 @@ index 94ee6f3..bc3825d 100644
  	while (offset < inode->i_size ) {
  		if (!bh ||
  			(void *) de >= (void *) (bh->b_data+sb->s_blocksize)) {
-@@ -1925,9 +1923,8 @@ static int empty_dir (struct inode * inode)
+@@ -1925,9 +1924,8 @@ static int empty_dir (struct inode * inode)
  			brelse (bh);
  			return 0;
  		}
@@ -282,7 +283,7 @@ index 94ee6f3..bc3825d 100644
  	}
  	brelse (bh);
  	return 1;
-@@ -2282,8 +2279,7 @@ retry:
+@@ -2282,8 +2280,7 @@ retry:
  }
  
  #define PARENT_INO(buffer) \

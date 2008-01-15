@@ -23,7 +23,7 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index e663455..7aea639 100644
+index e663455..bb89fe7 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -2667,6 +2667,22 @@ void ext4_get_inode_flags(struct ext4_inode_info *ei)
@@ -40,7 +40,7 @@ index e663455..7aea639 100644
 +				EXT4_FEATURE_RO_COMPAT_HUGE_FILE)) {
 +		/* we are using combined 48 bit field */
 +		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
-+						le32_to_cpu(raw_inode->i_blocks_lo);
++					le32_to_cpu(raw_inode->i_blocks_lo);
 +		return i_blocks;
 +	} else {
 +		return le32_to_cpu(raw_inode->i_blocks_lo);
@@ -91,7 +91,7 @@ index e663455..7aea639 100644
 +		/* i_block is stored in the split  48 bit fields */
 +		raw_inode->i_blocks_lo   = cpu_to_le32((u32)i_blocks);
 +		raw_inode->i_blocks_high = cpu_to_le16(i_blocks >> 32);
-+	}else {
++	} else {
 +		ext4_error(sb, __FUNCTION__,
 +				"Wrong inode i_blocks count  %llu\n",
 +				(unsigned long long)inode->i_blocks);
@@ -114,7 +114,7 @@ index e663455..7aea639 100644
  	raw_inode->i_flags = cpu_to_le32(ei->i_flags);
  	if (EXT4_SB(inode->i_sb)->s_es->s_creator_os !=
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 730dea6..16b6723 100644
+index 7be27db..2b9dc96 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1603,17 +1603,50 @@ static void ext4_orphan_cleanup (struct super_block * sb,
@@ -206,7 +206,7 @@ index 730dea6..16b6723 100644
  
  	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
 diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index db4a039..e2e8887 100644
+index a8f3fae..be25eca 100644
 --- a/include/linux/ext4_fs.h
 +++ b/include/linux/ext4_fs.h
 @@ -282,7 +282,7 @@ struct ext4_inode {

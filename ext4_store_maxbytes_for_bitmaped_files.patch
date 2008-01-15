@@ -10,10 +10,10 @@ Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 ---
 
  fs/ext4/file.c             |   19 ++++++++++++++++++-
- fs/ext4/inode.c            |   15 ++++++++++++++-
+ fs/ext4/inode.c            |   16 +++++++++++++++-
  fs/ext4/super.c            |    1 +
  include/linux/ext4_fs_sb.h |    1 +
- 4 files changed, 34 insertions(+), 2 deletions(-)
+ 4 files changed, 35 insertions(+), 2 deletions(-)
 
 
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
@@ -48,21 +48,22 @@ index 1a81cd6..a6b2aa1 100644
  	 * Skip flushing if there was an error, or if nothing was written.
  	 */
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 7d61830..3856e3e 100644
+index 9cf8572..eaace13 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -314,7 +314,9 @@ static int ext4_block_to_path(struct inode *inode,
+@@ -314,7 +314,10 @@ static int ext4_block_to_path(struct inode *inode,
  		offsets[n++] = i_block & (ptrs - 1);
  		final = ptrs;
  	} else {
 -		ext4_warning(inode->i_sb, "ext4_block_to_path", "block > big");
-+		ext4_warning(inode->i_sb, "ext4_block_to_path", "block %u > max",
++		ext4_warning(inode->i_sb, "ext4_block_to_path",
++				"block %u > max",
 +				i_block + direct_blocks +
 +				indirect_blocks + double_blocks);
  	}
  	if (boundary)
  		*boundary = final - 1 - (i_block & (ptrs - 1));
-@@ -3092,6 +3094,17 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
+@@ -3092,6 +3095,17 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
  		ext4_journal_stop(handle);
  	}
  
@@ -81,7 +82,7 @@ index 7d61830..3856e3e 100644
  	    attr->ia_valid & ATTR_SIZE && attr->ia_size < inode->i_size) {
  		handle_t *handle;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index d13a3ce..d798041 100644
+index c79e46b..0931831 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1922,6 +1922,7 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)

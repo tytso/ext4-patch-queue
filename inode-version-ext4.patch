@@ -23,11 +23,11 @@ Signed-off-by: Jean Noel Cordenner <jean-noel.cordenner@bull.net>
  5 files changed, 45 insertions(+), 22 deletions(-)
 
 
-Index: linux-2.6.24-rc6/fs/ext4/inode.c
-===================================================================
---- linux-2.6.24-rc6.orig/fs/ext4/inode.c	2008-01-04 17:26:13.000000000 -0800
-+++ linux-2.6.24-rc6/fs/ext4/inode.c	2008-01-04 17:26:36.000000000 -0800
-@@ -2780,6 +2780,13 @@ void ext4_read_inode(struct inode * inod
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index ee0bc3a..3c013e5 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2780,6 +2780,13 @@ void ext4_read_inode(struct inode * inode)
  	EXT4_INODE_GET_XTIME(i_atime, inode, raw_inode);
  	EXT4_EINODE_GET_XTIME(i_crtime, ei, raw_inode);
  
@@ -41,7 +41,7 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
  	if (S_ISREG(inode->i_mode)) {
  		inode->i_op = &ext4_file_inode_operations;
  		inode->i_fop = &ext4_file_operations;
-@@ -2962,8 +2969,14 @@ static int ext4_do_update_inode(handle_t
+@@ -2962,8 +2969,14 @@ static int ext4_do_update_inode(handle_t *handle,
  	} else for (block = 0; block < EXT4_N_BLOCKS; block++)
  		raw_inode->i_block[block] = ei->i_data[block];
  
@@ -57,7 +57,7 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
  
  	BUFFER_TRACE(bh, "call ext4_journal_dirty_metadata");
  	rc = ext4_journal_dirty_metadata(handle, bh);
-@@ -3190,6 +3203,9 @@ int ext4_mark_iloc_dirty(handle_t *handl
+@@ -3190,6 +3203,9 @@ int ext4_mark_iloc_dirty(handle_t *handle,
  {
  	int err = 0;
  
@@ -67,11 +67,11 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
  	/* the do_update_inode consumes one bh->b_count */
  	get_bh(iloc->bh);
  
-Index: linux-2.6.24-rc6/fs/ext4/super.c
-===================================================================
---- linux-2.6.24-rc6.orig/fs/ext4/super.c	2008-01-04 17:26:33.000000000 -0800
-+++ linux-2.6.24-rc6/fs/ext4/super.c	2008-01-04 17:26:36.000000000 -0800
-@@ -732,6 +732,8 @@ static int ext4_show_options(struct seq_
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index f7479d3..aa22acd 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -732,6 +732,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
  		seq_puts(seq, ",nobh");
  	if (!test_opt(sb, EXTENTS))
  		seq_puts(seq, ",noextents");
@@ -85,7 +85,7 @@ Index: linux-2.6.24-rc6/fs/ext4/super.c
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
 -	Opt_grpquota, Opt_extents, Opt_noextents,
-+	Opt_grpquota, Opt_extents, Opt_noextents,Opt_i_version,
++	Opt_grpquota, Opt_extents, Opt_noextents, Opt_i_version,
  };
  
  static match_table_t tokens = {
@@ -102,7 +102,7 @@ Index: linux-2.6.24-rc6/fs/ext4/super.c
  			clear_opt (sbi->s_mount_opt, EXTENTS);
  			break;
 +		case Opt_i_version:
-+			set_opt (sbi->s_mount_opt, I_VERSION);
++			set_opt(sbi->s_mount_opt, I_VERSION);
 +			sb->s_flags |= MS_I_VERSION;
 +			break;
  		default:
@@ -116,11 +116,11 @@ Index: linux-2.6.24-rc6/fs/ext4/super.c
  	inode->i_mtime = inode->i_ctime = CURRENT_TIME;
  	ext4_mark_inode_dirty(handle, inode);
  	mutex_unlock(&inode->i_mutex);
-Index: linux-2.6.24-rc6/fs/inode.c
-===================================================================
---- linux-2.6.24-rc6.orig/fs/inode.c	2008-01-04 17:26:35.000000000 -0800
-+++ linux-2.6.24-rc6/fs/inode.c	2008-01-04 17:26:36.000000000 -0800
-@@ -1243,23 +1243,6 @@ void touch_atime(struct vfsmount *mnt, s
+diff --git a/fs/inode.c b/fs/inode.c
+index b48324a..276ffd6 100644
+--- a/fs/inode.c
++++ b/fs/inode.c
+@@ -1243,23 +1243,6 @@ void touch_atime(struct vfsmount *mnt, struct dentry *dentry)
  EXPORT_SYMBOL(touch_atime);
  
  /**
@@ -144,10 +144,10 @@ Index: linux-2.6.24-rc6/fs/inode.c
   *	file_update_time	-	update mtime and ctime time
   *	@file: file accessed
   *
-Index: linux-2.6.24-rc6/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.24-rc6.orig/include/linux/ext4_fs.h	2008-01-04 17:26:33.000000000 -0800
-+++ linux-2.6.24-rc6/include/linux/ext4_fs.h	2008-01-04 17:26:36.000000000 -0800
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index cd406db..b609294 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
 @@ -292,7 +292,7 @@ struct ext4_inode {
  	__le32	i_flags;	/* File flags */
  	union {
@@ -182,11 +182,11 @@ Index: linux-2.6.24-rc6/include/linux/ext4_fs.h
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-Index: linux-2.6.24-rc6/include/linux/fs.h
-===================================================================
---- linux-2.6.24-rc6.orig/include/linux/fs.h	2008-01-04 17:26:35.000000000 -0800
-+++ linux-2.6.24-rc6/include/linux/fs.h	2008-01-04 17:26:36.000000000 -0800
-@@ -1396,7 +1396,21 @@ static inline void inode_dec_link_count(
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 94cf5d8..2ac81ee 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -1396,7 +1396,21 @@ static inline void inode_dec_link_count(struct inode *inode)
  	mark_inode_dirty(inode);
  }
  

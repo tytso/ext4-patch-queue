@@ -16,14 +16,14 @@ inode flag  EXT4_HUGE_FILE_FL
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
- fs/ext4/inode.c         |   34 ++++++++++++++++++++++++++--------
+ fs/ext4/inode.c         |   32 +++++++++++++++++++++++++-------
  fs/ext4/super.c         |    9 ++++++---
  include/linux/ext4_fs.h |    3 ++-
- 3 files changed, 34 insertions(+), 12 deletions(-)
+ 3 files changed, 33 insertions(+), 11 deletions(-)
 
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 7aea639..7d61830 100644
+index bb89fe7..9cf8572 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -2671,14 +2671,20 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
@@ -38,7 +38,7 @@ index 7aea639..7d61830 100644
  				EXT4_FEATURE_RO_COMPAT_HUGE_FILE)) {
  		/* we are using combined 48 bit field */
  		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
- 						le32_to_cpu(raw_inode->i_blocks_lo);
+ 					le32_to_cpu(raw_inode->i_blocks_lo);
 -		return i_blocks;
 +		if (ei->i_flags & EXT4_HUGE_FILE_FL) {
 +			/* i_blocks represent file system block size */
@@ -66,9 +66,12 @@ index 7aea639..7d61830 100644
  		/* i_block is stored in the split  48 bit fields */
 -		raw_inode->i_blocks_lo   = cpu_to_le32((u32)i_blocks);
 +		raw_inode->i_blocks_lo   = cpu_to_le32(i_blocks);
-+		raw_inode->i_blocks_high = cpu_to_le16(i_blocks >> 32);
+ 		raw_inode->i_blocks_high = cpu_to_le16(i_blocks >> 32);
 +		ei->i_flags &= ~EXT4_HUGE_FILE_FL;
-+	} else {
+ 	} else {
+-		ext4_error(sb, __FUNCTION__,
+-				"Wrong inode i_blocks count  %llu\n",
+-				(unsigned long long)inode->i_blocks);
 +		/*
 +		 * i_blocks should be represented in a 48 bit variable
 +		 * as multiple of  file system block size
@@ -81,16 +84,12 @@ index 7aea639..7d61830 100644
 +		/* i_block is stored in file system block size */
 +		i_blocks = i_blocks >> (inode->i_blkbits - 9);
 +		raw_inode->i_blocks_lo   = cpu_to_le32(i_blocks);
- 		raw_inode->i_blocks_high = cpu_to_le16(i_blocks >> 32);
--	}else {
--		ext4_error(sb, __FUNCTION__,
--				"Wrong inode i_blocks count  %llu\n",
--				(unsigned long long)inode->i_blocks);
++		raw_inode->i_blocks_high = cpu_to_le16(i_blocks >> 32);
  	}
  err_out:
  	return err;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 16b6723..67a2732 100644
+index 2b9dc96..64067de 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1631,11 +1631,14 @@ static loff_t ext4_max_size(int bits)
@@ -112,7 +111,7 @@ index 16b6723..67a2732 100644
  
  	/* indirect blocks */
 diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index e2e8887..9b8081b 100644
+index be25eca..6ae91f4 100644
 --- a/include/linux/ext4_fs.h
 +++ b/include/linux/ext4_fs.h
 @@ -178,8 +178,9 @@ struct ext4_group_desc

@@ -10,17 +10,17 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
  fs/ext4/super.c |   14 +++++++++++++-
- 1 file changed, 13 insertions(+), 1 deletion(-)
+ 1 files changed, 13 insertions(+), 1 deletions(-)
 
 
-Index: linux-2.6.24-rc7/fs/ext4/super.c
-===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/super.c	2008-01-11 08:01:06.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/super.c	2008-01-11 08:01:08.000000000 -0800
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 6822f58..2f78e89 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
 @@ -886,7 +886,7 @@ enum {
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
- 	Opt_grpquota, Opt_extents, Opt_noextents,Opt_i_version,
+ 	Opt_grpquota, Opt_extents, Opt_noextents, Opt_i_version,
 -	Opt_mballoc, Opt_nomballoc, Opt_stripe, Opt_delalloc,
 +	Opt_mballoc, Opt_nomballoc, Opt_stripe, Opt_delalloc, Opt_nodelalloc,
  };
@@ -35,7 +35,7 @@ Index: linux-2.6.24-rc7/fs/ext4/super.c
  	{Opt_resize, "resize"},
  };
 @@ -1294,6 +1295,9 @@ clear_qf_name:
- 			set_opt (sbi->s_mount_opt, I_VERSION);
+ 			set_opt(sbi->s_mount_opt, I_VERSION);
  			sb->s_flags |= MS_I_VERSION;
  			break;
 +		case Opt_nodelalloc:
@@ -44,14 +44,14 @@ Index: linux-2.6.24-rc7/fs/ext4/super.c
  		case Opt_mballoc:
  			set_opt(sbi->s_mount_opt, MBALLOC);
  			break;
-@@ -1912,6 +1916,14 @@ static int ext4_fill_super (struct super
+@@ -1912,6 +1916,14 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
  	 */
  	set_opt(sbi->s_mount_opt, MBALLOC);
  
 +	/*
-+ 	 * enable delayed allocation by default
-+ 	 * Use -o nodelalloc to turn it off
-+ 	 */
++	 * enable delayed allocation by default
++	 * Use -o nodelalloc to turn it off
++	 */
 +	set_opt(sbi->s_mount_opt, DELALLOC);
 +	set_opt(sbi->s_mount_opt, WRITEBACK_DATA);
 +

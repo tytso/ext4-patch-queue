@@ -12,19 +12,19 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
  fs/ext4/balloc.c          |    2 +-
  fs/ext4/extents.c         |   13 +++++++------
  fs/ext4/file.c            |    4 ++--
- fs/ext4/inode.c           |   40 +++++++++++++++++++++++++++++++++-------
+ fs/ext4/inode.c           |   39 ++++++++++++++++++++++++++++++++-------
  fs/ext4/ioctl.c           |    4 ++--
  fs/ext4/super.c           |    2 +-
  include/linux/ext4_fs.h   |   25 ++++---------------------
  include/linux/ext4_fs_i.h |    6 +++---
- 8 files changed, 53 insertions(+), 43 deletions(-)
+ 8 files changed, 52 insertions(+), 43 deletions(-)
 
 
-Index: linux-2.6.24-rc6/fs/ext4/balloc.c
-===================================================================
---- linux-2.6.24-rc6.orig/fs/ext4/balloc.c	2008-01-04 17:13:22.000000000 -0800
-+++ linux-2.6.24-rc6/fs/ext4/balloc.c	2008-01-04 17:21:14.000000000 -0800
-@@ -526,7 +526,7 @@ static inline int rsv_is_empty(struct ex
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index a9140ea..925e063 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -526,7 +526,7 @@ static inline int rsv_is_empty(struct ext4_reserve_window *rsv)
   * when setting the reservation window size through ioctl before the file
   * is open for write (needs block allocation).
   *
@@ -33,11 +33,11 @@ Index: linux-2.6.24-rc6/fs/ext4/balloc.c
   */
  void ext4_init_block_alloc_info(struct inode *inode)
  {
-Index: linux-2.6.24-rc6/fs/ext4/extents.c
-===================================================================
---- linux-2.6.24-rc6.orig/fs/ext4/extents.c	2008-01-04 17:16:15.000000000 -0800
-+++ linux-2.6.24-rc6/fs/ext4/extents.c	2008-01-04 17:21:14.000000000 -0800
-@@ -1564,7 +1564,7 @@ static int ext4_ext_rm_idx(handle_t *han
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index e9d5457..6fd9763 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -1564,7 +1564,7 @@ static int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
   * This routine returns max. credits that the extent tree can consume.
   * It should be OK for low-performance paths like ->writepage()
   * To allow many writing processes to fit into a single transaction,
@@ -46,7 +46,7 @@ Index: linux-2.6.24-rc6/fs/ext4/extents.c
   * pass the actual path.
   */
  int ext4_ext_calc_credits_for_insert(struct inode *inode,
-@@ -2128,7 +2128,8 @@ out:
+@@ -2130,7 +2130,8 @@ out:
  
  /*
   * Need to be called with
@@ -56,7 +56,7 @@ Index: linux-2.6.24-rc6/fs/ext4/extents.c
   */
  int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  			ext4_lblk_t iblock,
-@@ -2347,7 +2348,7 @@ void ext4_ext_truncate(struct inode * in
+@@ -2349,7 +2350,7 @@ void ext4_ext_truncate(struct inode * inode, struct page *page)
  	if (page)
  		ext4_block_truncate_page(handle, page, mapping, inode->i_size);
  
@@ -65,7 +65,7 @@ Index: linux-2.6.24-rc6/fs/ext4/extents.c
  	ext4_ext_invalidate_cache(inode);
  
  	/*
-@@ -2383,7 +2384,7 @@ out_stop:
+@@ -2385,7 +2386,7 @@ out_stop:
  	if (inode->i_nlink)
  		ext4_orphan_del(handle, inode);
  
@@ -74,7 +74,7 @@ Index: linux-2.6.24-rc6/fs/ext4/extents.c
  	ext4_journal_stop(handle);
  }
  
-@@ -2447,7 +2448,7 @@ long ext4_fallocate(struct inode *inode,
+@@ -2449,7 +2450,7 @@ long ext4_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
  	 * modify 1 super block, 1 block bitmap and 1 group descriptor.
  	 */
  	credits = EXT4_DATA_TRANS_BLOCKS(inode->i_sb) + 3;
@@ -83,7 +83,7 @@ Index: linux-2.6.24-rc6/fs/ext4/extents.c
  retry:
  	while (ret >= 0 && ret < max_blocks) {
  		block = block + ret;
-@@ -2504,7 +2505,7 @@ retry:
+@@ -2506,7 +2507,7 @@ retry:
  	if (ret == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
  		goto retry;
  
@@ -92,11 +92,11 @@ Index: linux-2.6.24-rc6/fs/ext4/extents.c
  	/*
  	 * Time to update the file size.
  	 * Update only when preallocation was requested beyond the file size.
-Index: linux-2.6.24-rc6/fs/ext4/file.c
-===================================================================
---- linux-2.6.24-rc6.orig/fs/ext4/file.c	2008-01-04 17:13:22.000000000 -0800
-+++ linux-2.6.24-rc6/fs/ext4/file.c	2008-01-04 17:16:29.000000000 -0800
-@@ -37,9 +37,9 @@ static int ext4_release_file (struct ino
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index a6b2aa1..ac35ec5 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -37,9 +37,9 @@ static int ext4_release_file (struct inode * inode, struct file * filp)
  	if ((filp->f_mode & FMODE_WRITE) &&
  			(atomic_read(&inode->i_writecount) == 1))
  	{
@@ -108,21 +108,20 @@ Index: linux-2.6.24-rc6/fs/ext4/file.c
  	}
  	if (is_dx(inode) && filp->private_data)
  		ext4_htree_free_dir_info(filp->private_data);
-Index: linux-2.6.24-rc6/fs/ext4/inode.c
-===================================================================
---- linux-2.6.24-rc6.orig/fs/ext4/inode.c	2008-01-04 17:16:15.000000000 -0800
-+++ linux-2.6.24-rc6/fs/ext4/inode.c	2008-01-04 17:26:02.000000000 -0800
-@@ -307,7 +307,8 @@ static int ext4_block_to_path(struct ino
- 		offsets[n++] = i_block & (ptrs - 1);
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 71c7ad0..596b3ab 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -308,7 +308,7 @@ static int ext4_block_to_path(struct inode *inode,
  		final = ptrs;
  	} else {
--		ext4_warning(inode->i_sb, "ext4_block_to_path", "block %u > max",
-+		ext4_warning(inode->i_sb, "ext4_block_to_path",
+ 		ext4_warning(inode->i_sb, "ext4_block_to_path",
+-				"block %u > max",
 +				"block %lu > max",
  				i_block + direct_blocks +
  				indirect_blocks + double_blocks);
  	}
-@@ -344,7 +345,7 @@ static int ext4_block_to_path(struct ino
+@@ -345,7 +345,7 @@ static int ext4_block_to_path(struct inode *inode,
   *	the whole chain, all way to the data (returns %NULL, *err == 0).
   *
   *      Need to be called with
@@ -131,7 +130,7 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
   */
  static Indirect *ext4_get_branch(struct inode *inode, int depth,
  				 ext4_lblk_t  *offsets,
-@@ -776,7 +777,8 @@ err_out:
+@@ -777,7 +777,8 @@ err_out:
   *
   *
   * Need to be called with
@@ -141,7 +140,7 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
   */
  int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
  		ext4_lblk_t iblock, unsigned long maxblocks,
-@@ -864,7 +866,7 @@ int ext4_get_blocks_handle(handle_t *han
+@@ -865,7 +866,7 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
  		err = ext4_splice_branch(handle, inode, iblock,
  					partial, indirect_blks, count);
  	/*
@@ -150,7 +149,7 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
  	 * protect it if you're about to implement concurrent
  	 * ext4_get_block() -bzzz
  	*/
-@@ -894,6 +896,30 @@ out:
+@@ -895,6 +896,30 @@ out:
  
  #define DIO_CREDITS (EXT4_RESERVE_TRANS_BLOCKS + 32)
  
@@ -181,7 +180,7 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
  static int ext4_get_block(struct inode *inode, sector_t iblock,
  			struct buffer_head *bh_result, int create)
  {
-@@ -1398,7 +1424,7 @@ static int jbd2_journal_dirty_data_fn(ha
+@@ -1399,7 +1424,7 @@ static int jbd2_journal_dirty_data_fn(handle_t *handle, struct buffer_head *bh)
   *	ext4_file_write() -> generic_file_write() -> __alloc_pages() -> ...
   *
   * Same applies to ext4_get_block().  We will deadlock on various things like
@@ -190,7 +189,7 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
   *
   * Setting PF_MEMALLOC here doesn't work - too many internal memory
   * allocations fail.
-@@ -2324,7 +2350,7 @@ void ext4_truncate(struct inode *inode)
+@@ -2325,7 +2350,7 @@ void ext4_truncate(struct inode *inode)
  	 * From here we block out all ext4_get_block() callers who want to
  	 * modify the block allocation tree.
  	 */
@@ -199,7 +198,7 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
  
  	if (n == 1) {		/* direct blocks */
  		ext4_free_data(handle, inode, NULL, i_data+offsets[0],
-@@ -2388,7 +2414,7 @@ do_indirects:
+@@ -2389,7 +2414,7 @@ do_indirects:
  
  	ext4_discard_reservation(inode);
  
@@ -208,10 +207,10 @@ Index: linux-2.6.24-rc6/fs/ext4/inode.c
  	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
  	ext4_mark_inode_dirty(handle, inode);
  
-Index: linux-2.6.24-rc6/fs/ext4/ioctl.c
-===================================================================
---- linux-2.6.24-rc6.orig/fs/ext4/ioctl.c	2008-01-04 17:13:22.000000000 -0800
-+++ linux-2.6.24-rc6/fs/ext4/ioctl.c	2008-01-04 17:21:19.000000000 -0800
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index e7f894b..c0e5b8c 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
 @@ -199,7 +199,7 @@ flags_err:
  		 * need to allocate reservation structure for this inode
  		 * before set the window size
@@ -230,11 +229,11 @@ Index: linux-2.6.24-rc6/fs/ext4/ioctl.c
  		return 0;
  	}
  	case EXT4_IOC_GROUP_EXTEND: {
-Index: linux-2.6.24-rc6/fs/ext4/super.c
-===================================================================
---- linux-2.6.24-rc6.orig/fs/ext4/super.c	2008-01-04 17:13:22.000000000 -0800
-+++ linux-2.6.24-rc6/fs/ext4/super.c	2008-01-04 17:21:22.000000000 -0800
-@@ -593,7 +593,7 @@ static void init_once(struct kmem_cache 
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index effd375..c730544 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -593,7 +593,7 @@ static void init_once(struct kmem_cache *cachep, void *foo)
  #ifdef CONFIG_EXT4DEV_FS_XATTR
  	init_rwsem(&ei->xattr_sem);
  #endif
@@ -243,11 +242,11 @@ Index: linux-2.6.24-rc6/fs/ext4/super.c
  	inode_init_once(&ei->vfs_inode);
  }
  
-Index: linux-2.6.24-rc6/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.24-rc6.orig/include/linux/ext4_fs.h	2008-01-04 17:16:15.000000000 -0800
-+++ linux-2.6.24-rc6/include/linux/ext4_fs.h	2008-01-04 17:25:41.000000000 -0800
-@@ -1106,27 +1106,10 @@ extern void ext4_ext_init(struct super_b
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index 583049c..300cc5a 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
+@@ -1107,27 +1107,10 @@ extern void ext4_ext_init(struct super_block *);
  extern void ext4_ext_release(struct super_block *);
  extern long ext4_fallocate(struct inode *inode, int mode, loff_t offset,
  			  loff_t len);
@@ -279,10 +278,10 @@ Index: linux-2.6.24-rc6/include/linux/ext4_fs.h
  #endif	/* __KERNEL__ */
  
  #endif	/* _LINUX_EXT4_FS_H */
-Index: linux-2.6.24-rc6/include/linux/ext4_fs_i.h
-===================================================================
---- linux-2.6.24-rc6.orig/include/linux/ext4_fs_i.h	2008-01-04 17:13:22.000000000 -0800
-+++ linux-2.6.24-rc6/include/linux/ext4_fs_i.h	2008-01-04 17:21:14.000000000 -0800
+diff --git a/include/linux/ext4_fs_i.h b/include/linux/ext4_fs_i.h
+index f1cd493..4377d24 100644
+--- a/include/linux/ext4_fs_i.h
++++ b/include/linux/ext4_fs_i.h
 @@ -139,16 +139,16 @@ struct ext4_inode_info {
  	__u16 i_extra_isize;
  
