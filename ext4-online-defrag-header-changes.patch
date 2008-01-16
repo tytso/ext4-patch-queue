@@ -1,0 +1,256 @@
+ext4: online defrad header file changes
+From: Akira Fujita <a-fujita@rs.jp.nec.com>
+
+Ext4 online defrag has the following three functions.
+
+1.[ no option ] Solving a single file fragmentation
+Single file fragmentation is solved by moving file
+data to contiguous free blocks.
+
+2.[ -r ] Solving a relevant file fragmentation
+Relevant file fragmentation is solved by moving
+the files under the specified directory closer together.
+
+3.[ -f ] Solving a free space fragmentation
+If there is no contiguous free blocks in the filesystem,
+the other files are moved to make sufficient space to allocate
+contiguous blocks for the target file.
+
+Current status:
+These patches are at the experimental stage so they have some
+items to improve. But these are worth enough to examine my trial.
+
+Dependencies:
+My patches depend on the multi-block allocation in ext4 patch queue.
+
+Outstanding issues:
+Nothing for the moment.
+
+Next steps:
+- Make carry out movement of data as atomic transaction.
+
+Summary of patches:
+*These patches are applied on the top of
+ ext4 git tree(linux-2.6.24-rc5).
+http://repo.or.cz/r/ext4-patch-queue.git
+
+[PATCH 1/5] ext4 online defrag header file changes
+- Header file changes used by online defrag.
+
+[PATCH 2/5] Allocate new contiguous blocks with mballoc
+- Search contiguous free blocks and allocate them for the temporary
+inode with the multi-block allocation.
+
+[PATCH 3/5] Move the file data to the new blocks
+- Move the blocks on the temporary inode to the original inode
+by a page.
+
+[PATCH 4/5] Free space fragmentation functions
+- Defrag tries to move other files to make sufficient space
+and reallocates the contiguous blocks for the target file.
+
+[PATCH 5/5] Online defrag command
+- The defrag command. Usage is as follows:
+o Put the multiple files closer together.
+  # e4defrag -r directory-name
+o Defrag for free space fragmentation.
+  # e4defrag -f file-name
+o Defrag for a single file.
+  # e4defrag file-name
+o Defrag for all files on ext4.
+  # e4defrag device-name
+
+Header file changes used by online defrag.
+
+Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
+Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
+---
+---
+ fs/ext4/Makefile                |    2 -
+ include/linux/ext4_fs.h         |   71 ++++++++++++++++++++++++++++++++++++++++
+ include/linux/ext4_fs_extents.h |   22 ++++++++++++
+ 3 files changed, 94 insertions(+), 1 deletion(-)
+
+Index: linux-2.6.24-rc7/fs/ext4/Makefile
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/ext4/Makefile	2008-01-16 13:52:19.000000000 -0800
++++ linux-2.6.24-rc7/fs/ext4/Makefile	2008-01-16 14:01:10.000000000 -0800
+@@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
+ 
+ ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
+ 		   ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
+-		   ext4_jbd2.o migrate.o mballoc.o
++		   ext4_jbd2.o migrate.o mballoc.o defrag.o
+ 
+ ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
+ ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
+Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.24-rc7.orig/include/linux/ext4_fs.h	2008-01-16 13:52:51.000000000 -0800
++++ linux-2.6.24-rc7/include/linux/ext4_fs.h	2008-01-16 14:38:02.000000000 -0800
+@@ -95,6 +95,7 @@ struct ext4_allocation_request {
+ 	unsigned long len;
+ 	/* flags. see above EXT4_MB_HINT_* */
+ 	unsigned long flags;
++	long long excepted_group;
+ };
+ 
+ /*
+@@ -299,6 +300,17 @@ struct ext4_new_group_data {
+ #define EXT4_IOC_GETRSVSZ		_IOR('f', 5, long)
+ #define EXT4_IOC_SETRSVSZ		_IOW('f', 6, long)
+ #define EXT4_IOC_MIGRATE		_IO('f', 7)
++#define EXT4_IOC_GET_EXTENTS		_IOR('f', 7, long)
++#define EXT4_IOC_GET_TREE_DEPTH		_IOR('f', 8, long)
++#define EXT4_IOC_GET_TREE_STATS		_IOR('f', 9, long)
++#define EXT4_IOC_FIBMAP			_IOW('f', 9, ext4_fsblk_t)
++#define EXT4_IOC_DEFRAG		_IOW('f', 10, struct ext4_ext_defrag_data)
++#define EXT4_IOC_GROUP_INFO	_IOW('f', 11, struct ext4_group_data_info)
++#define EXT4_IOC_FREE_BLOCKS_INFO	_IOW('f', 12, struct ext4_extents_info)
++#define EXT4_IOC_EXTENTS_INFO		_IOW('f', 13, struct ext4_extents_info)
++#define EXT4_IOC_RESERVE_BLOCK		_IOW('f', 14, struct ext4_extents_info)
++#define EXT4_IOC_MOVE_VICTIM		_IOW('f', 15, struct ext4_extents_info)
++#define EXT4_IOC_BLOCK_RELEASE		_IO('f', 16)
+ 
+ /*
+  * ioctl commands in 32 bit emulation
+@@ -316,6 +328,42 @@ struct ext4_new_group_data {
+ #define EXT4_IOC32_GETVERSION_OLD	FS_IOC32_GETVERSION
+ #define EXT4_IOC32_SETVERSION_OLD	FS_IOC32_SETVERSION
+ 
++/* Used for defrag */
++#define DEFRAG_MAX_ENT         32
++#define DEFRAG_FORCE_TRY       1
++#define DEFRAG_FORCE_VICTIM    2
++#define DEFRAG_FORCE_GATHER    3
++
++struct ext4_extent_data {
++	ext4_lblk_t block;		/* start logical block number */
++	ext4_fsblk_t start;		/* start physical block number */
++	int len;			/* blocks count */
++};
++
++struct ext4_ext_defrag_data {
++	ext4_lblk_t start_offset;	/* start offset to defrag in blocks */
++	ext4_lblk_t defrag_size;	/* size of defrag in blocks */
++	ext4_fsblk_t goal;		/* block offset for allocation */
++	int flag;			/* free space mode flag */
++	struct ext4_extent_data ext;
++};
++
++struct ext4_group_data_info {
++	int s_blocks_per_group;		/* blocks per group */
++	int s_inodes_per_group;		/* inodes per group */
++};
++
++struct ext4_extents_info {
++	unsigned long long ino;		/* inode number */
++	int max_entries;		/* maximum extents count */
++	int entries;			/* extent number/count */
++	ext4_lblk_t f_offset;		/* file offset */
++	ext4_grpblk_t g_offset;		/* group offset */
++	ext4_fsblk_t goal;		/* block offset for allocation */
++	struct ext4_extent_data ext[DEFRAG_MAX_ENT];
++};
++
++#define EXT4_TRANS_META_BLOCKS 4 /* bitmap + group desc + sb + inode */
+ 
+ /*
+  *  Mount options
+@@ -984,6 +1032,17 @@ extern struct ext4_group_desc * ext4_get
+ extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
+ extern void ext4_init_block_alloc_info(struct inode *);
+ extern void ext4_rsv_window_add(struct super_block *sb, struct ext4_reserve_window_node *rsv);
++extern void try_to_extend_reservation(struct ext4_reserve_window_node *,
++					struct super_block *, int);
++extern int alloc_new_reservation(struct ext4_reserve_window_node *,
++				ext4_grpblk_t, struct super_block *,
++				ext4_group_t, struct buffer_head *);
++extern ext4_grpblk_t bitmap_search_next_usable_block(ext4_grpblk_t,
++				struct buffer_head *, ext4_grpblk_t);
++extern int rsv_is_empty(struct ext4_reserve_window *rsv);
++extern int goal_in_my_reservation(struct ext4_reserve_window *rsv,
++				ext4_grpblk_t grp_goal, ext4_group_t group,
++				struct super_block *sb);
+ 
+ /* dir.c */
+ extern int ext4_check_dir_entry(const char *, struct inode *,
+@@ -993,6 +1052,7 @@ extern int ext4_htree_store_dirent(struc
+ 				    __u32 minor_hash,
+ 				    struct ext4_dir_entry_2 *dirent);
+ extern void ext4_htree_free_dir_info(struct dir_private_info *p);
++extern sector_t ext4_bmap(struct address_space *mapping, sector_t block);
+ 
+ /* fsync.c */
+ extern int ext4_sync_file (struct file *, struct dentry *, int);
+@@ -1053,6 +1113,8 @@ extern void ext4_set_aops(struct inode *
+ extern int ext4_writepage_trans_blocks(struct inode *);
+ extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
+ 		struct address_space *mapping, loff_t from);
++extern int ext4_get_block(struct inode *inode, sector_t iblock,
++		struct buffer_head *bh_result, int create);
+ 
+ /* ioctl.c */
+ extern int ext4_ioctl (struct inode *, struct file *, unsigned int,
+@@ -1102,6 +1164,14 @@ extern void ext4_inode_bitmap_set(struct
+ 				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
+ extern void ext4_inode_table_set(struct super_block *sb,
+ 				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
++/* extents.c */
++extern handle_t *ext4_ext_journal_restart(handle_t *handle, int needed);
++/* defrag.c */
++extern int ext4_ext_defrag(struct file *filp, ext4_lblk_t block_start,
++				ext4_lblk_t defrag_size, ext4_fsblk_t goal,
++				int flag, struct ext4_extent_data *ext);
++extern int ext4_ext_ioctl(struct inode *, struct file *, unsigned int,
++				unsigned long);
+ 
+ static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
+ {
+@@ -1219,6 +1289,7 @@ extern int ext4_get_blocks_wrap(handle_t
+ 			sector_t block, unsigned long max_blocks,
+ 			struct buffer_head *bh, int create,
+ 			int extend_disksize);
++extern int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start);
+ #endif	/* __KERNEL__ */
+ 
+ #endif	/* _LINUX_EXT4_FS_H */
+Index: linux-2.6.24-rc7/include/linux/ext4_fs_extents.h
+===================================================================
+--- linux-2.6.24-rc7.orig/include/linux/ext4_fs_extents.h	2008-01-16 13:52:18.000000000 -0800
++++ linux-2.6.24-rc7/include/linux/ext4_fs_extents.h	2008-01-16 14:01:10.000000000 -0800
+@@ -124,6 +124,19 @@ struct ext4_ext_path {
+ #define EXT4_EXT_CACHE_GAP	1
+ #define EXT4_EXT_CACHE_EXTENT	2
+ 
++/*
++ * to be called by ext4_ext_walk_space()
++ * negative retcode - error
++ * positive retcode - signal for ext4_ext_walk_space(), see below
++ * callback must return valid extent (passed or newly created)
++ */
++typedef int (*ext_prepare_callback)(struct inode *, struct ext4_ext_path *,
++					struct ext4_ext_cache *,
++					void *);
++
++#define EXT_CONTINUE	0
++#define EXT_BREAK	1
++#define EXT_REPEAT	2
+ 
+ #define EXT_MAX_BLOCK	0xffffffff
+ 
+@@ -225,5 +238,14 @@ extern int ext4_ext_search_left(struct i
+ 						ext4_lblk_t *, ext4_fsblk_t *);
+ extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
+ 						ext4_lblk_t *, ext4_fsblk_t *);
++extern ext4_fsblk_t ext_pblock(struct ext4_extent *ex);
++extern void ext4_ext_drop_refs(struct ext4_ext_path *path);
++extern ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
++					struct ext4_ext_path *path,
++					ext4_lblk_t block);
++extern int ext4_ext_insert_extent_defrag(handle_t *handle, struct inode *inode,
++					struct ext4_ext_path *path,
++					struct ext4_extent *newext, int defrag);
++extern ext4_lblk_t ext4_ext_next_allocated_block(struct ext4_ext_path *path);
+ #endif /* _LINUX_EXT4_EXTENTS */
+ 
