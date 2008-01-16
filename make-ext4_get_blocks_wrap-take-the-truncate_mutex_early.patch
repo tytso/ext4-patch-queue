@@ -13,16 +13,16 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
  fs/ext4/extents.c       |    9 ++++--
- fs/ext4/inode.c         |   69 +++++------------------------------------------
+ fs/ext4/inode.c         |   69 +++++-------------------------------------------
  include/linux/ext4_fs.h |    2 +
  3 files changed, 16 insertions(+), 64 deletions(-)
 
 
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 566bece..e9d5457 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -2128,6 +2128,10 @@ out:
+Index: linux-2.6.24-rc7/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/ext4/extents.c	2008-01-16 13:49:50.000000000 -0800
++++ linux-2.6.24-rc7/fs/ext4/extents.c	2008-01-16 13:50:04.000000000 -0800
+@@ -2129,6 +2129,10 @@ out:
  	return err ? err : allocated;
  }
  
@@ -33,7 +33,7 @@ index 566bece..e9d5457 100644
  int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  			ext4_lblk_t iblock,
  			unsigned long max_blocks, struct buffer_head *bh_result,
-@@ -2143,7 +2147,6 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2144,7 +2148,6 @@ int ext4_ext_get_blocks(handle_t *handle
  	__clear_bit(BH_New, &bh_result->b_state);
  	ext_debug("blocks %u/%lu requested for inode %u\n",
  			iblock, max_blocks, inode->i_ino);
@@ -41,7 +41,7 @@ index 566bece..e9d5457 100644
  
  	/* check in cache */
  	goal = ext4_ext_in_cache(inode, iblock, &newex);
-@@ -2317,8 +2320,6 @@ out2:
+@@ -2318,8 +2321,6 @@ out2:
  		ext4_ext_drop_refs(path);
  		kfree(path);
  	}
@@ -50,7 +50,7 @@ index 566bece..e9d5457 100644
  	return err ? err : allocated;
  }
  
-@@ -2448,6 +2449,7 @@ long ext4_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
+@@ -2449,6 +2450,7 @@ long ext4_fallocate(struct inode *inode,
  	 * modify 1 super block, 1 block bitmap and 1 group descriptor.
  	 */
  	credits = EXT4_DATA_TRANS_BLOCKS(inode->i_sb) + 3;
@@ -58,7 +58,7 @@ index 566bece..e9d5457 100644
  retry:
  	while (ret >= 0 && ret < max_blocks) {
  		block = block + ret;
-@@ -2504,6 +2506,7 @@ retry:
+@@ -2505,6 +2507,7 @@ retry:
  	if (ret == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
  		goto retry;
  
@@ -66,11 +66,11 @@ index 566bece..e9d5457 100644
  	/*
  	 * Time to update the file size.
  	 * Update only when preallocation was requested beyond the file size.
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index eaace13..71c7ad0 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -243,13 +243,6 @@ static inline void add_chain(Indirect *p, struct buffer_head *bh, __le32 *v)
+Index: linux-2.6.24-rc7/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/ext4/inode.c	2008-01-16 13:49:03.000000000 -0800
++++ linux-2.6.24-rc7/fs/ext4/inode.c	2008-01-16 13:50:04.000000000 -0800
+@@ -243,13 +243,6 @@ static inline void add_chain(Indirect *p
  	p->bh = bh;
  }
  
@@ -84,7 +84,7 @@ index eaace13..71c7ad0 100644
  /**
   *	ext4_block_to_path - parse the block number into array of offsets
   *	@inode: inode in question (we are only interested in its superblock)
-@@ -348,10 +341,11 @@ static int ext4_block_to_path(struct inode *inode,
+@@ -348,10 +341,11 @@ static int ext4_block_to_path(struct ino
   *		(pointer to last triple returned, *@err == 0)
   *	or when it gets an IO error reading an indirect block
   *		(ditto, *@err == -EIO)
@@ -98,7 +98,7 @@ index eaace13..71c7ad0 100644
   */
  static Indirect *ext4_get_branch(struct inode *inode, int depth,
  				 ext4_lblk_t  *offsets,
-@@ -370,9 +364,6 @@ static Indirect *ext4_get_branch(struct inode *inode, int depth,
+@@ -370,9 +364,6 @@ static Indirect *ext4_get_branch(struct 
  		bh = sb_bread(sb, le32_to_cpu(p->key));
  		if (!bh)
  			goto failure;
@@ -108,7 +108,7 @@ index eaace13..71c7ad0 100644
  		add_chain(++p, bh, (__le32*)bh->b_data + *++offsets);
  		/* Reader: end */
  		if (!p->key)
-@@ -380,10 +371,6 @@ static Indirect *ext4_get_branch(struct inode *inode, int depth,
+@@ -380,10 +371,6 @@ static Indirect *ext4_get_branch(struct 
  	}
  	return NULL;
  
@@ -130,7 +130,7 @@ index eaace13..71c7ad0 100644
   */
  int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
  		ext4_lblk_t iblock, unsigned long maxblocks,
-@@ -825,18 +816,6 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+@@ -825,18 +816,6 @@ int ext4_get_blocks_handle(handle_t *han
  		while (count < maxblocks && count <= blocks_to_boundary) {
  			ext4_fsblk_t blk;
  
@@ -149,7 +149,7 @@ index eaace13..71c7ad0 100644
  			blk = le32_to_cpu(*(chain[depth-1].p + count));
  
  			if (blk == first_block + count)
-@@ -844,44 +823,13 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+@@ -844,44 +823,13 @@ int ext4_get_blocks_handle(handle_t *han
  			else
  				break;
  		}
@@ -195,7 +195,7 @@ index eaace13..71c7ad0 100644
  	/*
  	 * Okay, we need to do block allocation.  Lazily initialize the block
  	 * allocation info here if necessary
-@@ -923,7 +871,6 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+@@ -923,7 +871,6 @@ int ext4_get_blocks_handle(handle_t *han
  	*/
  	if (!err && extend_disksize && inode->i_size > ei->i_disksize)
  		ei->i_disksize = inode->i_size;
@@ -203,11 +203,11 @@ index eaace13..71c7ad0 100644
  	if (err)
  		goto cleanup;
  
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 55a376e..583049c 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
-@@ -1113,6 +1113,7 @@ ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.24-rc7.orig/include/linux/ext4_fs.h	2008-01-16 13:49:41.000000000 -0800
++++ linux-2.6.24-rc7/include/linux/ext4_fs.h	2008-01-16 13:50:04.000000000 -0800
+@@ -1113,6 +1113,7 @@ ext4_get_blocks_wrap(handle_t *handle, s
  			int create, int extend_disksize)
  {
  	int retval;
@@ -215,7 +215,7 @@ index 55a376e..583049c 100644
  	if (EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL) {
  		retval = ext4_ext_get_blocks(handle, inode,
  						(ext4_lblk_t)block, max_blocks,
-@@ -1122,6 +1123,7 @@ ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+@@ -1122,6 +1123,7 @@ ext4_get_blocks_wrap(handle_t *handle, s
  						(ext4_lblk_t)block, max_blocks,
  						bh, create, extend_disksize);
  	}
