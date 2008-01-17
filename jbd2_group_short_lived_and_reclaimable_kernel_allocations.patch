@@ -1,0 +1,77 @@
+JBD2: Group short-lived and reclaimable kernel allocations
+From: Mingming Cao <cmm@us.ibm.com>
+Ported from JBD to JBD2
+
+--------------------------------
+From: Mel Gorman <mel@csn.ul.ie>
+Date: Tue, 16 Oct 2007 08:25:52 +0000 (-0700)
+Subject: Group short-lived and reclaimable kernel allocations
+X-Git-Tag: v2.6.24-rc1~1137
+X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Ftorvalds%2Flinux-2.6.git;a=commitdiff_plain;h=e12ba74d8ff3e2f73a583500d7095e406df4d093
+
+Group short-lived and reclaimable kernel allocations
+
+This patch marks a number of allocations that are either short-lived such as
+network buffers or are reclaimable such as inode allocations.  When something
+like updatedb is called, long-lived and unmovable kernel allocations tend to
+be spread throughout the address space which increases fragmentation.
+
+This patch groups these allocations together as much as possible by adding a
+new MIGRATE_TYPE.  The MIGRATE_RECLAIMABLE type is for allocations that can be
+reclaimed on demand, but not moved.  i.e.  they can be migrated by deleting
+them and re-reading the information from elsewhere.
+
+Cc: Mel Gorman <mel@csn.ul.ie>
+Cc: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+
+---
+ fs/jbd2/journal.c |    4 ++--
+ fs/jbd2/revoke.c  |    6 ++++--
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+Index: linux-2.6.24-rc7/fs/jbd2/journal.c
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/jbd2/journal.c	2008-01-16 15:02:40.000000000 -0800
++++ linux-2.6.24-rc7/fs/jbd2/journal.c	2008-01-16 17:40:24.000000000 -0800
+@@ -1975,7 +1975,7 @@ static int journal_init_jbd2_journal_hea
+ 	jbd2_journal_head_cache = kmem_cache_create("jbd2_journal_head",
+ 				sizeof(struct journal_head),
+ 				0,		/* offset */
+-				0,		/* flags */
++				SLAB_TEMPORARY,	/* flags */
+ 				NULL);		/* ctor */
+ 	retval = 0;
+ 	if (jbd2_journal_head_cache == 0) {
+@@ -2271,7 +2271,7 @@ static int __init journal_init_handle_ca
+ 	jbd2_handle_cache = kmem_cache_create("jbd2_journal_handle",
+ 				sizeof(handle_t),
+ 				0,		/* offset */
+-				0,		/* flags */
++				SLAB_TEMPORARY,	/* flags */
+ 				NULL);		/* ctor */
+ 	if (jbd2_handle_cache == NULL) {
+ 		printk(KERN_EMERG "JBD: failed to create handle cache\n");
+Index: linux-2.6.24-rc7/fs/jbd2/revoke.c
+===================================================================
+--- linux-2.6.24-rc7.orig/fs/jbd2/revoke.c	2008-01-06 13:45:38.000000000 -0800
++++ linux-2.6.24-rc7/fs/jbd2/revoke.c	2008-01-16 17:40:24.000000000 -0800
+@@ -171,13 +171,15 @@ int __init jbd2_journal_init_revoke_cach
+ {
+ 	jbd2_revoke_record_cache = kmem_cache_create("jbd2_revoke_record",
+ 					   sizeof(struct jbd2_revoke_record_s),
+-					   0, SLAB_HWCACHE_ALIGN, NULL);
++					   0,
++					   SLAB_HWCACHE_ALIGN|SLAB_TEMPORARY,
++					   NULL);
+ 	if (jbd2_revoke_record_cache == 0)
+ 		return -ENOMEM;
+ 
+ 	jbd2_revoke_table_cache = kmem_cache_create("jbd2_revoke_table",
+ 					   sizeof(struct jbd2_revoke_table_s),
+-					   0, 0, NULL);
++					   0, SLAB_TEMPORARY, NULL);
+ 	if (jbd2_revoke_table_cache == 0) {
+ 		kmem_cache_destroy(jbd2_revoke_record_cache);
+ 		jbd2_revoke_record_cache = NULL;
