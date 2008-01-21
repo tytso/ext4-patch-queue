@@ -1,28 +1,21 @@
-user of the jiffies rounding code: JBD2
+jbd2: Use round-jiffies() function for the "5 second" ext4/jbd2 wakeup
+
 From: Mingming Cao <cmm@us.ibm.com>
 
-Ported from JBD changes from Arjan van de Ven <arjan@linux.intel.com>
--------------------------------------------
-Date: Sun, 10 Dec 2006 10:21:26 +0000 (-0800)
-Subject: [PATCH] user of the jiffies rounding code: JBD
-X-Git-Tag: v2.6.20-rc1~15^2~43
-X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Ftorvalds%2Flinux-2.6.git;a=commitdiff_plain;h=44d306e1508fef6fa7a6eb15a1aba86ef68389a6
+While "every 5 seconds" doesn't sound as a problem, there can be many
+of these (and these timers do add up over all the kernel).  The "5
+second" wakeup isn't really timing sensitive; in addition even with
+rounding it'll still happen every 5 seconds (with the exception of the
+very first time, which is likely to be rounded up to somewhere closer
+to 6 seconds)
 
-[PATCH] user of the jiffies rounding code: JBD
-
-This patch introduces a user: of the round_jiffies() function; the "5 second"
-ext3/jbd wakeup.
-
-While "every 5 seconds" doesn't sound as a problem, there can be many of these
-(and these timers do add up over all the kernel).  The "5 second" wakeup isn't
-really timing sensitive; in addition even with rounding it'll still happen
-every 5 seconds (with the exception of the very first time, which is likely to
-be rounded up to somewhere closer to 6 seconds)
+(Ported from similar JBD patch made by Arjan van de Ven to
+fs/jbd/transaction.c)
 
 Cc: Arjan van de Ven <arjan@linux.intel.com>
 Cc: Andrew Morton <akpm@osdl.org>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
----
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
  fs/jbd2/transaction.c |    2 +-

@@ -1,29 +1,17 @@
-JBD2: Group short-lived and reclaimable kernel allocations
+jbd2: Mark jbd2 slabs as SLAB_TEMPORARY
+
 From: Mingming Cao <cmm@us.ibm.com>
-Ported from JBD to JBD2
 
---------------------------------
-From: Mel Gorman <mel@csn.ul.ie>
-Date: Tue, 16 Oct 2007 08:25:52 +0000 (-0700)
-Subject: Group short-lived and reclaimable kernel allocations
-X-Git-Tag: v2.6.24-rc1~1137
-X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Ftorvalds%2Flinux-2.6.git;a=commitdiff_plain;h=e12ba74d8ff3e2f73a583500d7095e406df4d093
-
-Group short-lived and reclaimable kernel allocations
-
-This patch marks a number of allocations that are either short-lived such as
-network buffers or are reclaimable such as inode allocations.  When something
-like updatedb is called, long-lived and unmovable kernel allocations tend to
-be spread throughout the address space which increases fragmentation.
-
-This patch groups these allocations together as much as possible by adding a
-new MIGRATE_TYPE.  The MIGRATE_RECLAIMABLE type is for allocations that can be
-reclaimed on demand, but not moved.  i.e.  they can be migrated by deleting
-them and re-reading the information from elsewhere.
+This patch marks slab allocations by jbd2 as short-lived in support of
+Mel Gorman's "Group short-lived and reclaimable kernel allocations"
+patch.  (Ported from similar changes made to fs/jbd/journal.c and
+fs/jbd/revoke.c in Mel's patch.)
 
 Cc: Mel Gorman <mel@csn.ul.ie>
 Cc: Andrew Morton <akpm@linux-foundation.org>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
 ---
 
 ---

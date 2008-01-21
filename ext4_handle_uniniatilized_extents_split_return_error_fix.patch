@@ -1,56 +1,36 @@
-ext4: fix uniniatilized extent splitting error.
+ext4: fix uniniatilized extent splitting error
 
 From: Dmitry Monakhov <dmonakhov@openvz.org>
 
-Hi,
-While playing with new fancy fallocate interface on ext4 i've triggered
-bug which corrupted my grub :).
+Fix bug reported by Dmitry Monakhov caused by lost error code
 
-My testcase:
-~~~~~~~~~~~~
-blksize = 0x1000;
-fd = open(argv[1], O_RDWR|O_CREAT, 0700);
-unsigned long long sz = 0x10000000UL;
-/* allocating big blocks chunk */
-syscall(__NR_fallocate, fd, 0, 0UL, sz)
+    Testcase: 
 
-/* grab all other available filesystem space */
-tfd = open("tmp", O_RDWR|O_CREAT|O_DIRECT, 0700);
-while( write(tfd, buf, 4096) > 0); /* loop untill ENOSPC */
-fsync(fd); /* just in case */
-while (pos < sz) {
-	/* each seek+ write operation result in splits uninitialized extent
-	in three extents. Splitting may result in new extent allocation
-	which probably will fail because of ENOSPC*/
+    blksize = 0x1000;
+    fd = open(argv[1], O_RDWR|O_CREAT, 0700);
+    unsigned long long sz = 0x10000000UL;
+    /* allocating big blocks chunk */
+    syscall(__NR_fallocate, fd, 0, 0UL, sz)
 
-	lseek(fd, blksize*2 -1, SEEK_CUR);
-	if ((ret = write(fd, 'a', 1)) != 1)
-		exit(1);
-	pos += blksize * 2;
-}
+    /* grab all other available filesystem space */
+    tfd = open("tmp", O_RDWR|O_CREAT|O_DIRECT, 0700);
+    while( write(tfd, buf, 4096) > 0); /* loop untill ENOSPC */
+    fsync(fd); /* just in case */
+    while (pos < sz) {
+    	/* each seek+ write operation result in splits uninitialized extent
+    	in three extents. Splitting may result in new extent allocation
+    	which probably will fail because of ENOSPC*/
 
-Buggy place:
-~~~~~~~~~~~~
-ext4_ext_get_blocks(..., bh_result,..)
-{
-	err = 0;
-	allocated = 0;
-....
-	 ret = ext4_ext_convert_to_initialized(...)
- 	if (ret < 0)
-<< By occasion real error code was lost here.
-		goto out2
-....
-out2:
-....
-	return err? err: allocated;
-<< Wow.. exit with "0", and caller assumes what bh_result was properly filled
-<<   and then will submit it for write. But in fact bh contains random data in
-<<   ->b_bdev, ->b_blocknr fileds :).
-}
+    	lseek(fd, blksize*2 -1, SEEK_CUR);
+    	if ((ret = write(fd, 'a', 1)) != 1)
+    		exit(1);
+    	pos += blksize * 2;
+    }
 
 Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
 ---
 
  fs/ext4/extents.c |    5 +++--
