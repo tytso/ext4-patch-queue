@@ -1,13 +1,13 @@
-ext4: Get the actual length of extent
+ext4: Use the ext4_ext_actual_len() helper function
 
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
-ext4 use the extent len for encoding whether the extent is intialized or
-not. The helper function ext4_ext_get_actual_len should be used to get the
-actual length of the extent.
+ext4 uses the high bit of the extent length to encode whether the extent
+is intialized or not. The helper function ext4_ext_get_actual_len should
+be used to get the actual length of the extent.
 
-Fix the below kernel BUG
-http://bugzilla.kernel.org/show_bug.cgi?id=9732
+This addresses the kernel bug documented here: 
+     http://bugzilla.kernel.org/show_bug.cgi?id=9732
 
 kernel BUG at fs/ext4/extents.c:1056!
 ....
@@ -24,6 +24,8 @@ Call Trace:
 [<ffffffff8100c043>] tracesys+0xd5/0xda
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
 ---
 
  fs/ext4/extents.c |   24 +++++++++++++-----------
