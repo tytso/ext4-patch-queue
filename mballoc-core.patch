@@ -2,143 +2,16 @@ ext4: Add multi block allocator for ext4
 
 From: Alex Tomas <alex@clusterfs.com>
 
-The allocation request involve request for multiple number of
-blocks near to the goal(block) value specified.
-
-During initialization phase of the allocator we decide to use the group
-preallocation or inode preallocation depending on the size file. The size of
-the file could be the resulting file size we would have after allocation or
-the current file size which ever is larger. If the size is less that
-sbi->s_mb_stream_request we select the group preallocation. The default value
-of s_mb_stream_request is 16 blocks. This can also be tuned via
-/proc/fs/ext4/<partition>/stream_req. The value is represented in terms of
-number of blocks.
-
-The main motivation for having small file use group preallocation is to ensure
-that we have small file closer in the disk.
-
-
-First stage the allocator looks at the inode prealloc list
-ext4_inode_info->i_prealloc_list contain list of prealloc
-spaces for this particular inode. The inode prealloc space
-is represented as
-pa_lstart -> the logical start block for this prealloc space
-pa_pstart -> the physical start block for this prealloc space
-pa_len    -> lenght for this prealloc space
-pa_free   ->  free space available in this prealloc space
-
-The inode preallocation space is used looking at the _logical_
-start block. If only the logical file block falls within the
-range of prealloc space we will consume the particular prealloc
-space. This make sure that that the we have contiguous physical
-blocks representing the file blocks
-
-The important thing to be noted in case of inode prealloc space
-is that we don't modify the values associated to inode prealloc
-space except pa_free.
-
-If we are not able to find blocks in the inode prealloc space and if we have
-the group allocation flag set then we look at the locality group prealloc
-space. These are per CPU prealloc list repreasented as
-
-ext4_sb_info.s_locality_groups[smp_processor_id()]
-
-The reason for having a per cpu locality group is to reduce the contention
-between CPUs. It is possible to get scheduled at this point.
-
-The locality group prealloc space is used looking at whether we have
-enough free space (pa_free) withing the prealloc space.
-
-If we can't allocate blocks via inode prealloc or/and locality group prealloc
-then we look at the buddy cache. The buddy cache is represented by
-ext4_sb_info.s_buddy_cache (struct inode) whose file offset gets mapped to the
-buddy and bitmap information regarding different groups. The buddy information
-is attached to buddy cache inode so that we can access them through the page
-cache. The information regarding each group is loaded via ext4_mb_load_buddy.
-The information involve block bitmap and buddy information. The information are
-stored in the inode as
-
- {                        page                        }
- [ group 0 buddy][ group 0 bitmap] [group 1][ group 1]...
-
-
-one block each for bitmap and buddy information.
-So for each group we take up 2 blocks. A page can
-contain blocks_per_page (PAGE_CACHE_SIZE / blocksize)  blocks.
-So it can have information regarding groups_per_page which
-is blocks_per_page/2
-
-Buddy cache inode is not stored on disk. The inode get
-thrown away at the end when unmounting the disk.
-
-We look for count number of blocks in the buddy cache. If
-we were able to locate that many free blocks we return
-with additional information regarding rest of the
-contiguous physical block available
-
-
-Before allocating blocks via buddy cache we normalize the request blocks. This
-ensure we ask for more blocks that we needed. The extra blocks that we get
-after allocation is added to the respective prealloc list. In case of inode
-preallocation we follow a list of heuristics based on file size. This can be
-found in ext4_mb_normalize_request. If we are doing a group prealloc we try to
-normalize the request to sbi->s_mb_group_prealloc. Default value of
-s_mb_group_prealloc is set to 512 blocks. This can be tuned via
-/proc/fs/ext4/<partition/group_prealloc. The value is represented in terms of
-number of blocks. If we have mounted the file system with -O stripe=<value>
-option the group prealloc request is normalized to the stripe value (sbi->s_stripe)
-
-The regular allocator(using the buddy cache) support few tunables.
-/proc/fs/ext4/<partition>/min_to_scan
-/proc/fs/ext4/<partition>/max_to_scan
-/proc/fs/ext4/<partition>/order2_req
-
-The regular allocator use buddy scan only if the request len is power of 2
-blocks and the order of allocation is >= sbi->s_mb_order2_reqs. The value of
-s_mb_order2_reqs can be tuned via /proc/fs/ext4/<partition>/order2_req.
-If the request len is equal to stripe size (sbi->s_stripe), we try to search
-for contigous block in stripe size. This should result in better allocation on
-RAID setup. If not we search in the specific group using bitmap for best
-extents. The tunable min_to_scan and max_to_scan controll the behaviour here.
-min_to_scan indicate how long the mballoc __must__ look for a best extent and
-max_to_scanindicate how long the mballoc __can__ look for a best extent in the
-found extents. Searching for the blocks starts with the group specified as the
-goal value in allocation context via ac_g_ex. Each group is first checked
-based on the criteria whether it can used for allocation. ext4_mb_good_group
-explains how the groups are checked.
-
-Both the prealloc space are getting populated
-as above. So for the first request we will hit the buddy cache
-which will result in this prealloc space getting filled. The prealloc
-space is then later used for the subsequent request.
-
-
 Signed-off-by: Alex Tomas <alex@clusterfs.com>
 Signed-off-by: Andreas Dilger <adilger@clusterfs.com>
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
 
- fs/ext4/Makefile           |    2 
- fs/ext4/balloc.c           |   67 
- fs/ext4/extents.c          |   45 
- fs/ext4/inode.c            |   15 
- fs/ext4/mballoc.c          | 4439 +++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/migrate.c          |   10 
- fs/ext4/super.c            |   61 
- fs/ext4/xattr.c            |    4 
- include/linux/ext4_fs.h    |   76 
- include/linux/ext4_fs_i.h  |    4 
- include/linux/ext4_fs_sb.h |   52 
- 11 files changed, 4738 insertions(+), 37 deletions(-)
- create mode 100644 fs/ext4/mballoc.c
-
-
-Index: linux-2.6.24-rc8/fs/ext4/Makefile
-===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/Makefile	2008-01-16 18:16:27.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/Makefile	2008-01-17 12:05:00.000000000 -0800
+diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
+index d5fd80b..ac6fa8c 100644
+--- a/fs/ext4/Makefile
++++ b/fs/ext4/Makefile
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -148,11 +21,11 @@ Index: linux-2.6.24-rc8/fs/ext4/Makefile
  
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-Index: linux-2.6.24-rc8/fs/ext4/balloc.c
-===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/balloc.c	2008-01-16 18:16:27.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/balloc.c	2008-01-17 12:05:00.000000000 -0800
-@@ -577,6 +577,8 @@ void ext4_discard_reservation(struct ino
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index 54d3da7..643046b 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -577,6 +577,8 @@ void ext4_discard_reservation(struct inode *inode)
  	struct ext4_reserve_window_node *rsv;
  	spinlock_t *rsv_lock = &EXT4_SB(inode->i_sb)->s_rsv_window_lock;
  
@@ -197,7 +70,7 @@ Index: linux-2.6.24-rc8/fs/ext4/balloc.c
  	if (dquot_freed_blocks)
  		DQUOT_FREE_BLOCK(inode, dquot_freed_blocks);
  	return;
-@@ -1576,7 +1588,7 @@ int ext4_should_retry_alloc(struct super
+@@ -1576,7 +1588,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
  }
  
  /**
@@ -206,7 +79,7 @@ Index: linux-2.6.24-rc8/fs/ext4/balloc.c
   * @handle:		handle to this transaction
   * @inode:		file inode
   * @goal:		given target block(filesystem wide)
-@@ -1589,7 +1601,7 @@ int ext4_should_retry_alloc(struct super
+@@ -1589,7 +1601,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
   * any specific goal block.
   *
   */
@@ -265,10 +138,10 @@ Index: linux-2.6.24-rc8/fs/ext4/balloc.c
  /**
   * ext4_count_free_blocks() -- count filesystem free blocks
   * @sb:		superblock
-Index: linux-2.6.24-rc8/fs/ext4/extents.c
-===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/extents.c	2008-01-16 18:16:27.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/extents.c	2008-01-17 12:05:02.000000000 -0800
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index a60227c..8cf5545 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
 @@ -853,7 +853,7 @@ cleanup:
  		for (i = 0; i < depth; i++) {
  			if (!ablocks[i])
@@ -278,7 +151,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  		}
  	}
  	kfree(ablocks);
-@@ -1698,7 +1698,7 @@ static int ext4_ext_rm_idx(handle_t *han
+@@ -1698,7 +1698,7 @@ static int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
  	ext_debug("index is empty, remove it, free block %llu\n", leaf);
  	bh = sb_find_get_block(inode->i_sb, leaf);
  	ext4_forget(handle, 1, inode, bh, leaf);
@@ -287,7 +160,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  	return err;
  }
  
-@@ -1759,8 +1759,10 @@ static int ext4_remove_blocks(handle_t *
+@@ -1759,8 +1759,10 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  {
  	struct buffer_head *bh;
  	unsigned short ee_len =  ext4_ext_get_actual_len(ex);
@@ -299,7 +172,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  #ifdef EXTENTS_STATS
  	{
  		struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
-@@ -1789,7 +1791,7 @@ static int ext4_remove_blocks(handle_t *
+@@ -1789,7 +1791,7 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  			bh = sb_find_get_block(inode->i_sb, start + i);
  			ext4_forget(handle, 0, inode, bh, start + i);
  		}
@@ -308,7 +181,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  	} else if (from == le32_to_cpu(ex->ee_block)
  		   && to <= le32_to_cpu(ex->ee_block) + ee_len - 1) {
  		printk(KERN_INFO "strange request: removal %u-%u from %u:%u\n",
-@@ -2287,6 +2289,7 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2287,6 +2289,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  	ext4_fsblk_t goal, newblock;
  	int err = 0, depth, ret;
  	unsigned long allocated = 0;
@@ -316,7 +189,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  
  	__clear_bit(BH_New, &bh_result->b_state);
  	ext_debug("blocks %u/%lu requested for inode %u\n",
-@@ -2397,8 +2400,15 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2397,8 +2400,15 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  	if (S_ISREG(inode->i_mode) && (!EXT4_I(inode)->i_block_alloc_info))
  		ext4_init_block_alloc_info(inode);
  
@@ -334,7 +207,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  
  	/*
  	 * See if request is beyond maximum number of blocks we can have in
-@@ -2421,7 +2431,18 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2421,7 +2431,18 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  		allocated = le16_to_cpu(newex.ee_len);
  	else
  		allocated = max_blocks;
@@ -354,7 +227,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  	if (!newblock)
  		goto out2;
  	ext_debug("allocate new block: goal %llu, found %llu/%lu\n",
-@@ -2429,14 +2450,17 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2429,14 +2450,17 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  
  	/* try to insert new extent into found leaf and return */
  	ext4_ext_store_pblock(&newex, newblock);
@@ -374,7 +247,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  		goto out2;
  	}
  
-@@ -2445,6 +2469,7 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2445,6 +2469,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  
  	/* previous routine could use block we allocated */
  	newblock = ext_pblock(&newex);
@@ -382,7 +255,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  outnew:
  	__set_bit(BH_New, &bh_result->b_state);
  
-@@ -2496,6 +2521,8 @@ void ext4_ext_truncate(struct inode * in
+@@ -2496,6 +2521,8 @@ void ext4_ext_truncate(struct inode * inode, struct page *page)
  	down_write(&EXT4_I(inode)->i_data_sem);
  	ext4_ext_invalidate_cache(inode);
  
@@ -391,11 +264,11 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  	/*
  	 * TODO: optimization is possible here.
  	 * Probably we need not scan at all,
-Index: linux-2.6.24-rc8/fs/ext4/inode.c
-===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/inode.c	2008-01-16 18:16:27.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/inode.c	2008-01-17 12:05:01.000000000 -0800
-@@ -551,7 +551,7 @@ static int ext4_alloc_blocks(handle_t *h
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 3c013e5..2947800 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -551,7 +551,7 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
  	return ret;
  failed_out:
  	for (i = 0; i <index; i++)
@@ -429,7 +302,7 @@ Index: linux-2.6.24-rc8/fs/ext4/inode.c
  
  	return err;
  }
-@@ -2051,7 +2052,7 @@ static void ext4_clear_blocks(handle_t *
+@@ -2051,7 +2052,7 @@ static void ext4_clear_blocks(handle_t *handle, struct inode *inode,
  		}
  	}
  
@@ -438,7 +311,7 @@ Index: linux-2.6.24-rc8/fs/ext4/inode.c
  }
  
  /**
-@@ -2224,7 +2225,7 @@ static void ext4_free_branches(handle_t 
+@@ -2224,7 +2225,7 @@ static void ext4_free_branches(handle_t *handle, struct inode *inode,
  				ext4_journal_test_restart(handle, inode);
  			}
  
@@ -447,11 +320,12 @@ Index: linux-2.6.24-rc8/fs/ext4/inode.c
  
  			if (parent_bh) {
  				/*
-Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
-===================================================================
---- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.24-rc8/fs/ext4/mballoc.c	2008-01-17 12:05:20.000000000 -0800
-@@ -0,0 +1,4439 @@
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+new file mode 100644
+index 0000000..aacbbb2
+--- /dev/null
++++ b/fs/ext4/mballoc.c
+@@ -0,0 +1,4553 @@
 +/*
 + * Copyright (c) 2003-2006, Cluster File Systems, Inc, info@clusterfs.com
 + * Written by Alex Tomas <alex@clusterfs.com>
@@ -508,6 +382,120 @@ Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
 + *   - mb_mark_used() may allocate chunk right after splitting buddy
 + *   - tree of groups sorted by number of free blocks
 + *   - error handling
++ */
++
++/* 
++ * The allocation request involve request for multiple number of blocks
++ * near to the goal(block) value specified.
++ * 
++ * During initialization phase of the allocator we decide to use the group
++ * preallocation or inode preallocation depending on the size file. The
++ * size of the file could be the resulting file size we would have after
++ * allocation or the current file size which ever is larger. If the size is
++ * less that sbi->s_mb_stream_request we select the group
++ * preallocation. The default value of s_mb_stream_request is 16
++ * blocks. This can also be tuned via
++ * /proc/fs/ext4/<partition>/stream_req. The value is represented in terms
++ * of number of blocks.
++ * 
++ * The main motivation for having small file use group preallocation is to
++ * ensure that we have small file closer in the disk.
++ * 
++ * First stage the allocator looks at the inode prealloc list
++ * ext4_inode_info->i_prealloc_list contain list of prealloc spaces for
++ * this particular inode. The inode prealloc space is represented as:
++ * 
++ * pa_lstart -> the logical start block for this prealloc space
++ * pa_pstart -> the physical start block for this prealloc space
++ * pa_len    -> lenght for this prealloc space
++ * pa_free   ->  free space available in this prealloc space
++ * 
++ * The inode preallocation space is used looking at the _logical_ start
++ * block. If only the logical file block falls within the range of prealloc
++ * space we will consume the particular prealloc space. This make sure that
++ * that the we have contiguous physical blocks representing the file blocks
++ * 
++ * The important thing to be noted in case of inode prealloc space is that
++ * we don't modify the values associated to inode prealloc space except
++ * pa_free.
++ * 
++ * If we are not able to find blocks in the inode prealloc space and if we
++ * have the group allocation flag set then we look at the locality group
++ * prealloc space. These are per CPU prealloc list repreasented as
++ * 
++ * ext4_sb_info.s_locality_groups[smp_processor_id()]
++ * 
++ * The reason for having a per cpu locality group is to reduce the contention
++ * between CPUs. It is possible to get scheduled at this point.
++ * 
++ * The locality group prealloc space is used looking at whether we have
++ * enough free space (pa_free) withing the prealloc space.
++ * 
++ * If we can't allocate blocks via inode prealloc or/and locality group
++ * prealloc then we look at the buddy cache. The buddy cache is represented
++ * by ext4_sb_info.s_buddy_cache (struct inode) whose file offset gets
++ * mapped to the buddy and bitmap information regarding different
++ * groups. The buddy information is attached to buddy cache inode so that
++ * we can access them through the page cache. The information regarding
++ * each group is loaded via ext4_mb_load_buddy.  The information involve
++ * block bitmap and buddy information. The information are stored in the
++ * inode as:
++ * 
++ *  {                        page                        }
++ *  [ group 0 buddy][ group 0 bitmap] [group 1][ group 1]...
++ * 
++ * 
++ * one block each for bitmap and buddy information.  So for each group we
++ * take up 2 blocks. A page can contain blocks_per_page (PAGE_CACHE_SIZE /
++ * blocksize) blocks.  So it can have information regarding groups_per_page
++ * which is blocks_per_page/2
++ * 
++ * The buddy cache inode is not stored on disk. The inode is thrown
++ * away when the filesystem is unmounted.
++ * 
++ * We look for count number of blocks in the buddy cache. If we were able
++ * to locate that many free blocks we return with additional information
++ * regarding rest of the contiguous physical block available
++ * 
++ * Before allocating blocks via buddy cache we normalize the request
++ * blocks. This ensure we ask for more blocks that we needed. The extra
++ * blocks that we get after allocation is added to the respective prealloc
++ * list. In case of inode preallocation we follow a list of heuristics
++ * based on file size. This can be found in ext4_mb_normalize_request. If
++ * we are doing a group prealloc we try to normalize the request to
++ * sbi->s_mb_group_prealloc. Default value of s_mb_group_prealloc is set to
++ * 512 blocks. This can be tuned via
++ * /proc/fs/ext4/<partition/group_prealloc. The value is represented in
++ * terms of number of blocks. If we have mounted the file system with -O
++ * stripe=<value> option the group prealloc request is normalized to the
++ * stripe value (sbi->s_stripe)
++ * 
++ * The regular allocator(using the buddy cache) support few tunables.
++ * 
++ * /proc/fs/ext4/<partition>/min_to_scan
++ * /proc/fs/ext4/<partition>/max_to_scan
++ * /proc/fs/ext4/<partition>/order2_req
++ * 
++ * The regular allocator use buddy scan only if the request len is power of
++ * 2 blocks and the order of allocation is >= sbi->s_mb_order2_reqs. The
++ * value of s_mb_order2_reqs can be tuned via
++ * /proc/fs/ext4/<partition>/order2_req.  If the request len is equal to
++ * stripe size (sbi->s_stripe), we try to search for contigous block in
++ * stripe size. This should result in better allocation on RAID setup. If
++ * not we search in the specific group using bitmap for best extents. The
++ * tunable min_to_scan and max_to_scan controll the behaviour here.
++ * min_to_scan indicate how long the mballoc __must__ look for a best
++ * extent and max_to_scanindicate how long the mballoc __can__ look for a
++ * best extent in the found extents. Searching for the blocks starts with
++ * the group specified as the goal value in allocation context via
++ * ac_g_ex. Each group is first checked based on the criteria whether it
++ * can used for allocation. ext4_mb_good_group explains how the groups are
++ * checked.
++ * 
++ * Both the prealloc space are getting populated as above. So for the first
++ * request we will hit the buddy cache which will result in this prealloc
++ * space getting filled. The prealloc space is then later used for the
++ * subsequent request.
 + */
 +
 +/*
@@ -4891,11 +4879,11 @@ Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
 +	ext4_std_error(sb, err);
 +	return;
 +}
-Index: linux-2.6.24-rc8/fs/ext4/migrate.c
-===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/migrate.c	2008-01-16 18:16:27.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/migrate.c	2008-01-16 18:16:27.000000000 -0800
-@@ -253,11 +253,11 @@ static int free_dind_blocks(handle_t *ha
+diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
+index 7203d3d..6b40f55 100644
+--- a/fs/ext4/migrate.c
++++ b/fs/ext4/migrate.c
+@@ -253,11 +253,11 @@ static int free_dind_blocks(handle_t *handle,
  	for (i = 0; i < max_entries; i++) {
  		if (tmp_idata[i]) {
  			ext4_free_blocks(handle, inode,
@@ -4909,7 +4897,7 @@ Index: linux-2.6.24-rc8/fs/ext4/migrate.c
  
  	return 0;
  
-@@ -289,7 +289,7 @@ static int free_tind_blocks(handle_t *ha
+@@ -289,7 +289,7 @@ static int free_tind_blocks(handle_t *handle,
  		}
  	}
  	brelse(bh);
@@ -4918,7 +4906,7 @@ Index: linux-2.6.24-rc8/fs/ext4/migrate.c
  
  	return 0;
  
-@@ -304,7 +304,7 @@ static int free_ind_block(handle_t *hand
+@@ -304,7 +304,7 @@ static int free_ind_block(handle_t *handle, struct inode *inode)
  	if (ei->i_data[EXT4_IND_BLOCK]) {
  
  		ext4_free_blocks(handle, inode,
@@ -4927,7 +4915,7 @@ Index: linux-2.6.24-rc8/fs/ext4/migrate.c
  
  	}
  
-@@ -402,7 +402,7 @@ static int free_ext_idx(handle_t *handle
+@@ -402,7 +402,7 @@ static int free_ext_idx(handle_t *handle, struct inode *inode,
  	if (eh->eh_depth == 0) {
  
  		brelse(bh);
@@ -4936,11 +4924,11 @@ Index: linux-2.6.24-rc8/fs/ext4/migrate.c
  
  	} else {
  
-Index: linux-2.6.24-rc8/fs/ext4/super.c
-===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/super.c	2008-01-16 18:16:27.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/super.c	2008-01-17 12:05:02.000000000 -0800
-@@ -503,6 +503,7 @@ static void ext4_put_super (struct super
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 64fc7f1..136d095 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -503,6 +503,7 @@ static void ext4_put_super (struct super_block * sb)
  	struct ext4_super_block *es = sbi->s_es;
  	int i;
  
@@ -4948,7 +4936,7 @@ Index: linux-2.6.24-rc8/fs/ext4/super.c
  	ext4_ext_release(sb);
  	ext4_xattr_put_super(sb);
  	jbd2_journal_destroy(sbi->s_journal);
-@@ -569,6 +570,8 @@ static struct inode *ext4_alloc_inode(st
+@@ -569,6 +570,8 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
  	ei->i_block_alloc_info = NULL;
  	ei->vfs_inode.i_version = 1;
  	memset(&ei->i_cached_extent, 0, sizeof(struct ext4_ext_cache));
@@ -4995,7 +4983,7 @@ Index: linux-2.6.24-rc8/fs/ext4/super.c
  		default:
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
-@@ -1742,6 +1762,33 @@ static ext4_fsblk_t descriptor_loc(struc
+@@ -1742,6 +1762,33 @@ static ext4_fsblk_t descriptor_loc(struct super_block *sb,
  	return (has_super + ext4_group_first_block_no(sb, bg));
  }
  
@@ -5029,7 +5017,7 @@ Index: linux-2.6.24-rc8/fs/ext4/super.c
  
  static int ext4_fill_super (struct super_block *sb, void *data, int silent)
  				__releases(kernel_sem)
-@@ -2091,6 +2138,8 @@ static int ext4_fill_super (struct super
+@@ -2091,6 +2138,8 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
  	sbi->s_rsv_window_head.rsv_goal_size = 0;
  	ext4_rsv_window_add(sb, &sbi->s_rsv_window_head);
  
@@ -5038,7 +5026,7 @@ Index: linux-2.6.24-rc8/fs/ext4/super.c
  	/*
  	 * set up enough so that it can read an inode
  	 */
-@@ -2250,6 +2299,7 @@ static int ext4_fill_super (struct super
+@@ -2250,6 +2299,7 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
  		"writeback");
  
  	ext4_ext_init(sb);
@@ -5046,7 +5034,7 @@ Index: linux-2.6.24-rc8/fs/ext4/super.c
  
  	lock_kernel();
  	return 0;
-@@ -3232,9 +3282,15 @@ static struct file_system_type ext4dev_f
+@@ -3232,9 +3282,15 @@ static struct file_system_type ext4dev_fs_type = {
  
  static int __init init_ext4_fs(void)
  {
@@ -5080,11 +5068,11 @@ Index: linux-2.6.24-rc8/fs/ext4/super.c
  }
  
  MODULE_AUTHOR("Remy Card, Stephen Tweedie, Andrew Morton, Andreas Dilger, Theodore Ts'o and others");
-Index: linux-2.6.24-rc8/fs/ext4/xattr.c
-===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/xattr.c	2008-01-15 20:22:48.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/xattr.c	2008-01-16 18:16:27.000000000 -0800
-@@ -480,7 +480,7 @@ ext4_xattr_release_block(handle_t *handl
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index 8638730..d796213 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -480,7 +480,7 @@ ext4_xattr_release_block(handle_t *handle, struct inode *inode,
  		ea_bdebug(bh, "refcount now=0; freeing");
  		if (ce)
  			mb_cache_entry_free(ce);
@@ -5102,10 +5090,10 @@ Index: linux-2.6.24-rc8/fs/ext4/xattr.c
  				error = -EIO;
  				goto cleanup;
  			}
-Index: linux-2.6.24-rc8/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.24-rc8.orig/include/linux/ext4_fs.h	2008-01-16 18:16:27.000000000 -0800
-+++ linux-2.6.24-rc8/include/linux/ext4_fs.h	2008-01-17 12:05:01.000000000 -0800
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index d0b7ca9..1852313 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
 @@ -20,6 +20,8 @@
  #include <linux/blkdev.h>
  #include <linux/magic.h>
@@ -5174,7 +5162,7 @@ Index: linux-2.6.24-rc8/include/linux/ext4_fs.h
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-@@ -912,7 +959,7 @@ extern ext4_fsblk_t ext4_new_blocks (han
+@@ -912,7 +959,7 @@ extern ext4_fsblk_t ext4_new_blocks (handle_t *handle, struct inode *inode,
  extern ext4_fsblk_t ext4_new_blocks_old(handle_t *handle, struct inode *inode,
  			ext4_fsblk_t goal, unsigned long *count, int *errp);
  extern void ext4_free_blocks (handle_t *handle, struct inode *inode,
@@ -5183,7 +5171,7 @@ Index: linux-2.6.24-rc8/include/linux/ext4_fs.h
  extern void ext4_free_blocks_sb (handle_t *handle, struct super_block *sb,
  				 ext4_fsblk_t block, unsigned long count,
  				unsigned long *pdquot_freed_blocks);
-@@ -950,6 +997,20 @@ extern unsigned long ext4_count_dirs (st
+@@ -950,6 +997,20 @@ extern unsigned long ext4_count_dirs (struct super_block *);
  extern void ext4_check_inodes_bitmap (struct super_block *);
  extern unsigned long ext4_count_free (struct buffer_head *, unsigned);
  
@@ -5204,7 +5192,7 @@ Index: linux-2.6.24-rc8/include/linux/ext4_fs.h
  
  /* inode.c */
  int ext4_forget(handle_t *handle, int is_metadata, struct inode *inode,
-@@ -1080,6 +1141,19 @@ static inline void ext4_isize_set(struct
+@@ -1080,6 +1141,19 @@ static inline void ext4_isize_set(struct ext4_inode *raw_inode, loff_t i_size)
  	raw_inode->i_size_high = cpu_to_le32(i_size >> 32);
  }
  
@@ -5224,10 +5212,10 @@ Index: linux-2.6.24-rc8/include/linux/ext4_fs.h
  #define ext4_std_error(sb, errno)				\
  do {								\
  	if ((errno))						\
-Index: linux-2.6.24-rc8/include/linux/ext4_fs_i.h
-===================================================================
---- linux-2.6.24-rc8.orig/include/linux/ext4_fs_i.h	2008-01-16 18:16:27.000000000 -0800
-+++ linux-2.6.24-rc8/include/linux/ext4_fs_i.h	2008-01-16 18:16:27.000000000 -0800
+diff --git a/include/linux/ext4_fs_i.h b/include/linux/ext4_fs_i.h
+index 4377d24..d5508d3 100644
+--- a/include/linux/ext4_fs_i.h
++++ b/include/linux/ext4_fs_i.h
 @@ -158,6 +158,10 @@ struct ext4_inode_info {
  	 * struct timespec i_{a,c,m}time in the generic inode.
  	 */
@@ -5239,10 +5227,10 @@ Index: linux-2.6.24-rc8/include/linux/ext4_fs_i.h
  };
  
  #endif	/* _LINUX_EXT4_FS_I */
-Index: linux-2.6.24-rc8/include/linux/ext4_fs_sb.h
-===================================================================
---- linux-2.6.24-rc8.orig/include/linux/ext4_fs_sb.h	2008-01-16 18:16:27.000000000 -0800
-+++ linux-2.6.24-rc8/include/linux/ext4_fs_sb.h	2008-01-17 12:05:00.000000000 -0800
+diff --git a/include/linux/ext4_fs_sb.h b/include/linux/ext4_fs_sb.h
+index 38a47ec..abaae2c 100644
+--- a/include/linux/ext4_fs_sb.h
++++ b/include/linux/ext4_fs_sb.h
 @@ -91,6 +91,58 @@ struct ext4_sb_info {
  	unsigned long s_ext_blocks;
  	unsigned long s_ext_extents;
