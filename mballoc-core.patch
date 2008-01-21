@@ -384,10 +384,10 @@ index 0000000..aacbbb2
 + *   - error handling
 + */
 +
-+/* 
++/*
 + * The allocation request involve request for multiple number of blocks
 + * near to the goal(block) value specified.
-+ * 
++ *
 + * During initialization phase of the allocator we decide to use the group
 + * preallocation or inode preallocation depending on the size file. The
 + * size of the file could be the resulting file size we would have after
@@ -397,40 +397,40 @@ index 0000000..aacbbb2
 + * blocks. This can also be tuned via
 + * /proc/fs/ext4/<partition>/stream_req. The value is represented in terms
 + * of number of blocks.
-+ * 
++ *
 + * The main motivation for having small file use group preallocation is to
 + * ensure that we have small file closer in the disk.
-+ * 
++ *
 + * First stage the allocator looks at the inode prealloc list
 + * ext4_inode_info->i_prealloc_list contain list of prealloc spaces for
 + * this particular inode. The inode prealloc space is represented as:
-+ * 
++ *
 + * pa_lstart -> the logical start block for this prealloc space
 + * pa_pstart -> the physical start block for this prealloc space
 + * pa_len    -> lenght for this prealloc space
 + * pa_free   ->  free space available in this prealloc space
-+ * 
++ *
 + * The inode preallocation space is used looking at the _logical_ start
 + * block. If only the logical file block falls within the range of prealloc
 + * space we will consume the particular prealloc space. This make sure that
 + * that the we have contiguous physical blocks representing the file blocks
-+ * 
++ *
 + * The important thing to be noted in case of inode prealloc space is that
 + * we don't modify the values associated to inode prealloc space except
 + * pa_free.
-+ * 
++ *
 + * If we are not able to find blocks in the inode prealloc space and if we
 + * have the group allocation flag set then we look at the locality group
 + * prealloc space. These are per CPU prealloc list repreasented as
-+ * 
++ *
 + * ext4_sb_info.s_locality_groups[smp_processor_id()]
-+ * 
++ *
 + * The reason for having a per cpu locality group is to reduce the contention
 + * between CPUs. It is possible to get scheduled at this point.
-+ * 
++ *
 + * The locality group prealloc space is used looking at whether we have
 + * enough free space (pa_free) withing the prealloc space.
-+ * 
++ *
 + * If we can't allocate blocks via inode prealloc or/and locality group
 + * prealloc then we look at the buddy cache. The buddy cache is represented
 + * by ext4_sb_info.s_buddy_cache (struct inode) whose file offset gets
@@ -440,23 +440,23 @@ index 0000000..aacbbb2
 + * each group is loaded via ext4_mb_load_buddy.  The information involve
 + * block bitmap and buddy information. The information are stored in the
 + * inode as:
-+ * 
++ *
 + *  {                        page                        }
 + *  [ group 0 buddy][ group 0 bitmap] [group 1][ group 1]...
-+ * 
-+ * 
++ *
++ *
 + * one block each for bitmap and buddy information.  So for each group we
 + * take up 2 blocks. A page can contain blocks_per_page (PAGE_CACHE_SIZE /
 + * blocksize) blocks.  So it can have information regarding groups_per_page
 + * which is blocks_per_page/2
-+ * 
++ *
 + * The buddy cache inode is not stored on disk. The inode is thrown
 + * away when the filesystem is unmounted.
-+ * 
++ *
 + * We look for count number of blocks in the buddy cache. If we were able
 + * to locate that many free blocks we return with additional information
 + * regarding rest of the contiguous physical block available
-+ * 
++ *
 + * Before allocating blocks via buddy cache we normalize the request
 + * blocks. This ensure we ask for more blocks that we needed. The extra
 + * blocks that we get after allocation is added to the respective prealloc
@@ -469,13 +469,13 @@ index 0000000..aacbbb2
 + * terms of number of blocks. If we have mounted the file system with -O
 + * stripe=<value> option the group prealloc request is normalized to the
 + * stripe value (sbi->s_stripe)
-+ * 
++ *
 + * The regular allocator(using the buddy cache) support few tunables.
-+ * 
++ *
 + * /proc/fs/ext4/<partition>/min_to_scan
 + * /proc/fs/ext4/<partition>/max_to_scan
 + * /proc/fs/ext4/<partition>/order2_req
-+ * 
++ *
 + * The regular allocator use buddy scan only if the request len is power of
 + * 2 blocks and the order of allocation is >= sbi->s_mb_order2_reqs. The
 + * value of s_mb_order2_reqs can be tuned via
@@ -491,7 +491,7 @@ index 0000000..aacbbb2
 + * ac_g_ex. Each group is first checked based on the criteria whether it
 + * can used for allocation. ext4_mb_good_group explains how the groups are
 + * checked.
-+ * 
++ *
 + * Both the prealloc space are getting populated as above. So for the first
 + * request we will hit the buddy cache which will result in this prealloc
 + * space getting filled. The prealloc space is then later used for the
