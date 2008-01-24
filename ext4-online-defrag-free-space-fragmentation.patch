@@ -8,17 +8,12 @@ and reallocates the contiguous blocks for the target file.
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
----
----
- fs/ext4/balloc.c  |   12 -
- fs/ext4/defrag.c  |  538 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/extents.c |   53 ++++-
- 3 files changed, 587 insertions(+), 16 deletions(-)
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
-Index: linux-2.6.24-rc8/fs/ext4/balloc.c
-===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/balloc.c	2008-01-24 11:19:47.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/balloc.c	2008-01-24 11:19:58.000000000 -0800
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index aed3456..3539b3b 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
 @@ -383,7 +383,7 @@ restart:
   * If the goal block is within the reservation window, return 1;
   * otherwise, return 0;
@@ -28,7 +23,7 @@ Index: linux-2.6.24-rc8/fs/ext4/balloc.c
  goal_in_my_reservation(struct ext4_reserve_window *rsv, ext4_grpblk_t grp_goal,
  			ext4_group_t group, struct super_block *sb)
  {
-@@ -488,7 +488,7 @@ void ext4_rsv_window_add(struct super_bl
+@@ -488,7 +488,7 @@ void ext4_rsv_window_add(struct super_block *sb,
   * from the filesystem reservation window rb tree. Must be called with
   * rsv_lock hold.
   */
@@ -37,7 +32,7 @@ Index: linux-2.6.24-rc8/fs/ext4/balloc.c
  			      struct ext4_reserve_window_node *rsv)
  {
  	rsv->rsv_start = EXT4_RESERVE_WINDOW_NOT_ALLOCATED;
-@@ -503,7 +503,7 @@ static void rsv_window_remove(struct sup
+@@ -503,7 +503,7 @@ static void rsv_window_remove(struct super_block *sb,
   *
   * returns 1 if the end block is EXT4_RESERVE_WINDOW_NOT_ALLOCATED.
   */
@@ -46,7 +41,7 @@ Index: linux-2.6.24-rc8/fs/ext4/balloc.c
  {
  	/* a valid reservation end block could not be 0 */
  	return rsv->_rsv_end == EXT4_RESERVE_WINDOW_NOT_ALLOCATED;
-@@ -871,7 +871,7 @@ static int ext4_test_allocatable(ext4_gr
+@@ -871,7 +871,7 @@ static int ext4_test_allocatable(ext4_grpblk_t nr, struct buffer_head *bh)
   * bitmap on disk and the last-committed copy in journal, until we find a
   * bit free in both bitmaps.
   */
@@ -73,10 +68,10 @@ Index: linux-2.6.24-rc8/fs/ext4/balloc.c
  			struct super_block *sb, int size)
  {
  	struct ext4_reserve_window_node *next_rsv;
-Index: linux-2.6.24-rc8/fs/ext4/defrag.c
-===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/defrag.c	2008-01-24 11:19:56.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/defrag.c	2008-01-24 11:19:58.000000000 -0800
+diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
+index 7807ca4..79a77be 100644
+--- a/fs/ext4/defrag.c
++++ b/fs/ext4/defrag.c
 @@ -13,6 +13,13 @@
  #include <asm/uaccess.h>
  #include "group.h"
@@ -91,7 +86,7 @@ Index: linux-2.6.24-rc8/fs/ext4/defrag.c
  /* Will go away */
  ext4_fsblk_t idx_pblock(struct ext4_extent_idx *ix)
  {
-@@ -260,6 +267,469 @@ ext4_ext_next_extent(struct inode *inode
+@@ -260,6 +267,470 @@ ext4_ext_next_extent(struct inode *inode,
  	return 1;
  }
  
@@ -452,8 +447,9 @@ Index: linux-2.6.24-rc8/fs/ext4/defrag.c
 +		}
 +
 +		/* Sync journal blocks before reservation */
-+		if (do_fsync(target_filp, 0)) {
-+			printk(KERN_ERR "defrag: failed do_fsync\n");
++		ret = ext4_force_commit(sb);
++		if (ret) {
++			printk(KERN_ERR "defrag: failed ext4_force_commit (%d)\n", ret);
 +			goto ERR;
 +		}
 +	}
@@ -561,7 +557,7 @@ Index: linux-2.6.24-rc8/fs/ext4/defrag.c
  int ext4_ext_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
  			unsigned long arg)
  {
-@@ -312,6 +782,74 @@ int ext4_ext_ioctl(struct inode *inode, 
+@@ -312,6 +783,74 @@ int ext4_ext_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
  		unlock_kernel();
  
  		return put_user(block, p);
@@ -636,11 +632,11 @@ Index: linux-2.6.24-rc8/fs/ext4/defrag.c
  	} else if (cmd == EXT4_IOC_DEFRAG) {
  		struct ext4_ext_defrag_data defrag;
  
-Index: linux-2.6.24-rc8/fs/ext4/extents.c
-===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/extents.c	2008-01-24 11:19:56.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/extents.c	2008-01-24 11:19:58.000000000 -0800
-@@ -177,11 +177,17 @@ ext4_fsblk_t ext4_ext_find_goal(struct i
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 240a4fb..c2caf97 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -177,11 +177,17 @@ ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
  static ext4_fsblk_t
  ext4_ext_new_block(handle_t *handle, struct inode *inode,
  			struct ext4_ext_path *path,
@@ -660,7 +656,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  	newblock = ext4_new_block(handle, inode, goal, err);
  	return newblock;
  }
-@@ -632,7 +638,8 @@ static int ext4_ext_insert_index(handle_
+@@ -632,7 +638,8 @@ static int ext4_ext_insert_index(handle_t *handle, struct inode *inode,
   */
  static int ext4_ext_split(handle_t *handle, struct inode *inode,
  				struct ext4_ext_path *path,
@@ -670,7 +666,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  {
  	struct buffer_head *bh = NULL;
  	int depth = ext_depth(inode);
-@@ -682,7 +689,8 @@ static int ext4_ext_split(handle_t *hand
+@@ -682,7 +689,8 @@ static int ext4_ext_split(handle_t *handle, struct inode *inode,
  	/* allocate all needed blocks */
  	ext_debug("allocate %d blocks for indexes/leaf\n", depth - at);
  	for (a = 0; a < depth - at; a++) {
@@ -690,7 +686,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  {
  	struct ext4_ext_path *curp = path;
  	struct ext4_extent_header *neh;
-@@ -880,7 +889,8 @@ static int ext4_ext_grow_indepth(handle_
+@@ -880,7 +889,8 @@ static int ext4_ext_grow_indepth(handle_t *handle, struct inode *inode,
  	ext4_fsblk_t newblock;
  	int err = 0;
  
@@ -730,7 +726,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  		if (err)
  			goto out;
  
-@@ -1433,6 +1446,19 @@ int ext4_ext_insert_extent(handle_t *han
+@@ -1433,6 +1446,19 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
  				struct ext4_ext_path *path,
  				struct ext4_extent *newext)
  {
@@ -750,7 +746,7 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  	struct ext4_extent_header * eh;
  	struct ext4_extent *ex, *fex;
  	struct ext4_extent *nearex; /* nearest extent */
-@@ -1440,6 +1466,7 @@ int ext4_ext_insert_extent(handle_t *han
+@@ -1440,6 +1466,7 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
  	int depth, len, err;
  	ext4_lblk_t next;
  	unsigned uninitialized = 0;
