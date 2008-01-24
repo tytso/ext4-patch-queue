@@ -28,18 +28,18 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  Documentation/filesystems/ext4.txt |   10 +
  fs/Kconfig                         |    1 
  fs/ext4/super.c                    |   25 ++++
- fs/jbd2/commit.c                   |  196 +++++++++++++++++++++++++++----------
- fs/jbd2/journal.c                  |   28 +++++
- fs/jbd2/recovery.c                 |  149 ++++++++++++++++++++++++++--
+ fs/jbd2/commit.c                   |  198 +++++++++++++++++++++++++++----------
+ fs/jbd2/journal.c                  |   26 ++++
+ fs/jbd2/recovery.c                 |  151 ++++++++++++++++++++++++++--
  include/linux/ext4_fs.h            |    3 
- include/linux/jbd2.h               |   36 ++++++
- 8 files changed, 388 insertions(+), 60 deletions(-)
+ include/linux/jbd2.h               |   36 +++++-
+ 8 files changed, 388 insertions(+), 62 deletions(-)
 
 
-Index: linux-2.6.24-rc7/Documentation/filesystems/ext4.txt
+Index: linux-2.6.24-rc8/Documentation/filesystems/ext4.txt
 ===================================================================
---- linux-2.6.24-rc7.orig/Documentation/filesystems/ext4.txt	2008-01-16 13:47:29.000000000 -0800
-+++ linux-2.6.24-rc7/Documentation/filesystems/ext4.txt	2008-01-16 13:50:14.000000000 -0800
+--- linux-2.6.24-rc8.orig/Documentation/filesystems/ext4.txt	2008-01-24 11:18:08.000000000 -0800
++++ linux-2.6.24-rc8/Documentation/filesystems/ext4.txt	2008-01-24 13:00:44.000000000 -0800
 @@ -89,6 +89,16 @@ When mounting an ext4 filesystem, the fo
  extents			ext4 will use extents to address file data.  The
  			file system will no longer be mountable by ext3.
@@ -57,10 +57,10 @@ Index: linux-2.6.24-rc7/Documentation/filesystems/ext4.txt
  journal=update		Update the ext4 file system's journal to the current
  			format.
  
-Index: linux-2.6.24-rc7/fs/Kconfig
+Index: linux-2.6.24-rc8/fs/Kconfig
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/Kconfig	2008-01-16 13:47:29.000000000 -0800
-+++ linux-2.6.24-rc7/fs/Kconfig	2008-01-16 13:50:14.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/Kconfig	2008-01-24 11:18:08.000000000 -0800
++++ linux-2.6.24-rc8/fs/Kconfig	2008-01-24 11:18:55.000000000 -0800
 @@ -236,6 +236,7 @@ config JBD_DEBUG
  
  config JBD2
@@ -69,10 +69,10 @@ Index: linux-2.6.24-rc7/fs/Kconfig
  	help
  	  This is a generic journaling layer for block devices that support
  	  both 32-bit and 64-bit block numbers.  It is currently used by
-Index: linux-2.6.24-rc7/fs/ext4/super.c
+Index: linux-2.6.24-rc8/fs/ext4/super.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/super.c	2008-01-16 13:50:09.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/super.c	2008-01-16 13:50:14.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/ext4/super.c	2008-01-24 11:18:52.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/super.c	2008-01-24 13:00:45.000000000 -0800
 @@ -869,6 +869,7 @@ enum {
  	Opt_user_xattr, Opt_nouser_xattr, Opt_acl, Opt_noacl,
  	Opt_reservation, Opt_noreservation, Opt_noload, Opt_nobh, Opt_bh,
@@ -126,10 +126,10 @@ Index: linux-2.6.24-rc7/fs/ext4/super.c
  	/* We have now updated the journal if required, so we can
  	 * validate the data journaling mode. */
  	switch (test_opt(sb, DATA_FLAGS)) {
-Index: linux-2.6.24-rc7/fs/jbd2/commit.c
+Index: linux-2.6.24-rc8/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/jbd2/commit.c	2008-01-16 13:50:13.000000000 -0800
-+++ linux-2.6.24-rc7/fs/jbd2/commit.c	2008-01-16 13:50:14.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/jbd2/commit.c	2008-01-24 11:18:54.000000000 -0800
++++ linux-2.6.24-rc8/fs/jbd2/commit.c	2008-01-24 13:02:43.000000000 -0800
 @@ -21,6 +21,7 @@
  #include <linux/mm.h>
  #include <linux/pagemap.h>
@@ -286,11 +286,12 @@ Index: linux-2.6.24-rc7/fs/jbd2/commit.c
  static void journal_do_submit_data(struct buffer_head **wbuf, int bufs)
  {
  	int i;
-@@ -275,6 +350,20 @@ write_out_data:
+@@ -275,7 +350,21 @@ write_out_data:
  	journal_do_submit_data(wbuf, bufs);
  }
  
-+static inline __u32 jbd2_checksum_data(__u32 crc32_sum, struct buffer_head *bh)
+-static inline void write_tag_block(int tag_bytes, journal_block_tag_t *tag,
++static __u32 jbd2_checksum_data(__u32 crc32_sum, struct buffer_head *bh)
 +{
 +	struct page *page = bh->b_page;
 +	char *addr;
@@ -304,9 +305,10 @@ Index: linux-2.6.24-rc7/fs/jbd2/commit.c
 +	return checksum;
 +}
 +
- static inline void write_tag_block(int tag_bytes, journal_block_tag_t *tag,
++static void write_tag_block(int tag_bytes, journal_block_tag_t *tag,
  				   unsigned long long block)
  {
+ 	tag->t_blocknr = cpu_to_be32(block & (u32)~0);
 @@ -307,6 +396,8 @@ void jbd2_journal_commit_transaction(jou
  	int tag_flag;
  	int i;
@@ -418,11 +420,11 @@ Index: linux-2.6.24-rc7/fs/jbd2/commit.c
  
  	if (err)
  		jbd2_journal_abort(journal, err);
-Index: linux-2.6.24-rc7/fs/jbd2/journal.c
+Index: linux-2.6.24-rc8/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/jbd2/journal.c	2008-01-16 13:50:13.000000000 -0800
-+++ linux-2.6.24-rc7/fs/jbd2/journal.c	2008-01-16 13:50:14.000000000 -0800
-@@ -1578,6 +1578,34 @@ int jbd2_journal_set_features (journal_t
+--- linux-2.6.24-rc8.orig/fs/jbd2/journal.c	2008-01-24 11:18:54.000000000 -0800
++++ linux-2.6.24-rc8/fs/jbd2/journal.c	2008-01-24 13:06:53.000000000 -0800
+@@ -1578,6 +1578,32 @@ int jbd2_journal_set_features (journal_t
  	return 1;
  }
  
@@ -435,7 +437,7 @@ Index: linux-2.6.24-rc7/fs/jbd2/journal.c
 + * @incompat: bitmask of incompatible features
 + *
 + * Clear a given journal feature as present on the
-+ * superblock.  Returns true if the requested features could be reset.
++ * superblock.
 + */
 +int jbd2_journal_clear_features(journal_t *journal, unsigned long compat,
 +				unsigned long ro, unsigned long incompat)
@@ -450,17 +452,15 @@ Index: linux-2.6.24-rc7/fs/jbd2/journal.c
 +	sb->s_feature_compat    &= ~cpu_to_be32(compat);
 +	sb->s_feature_ro_compat &= ~cpu_to_be32(ro);
 +	sb->s_feature_incompat  &= ~cpu_to_be32(incompat);
-+
-+	return 1;
 +}
 +EXPORT_SYMBOL(jbd2_journal_clear_features);
  
  /**
   * int jbd2_journal_update_format () - Update on-disk journal structure.
-Index: linux-2.6.24-rc7/fs/jbd2/recovery.c
+Index: linux-2.6.24-rc8/fs/jbd2/recovery.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/jbd2/recovery.c	2008-01-16 13:47:29.000000000 -0800
-+++ linux-2.6.24-rc7/fs/jbd2/recovery.c	2008-01-16 13:52:00.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/jbd2/recovery.c	2008-01-24 11:18:08.000000000 -0800
++++ linux-2.6.24-rc8/fs/jbd2/recovery.c	2008-01-24 13:16:07.000000000 -0800
 @@ -21,6 +21,7 @@
  #include <linux/jbd2.h>
  #include <linux/errno.h>
@@ -481,7 +481,7 @@ Index: linux-2.6.24-rc7/fs/jbd2/recovery.c
 +			unsigned long *next_log_block, __u32 *crc32_sum)
 +{
 +	int i, num_blks, err;
-+	unsigned io_block;
++	unsigned long io_block;
 +	struct buffer_head *obh;
 +
 +	num_blks = count_tags(journal, bh);
@@ -494,7 +494,7 @@ Index: linux-2.6.24-rc7/fs/jbd2/recovery.c
 +		err = jread(&obh, journal, io_block);
 +		if (err) {
 +			printk(KERN_ERR "JBD: IO error %d recovering block "
-+				"%u in log\n", err, io_block);
++				"%lu in log\n", err, io_block);
 +			return 1;
 +		} else {
 +			*crc32_sum = crc32_be(*crc32_sum, (void *)obh->b_data,
@@ -515,7 +515,7 @@ Index: linux-2.6.24-rc7/fs/jbd2/recovery.c
  
  	/* Precompute the maximum metadata descriptors in a descriptor block */
  	int			MAX_BLOCKS_PER_DESC;
-@@ -419,9 +452,23 @@ static int do_one_pass(journal_t *journa
+@@ -419,12 +452,26 @@ static int do_one_pass(journal_t *journa
  		switch(blocktype) {
  		case JBD2_DESCRIPTOR_BLOCK:
  			/* If it is a valid descriptor block, replay it
@@ -532,15 +532,19 @@ Index: linux-2.6.24-rc7/fs/jbd2/recovery.c
 +					if (calc_chksums(journal, bh,
 +							&next_log_block,
 +							&crc32_sum)) {
-+						brelse(bh);
++						put_bh(bh);
 +						break;
 +					}
-+					brelse(bh);
++					put_bh(bh);
 +					continue;
 +				}
  				next_log_block += count_tags(journal, bh);
  				wrap(journal, next_log_block);
- 				brelse(bh);
+-				brelse(bh);
++				put_bh(bh);
+ 				continue;
+ 			}
+ 
 @@ -516,9 +563,96 @@ static int do_one_pass(journal_t *journa
  			continue;
  
@@ -654,10 +658,10 @@ Index: linux-2.6.24-rc7/fs/jbd2/recovery.c
  		/* It's really bad news if different passes end up at
  		 * different places (but possible due to IO errors). */
  		if (info->end_transaction != next_commit_ID) {
-Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
+Index: linux-2.6.24-rc8/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.24-rc7.orig/include/linux/ext4_fs.h	2008-01-16 13:50:09.000000000 -0800
-+++ linux-2.6.24-rc7/include/linux/ext4_fs.h	2008-01-16 13:50:14.000000000 -0800
+--- linux-2.6.24-rc8.orig/include/linux/ext4_fs.h	2008-01-24 11:18:52.000000000 -0800
++++ linux-2.6.24-rc8/include/linux/ext4_fs.h	2008-01-24 13:00:45.000000000 -0800
 @@ -467,7 +467,8 @@ do {									       \
  #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
  #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
@@ -668,10 +672,10 @@ Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-Index: linux-2.6.24-rc7/include/linux/jbd2.h
+Index: linux-2.6.24-rc8/include/linux/jbd2.h
 ===================================================================
---- linux-2.6.24-rc7.orig/include/linux/jbd2.h	2008-01-16 13:50:13.000000000 -0800
-+++ linux-2.6.24-rc7/include/linux/jbd2.h	2008-01-16 13:50:14.000000000 -0800
+--- linux-2.6.24-rc8.orig/include/linux/jbd2.h	2008-01-24 11:18:54.000000000 -0800
++++ linux-2.6.24-rc8/include/linux/jbd2.h	2008-01-24 11:46:16.000000000 -0800
 @@ -149,6 +149,28 @@ typedef struct journal_header_s
  	__be32		h_sequence;
  } journal_header_t;
