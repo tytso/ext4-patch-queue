@@ -19,7 +19,7 @@ Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Index: linux-2.6.24-rc8/fs/ext4/defrag.c
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.24-rc8/fs/ext4/defrag.c	2008-01-17 12:05:47.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/defrag.c	2008-01-24 11:19:54.000000000 -0800
 @@ -0,0 +1,766 @@
 +#include <linux/module.h>
 +#include <linux/fs.h>
@@ -789,8 +789,8 @@ Index: linux-2.6.24-rc8/fs/ext4/defrag.c
 +}
 Index: linux-2.6.24-rc8/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/extents.c	2008-01-17 12:05:40.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/extents.c	2008-01-17 12:05:47.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/ext4/extents.c	2008-01-24 11:19:32.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/extents.c	2008-01-24 11:19:54.000000000 -0800
 @@ -48,7 +48,7 @@
   * ext_pblock:
   * combine low and high parts of physical block number into ext4_fsblk_t
@@ -829,9 +829,9 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
  	int depth = ext_depth(inode);
 Index: linux-2.6.24-rc8/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/inode.c	2008-01-17 12:05:41.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/inode.c	2008-01-17 12:05:47.000000000 -0800
-@@ -1507,7 +1507,7 @@ out:
+--- linux-2.6.24-rc8.orig/fs/ext4/inode.c	2008-01-24 11:19:34.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/inode.c	2008-01-24 11:19:54.000000000 -0800
+@@ -1508,7 +1508,7 @@ out:
   * So, if we see any bmap calls here on a modified, data-journaled file,
   * take extra steps to flush any blocks which might be in the cache.
   */
@@ -842,8 +842,8 @@ Index: linux-2.6.24-rc8/fs/ext4/inode.c
  	journal_t *journal;
 Index: linux-2.6.24-rc8/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/ioctl.c	2008-01-17 12:05:00.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/ioctl.c	2008-01-17 12:05:47.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/ext4/ioctl.c	2008-01-24 11:19:07.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/ioctl.c	2008-01-24 11:19:54.000000000 -0800
 @@ -231,6 +231,19 @@ flags_err:
  
  		return err;
@@ -866,9 +866,9 @@ Index: linux-2.6.24-rc8/fs/ext4/ioctl.c
  		struct super_block *sb = inode->i_sb;
 Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.24-rc8.orig/fs/ext4/mballoc.c	2008-01-17 12:05:20.000000000 -0800
-+++ linux-2.6.24-rc8/fs/ext4/mballoc.c	2008-01-17 12:05:47.000000000 -0800
-@@ -413,6 +413,7 @@ struct ext4_allocation_context {
+--- linux-2.6.24-rc8.orig/fs/ext4/mballoc.c	2008-01-24 11:19:18.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/mballoc.c	2008-01-24 11:19:54.000000000 -0800
+@@ -527,6 +527,7 @@ struct ext4_allocation_context {
  	struct page *ac_buddy_page;
  	struct ext4_prealloc_space *ac_pa;
  	struct ext4_locality_group *ac_lg;
@@ -876,7 +876,7 @@ Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
  };
  
  #define AC_STATUS_CONTINUE	1
-@@ -1900,6 +1901,11 @@ repeat:
+@@ -2005,6 +2006,11 @@ repeat:
  			if (group == EXT4_SB(sb)->s_groups_count)
  				group = 0;
  
@@ -888,7 +888,7 @@ Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
  			/* quick check to skip empty groups */
  			grp = ext4_get_group_info(ac->ac_sb, group);
  			if (grp->bb_free == 0)
-@@ -4050,6 +4056,7 @@ static int ext4_mb_initialize_context(st
+@@ -4165,6 +4171,7 @@ static int ext4_mb_initialize_context(st
  	ac->ac_bitmap_page = NULL;
  	ac->ac_buddy_page = NULL;
  	ac->ac_lg = NULL;

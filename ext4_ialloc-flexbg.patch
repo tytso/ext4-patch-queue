@@ -28,10 +28,10 @@ Signed-off-by: Valerie Clement <valerie.clement@bull.net>
  include/linux/ext4_fs_sb.h |    3 +
  5 files changed, 196 insertions(+), 1 deletion(-)
 
-Index: linux-2.6.24-rc7/fs/ext4/balloc.c
+Index: linux-2.6.24-rc8/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/balloc.c	2008-01-16 13:52:19.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/balloc.c	2008-01-16 13:52:51.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/ext4/balloc.c	2008-01-24 11:19:18.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/balloc.c	2008-01-24 11:19:47.000000000 -0800
 @@ -127,6 +127,8 @@ unsigned ext4_init_block_bitmap(struct s
  		mark_bitmap_end(group_blocks, sb->s_blocksize * 8, bh->b_data);
  	}
@@ -69,10 +69,10 @@ Index: linux-2.6.24-rc7/fs/ext4/balloc.c
  	BUFFER_TRACE(gdp_bh, "journal_dirty_metadata for group descriptor");
  	err = ext4_journal_dirty_metadata(handle, gdp_bh);
  	if (!fatal)
-Index: linux-2.6.24-rc7/fs/ext4/ialloc.c
+Index: linux-2.6.24-rc8/fs/ext4/ialloc.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/ialloc.c	2008-01-16 13:52:16.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/ialloc.c	2008-01-16 13:52:51.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/ext4/ialloc.c	2008-01-24 11:19:09.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/ialloc.c	2008-01-24 11:19:47.000000000 -0800
 @@ -158,6 +158,7 @@ void ext4_free_inode (handle_t *handle, 
  	struct ext4_super_block * es;
  	struct ext4_sb_info *sbi;
@@ -218,10 +218,10 @@ Index: linux-2.6.24-rc7/fs/ext4/ialloc.c
  	inode->i_uid = current->fsuid;
  	if (test_opt (sb, GRPID))
  		inode->i_gid = dir->i_gid;
-Index: linux-2.6.24-rc7/fs/ext4/super.c
+Index: linux-2.6.24-rc8/fs/ext4/super.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/super.c	2008-01-16 13:52:50.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/super.c	2008-01-16 13:52:51.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/ext4/super.c	2008-01-24 11:19:46.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/super.c	2008-01-24 11:19:47.000000000 -0800
 @@ -518,6 +518,7 @@ static void ext4_put_super (struct super
  	for (i = 0; i < sbi->s_gdb_count; i++)
  		brelse(sbi->s_group_desc[i]);
@@ -285,7 +285,7 @@ Index: linux-2.6.24-rc7/fs/ext4/super.c
  __le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 block_group,
  			    struct ext4_group_desc *gdp)
  {
-@@ -2127,6 +2176,14 @@ static int ext4_fill_super (struct super
+@@ -2128,6 +2177,14 @@ static int ext4_fill_super (struct super
  		printk(KERN_ERR "EXT4-fs: group descriptors corrupted!\n");
  		goto failed_mount2;
  	}
@@ -300,10 +300,10 @@ Index: linux-2.6.24-rc7/fs/ext4/super.c
  	sbi->s_gdb_count = db_count;
  	get_random_bytes(&sbi->s_next_generation, sizeof(u32));
  	spin_lock_init(&sbi->s_next_gen_lock);
-Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
+Index: linux-2.6.24-rc8/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.24-rc7.orig/include/linux/ext4_fs.h	2008-01-16 13:52:43.000000000 -0800
-+++ linux-2.6.24-rc7/include/linux/ext4_fs.h	2008-01-16 13:52:51.000000000 -0800
+--- linux-2.6.24-rc8.orig/include/linux/ext4_fs.h	2008-01-24 11:19:34.000000000 -0800
++++ linux-2.6.24-rc8/include/linux/ext4_fs.h	2008-01-24 11:19:47.000000000 -0800
 @@ -171,6 +171,15 @@ struct ext4_group_desc
  	__u32	bg_reserved2[3];
  };
@@ -350,10 +350,10 @@ Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
  #define ext4_std_error(sb, errno)				\
  do {								\
  	if ((errno))						\
-Index: linux-2.6.24-rc7/include/linux/ext4_fs_sb.h
+Index: linux-2.6.24-rc8/include/linux/ext4_fs_sb.h
 ===================================================================
---- linux-2.6.24-rc7.orig/include/linux/ext4_fs_sb.h	2008-01-16 13:52:19.000000000 -0800
-+++ linux-2.6.24-rc7/include/linux/ext4_fs_sb.h	2008-01-16 13:52:51.000000000 -0800
+--- linux-2.6.24-rc8.orig/include/linux/ext4_fs_sb.h	2008-01-24 11:19:18.000000000 -0800
++++ linux-2.6.24-rc8/include/linux/ext4_fs_sb.h	2008-01-24 11:19:47.000000000 -0800
 @@ -143,6 +143,9 @@ struct ext4_sb_info {
  
  	/* locality groups */

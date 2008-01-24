@@ -12,12 +12,12 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
  fs/ext4/balloc.c          |    2 +-
  fs/ext4/extents.c         |   13 +++++++------
  fs/ext4/file.c            |    4 ++--
- fs/ext4/inode.c           |   39 ++++++++++++++++++++++++++++++++-------
+ fs/ext4/inode.c           |   40 +++++++++++++++++++++++++++++++++-------
  fs/ext4/ioctl.c           |    4 ++--
  fs/ext4/super.c           |    2 +-
  include/linux/ext4_fs.h   |   25 ++++---------------------
  include/linux/ext4_fs_i.h |    6 +++---
- 8 files changed, 52 insertions(+), 43 deletions(-)
+ 8 files changed, 53 insertions(+), 43 deletions(-)
 
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
@@ -34,10 +34,10 @@ index a9140ea..925e063 100644
  void ext4_init_block_alloc_info(struct inode *inode)
  {
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index e9d5457..6fd9763 100644
+index ec5019f..03d1bbb 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -1564,7 +1564,7 @@ static int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
+@@ -1565,7 +1565,7 @@ static int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
   * This routine returns max. credits that the extent tree can consume.
   * It should be OK for low-performance paths like ->writepage()
   * To allow many writing processes to fit into a single transaction,
@@ -46,7 +46,7 @@ index e9d5457..6fd9763 100644
   * pass the actual path.
   */
  int ext4_ext_calc_credits_for_insert(struct inode *inode,
-@@ -2130,7 +2130,8 @@ out:
+@@ -2131,7 +2131,8 @@ out:
  
  /*
   * Need to be called with
@@ -56,7 +56,7 @@ index e9d5457..6fd9763 100644
   */
  int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  			ext4_lblk_t iblock,
-@@ -2349,7 +2350,7 @@ void ext4_ext_truncate(struct inode * inode, struct page *page)
+@@ -2350,7 +2351,7 @@ void ext4_ext_truncate(struct inode * inode, struct page *page)
  	if (page)
  		ext4_block_truncate_page(handle, page, mapping, inode->i_size);
  
@@ -65,7 +65,7 @@ index e9d5457..6fd9763 100644
  	ext4_ext_invalidate_cache(inode);
  
  	/*
-@@ -2385,7 +2386,7 @@ out_stop:
+@@ -2386,7 +2387,7 @@ out_stop:
  	if (inode->i_nlink)
  		ext4_orphan_del(handle, inode);
  
@@ -74,7 +74,7 @@ index e9d5457..6fd9763 100644
  	ext4_journal_stop(handle);
  }
  
-@@ -2449,7 +2450,7 @@ long ext4_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
+@@ -2450,7 +2451,7 @@ long ext4_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
  	 * modify 1 super block, 1 block bitmap and 1 group descriptor.
  	 */
  	credits = EXT4_DATA_TRANS_BLOCKS(inode->i_sb) + 3;
@@ -83,7 +83,7 @@ index e9d5457..6fd9763 100644
  retry:
  	while (ret >= 0 && ret < max_blocks) {
  		block = block + ret;
-@@ -2506,7 +2507,7 @@ retry:
+@@ -2507,7 +2508,7 @@ retry:
  	if (ret == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
  		goto retry;
  
@@ -109,7 +109,7 @@ index a6b2aa1..ac35ec5 100644
  	if (is_dx(inode) && filp->private_data)
  		ext4_htree_free_dir_info(filp->private_data);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 71c7ad0..596b3ab 100644
+index 71c7ad0..a7eb8bb 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -308,7 +308,7 @@ static int ext4_block_to_path(struct inode *inode,
@@ -149,7 +149,7 @@ index 71c7ad0..596b3ab 100644
  	 * protect it if you're about to implement concurrent
  	 * ext4_get_block() -bzzz
  	*/
-@@ -895,6 +896,30 @@ out:
+@@ -895,6 +896,31 @@ out:
  
  #define DIO_CREDITS (EXT4_RESERVE_TRANS_BLOCKS + 32)
  
@@ -177,10 +177,11 @@ index 71c7ad0..596b3ab 100644
 +	}
 +	return retval;
 +}
++
  static int ext4_get_block(struct inode *inode, sector_t iblock,
  			struct buffer_head *bh_result, int create)
  {
-@@ -1399,7 +1424,7 @@ static int jbd2_journal_dirty_data_fn(handle_t *handle, struct buffer_head *bh)
+@@ -1399,7 +1425,7 @@ static int jbd2_journal_dirty_data_fn(handle_t *handle, struct buffer_head *bh)
   *	ext4_file_write() -> generic_file_write() -> __alloc_pages() -> ...
   *
   * Same applies to ext4_get_block().  We will deadlock on various things like
@@ -189,7 +190,7 @@ index 71c7ad0..596b3ab 100644
   *
   * Setting PF_MEMALLOC here doesn't work - too many internal memory
   * allocations fail.
-@@ -2325,7 +2350,7 @@ void ext4_truncate(struct inode *inode)
+@@ -2325,7 +2351,7 @@ void ext4_truncate(struct inode *inode)
  	 * From here we block out all ext4_get_block() callers who want to
  	 * modify the block allocation tree.
  	 */
@@ -198,7 +199,7 @@ index 71c7ad0..596b3ab 100644
  
  	if (n == 1) {		/* direct blocks */
  		ext4_free_data(handle, inode, NULL, i_data+offsets[0],
-@@ -2389,7 +2414,7 @@ do_indirects:
+@@ -2389,7 +2415,7 @@ do_indirects:
  
  	ext4_discard_reservation(inode);
  

@@ -8,18 +8,20 @@ to ext4 extent mapped inode.
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
- fs/ext4/Makefile        |    2 
- fs/ext4/ioctl.c         |    3 
- fs/ext4/migrate.c       |  634 ++++++++++++++++++++++++++++++++++++++++++++++++
- include/linux/ext4_fs.h |    4 
- 4 files changed, 642 insertions(+), 1 deletion(-)
+ fs/ext4/Makefile                |    2 
+ fs/ext4/extents.c               |    2 
+ fs/ext4/ioctl.c                 |    3 
+ fs/ext4/migrate.c               |  584 +++++++++++++++++++++++++++++++++++++++
+ include/linux/ext4_fs.h         |    4 
+ include/linux/ext4_fs_extents.h |    1 
+ 6 files changed, 594 insertions(+), 2 deletions(-)
  create mode 100644 fs/ext4/migrate.c
 
 
-Index: linux-2.6.24-rc7/fs/ext4/Makefile
-===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/Makefile	2008-01-06 13:45:38.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/Makefile	2008-01-16 15:02:41.000000000 -0800
+diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
+index ae6e7e5..d5fd80b 100644
+--- a/fs/ext4/Makefile
++++ b/fs/ext4/Makefile
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -29,10 +31,23 @@ Index: linux-2.6.24-rc7/fs/ext4/Makefile
  
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-Index: linux-2.6.24-rc7/fs/ext4/ioctl.c
-===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/ioctl.c	2008-01-16 14:49:20.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/ioctl.c	2008-01-16 15:02:40.000000000 -0800
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 03d1bbb..323cd76 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -75,7 +75,7 @@ static ext4_fsblk_t idx_pblock(struct ext4_extent_idx *ix)
+  * stores a large physical block number into an extent struct,
+  * breaking it into parts
+  */
+-static void ext4_ext_store_pblock(struct ext4_extent *ex, ext4_fsblk_t pb)
++void ext4_ext_store_pblock(struct ext4_extent *ex, ext4_fsblk_t pb)
+ {
+ 	ex->ee_start_lo = cpu_to_le32((unsigned long) (pb & 0xffffffff));
+ 	ex->ee_start_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1) & 0xffff);
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index c0e5b8c..2ed7c37 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
 @@ -254,6 +254,9 @@ flags_err:
  		return err;
  	}
@@ -43,11 +58,12 @@ Index: linux-2.6.24-rc7/fs/ext4/ioctl.c
  	default:
  		return -ENOTTY;
  	}
-Index: linux-2.6.24-rc7/fs/ext4/migrate.c
-===================================================================
---- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.24-rc7/fs/ext4/migrate.c	2008-01-16 15:03:01.000000000 -0800
-@@ -0,0 +1,634 @@
+diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
+new file mode 100644
+index 0000000..ad8eb0c
+--- /dev/null
++++ b/fs/ext4/migrate.c
+@@ -0,0 +1,584 @@
 +/*
 + * Copyright IBM Corporation, 2007
 + * Author Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
@@ -66,18 +82,14 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +#include <linux/ext4_jbd2.h>
 +#include <linux/ext4_fs_extents.h>
 +
++/*
++ * The contiguous blocks details which can be
++ * represented by a single extent
++ */
 +struct list_blocks_struct {
 +	ext4_lblk_t first_block, last_block;
 +	ext4_fsblk_t first_pblock, last_pblock;
 +};
-+
-+/* will go away */
-+static void ext4_ext_store_pblock(struct ext4_extent *ex, ext4_fsblk_t pb)
-+{
-+	ex->ee_start_lo = cpu_to_le32((unsigned long) (pb & 0xffffffff));
-+	ex->ee_start_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1)
-+								& 0xffff);
-+}
 +
 +static int finish_range(handle_t *handle, struct inode *inode,
 +				struct list_blocks_struct *lb)
@@ -111,15 +123,11 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	/*
 +	 * Make sure the credit we accumalated is not really high
 +	 */
-+
 +	if (needed && handle->h_buffer_credits >= EXT4_RESERVE_TRANS_BLOCKS) {
-+
 +		retval = ext4_journal_restart(handle, needed);
 +		if (retval)
 +			goto err_out;
-+
 +	}
-+
 +	if (needed) {
 +		retval = ext4_journal_extend(handle, needed);
 +		if (retval != 0) {
@@ -131,19 +139,17 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +				goto err_out;
 +		}
 +	}
-+
 +	retval = ext4_ext_insert_extent(handle, inode, path, &newext);
-+
 +err_out:
 +	lb->first_pblock = 0;
 +	return retval;
 +}
++
 +static int update_extent_range(handle_t *handle, struct inode *inode,
 +				ext4_fsblk_t pblock, ext4_lblk_t blk_num,
 +				struct list_blocks_struct *lb)
 +{
 +	int retval;
-+
 +	/*
 +	 * See if we can add on to the existing range (if it exists)
 +	 */
@@ -162,7 +168,6 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	lb->first_block = lb->last_block = blk_num;
 +
 +	return retval;
-+
 +}
 +
 +static int update_ind_extent_range(handle_t *handle, struct inode *inode,
@@ -186,7 +191,6 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +		return -EIO;
 +
 +	i_data = (__le32 *)bh->b_data;
-+
 +	for (i = 0; i < max_entries; i++, blk_count++) {
 +		if (i_data[i]) {
 +			retval = update_extent_range(handle, inode,
@@ -203,6 +207,7 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	return retval;
 +
 +}
++
 +static int update_dind_extent_range(handle_t *handle, struct inode *inode,
 +				    ext4_fsblk_t pblock, ext4_lblk_t *blk_nump,
 +				    struct list_blocks_struct *lb)
@@ -218,13 +223,11 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +		*blk_nump += max_entries * max_entries;
 +		return 0;
 +	}
-+
 +	bh = sb_bread(inode->i_sb, pblock);
 +	if (!bh)
 +		return -EIO;
 +
 +	i_data = (__le32 *)bh->b_data;
-+
 +	for (i = 0; i < max_entries; i++) {
 +		if (i_data[i]) {
 +			retval = update_ind_extent_range(handle, inode,
@@ -244,6 +247,7 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	return retval;
 +
 +}
++
 +static int update_tind_extent_range(handle_t *handle, struct inode *inode,
 +				     ext4_fsblk_t pblock, ext4_lblk_t *blk_nump,
 +				     struct list_blocks_struct *lb)
@@ -259,13 +263,11 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +		*blk_nump += max_entries * max_entries * max_entries;
 +		return 0;
 +	}
-+
 +	bh = sb_bread(inode->i_sb, pblock);
 +	if (!bh)
 +		return -EIO;
 +
 +	i_data = (__le32 *)bh->b_data;
-+
 +	for (i = 0; i < max_entries; i++) {
 +		if (i_data[i]) {
 +			retval = update_dind_extent_range(handle, inode,
@@ -278,14 +280,12 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +			blk_count += max_entries * max_entries;
 +		}
 +	}
-+
 +	/* Update the file block number */
 +	*blk_nump = blk_count;
 +	brelse(bh);
 +	return retval;
 +
 +}
-+
 +
 +static int free_dind_blocks(handle_t *handle,
 +				struct inode *inode, __le32 i_data)
@@ -308,10 +308,7 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	}
 +	brelse(bh);
 +	ext4_free_blocks(handle, inode, le32_to_cpu(i_data), 1);
-+
 +	return 0;
-+
-+
 +}
 +
 +static int free_tind_blocks(handle_t *handle,
@@ -327,7 +324,6 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +		return -EIO;
 +
 +	tmp_idata = (__le32 *)bh->b_data;
-+
 +	for (i = 0; i < max_entries; i++) {
 +		if (tmp_idata[i]) {
 +			retval = free_dind_blocks(handle,
@@ -340,10 +336,7 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	}
 +	brelse(bh);
 +	ext4_free_blocks(handle, inode, le32_to_cpu(i_data), 1);
-+
 +	return 0;
-+
-+
 +}
 +
 +static int free_ind_block(handle_t *handle, struct inode *inode)
@@ -352,10 +345,8 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	struct ext4_inode_info *ei = EXT4_I(inode);
 +
 +	if (ei->i_data[EXT4_IND_BLOCK]) {
-+
 +		ext4_free_blocks(handle, inode,
 +				le32_to_cpu(ei->i_data[EXT4_IND_BLOCK]), 1);
-+
 +	}
 +
 +	if (ei->i_data[EXT4_DIND_BLOCK]) {
@@ -371,16 +362,14 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +		if (retval)
 +			return retval;
 +	}
-+
-+
 +	return 0;
 +}
++
 +static int ext4_ext_swap_inode_data(handle_t *handle, struct inode *inode,
 +				struct inode *tmp_inode, int retval)
 +{
 +	struct ext4_inode_info *ei = EXT4_I(inode);
 +	struct ext4_inode_info *tmp_ei = EXT4_I(tmp_inode);
-+
 +
 +	retval = free_ind_block(handle, inode);
 +	if (retval)
@@ -418,9 +407,7 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	spin_unlock(&inode->i_lock);
 +
 +	ext4_mark_inode_dirty(handle, inode);
-+
 +err_out:
-+
 +	return retval;
 +}
 +
@@ -442,7 +429,6 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	struct buffer_head *bh;
 +	struct ext4_extent_header *eh;
 +
-+
 +	block = idx_pblock(ix);
 +	bh = sb_bread(inode->i_sb, block);
 +	if (!bh)
@@ -450,24 +436,19 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +
 +	eh = (struct ext4_extent_header *)bh->b_data;
 +	if (eh->eh_depth == 0) {
-+
 +		brelse(bh);
 +		ext4_free_blocks(handle, inode, block, 1);
-+
 +	} else {
-+
 +		ix = EXT_FIRST_INDEX(eh);
 +		for (i = 0; i < le16_to_cpu(eh->eh_entries); i++, ix++) {
 +			retval = free_ext_idx(handle, inode, ix);
 +			if (retval)
 +				return retval;
 +		}
-+
 +	}
-+
 +	return retval;
-+
 +}
++
 +/*
 + * Free the extent meta data blocks only
 + */
@@ -489,10 +470,10 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +		if (retval)
 +			return retval;
 +	}
-+
 +	return retval;
 +
 +}
++
 +int ext4_ext_migrate(struct inode *inode, struct file *filp,
 +				unsigned int cmd, unsigned long arg)
 +{
@@ -504,7 +485,6 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	struct inode *tmp_inode = NULL;
 +	struct list_blocks_struct lb;
 +	unsigned long max_entries;
-+
 +
 +	if (!test_opt(inode->i_sb, EXTENTS)) {
 +		/*
@@ -518,8 +498,6 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +		return -EINVAL;
 +
 +	down_write(&EXT4_I(inode)->i_data_sem);
-+
-+
 +	handle = ext4_journal_start(inode,
 +					EXT4_DATA_TRANS_BLOCKS(inode->i_sb) +
 +					EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3 +
@@ -529,18 +507,15 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +		retval = PTR_ERR(handle);
 +		goto err_out;
 +	}
-+
 +	tmp_inode = ext4_new_inode(handle,
 +				inode->i_sb->s_root->d_inode,
 +				S_IFREG);
-+
 +	if (IS_ERR(tmp_inode)) {
 +		retval = -ENOMEM;
 +		ext4_journal_stop(handle);
 +		tmp_inode = NULL;
 +		goto err_out;
 +	}
-+
 +	i_size_write(tmp_inode, i_size_read(inode));
 +	/*
 +	 * We don't want the inode to be reclaimed
@@ -573,7 +548,6 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	 */
 +	handle = ext4_journal_start(inode, 1);
 +	for (i = 0; i < EXT4_NDIR_BLOCKS; i++, blk_count++) {
-+
 +		if (i_data[i]) {
 +			retval = update_extent_range(handle, tmp_inode,
 +						le32_to_cpu(i_data[i]),
@@ -582,7 +556,6 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +				goto err_out;
 +		}
 +	}
-+
 +	if (i_data[EXT4_IND_BLOCK]) {
 +		retval = update_ind_extent_range(handle, tmp_inode,
 +					le32_to_cpu(i_data[EXT4_IND_BLOCK]),
@@ -592,7 +565,6 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	} else {
 +		blk_count +=  max_entries;
 +	}
-+
 +	if (i_data[EXT4_DIND_BLOCK]) {
 +		retval = update_dind_extent_range(handle, tmp_inode,
 +					le32_to_cpu(i_data[EXT4_DIND_BLOCK]),
@@ -602,8 +574,6 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	} else {
 +		blk_count += max_entries * max_entries;
 +	}
-+
-+
 +	if (i_data[EXT4_TIND_BLOCK]) {
 +		retval = update_tind_extent_range(handle, tmp_inode,
 +					le32_to_cpu(i_data[EXT4_TIND_BLOCK]),
@@ -611,12 +581,10 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +			if (retval)
 +				goto err_out;
 +	}
-+
 +	/*
 +	 * Build the last extent
 +	 */
 +	retval = finish_range(handle, tmp_inode, &lb);
-+
 +err_out:
 +	/*
 +	 * We are either freeing extent information or indirect
@@ -627,14 +595,12 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +	 *
 +	 * FIXME!! we may be touching bitmaps in different block groups.
 +	 */
-+
 +	if (ext4_journal_extend(handle,
 +			4 + 2*EXT4_QUOTA_TRANS_BLOCKS(inode->i_sb)) != 0) {
 +
 +		ext4_journal_restart(handle,
 +				4 + 2*EXT4_QUOTA_TRANS_BLOCKS(inode->i_sb));
 +	}
-+
 +	if (retval) {
 +		/*
 +		 * Failure case delete the extent information with the
@@ -682,10 +648,10 @@ Index: linux-2.6.24-rc7/fs/ext4/migrate.c
 +
 +	return retval;
 +}
-Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.24-rc7.orig/include/linux/ext4_fs.h	2008-01-16 14:49:20.000000000 -0800
-+++ linux-2.6.24-rc7/include/linux/ext4_fs.h	2008-01-16 15:02:42.000000000 -0800
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index b609294..213974f 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
 @@ -243,6 +243,7 @@ struct ext4_new_group_data {
  #endif
  #define EXT4_IOC_GETRSVSZ		_IOR('f', 5, long)
@@ -694,7 +660,7 @@ Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
  
  /*
   * ioctl commands in 32 bit emulation
-@@ -983,6 +984,9 @@ extern int ext4_ioctl (struct inode *, s
+@@ -983,6 +984,9 @@ extern int ext4_ioctl (struct inode *, struct file *, unsigned int,
  		       unsigned long);
  extern long ext4_compat_ioctl (struct file *, unsigned int, unsigned long);
  
@@ -704,3 +670,15 @@ Index: linux-2.6.24-rc7/include/linux/ext4_fs.h
  /* namei.c */
  extern int ext4_orphan_add(handle_t *, struct inode *);
  extern int ext4_orphan_del(handle_t *, struct inode *);
+diff --git a/include/linux/ext4_fs_extents.h b/include/linux/ext4_fs_extents.h
+index 023683b..db64509 100644
+--- a/include/linux/ext4_fs_extents.h
++++ b/include/linux/ext4_fs_extents.h
+@@ -212,6 +212,7 @@ static inline int ext4_ext_get_actual_len(struct ext4_extent *ext)
+ 		(le16_to_cpu(ext->ee_len) - EXT_INIT_MAX_LEN));
+ }
+ 
++extern void ext4_ext_store_pblock(struct ext4_extent *, ext4_fsblk_t);
+ extern int ext4_extent_tree_init(handle_t *, struct inode *);
+ extern int ext4_ext_calc_credits_for_insert(struct inode *, struct ext4_ext_path *);
+ extern int ext4_ext_try_to_merge(struct inode *inode,

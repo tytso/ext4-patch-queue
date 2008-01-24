@@ -15,10 +15,10 @@ Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
  fs/ext4/extents.c |   53 ++++-
  3 files changed, 587 insertions(+), 16 deletions(-)
 
-Index: linux-2.6.24-rc7/fs/ext4/balloc.c
+Index: linux-2.6.24-rc8/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/balloc.c	2008-01-16 13:52:51.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/balloc.c	2008-01-16 14:39:32.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/ext4/balloc.c	2008-01-24 11:19:47.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/balloc.c	2008-01-24 11:19:58.000000000 -0800
 @@ -383,7 +383,7 @@ restart:
   * If the goal block is within the reservation window, return 1;
   * otherwise, return 0;
@@ -73,10 +73,10 @@ Index: linux-2.6.24-rc7/fs/ext4/balloc.c
  			struct super_block *sb, int size)
  {
  	struct ext4_reserve_window_node *next_rsv;
-Index: linux-2.6.24-rc7/fs/ext4/defrag.c
+Index: linux-2.6.24-rc8/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/defrag.c	2008-01-16 14:39:10.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/defrag.c	2008-01-16 14:39:32.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/ext4/defrag.c	2008-01-24 11:19:56.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/defrag.c	2008-01-24 11:19:58.000000000 -0800
 @@ -13,6 +13,13 @@
  #include <asm/uaccess.h>
  #include "group.h"
@@ -91,7 +91,7 @@ Index: linux-2.6.24-rc7/fs/ext4/defrag.c
  /* Will go away */
  ext4_fsblk_t idx_pblock(struct ext4_extent_idx *ix)
  {
-@@ -268,6 +275,469 @@ ext4_ext_next_extent(struct inode *inode
+@@ -260,6 +267,469 @@ ext4_ext_next_extent(struct inode *inode
  	return 1;
  }
  
@@ -561,7 +561,7 @@ Index: linux-2.6.24-rc7/fs/ext4/defrag.c
  int ext4_ext_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
  			unsigned long arg)
  {
-@@ -320,6 +790,74 @@ int ext4_ext_ioctl(struct inode *inode, 
+@@ -312,6 +782,74 @@ int ext4_ext_ioctl(struct inode *inode, 
  		unlock_kernel();
  
  		return put_user(block, p);
@@ -636,10 +636,10 @@ Index: linux-2.6.24-rc7/fs/ext4/defrag.c
  	} else if (cmd == EXT4_IOC_DEFRAG) {
  		struct ext4_ext_defrag_data defrag;
  
-Index: linux-2.6.24-rc7/fs/ext4/extents.c
+Index: linux-2.6.24-rc8/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.24-rc7.orig/fs/ext4/extents.c	2008-01-16 14:39:10.000000000 -0800
-+++ linux-2.6.24-rc7/fs/ext4/extents.c	2008-01-16 14:39:32.000000000 -0800
+--- linux-2.6.24-rc8.orig/fs/ext4/extents.c	2008-01-24 11:19:56.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/extents.c	2008-01-24 11:19:58.000000000 -0800
 @@ -177,11 +177,17 @@ ext4_fsblk_t ext4_ext_find_goal(struct i
  static ext4_fsblk_t
  ext4_ext_new_block(handle_t *handle, struct inode *inode,
