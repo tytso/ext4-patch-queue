@@ -12,25 +12,25 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  Documentation/filesystems/ext4.txt |   10 
  Documentation/filesystems/proc.txt |   39 
  fs/ext4/Makefile                   |    2 
- fs/ext4/balloc.c                   |   67 -
+ fs/ext4/balloc.c                   |   67 
  fs/ext4/extents.c                  |   45 
  fs/ext4/inode.c                    |   15 
- fs/ext4/mballoc.c                  | 4552 ++++++++++++++++++++++++++++++++++++
+ fs/ext4/mballoc.c                  | 4552 +++++++++++++++++++++++++++++++++++++
  fs/ext4/migrate.c                  |   10 
  fs/ext4/super.c                    |   62 
  fs/ext4/xattr.c                    |    4 
- include/linux/ext4_fs.h            |   76 +
+ include/linux/ext4_fs.h            |   76 
  include/linux/ext4_fs_i.h          |    4 
  include/linux/ext4_fs_sb.h         |   52 
  13 files changed, 4900 insertions(+), 38 deletions(-)
  create mode 100644 fs/ext4/mballoc.c
 
 
-diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
-index 4f329af..f9038de 100644
---- a/Documentation/filesystems/ext4.txt
-+++ b/Documentation/filesystems/ext4.txt
-@@ -86,9 +86,11 @@ Alex is working on a new set of patches right now.
+Index: linux-2.6.24-rc8/Documentation/filesystems/ext4.txt
+===================================================================
+--- linux-2.6.24-rc8.orig/Documentation/filesystems/ext4.txt	2008-01-24 11:18:55.000000000 -0800
++++ linux-2.6.24-rc8/Documentation/filesystems/ext4.txt	2008-01-24 11:19:18.000000000 -0800
+@@ -86,9 +86,11 @@ Alex is working on a new set of patches 
  When mounting an ext4 filesystem, the following option are accepted:
  (*) == default
  
@@ -43,7 +43,7 @@ index 4f329af..f9038de 100644
  journal_checksum	Enable checksumming of the journal transactions.
  			This will allow the recovery code in e2fsck and the
  			kernel to detect corruption in the kernel.  It is a
-@@ -206,6 +208,12 @@ nobh			(a) cache disk block mapping information
+@@ -206,6 +208,12 @@ nobh			(a) cache disk block mapping info
  			"nobh" option tries to avoid associating buffer
  			heads (supported only for "writeback" mode).
  
@@ -56,10 +56,10 @@ index 4f329af..f9038de 100644
  
  Data Mode
  ---------
-diff --git a/Documentation/filesystems/proc.txt b/Documentation/filesystems/proc.txt
-index dec9945..4413a2d 100644
---- a/Documentation/filesystems/proc.txt
-+++ b/Documentation/filesystems/proc.txt
+Index: linux-2.6.24-rc8/Documentation/filesystems/proc.txt
+===================================================================
+--- linux-2.6.24-rc8.orig/Documentation/filesystems/proc.txt	2008-01-24 11:18:07.000000000 -0800
++++ linux-2.6.24-rc8/Documentation/filesystems/proc.txt	2008-01-24 11:19:18.000000000 -0800
 @@ -857,6 +857,45 @@ CPUs.
  The   "procs_blocked" line gives  the  number of  processes currently blocked,
  waiting for I/O to complete.
@@ -106,10 +106,10 @@ index dec9945..4413a2d 100644
  
  ------------------------------------------------------------------------------
  Summary
-diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
-index d5fd80b..ac6fa8c 100644
---- a/fs/ext4/Makefile
-+++ b/fs/ext4/Makefile
+Index: linux-2.6.24-rc8/fs/ext4/Makefile
+===================================================================
+--- linux-2.6.24-rc8.orig/fs/ext4/Makefile	2008-01-24 11:19:07.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/Makefile	2008-01-24 11:23:03.000000000 -0800
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -119,11 +119,11 @@ index d5fd80b..ac6fa8c 100644
  
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 54d3da7..643046b 100644
---- a/fs/ext4/balloc.c
-+++ b/fs/ext4/balloc.c
-@@ -577,6 +577,8 @@ void ext4_discard_reservation(struct inode *inode)
+Index: linux-2.6.24-rc8/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.24-rc8.orig/fs/ext4/balloc.c	2008-01-24 11:19:09.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/balloc.c	2008-01-24 11:23:03.000000000 -0800
+@@ -577,6 +577,8 @@ void ext4_discard_reservation(struct ino
  	struct ext4_reserve_window_node *rsv;
  	spinlock_t *rsv_lock = &EXT4_SB(inode->i_sb)->s_rsv_window_lock;
  
@@ -168,7 +168,7 @@ index 54d3da7..643046b 100644
  	if (dquot_freed_blocks)
  		DQUOT_FREE_BLOCK(inode, dquot_freed_blocks);
  	return;
-@@ -1576,7 +1588,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+@@ -1576,7 +1588,7 @@ int ext4_should_retry_alloc(struct super
  }
  
  /**
@@ -177,7 +177,7 @@ index 54d3da7..643046b 100644
   * @handle:		handle to this transaction
   * @inode:		file inode
   * @goal:		given target block(filesystem wide)
-@@ -1589,7 +1601,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+@@ -1589,7 +1601,7 @@ int ext4_should_retry_alloc(struct super
   * any specific goal block.
   *
   */
@@ -236,10 +236,10 @@ index 54d3da7..643046b 100644
  /**
   * ext4_count_free_blocks() -- count filesystem free blocks
   * @sb:		superblock
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index f1920ec..9fa7406 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
+Index: linux-2.6.24-rc8/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.24-rc8.orig/fs/ext4/extents.c	2008-01-24 11:19:11.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/extents.c	2008-01-24 11:23:04.000000000 -0800
 @@ -853,7 +853,7 @@ cleanup:
  		for (i = 0; i < depth; i++) {
  			if (!ablocks[i])
@@ -249,7 +249,7 @@ index f1920ec..9fa7406 100644
  		}
  	}
  	kfree(ablocks);
-@@ -1698,7 +1698,7 @@ static int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
+@@ -1698,7 +1698,7 @@ static int ext4_ext_rm_idx(handle_t *han
  	ext_debug("index is empty, remove it, free block %llu\n", leaf);
  	bh = sb_find_get_block(inode->i_sb, leaf);
  	ext4_forget(handle, 1, inode, bh, leaf);
@@ -258,7 +258,7 @@ index f1920ec..9fa7406 100644
  	return err;
  }
  
-@@ -1759,8 +1759,10 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -1759,8 +1759,10 @@ static int ext4_remove_blocks(handle_t *
  {
  	struct buffer_head *bh;
  	unsigned short ee_len =  ext4_ext_get_actual_len(ex);
@@ -270,7 +270,7 @@ index f1920ec..9fa7406 100644
  #ifdef EXTENTS_STATS
  	{
  		struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
-@@ -1789,7 +1791,7 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -1789,7 +1791,7 @@ static int ext4_remove_blocks(handle_t *
  			bh = sb_find_get_block(inode->i_sb, start + i);
  			ext4_forget(handle, 0, inode, bh, start + i);
  		}
@@ -279,7 +279,7 @@ index f1920ec..9fa7406 100644
  	} else if (from == le32_to_cpu(ex->ee_block)
  		   && to <= le32_to_cpu(ex->ee_block) + ee_len - 1) {
  		printk(KERN_INFO "strange request: removal %u-%u from %u:%u\n",
-@@ -2287,6 +2289,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2287,6 +2289,7 @@ int ext4_ext_get_blocks(handle_t *handle
  	ext4_fsblk_t goal, newblock;
  	int err = 0, depth, ret;
  	unsigned long allocated = 0;
@@ -287,7 +287,7 @@ index f1920ec..9fa7406 100644
  
  	__clear_bit(BH_New, &bh_result->b_state);
  	ext_debug("blocks %u/%lu requested for inode %u\n",
-@@ -2397,8 +2400,15 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2397,8 +2400,15 @@ int ext4_ext_get_blocks(handle_t *handle
  	if (S_ISREG(inode->i_mode) && (!EXT4_I(inode)->i_block_alloc_info))
  		ext4_init_block_alloc_info(inode);
  
@@ -305,7 +305,7 @@ index f1920ec..9fa7406 100644
  
  	/*
  	 * See if request is beyond maximum number of blocks we can have in
-@@ -2421,7 +2431,18 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2421,7 +2431,18 @@ int ext4_ext_get_blocks(handle_t *handle
  		allocated = le16_to_cpu(newex.ee_len);
  	else
  		allocated = max_blocks;
@@ -325,7 +325,7 @@ index f1920ec..9fa7406 100644
  	if (!newblock)
  		goto out2;
  	ext_debug("allocate new block: goal %llu, found %llu/%lu\n",
-@@ -2429,14 +2450,17 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2429,14 +2450,17 @@ int ext4_ext_get_blocks(handle_t *handle
  
  	/* try to insert new extent into found leaf and return */
  	ext4_ext_store_pblock(&newex, newblock);
@@ -345,7 +345,7 @@ index f1920ec..9fa7406 100644
  		goto out2;
  	}
  
-@@ -2445,6 +2469,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -2445,6 +2469,7 @@ int ext4_ext_get_blocks(handle_t *handle
  
  	/* previous routine could use block we allocated */
  	newblock = ext_pblock(&newex);
@@ -353,7 +353,7 @@ index f1920ec..9fa7406 100644
  outnew:
  	__set_bit(BH_New, &bh_result->b_state);
  
-@@ -2496,6 +2521,8 @@ void ext4_ext_truncate(struct inode * inode, struct page *page)
+@@ -2496,6 +2521,8 @@ void ext4_ext_truncate(struct inode * in
  	down_write(&EXT4_I(inode)->i_data_sem);
  	ext4_ext_invalidate_cache(inode);
  
@@ -362,11 +362,11 @@ index f1920ec..9fa7406 100644
  	/*
  	 * TODO: optimization is possible here.
  	 * Probably we need not scan at all,
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index a06a3b7..bb717cb 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -551,7 +551,7 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
+Index: linux-2.6.24-rc8/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.24-rc8.orig/fs/ext4/inode.c	2008-01-24 11:18:57.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/inode.c	2008-01-24 11:23:03.000000000 -0800
+@@ -551,7 +551,7 @@ static int ext4_alloc_blocks(handle_t *h
  	return ret;
  failed_out:
  	for (i = 0; i <index; i++)
@@ -400,7 +400,7 @@ index a06a3b7..bb717cb 100644
  
  	return err;
  }
-@@ -2052,7 +2053,7 @@ static void ext4_clear_blocks(handle_t *handle, struct inode *inode,
+@@ -2052,7 +2053,7 @@ static void ext4_clear_blocks(handle_t *
  		}
  	}
  
@@ -409,7 +409,7 @@ index a06a3b7..bb717cb 100644
  }
  
  /**
-@@ -2225,7 +2226,7 @@ static void ext4_free_branches(handle_t *handle, struct inode *inode,
+@@ -2225,7 +2226,7 @@ static void ext4_free_branches(handle_t 
  				ext4_journal_test_restart(handle, inode);
  			}
  
@@ -418,11 +418,10 @@ index a06a3b7..bb717cb 100644
  
  			if (parent_bh) {
  				/*
-diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-new file mode 100644
-index 0000000..b1d9571
---- /dev/null
-+++ b/fs/ext4/mballoc.c
+Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-2.6.24-rc8/fs/ext4/mballoc.c	2008-01-24 11:31:19.000000000 -0800
 @@ -0,0 +1,4552 @@
 +/*
 + * Copyright (c) 2003-2006, Cluster File Systems, Inc, info@clusterfs.com
@@ -3147,9 +3146,9 @@ index 0000000..b1d9571
 +#ifdef DOUBLE_CHECK
 +			kfree(grinfo->bb_bitmap);
 +#endif
-+			ext4_lock_group(sb,i);
++			ext4_lock_group(sb, i);
 +			ext4_mb_cleanup_pa(grinfo);
-+			ext4_lock_group(sb,i);
++			ext4_lock_group(sb, i);
 +			kfree(grinfo);
 +		}
 +		num_meta_group_infos = (sbi->s_groups_count +
@@ -4976,11 +4975,11 @@ index 0000000..b1d9571
 +	ext4_std_error(sb, err);
 +	return;
 +}
-diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
-index ad8eb0c..5e9c7e8 100644
---- a/fs/ext4/migrate.c
-+++ b/fs/ext4/migrate.c
-@@ -237,11 +237,11 @@ static int free_dind_blocks(handle_t *handle,
+Index: linux-2.6.24-rc8/fs/ext4/migrate.c
+===================================================================
+--- linux-2.6.24-rc8.orig/fs/ext4/migrate.c	2008-01-24 11:19:07.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/migrate.c	2008-01-24 11:19:18.000000000 -0800
+@@ -237,11 +237,11 @@ static int free_dind_blocks(handle_t *ha
  	for (i = 0; i < max_entries; i++) {
  		if (tmp_idata[i]) {
  			ext4_free_blocks(handle, inode,
@@ -4994,7 +4993,7 @@ index ad8eb0c..5e9c7e8 100644
  	return 0;
  }
  
-@@ -269,7 +269,7 @@ static int free_tind_blocks(handle_t *handle,
+@@ -269,7 +269,7 @@ static int free_tind_blocks(handle_t *ha
  		}
  	}
  	brelse(bh);
@@ -5003,7 +5002,7 @@ index ad8eb0c..5e9c7e8 100644
  	return 0;
  }
  
-@@ -280,7 +280,7 @@ static int free_ind_block(handle_t *handle, struct inode *inode)
+@@ -280,7 +280,7 @@ static int free_ind_block(handle_t *hand
  
  	if (ei->i_data[EXT4_IND_BLOCK]) {
  		ext4_free_blocks(handle, inode,
@@ -5012,7 +5011,7 @@ index ad8eb0c..5e9c7e8 100644
  	}
  
  	if (ei->i_data[EXT4_DIND_BLOCK]) {
-@@ -371,7 +371,7 @@ static int free_ext_idx(handle_t *handle, struct inode *inode,
+@@ -371,7 +371,7 @@ static int free_ext_idx(handle_t *handle
  	eh = (struct ext4_extent_header *)bh->b_data;
  	if (eh->eh_depth == 0) {
  		brelse(bh);
@@ -5021,11 +5020,11 @@ index ad8eb0c..5e9c7e8 100644
  	} else {
  		ix = EXT_FIRST_INDEX(eh);
  		for (i = 0; i < le16_to_cpu(eh->eh_entries); i++, ix++) {
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 64fc7f1..3a51ffc 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -503,6 +503,7 @@ static void ext4_put_super (struct super_block * sb)
+Index: linux-2.6.24-rc8/fs/ext4/super.c
+===================================================================
+--- linux-2.6.24-rc8.orig/fs/ext4/super.c	2008-01-24 11:19:08.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/super.c	2008-01-24 11:23:04.000000000 -0800
+@@ -503,6 +503,7 @@ static void ext4_put_super (struct super
  	struct ext4_super_block *es = sbi->s_es;
  	int i;
  
@@ -5033,7 +5032,7 @@ index 64fc7f1..3a51ffc 100644
  	ext4_ext_release(sb);
  	ext4_xattr_put_super(sb);
  	jbd2_journal_destroy(sbi->s_journal);
-@@ -569,6 +570,8 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
+@@ -569,6 +570,8 @@ static struct inode *ext4_alloc_inode(st
  	ei->i_block_alloc_info = NULL;
  	ei->vfs_inode.i_version = 1;
  	memset(&ei->i_cached_extent, 0, sizeof(struct ext4_ext_cache));
@@ -5080,7 +5079,7 @@ index 64fc7f1..3a51ffc 100644
  		default:
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
-@@ -1742,6 +1762,34 @@ static ext4_fsblk_t descriptor_loc(struct super_block *sb,
+@@ -1742,6 +1762,34 @@ static ext4_fsblk_t descriptor_loc(struc
  	return (has_super + ext4_group_first_block_no(sb, bg));
  }
  
@@ -5115,7 +5114,7 @@ index 64fc7f1..3a51ffc 100644
  
  static int ext4_fill_super (struct super_block *sb, void *data, int silent)
  				__releases(kernel_sem)
-@@ -2091,6 +2139,8 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
+@@ -2091,6 +2139,8 @@ static int ext4_fill_super (struct super
  	sbi->s_rsv_window_head.rsv_goal_size = 0;
  	ext4_rsv_window_add(sb, &sbi->s_rsv_window_head);
  
@@ -5124,7 +5123,7 @@ index 64fc7f1..3a51ffc 100644
  	/*
  	 * set up enough so that it can read an inode
  	 */
-@@ -2250,6 +2300,7 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
+@@ -2250,6 +2300,7 @@ static int ext4_fill_super (struct super
  		"writeback");
  
  	ext4_ext_init(sb);
@@ -5132,7 +5131,7 @@ index 64fc7f1..3a51ffc 100644
  
  	lock_kernel();
  	return 0;
-@@ -3232,9 +3283,15 @@ static struct file_system_type ext4dev_fs_type = {
+@@ -3232,9 +3283,15 @@ static struct file_system_type ext4dev_f
  
  static int __init init_ext4_fs(void)
  {
@@ -5166,11 +5165,11 @@ index 64fc7f1..3a51ffc 100644
  }
  
  MODULE_AUTHOR("Remy Card, Stephen Tweedie, Andrew Morton, Andreas Dilger, Theodore Ts'o and others");
-diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
-index 8638730..d796213 100644
---- a/fs/ext4/xattr.c
-+++ b/fs/ext4/xattr.c
-@@ -480,7 +480,7 @@ ext4_xattr_release_block(handle_t *handle, struct inode *inode,
+Index: linux-2.6.24-rc8/fs/ext4/xattr.c
+===================================================================
+--- linux-2.6.24-rc8.orig/fs/ext4/xattr.c	2008-01-24 11:18:07.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/xattr.c	2008-01-24 11:19:18.000000000 -0800
+@@ -480,7 +480,7 @@ ext4_xattr_release_block(handle_t *handl
  		ea_bdebug(bh, "refcount now=0; freeing");
  		if (ce)
  			mb_cache_entry_free(ce);
@@ -5188,10 +5187,10 @@ index 8638730..d796213 100644
  				error = -EIO;
  				goto cleanup;
  			}
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index d0b7ca9..1852313 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
+Index: linux-2.6.24-rc8/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.24-rc8.orig/include/linux/ext4_fs.h	2008-01-24 11:19:10.000000000 -0800
++++ linux-2.6.24-rc8/include/linux/ext4_fs.h	2008-01-24 11:23:03.000000000 -0800
 @@ -20,6 +20,8 @@
  #include <linux/blkdev.h>
  #include <linux/magic.h>
@@ -5260,7 +5259,7 @@ index d0b7ca9..1852313 100644
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-@@ -912,7 +959,7 @@ extern ext4_fsblk_t ext4_new_blocks (handle_t *handle, struct inode *inode,
+@@ -912,7 +959,7 @@ extern ext4_fsblk_t ext4_new_blocks (han
  extern ext4_fsblk_t ext4_new_blocks_old(handle_t *handle, struct inode *inode,
  			ext4_fsblk_t goal, unsigned long *count, int *errp);
  extern void ext4_free_blocks (handle_t *handle, struct inode *inode,
@@ -5269,7 +5268,7 @@ index d0b7ca9..1852313 100644
  extern void ext4_free_blocks_sb (handle_t *handle, struct super_block *sb,
  				 ext4_fsblk_t block, unsigned long count,
  				unsigned long *pdquot_freed_blocks);
-@@ -950,6 +997,20 @@ extern unsigned long ext4_count_dirs (struct super_block *);
+@@ -950,6 +997,20 @@ extern unsigned long ext4_count_dirs (st
  extern void ext4_check_inodes_bitmap (struct super_block *);
  extern unsigned long ext4_count_free (struct buffer_head *, unsigned);
  
@@ -5290,7 +5289,7 @@ index d0b7ca9..1852313 100644
  
  /* inode.c */
  int ext4_forget(handle_t *handle, int is_metadata, struct inode *inode,
-@@ -1080,6 +1141,19 @@ static inline void ext4_isize_set(struct ext4_inode *raw_inode, loff_t i_size)
+@@ -1080,6 +1141,19 @@ static inline void ext4_isize_set(struct
  	raw_inode->i_size_high = cpu_to_le32(i_size >> 32);
  }
  
@@ -5310,10 +5309,10 @@ index d0b7ca9..1852313 100644
  #define ext4_std_error(sb, errno)				\
  do {								\
  	if ((errno))						\
-diff --git a/include/linux/ext4_fs_i.h b/include/linux/ext4_fs_i.h
-index 4377d24..d5508d3 100644
---- a/include/linux/ext4_fs_i.h
-+++ b/include/linux/ext4_fs_i.h
+Index: linux-2.6.24-rc8/include/linux/ext4_fs_i.h
+===================================================================
+--- linux-2.6.24-rc8.orig/include/linux/ext4_fs_i.h	2008-01-24 11:18:52.000000000 -0800
++++ linux-2.6.24-rc8/include/linux/ext4_fs_i.h	2008-01-24 11:19:18.000000000 -0800
 @@ -158,6 +158,10 @@ struct ext4_inode_info {
  	 * struct timespec i_{a,c,m}time in the generic inode.
  	 */
@@ -5325,10 +5324,10 @@ index 4377d24..d5508d3 100644
  };
  
  #endif	/* _LINUX_EXT4_FS_I */
-diff --git a/include/linux/ext4_fs_sb.h b/include/linux/ext4_fs_sb.h
-index 38a47ec..abaae2c 100644
---- a/include/linux/ext4_fs_sb.h
-+++ b/include/linux/ext4_fs_sb.h
+Index: linux-2.6.24-rc8/include/linux/ext4_fs_sb.h
+===================================================================
+--- linux-2.6.24-rc8.orig/include/linux/ext4_fs_sb.h	2008-01-24 11:18:38.000000000 -0800
++++ linux-2.6.24-rc8/include/linux/ext4_fs_sb.h	2008-01-24 11:23:03.000000000 -0800
 @@ -91,6 +91,58 @@ struct ext4_sb_info {
  	unsigned long s_ext_blocks;
  	unsigned long s_ext_extents;
