@@ -1,0 +1,24 @@
+ext4: Add stripe= option to /proc/mounts
+From: Miklos Szeredi <mszeredi@suse.cz>
+
+Add stripe= option to /proc/mounts for ext4 filesystems.
+
+Signed-off-by: Miklos Szeredi <mszeredi@suse.cz>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/super.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+Index: linux-2.6.24-rc8/fs/ext4/super.c
+===================================================================
+--- linux-2.6.24-rc8.orig/fs/ext4/super.c	2008-01-25 08:48:59.000000000 -0800
++++ linux-2.6.24-rc8/fs/ext4/super.c	2008-01-25 09:06:07.000000000 -0800
+@@ -741,6 +741,8 @@ static int ext4_show_options(struct seq_
+ 	if (test_opt(sb, I_VERSION))
+ 		seq_puts(seq, ",i_version");
+ 
++	if (sbi->s_stripe)
++		seq_printf(seq, ",stripe=%lu", sbi->s_stripe);
+ 	/*
+ 	 * journal mode get enabled in different ways
+ 	 * So just print the value even if we didn't specify it
