@@ -122,7 +122,7 @@ index ff3428e..a9140ea 100644
 -	if (!bh)
 -		ext4_error (sb, __FUNCTION__,
 +	if (bh_submit_read(bh) < 0) {
-+		brelse(bh);
++		put_bh(bh);
 +		ext4_error(sb, __FUNCTION__,
  			    "Cannot read block bitmap - "
 -			    "block_group = %lu, block_bitmap = %llu",
@@ -132,7 +132,7 @@ index ff3428e..a9140ea 100644
 +		return NULL;
 +	}
 +	if (!ext4_valid_block_bitmap(sb, desc, block_group, bh)) {
-+		brelse(bh);
++		put_bh(bh);
 +		return NULL;
 +	}
 +

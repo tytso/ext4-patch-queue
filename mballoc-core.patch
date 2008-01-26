@@ -2995,7 +2995,7 @@ Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
 +			BUG_ON(bh == NULL);
 +			memcpy(meta_group_info[j]->bb_bitmap, bh->b_data,
 +					sb->s_blocksize);
-+			brelse(bh);
++			put_bh(bh);
 +		}
 +#endif
 +
@@ -3494,7 +3494,7 @@ Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
 +
 +out_err:
 +	sb->s_dirt = 1;
-+	brelse(bitmap_bh);
++	put_bh(bitmap_bh);
 +	return err;
 +}
 +
@@ -4314,7 +4314,7 @@ Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
 +out:
 +	ext4_unlock_group(sb, group);
 +	ext4_mb_release_desc(&e4b);
-+	brelse(bitmap_bh);
++	put_bh(bitmap_bh);
 +	return free;
 +}
 +
@@ -4415,7 +4415,7 @@ Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
 +		ext4_unlock_group(sb, group);
 +
 +		ext4_mb_release_desc(&e4b);
-+		brelse(bitmap_bh);
++		put_bh(bitmap_bh);
 +
 +		list_del(&pa->u.pa_tmp_list);
 +		call_rcu(&(pa)->u.pa_rcu, ext4_mb_pa_callback);
@@ -4877,7 +4877,7 @@ Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
 +		overflow = bit + count - EXT4_BLOCKS_PER_GROUP(sb);
 +		count -= overflow;
 +	}
-+	brelse(bitmap_bh);
++	put_bh(bitmap_bh);
 +	bitmap_bh = read_block_bitmap(sb, block_group);
 +	if (!bitmap_bh)
 +		goto error_return;
@@ -4971,7 +4971,7 @@ Index: linux-2.6.24-rc8/fs/ext4/mballoc.c
 +	}
 +	sb->s_dirt = 1;
 +error_return:
-+	brelse(bitmap_bh);
++	put_bh(bitmap_bh);
 +	ext4_std_error(sb, err);
 +	return;
 +}
@@ -4979,15 +4979,14 @@ Index: linux-2.6.24-rc8/fs/ext4/migrate.c
 ===================================================================
 --- linux-2.6.24-rc8.orig/fs/ext4/migrate.c	2008-01-24 11:19:07.000000000 -0800
 +++ linux-2.6.24-rc8/fs/ext4/migrate.c	2008-01-24 11:19:18.000000000 -0800
-@@ -237,11 +237,11 @@ static int free_dind_blocks(handle_t *ha
+@@ -237,10 +237,10 @@ static int free_dind_blocks(handle_t *ha
  	for (i = 0; i < max_entries; i++) {
- 		if (tmp_idata[i]) {
+ 		if (tmp_idata[i])
  			ext4_free_blocks(handle, inode,
 -					le32_to_cpu(tmp_idata[i]), 1);
 +					le32_to_cpu(tmp_idata[i]), 1, 1);
- 		}
  	}
- 	brelse(bh);
+ 	put_bh(bh);
 -	ext4_free_blocks(handle, inode, le32_to_cpu(i_data), 1);
 +	ext4_free_blocks(handle, inode, le32_to_cpu(i_data), 1, 1);
  	return 0;
@@ -4996,28 +4995,26 @@ Index: linux-2.6.24-rc8/fs/ext4/migrate.c
 @@ -269,7 +269,7 @@ static int free_tind_blocks(handle_t *ha
  		}
  	}
- 	brelse(bh);
+ 	put_bh(bh);
 -	ext4_free_blocks(handle, inode, le32_to_cpu(i_data), 1);
 +	ext4_free_blocks(handle, inode, le32_to_cpu(i_data), 1, 1);
  	return 0;
  }
  
-@@ -280,7 +280,7 @@ static int free_ind_block(handle_t *hand
+@@ -280,6 +280,6 @@ static int free_ind_block(handle_t *hand
  
- 	if (ei->i_data[EXT4_IND_BLOCK]) {
+ 	if (ei->i_data[EXT4_IND_BLOCK])
  		ext4_free_blocks(handle, inode,
 -				le32_to_cpu(ei->i_data[EXT4_IND_BLOCK]), 1);
 +				le32_to_cpu(ei->i_data[EXT4_IND_BLOCK]), 1, 1);
- 	}
  
  	if (ei->i_data[EXT4_DIND_BLOCK]) {
-@@ -371,7 +371,7 @@ static int free_ext_idx(handle_t *handle
+@@ -371,6 +371,6 @@ static int free_ext_idx(handle_t *handle
  	eh = (struct ext4_extent_header *)bh->b_data;
- 	if (eh->eh_depth == 0) {
- 		brelse(bh);
+ 	if (eh->eh_depth == 0)
 -		ext4_free_blocks(handle, inode, block, 1);
 +		ext4_free_blocks(handle, inode, block, 1, 1);
- 	} else {
+ 	else {
  		ix = EXT_FIRST_INDEX(eh);
  		for (i = 0; i < le16_to_cpu(eh->eh_entries); i++, ix++) {
 Index: linux-2.6.24-rc8/fs/ext4/super.c

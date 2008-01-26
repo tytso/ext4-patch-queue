@@ -63,7 +63,7 @@ new file mode 100644
 index 0000000..ad8eb0c
 --- /dev/null
 +++ b/fs/ext4/migrate.c
-@@ -0,0 +1,584 @@
+@@ -0,0 +1,571 @@
 +/*
 + * Copyright IBM Corporation, 2007
 + * Author Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
@@ -203,7 +203,7 @@ index 0000000..ad8eb0c
 +
 +	/* Update the file block number */
 +	*blk_nump = blk_count;
-+	brelse(bh);
++	put_bh(bh);
 +	return retval;
 +
 +}
@@ -243,7 +243,7 @@ index 0000000..ad8eb0c
 +
 +	/* Update the file block number */
 +	*blk_nump = blk_count;
-+	brelse(bh);
++	put_bh(bh);
 +	return retval;
 +
 +}
@@ -275,14 +275,13 @@ index 0000000..ad8eb0c
 +						&blk_count, lb);
 +			if (retval)
 +				break;
-+		} else {
++		} else
 +			/* Only update the file block number */
 +			blk_count += max_entries * max_entries;
-+		}
 +	}
 +	/* Update the file block number */
 +	*blk_nump = blk_count;
-+	brelse(bh);
++	put_bh(bh);
 +	return retval;
 +
 +}
@@ -301,12 +300,11 @@ index 0000000..ad8eb0c
 +
 +	tmp_idata = (__le32 *)bh->b_data;
 +	for (i = 0; i < max_entries; i++) {
-+		if (tmp_idata[i]) {
++		if (tmp_idata[i])
 +			ext4_free_blocks(handle, inode,
 +					le32_to_cpu(tmp_idata[i]), 1);
-+		}
 +	}
-+	brelse(bh);
++	put_bh(bh);
 +	ext4_free_blocks(handle, inode, le32_to_cpu(i_data), 1);
 +	return 0;
 +}
@@ -329,12 +327,12 @@ index 0000000..ad8eb0c
 +			retval = free_dind_blocks(handle,
 +					inode, tmp_idata[i]);
 +			if (retval) {
-+				brelse(bh);
++				put_bh(bh);
 +				return retval;
 +			}
 +		}
 +	}
-+	brelse(bh);
++	put_bh(bh);
 +	ext4_free_blocks(handle, inode, le32_to_cpu(i_data), 1);
 +	return 0;
 +}
@@ -344,10 +342,9 @@ index 0000000..ad8eb0c
 +	int retval;
 +	struct ext4_inode_info *ei = EXT4_I(inode);
 +
-+	if (ei->i_data[EXT4_IND_BLOCK]) {
++	if (ei->i_data[EXT4_IND_BLOCK])
 +		ext4_free_blocks(handle, inode,
 +				le32_to_cpu(ei->i_data[EXT4_IND_BLOCK]), 1);
-+	}
 +
 +	if (ei->i_data[EXT4_DIND_BLOCK]) {
 +		retval = free_dind_blocks(handle, inode,
@@ -435,17 +432,17 @@ index 0000000..ad8eb0c
 +		return -EIO;
 +
 +	eh = (struct ext4_extent_header *)bh->b_data;
-+	if (eh->eh_depth == 0) {
-+		brelse(bh);
++	if (eh->eh_depth == 0)
 +		ext4_free_blocks(handle, inode, block, 1);
-+	} else {
++	else {
 +		ix = EXT_FIRST_INDEX(eh);
 +		for (i = 0; i < le16_to_cpu(eh->eh_entries); i++, ix++) {
 +			retval = free_ext_idx(handle, inode, ix);
 +			if (retval)
-+				return retval;
++				break;
 +		}
 +	}
++	put_bh(bh);
 +	return retval;
 +}
 +
@@ -458,12 +455,11 @@ index 0000000..ad8eb0c
 +	struct ext4_inode_info *ei = EXT4_I(inode);
 +	struct ext4_extent_header *eh = (struct ext4_extent_header *)ei->i_data;
 +	struct ext4_extent_idx *ix;
-+	if (eh->eh_depth == 0) {
++	if (eh->eh_depth == 0)
 +		/*
 +		 * No extra blocks allocated for extent meta data
 +		 */
 +		return 0;
-+	}
 +	ix = EXT_FIRST_INDEX(eh);
 +	for (i = 0; i < le16_to_cpu(eh->eh_entries); i++, ix++) {
 +		retval = free_ext_idx(handle, inode, ix);
@@ -486,13 +482,11 @@ index 0000000..ad8eb0c
 +	struct list_blocks_struct lb;
 +	unsigned long max_entries;
 +
-+	if (!test_opt(inode->i_sb, EXTENTS)) {
++	if (!test_opt(inode->i_sb, EXTENTS))
 +		/*
-+		 * if mounted with noextents
-+		 * we don't allow the migrate
++		 * if mounted with noextents we don't allow the migrate
 +		 */
 +		return -EINVAL;
-+	}
 +
 +	if ((EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL))
 +		return -EINVAL;
@@ -562,18 +556,16 @@ index 0000000..ad8eb0c
 +					&blk_count, &lb);
 +			if (retval)
 +				goto err_out;
-+	} else {
++	} else
 +		blk_count +=  max_entries;
-+	}
 +	if (i_data[EXT4_DIND_BLOCK]) {
 +		retval = update_dind_extent_range(handle, tmp_inode,
 +					le32_to_cpu(i_data[EXT4_DIND_BLOCK]),
 +					&blk_count, &lb);
 +			if (retval)
 +				goto err_out;
-+	} else {
++	} else
 +		blk_count += max_entries * max_entries;
-+	}
 +	if (i_data[EXT4_TIND_BLOCK]) {
 +		retval = update_tind_extent_range(handle, tmp_inode,
 +					le32_to_cpu(i_data[EXT4_TIND_BLOCK]),
@@ -596,23 +588,18 @@ index 0000000..ad8eb0c
 +	 * FIXME!! we may be touching bitmaps in different block groups.
 +	 */
 +	if (ext4_journal_extend(handle,
-+			4 + 2*EXT4_QUOTA_TRANS_BLOCKS(inode->i_sb)) != 0) {
-+
++			4 + 2*EXT4_QUOTA_TRANS_BLOCKS(inode->i_sb)) != 0)
 +		ext4_journal_restart(handle,
 +				4 + 2*EXT4_QUOTA_TRANS_BLOCKS(inode->i_sb));
-+	}
-+	if (retval) {
++	if (retval)
 +		/*
 +		 * Failure case delete the extent information with the
 +		 * tmp_inode
 +		 */
 +		free_ext_block(handle, tmp_inode);
-+
-+	} else {
-+
++	else
 +		retval = ext4_ext_swap_inode_data(handle, inode,
 +							tmp_inode, retval);
-+	}
 +
 +	/*
 +	 * Mark the tmp_inode as of size zero

@@ -143,12 +143,12 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
 +			return -EIO;
 +		eh = ext_block_hdr(bh);
 +		if (ext4_ext_check_header(inode, eh, depth)) {
-+			brelse(bh);
++			put_bh(bh);
 +			return -EIO;
 +		}
 +		ix = EXT_FIRST_INDEX(eh);
 +		block = idx_pblock(ix);
-+		brelse(bh);
++		put_bh(bh);
 +	}
 +
 +	bh = sb_bread(inode->i_sb, block);
@@ -156,13 +156,13 @@ Index: linux-2.6.24-rc8/fs/ext4/extents.c
 +		return -EIO;
 +	eh = ext_block_hdr(bh);
 +	if (ext4_ext_check_header(inode, eh, path->p_depth - depth)) {
-+		brelse(bh);
++		put_bh(bh);
 +		return -EIO;
 +	}
 +	ex = EXT_FIRST_EXTENT(eh);
 +	*logical = le32_to_cpu(ex->ee_block);
 +	*phys = ext_pblock(ex);
-+	brelse(bh);
++	put_bh(bh);
 +	return 0;
 +
 +}
