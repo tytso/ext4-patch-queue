@@ -1,8 +1,8 @@
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index cf2f612..a8c599a 100644
+index 055a0cd..8a405ae 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1991,6 +1991,17 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
+@@ -1926,6 +1926,17 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
  		printk(KERN_WARNING
  		       "EXT4-fs warning: feature flags set on rev 0 fs, "
  		       "running e2fsck is recommended\n");
@@ -12,8 +12,8 @@ index cf2f612..a8c599a 100644
 +	 * that the TEST_FILESYS flag in s->flags be set.
 +	 */
 +	if (!(le32_to_cpu(es->s_flags) & EXT2_FLAGS_TEST_FILESYS)) {
-+		printk(KERN_WARNING, "EXT4-fs: %s: test filesystem flag "
-+		       "not set.\n");
++		printk(KERN_WARNING "EXT4-fs: %s: not marked "
++		       "OK to use with test code.\n", sb->s_id);
 +		goto failed_mount;
 +	}
 +
@@ -21,10 +21,10 @@ index cf2f612..a8c599a 100644
  	 * Check feature flags regardless of the revision level, since we
  	 * previously didn't change the revision level when setting the flags,
 diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 98d1c3c..d203543 100644
+index 1852313..285fa6c 100644
 --- a/include/linux/ext4_fs.h
 +++ b/include/linux/ext4_fs.h
-@@ -547,6 +547,13 @@ do {									       \
+@@ -490,6 +490,13 @@ do {									       \
  #define	EXT4_ORPHAN_FS			0x0004	/* Orphans being recovered */
  
  /*
