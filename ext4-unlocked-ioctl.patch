@@ -1,0 +1,403 @@
+Convert ext4_ioctl to an unlocked_ioctl
+
+From: Mathieu Segaud <mathieu.segaud@regala.cx>
+
+Change ext4_ioctl() to be an unlocked_ioctl(), explicitly
+exposing BKL's uses.
+
+Signed-off-by: Mathieu Segaud <mathieu.segaud@regala.cx>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index 33888bb..56e6608 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -42,7 +42,7 @@ const struct file_operations ext4_dir_operations = {
+ 	.llseek		= generic_file_llseek,
+ 	.read		= generic_read_dir,
+ 	.readdir	= ext4_readdir,		/* we take BKL. needed?*/
+-	.ioctl		= ext4_ioctl,		/* BKL held */
++	.unlocked_ioctl	= ext4_ioctl,
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext4_compat_ioctl,
+ #endif
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index ac35ec5..c586a81 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -129,7 +129,7 @@ const struct file_operations ext4_file_operations = {
+ 	.write		= do_sync_write,
+ 	.aio_read	= generic_file_aio_read,
+ 	.aio_write	= ext4_file_write,
+-	.ioctl		= ext4_ioctl,
++	.unlocked_ioctl	= ext4_ioctl,
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext4_compat_ioctl,
+ #endif
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 2ed7c37..7689d2e 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -17,12 +17,18 @@
+ #include <linux/smp_lock.h>
+ #include <asm/uaccess.h>
+ 
+-int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+-		unsigned long arg)
++long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
+-	struct ext4_inode_info *ei = EXT4_I(inode);
++	struct ext4_inode_info *ei;
++	struct inode *inode;
+ 	unsigned int flags;
+ 	unsigned short rsv_window_size;
++	long retval = 0;
++
++	lock_kernel();
++
++	inode = filp->f_path.dentry->d_inode;
++	ei = EXT4_I(inode);
+ 
+ 	ext4_debug ("cmd = %u, arg = %lu\n", cmd, arg);
+ 
+@@ -30,22 +36,28 @@ int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+ 	case EXT4_IOC_GETFLAGS:
+ 		ext4_get_inode_flags(ei);
+ 		flags = ei->i_flags & EXT4_FL_USER_VISIBLE;
+-		return put_user(flags, (int __user *) arg);
++		retval = put_user(flags, (int __user *) arg);
++		goto out;
+ 	case EXT4_IOC_SETFLAGS: {
+ 		handle_t *handle = NULL;
+-		int err;
+ 		struct ext4_iloc iloc;
+ 		unsigned int oldflags;
+ 		unsigned int jflag;
+ 
+-		if (IS_RDONLY(inode))
+-			return -EROFS;
++		if (IS_RDONLY(inode)) {
++			retval = -EROFS;
++			goto out;
++		}
+ 
+-		if (!is_owner_or_cap(inode))
+-			return -EACCES;
++		if (!is_owner_or_cap(inode)) {
++			retval = -EACCES;
++			goto out;
++		}
+ 
+-		if (get_user(flags, (int __user *) arg))
+-			return -EFAULT;
++		if (get_user(flags, (int __user *) arg)) {
++			retval = -EFAULT;
++			goto out;
++		}
+ 
+ 		if (!S_ISDIR(inode->i_mode))
+ 			flags &= ~EXT4_DIRSYNC_FL;
+@@ -54,7 +66,8 @@ int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+ 		/* Is it quota file? Do not allow user to mess with it */
+ 		if (IS_NOQUOTA(inode)) {
+ 			mutex_unlock(&inode->i_mutex);
+-			return -EPERM;
++			retval = -EPERM;
++			goto out;
+ 		}
+ 		oldflags = ei->i_flags;
+ 
+@@ -70,7 +83,8 @@ int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+ 		if ((flags ^ oldflags) & (EXT4_APPEND_FL | EXT4_IMMUTABLE_FL)) {
+ 			if (!capable(CAP_LINUX_IMMUTABLE)) {
+ 				mutex_unlock(&inode->i_mutex);
+-				return -EPERM;
++				retval = -EPERM;
++				goto out;
+ 			}
+ 		}
+ 
+@@ -81,7 +95,8 @@ int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+ 		if ((jflag ^ oldflags) & (EXT4_JOURNAL_DATA_FL)) {
+ 			if (!capable(CAP_SYS_RESOURCE)) {
+ 				mutex_unlock(&inode->i_mutex);
+-				return -EPERM;
++				retval = -EPERM;
++				goto out;
+ 			}
+ 		}
+ 
+@@ -89,12 +104,13 @@ int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+ 		handle = ext4_journal_start(inode, 1);
+ 		if (IS_ERR(handle)) {
+ 			mutex_unlock(&inode->i_mutex);
+-			return PTR_ERR(handle);
++			retval = PTR_ERR(handle);
++			goto out;
+ 		}
+ 		if (IS_SYNC(inode))
+ 			handle->h_sync = 1;
+-		err = ext4_reserve_inode_write(handle, inode, &iloc);
+-		if (err)
++		retval = ext4_reserve_inode_write(handle, inode, &iloc);
++		if (retval)
+ 			goto flags_err;
+ 
+ 		flags = flags & EXT4_FL_USER_MODIFIABLE;
+@@ -104,47 +120,55 @@ int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+ 		ext4_set_inode_flags(inode);
+ 		inode->i_ctime = ext4_current_time(inode);
+ 
+-		err = ext4_mark_iloc_dirty(handle, inode, &iloc);
++		retval = ext4_mark_iloc_dirty(handle, inode, &iloc);
+ flags_err:
+ 		ext4_journal_stop(handle);
+-		if (err) {
++		if (retval) {
+ 			mutex_unlock(&inode->i_mutex);
+-			return err;
++			goto out;
+ 		}
+ 
+ 		if ((jflag ^ oldflags) & (EXT4_JOURNAL_DATA_FL))
+-			err = ext4_change_inode_journal_flag(inode, jflag);
++			retval = ext4_change_inode_journal_flag(inode, jflag);
+ 		mutex_unlock(&inode->i_mutex);
+-		return err;
++		goto out;
+ 	}
+ 	case EXT4_IOC_GETVERSION:
+ 	case EXT4_IOC_GETVERSION_OLD:
+-		return put_user(inode->i_generation, (int __user *) arg);
++		retval = put_user(inode->i_generation, (int __user *) arg);
++		goto out;
+ 	case EXT4_IOC_SETVERSION:
+ 	case EXT4_IOC_SETVERSION_OLD: {
+ 		handle_t *handle;
+ 		struct ext4_iloc iloc;
+ 		__u32 generation;
+-		int err;
+ 
+-		if (!is_owner_or_cap(inode))
+-			return -EPERM;
+-		if (IS_RDONLY(inode))
+-			return -EROFS;
+-		if (get_user(generation, (int __user *) arg))
+-			return -EFAULT;
++		if (!is_owner_or_cap(inode)) {
++			retval = -EPERM;
++			goto out;
++		}
++		if (IS_RDONLY(inode)) {
++			retval = -EROFS;
++			goto out;
++		}
++		if (get_user(generation, (int __user *) arg)) {
++			retval = -EFAULT;
++			goto out;
++		}
+ 
+ 		handle = ext4_journal_start(inode, 1);
+-		if (IS_ERR(handle))
+-			return PTR_ERR(handle);
+-		err = ext4_reserve_inode_write(handle, inode, &iloc);
+-		if (err == 0) {
++		if (IS_ERR(handle)) {
++			retval = PTR_ERR(handle);
++			goto out;
++		}
++		retval = ext4_reserve_inode_write(handle, inode, &iloc);
++		if (retval == 0) {
+ 			inode->i_ctime = ext4_current_time(inode);
+ 			inode->i_generation = generation;
+-			err = ext4_mark_iloc_dirty(handle, inode, &iloc);
++			retval = ext4_mark_iloc_dirty(handle, inode, &iloc);
+ 		}
+ 		ext4_journal_stop(handle);
+-		return err;
++		goto out;
+ 	}
+ #ifdef CONFIG_JBD2_DEBUG
+ 	case EXT4_IOC_WAIT_FOR_READONLY:
+@@ -158,16 +182,15 @@ flags_err:
+ 		{
+ 			struct super_block *sb = inode->i_sb;
+ 			DECLARE_WAITQUEUE(wait, current);
+-			int ret = 0;
+ 
+ 			set_current_state(TASK_INTERRUPTIBLE);
+ 			add_wait_queue(&EXT4_SB(sb)->ro_wait_queue, &wait);
+ 			if (timer_pending(&EXT4_SB(sb)->turn_ro_timer)) {
+ 				schedule();
+-				ret = 1;
++				retval = 1;
+ 			}
+ 			remove_wait_queue(&EXT4_SB(sb)->ro_wait_queue, &wait);
+-			return ret;
++			goto out;
+ 		}
+ #endif
+ 	case EXT4_IOC_GETRSVSZ:
+@@ -175,22 +198,33 @@ flags_err:
+ 			&& S_ISREG(inode->i_mode)
+ 			&& ei->i_block_alloc_info) {
+ 			rsv_window_size = ei->i_block_alloc_info->rsv_window_node.rsv_goal_size;
+-			return put_user(rsv_window_size, (int __user *)arg);
++			retval = put_user(rsv_window_size, (int __user *)arg);
++			goto out;
+ 		}
+-		return -ENOTTY;
++		retval = -ENOTTY;
++		goto out;
+ 	case EXT4_IOC_SETRSVSZ: {
+ 
+-		if (!test_opt(inode->i_sb, RESERVATION) ||!S_ISREG(inode->i_mode))
+-			return -ENOTTY;
++		if (!test_opt(inode->i_sb, RESERVATION) ||
++				!S_ISREG(inode->i_mode)) {
++			retval = -ENOTTY;
++			goto out;
++		}
+ 
+-		if (IS_RDONLY(inode))
+-			return -EROFS;
++		if (IS_RDONLY(inode)) {
++			retval = -EROFS;
++			goto out;
++		}
+ 
+-		if (!is_owner_or_cap(inode))
+-			return -EACCES;
++		if (!is_owner_or_cap(inode)) {
++			retval = -EACCES;
++			goto out;
++		}
+ 
+-		if (get_user(rsv_window_size, (int __user *)arg))
+-			return -EFAULT;
++		if (get_user(rsv_window_size, (int __user *)arg)) {
++			retval = -EFAULT;
++			goto out;
++		}
+ 
+ 		if (rsv_window_size > EXT4_MAX_RESERVE_BLOCKS)
+ 			rsv_window_size = EXT4_MAX_RESERVE_BLOCKS;
+@@ -208,58 +242,75 @@ flags_err:
+ 			rsv->rsv_goal_size = rsv_window_size;
+ 		}
+ 		up_write(&ei->i_data_sem);
+-		return 0;
++		goto out;
+ 	}
+ 	case EXT4_IOC_GROUP_EXTEND: {
+ 		ext4_fsblk_t n_blocks_count;
+ 		struct super_block *sb = inode->i_sb;
+ 		int err;
+ 
+-		if (!capable(CAP_SYS_RESOURCE))
+-			return -EPERM;
++		if (!capable(CAP_SYS_RESOURCE)) {
++			retval = -EPERM;
++			goto out;
++		}
+ 
+-		if (IS_RDONLY(inode))
+-			return -EROFS;
++		if (IS_RDONLY(inode)) {
++			retval = -EROFS;
++			goto out;
++		}
+ 
+-		if (get_user(n_blocks_count, (__u32 __user *)arg))
+-			return -EFAULT;
++		if (get_user(n_blocks_count, (__u32 __user *)arg)) {
++			retval = -EFAULT;
++			goto out;
++		}
+ 
+-		err = ext4_group_extend(sb, EXT4_SB(sb)->s_es, n_blocks_count);
++		retval = ext4_group_extend(sb, EXT4_SB(sb)->s_es,
++					   n_blocks_count);
+ 		jbd2_journal_lock_updates(EXT4_SB(sb)->s_journal);
+ 		jbd2_journal_flush(EXT4_SB(sb)->s_journal);
+ 		jbd2_journal_unlock_updates(EXT4_SB(sb)->s_journal);
+ 
+-		return err;
++		goto out;
+ 	}
+ 	case EXT4_IOC_GROUP_ADD: {
+ 		struct ext4_new_group_data input;
+ 		struct super_block *sb = inode->i_sb;
+ 		int err;
+ 
+-		if (!capable(CAP_SYS_RESOURCE))
+-			return -EPERM;
++		if (!capable(CAP_SYS_RESOURCE)) {
++			retval = -EPERM;
++			goto out;
++		}
+ 
+-		if (IS_RDONLY(inode))
+-			return -EROFS;
++		if (IS_RDONLY(inode)) {
++			retval = -EROFS;
++			goto out;
++		}
+ 
+ 		if (copy_from_user(&input, (struct ext4_new_group_input __user *)arg,
+-				sizeof(input)))
+-			return -EFAULT;
++				   sizeof(input))) {
++			retval = -EFAULT;
++			goto out;
++		}
+ 
+-		err = ext4_group_add(sb, &input);
++		retval = ext4_group_add(sb, &input);
+ 		jbd2_journal_lock_updates(EXT4_SB(sb)->s_journal);
+ 		jbd2_journal_flush(EXT4_SB(sb)->s_journal);
+ 		jbd2_journal_unlock_updates(EXT4_SB(sb)->s_journal);
+ 
+-		return err;
++		goto out;
+ 	}
+ 
+ 	case EXT4_IOC_MIGRATE:
+-		return ext4_ext_migrate(inode, filp, cmd, arg);
++		retval = ext4_ext_migrate(inode, filp, cmd, arg);
++		goto out;
+ 
+ 	default:
+-		return -ENOTTY;
++		retval = -ENOTTY;
+ 	}
++out:
++	unlock_kernel();
++	return retval;
+ }
+ 
+ #ifdef CONFIG_COMPAT
+@@ -307,9 +358,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ 	default:
+ 		return -ENOIOCTLCMD;
+ 	}
+-	lock_kernel();
+ 	ret = ext4_ioctl(inode, file, cmd, (unsigned long) compat_ptr(arg));
+-	unlock_kernel();
+ 	return ret;
+ }
+ #endif
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index 1852313..0eb31e3 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
+@@ -1042,8 +1042,7 @@ extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
+ 		struct address_space *mapping, loff_t from);
+ 
+ /* ioctl.c */
+-extern int ext4_ioctl (struct inode *, struct file *, unsigned int,
+-		       unsigned long);
++extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
+ extern long ext4_compat_ioctl (struct file *, unsigned int, unsigned long);
+ 
+ /* migrate.c */
