@@ -1,0 +1,32 @@
+Remove incorrect BKL comments in ext4
+
+From: Andi Kleen <ak@suse.de>
+
+Signed-off-by: Andi Kleen <ak@suse.de>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index d9c81ce..88c97f7 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -46,7 +46,7 @@ const struct file_operations ext4_dir_operations = {
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext4_compat_ioctl,
+ #endif
+-	.fsync		= ext4_sync_file,	/* BKL held */
++	.fsync		= ext4_sync_file,
+ 	.release	= ext4_release_dir,
+ };
+ 
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index fb250bd..e7e10df 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -773,7 +773,6 @@ err_out:
+  *
+  * `handle' can be NULL if create == 0.
+  *
+- * The BKL may not be held on entry here.  Be sure to take it early.
+  * return > 0, # of blocks mapped or allocated.
+  * return = 0, if plain lookup failed.
+  * return < 0, error case.

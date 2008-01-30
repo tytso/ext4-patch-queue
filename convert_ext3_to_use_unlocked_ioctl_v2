@@ -1,0 +1,90 @@
+Convert ext3 to use unlocked_ioctl v2
+
+From: Andi Kleen <ak@suse.de>
+
+I checked ext3_ioctl and it looked largely safe to not be used
+without BKL.  So convert it over to unlocked_ioctl.
+
+Signed-off-by: Andi Kleen <ak@suse.de>
+
+v1->v2: drop lock kernel for online growth. resize.c seems to do enough
+locking
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+diff --git a/fs/ext3/dir.c b/fs/ext3/dir.c
+index 8ca3bfd..77a6962 100644
+--- a/fs/ext3/dir.c
++++ b/fs/ext3/dir.c
+@@ -42,7 +42,7 @@ const struct file_operations ext3_dir_operations = {
+ 	.llseek		= generic_file_llseek,
+ 	.read		= generic_read_dir,
+ 	.readdir	= ext3_readdir,		/* we take BKL. needed?*/
+-	.ioctl		= ext3_ioctl,		/* BKL held */
++	.unlocked_ioctl = ext3_ioctl,
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext3_compat_ioctl,
+ #endif
+diff --git a/fs/ext3/file.c b/fs/ext3/file.c
+index acc4913..2da795e 100644
+--- a/fs/ext3/file.c
++++ b/fs/ext3/file.c
+@@ -112,7 +112,7 @@ const struct file_operations ext3_file_operations = {
+ 	.write		= do_sync_write,
+ 	.aio_read	= generic_file_aio_read,
+ 	.aio_write	= ext3_file_write,
+-	.ioctl		= ext3_ioctl,
++	.unlocked_ioctl = ext3_ioctl,
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext3_compat_ioctl,
+ #endif
+diff --git a/fs/ext3/ioctl.c b/fs/ext3/ioctl.c
+index 023a070..0f177d2 100644
+--- a/fs/ext3/ioctl.c
++++ b/fs/ext3/ioctl.c
+@@ -17,9 +17,9 @@
+ #include <linux/smp_lock.h>
+ #include <asm/uaccess.h>
+ 
+-int ext3_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+-		unsigned long arg)
++long ext3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
++	struct inode *inode = filp->f_dentry->d_inode;
+ 	struct ext3_inode_info *ei = EXT3_I(inode);
+ 	unsigned int flags;
+ 	unsigned short rsv_window_size;
+@@ -263,9 +263,6 @@ flags_err:
+ #ifdef CONFIG_COMPAT
+ long ext3_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ {
+-	struct inode *inode = file->f_path.dentry->d_inode;
+-	int ret;
+-
+ 	/* These are just misnamed, they actually get/put from/to user an int */
+ 	switch (cmd) {
+ 	case EXT3_IOC32_GETFLAGS:
+@@ -305,9 +302,6 @@ long ext3_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ 	default:
+ 		return -ENOIOCTLCMD;
+ 	}
+-	lock_kernel();
+-	ret = ext3_ioctl(inode, file, cmd, (unsigned long) compat_ptr(arg));
+-	unlock_kernel();
+-	return ret;
++	return ext3_ioctl(file, cmd, (unsigned long) compat_ptr(arg));
+ }
+ #endif
+diff --git a/include/linux/ext3_fs.h b/include/linux/ext3_fs.h
+index 241c01c..1c925eb 100644
+--- a/include/linux/ext3_fs.h
++++ b/include/linux/ext3_fs.h
+@@ -838,8 +838,7 @@ extern void ext3_get_inode_flags(struct ext3_inode_info *);
+ extern void ext3_set_aops(struct inode *inode);
+ 
+ /* ioctl.c */
+-extern int ext3_ioctl (struct inode *, struct file *, unsigned int,
+-		       unsigned long);
++extern long ext3_ioctl(struct file *, unsigned int, unsigned long);
+ extern long ext3_compat_ioctl (struct file *, unsigned int, unsigned long);
+ 
+ /* namei.c */

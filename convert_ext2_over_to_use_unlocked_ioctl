@@ -1,0 +1,96 @@
+Convert ext2 over to use unlocked_ioctl
+
+From: Andi Kleen <ak@suse.de>
+
+I checked ext2_ioctl and could not find anything in there that would
+need the BKL. So convert it over to use unlocked_ioctl
+
+Signed-off-by: Andi Kleen <ak@suse.de>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+diff --git a/fs/ext2/dir.c b/fs/ext2/dir.c
+index d868e26..8dededd 100644
+--- a/fs/ext2/dir.c
++++ b/fs/ext2/dir.c
+@@ -703,7 +703,7 @@ const struct file_operations ext2_dir_operations = {
+ 	.llseek		= generic_file_llseek,
+ 	.read		= generic_read_dir,
+ 	.readdir	= ext2_readdir,
+-	.ioctl		= ext2_ioctl,
++	.unlocked_ioctl = ext2_ioctl,
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext2_compat_ioctl,
+ #endif
+diff --git a/fs/ext2/ext2.h b/fs/ext2/ext2.h
+index c87ae29..bb9948c 100644
+--- a/fs/ext2/ext2.h
++++ b/fs/ext2/ext2.h
+@@ -139,8 +139,7 @@ int __ext2_write_begin(struct file *file, struct address_space *mapping,
+ 		struct page **pagep, void **fsdata);
+ 
+ /* ioctl.c */
+-extern int ext2_ioctl (struct inode *, struct file *, unsigned int,
+-		       unsigned long);
++extern long ext2_ioctl(struct file *, unsigned int, unsigned long);
+ extern long ext2_compat_ioctl(struct file *, unsigned int, unsigned long);
+ 
+ /* namei.c */
+diff --git a/fs/ext2/file.c b/fs/ext2/file.c
+index c051798..5f2fa9c 100644
+--- a/fs/ext2/file.c
++++ b/fs/ext2/file.c
+@@ -48,7 +48,7 @@ const struct file_operations ext2_file_operations = {
+ 	.write		= do_sync_write,
+ 	.aio_read	= generic_file_aio_read,
+ 	.aio_write	= generic_file_aio_write,
+-	.ioctl		= ext2_ioctl,
++	.unlocked_ioctl = ext2_ioctl,
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext2_compat_ioctl,
+ #endif
+@@ -65,7 +65,7 @@ const struct file_operations ext2_xip_file_operations = {
+ 	.llseek		= generic_file_llseek,
+ 	.read		= xip_file_read,
+ 	.write		= xip_file_write,
+-	.ioctl		= ext2_ioctl,
++	.unlocked_ioctl = ext2_ioctl,
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext2_compat_ioctl,
+ #endif
+diff --git a/fs/ext2/ioctl.c b/fs/ext2/ioctl.c
+index 320b2cb..b8ea11f 100644
+--- a/fs/ext2/ioctl.c
++++ b/fs/ext2/ioctl.c
+@@ -17,9 +17,9 @@
+ #include <asm/uaccess.h>
+ 
+ 
+-int ext2_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+-		unsigned long arg)
++long ext2_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
++	struct inode *inode = filp->f_dentry->d_inode;
+ 	struct ext2_inode_info *ei = EXT2_I(inode);
+ 	unsigned int flags;
+ 	unsigned short rsv_window_size;
+@@ -141,9 +141,6 @@ int ext2_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+ #ifdef CONFIG_COMPAT
+ long ext2_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ {
+-	struct inode *inode = file->f_path.dentry->d_inode;
+-	int ret;
+-
+ 	/* These are just misnamed, they actually get/put from/to user an int */
+ 	switch (cmd) {
+ 	case EXT2_IOC32_GETFLAGS:
+@@ -161,9 +158,6 @@ long ext2_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ 	default:
+ 		return -ENOIOCTLCMD;
+ 	}
+-	lock_kernel();
+-	ret = ext2_ioctl(inode, file, cmd, (unsigned long) compat_ptr(arg));
+-	unlock_kernel();
+-	return ret;
++	return ext2_ioctl(file, cmd, (unsigned long) compat_ptr(arg));
+ }
+ #endif

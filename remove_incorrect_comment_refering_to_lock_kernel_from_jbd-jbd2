@@ -1,0 +1,36 @@
+Remove incorrect comment refering to lock_kernel() from jbd/jbd2
+
+From: Andi Kleen <ak@suse.de>
+
+None of the callers of this function does actually take the BKL
+as far as I can see. So remove the comment refering to the BKL.
+
+Signed-off-by: Andi Kleen <ak@suse.de>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+diff --git a/fs/jbd/recovery.c b/fs/jbd/recovery.c
+index c5d9694..2b8edf4 100644
+--- a/fs/jbd/recovery.c
++++ b/fs/jbd/recovery.c
+@@ -354,7 +354,7 @@ static int do_one_pass(journal_t *journal,
+ 		struct buffer_head *	obh;
+ 		struct buffer_head *	nbh;
+ 
+-		cond_resched();		/* We're under lock_kernel() */
++		cond_resched();
+ 
+ 		/* If we already know where to stop the log traversal,
+ 		 * check right now that we haven't gone past the end of
+diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
+index 9216806..d36356f 100644
+--- a/fs/jbd2/recovery.c
++++ b/fs/jbd2/recovery.c
+@@ -397,7 +397,7 @@ static int do_one_pass(journal_t *journal,
+ 		struct buffer_head *	obh;
+ 		struct buffer_head *	nbh;
+ 
+-		cond_resched();		/* We're under lock_kernel() */
++		cond_resched();
+ 
+ 		/* If we already know where to stop the log traversal,
+ 		 * check right now that we haven't gone past the end of

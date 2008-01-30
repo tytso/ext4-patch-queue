@@ -1,0 +1,89 @@
+Convert ext4 to use unlocked_ioctl v2
+
+From: Andi Kleen <ak@suse.de>
+
+I checked ext4_ioctl and it looked largely safe to not be used
+without BKL.  So convert it over to unlocked_ioctl.
+
+Signed-off-by: Andi Kleen <ak@suse.de>
+
+v1->v2: drop BKL for online grow. resize.c seems to do enough locking
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index 33888bb..d9c81ce 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -42,7 +42,7 @@ const struct file_operations ext4_dir_operations = {
+ 	.llseek		= generic_file_llseek,
+ 	.read		= generic_read_dir,
+ 	.readdir	= ext4_readdir,		/* we take BKL. needed?*/
+-	.ioctl		= ext4_ioctl,		/* BKL held */
++	.unlocked_ioctl = ext4_ioctl,
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext4_compat_ioctl,
+ #endif
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index ac35ec5..20507a2 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -129,7 +129,7 @@ const struct file_operations ext4_file_operations = {
+ 	.write		= do_sync_write,
+ 	.aio_read	= generic_file_aio_read,
+ 	.aio_write	= ext4_file_write,
+-	.ioctl		= ext4_ioctl,
++	.unlocked_ioctl = ext4_ioctl,
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext4_compat_ioctl,
+ #endif
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index f362025..2f7524f 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -17,9 +17,9 @@
+ #include <linux/smp_lock.h>
+ #include <asm/uaccess.h>
+ 
+-int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
+-		unsigned long arg)
++long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
++	struct inode *inode = filp->f_dentry->d_inode;
+ 	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	unsigned int flags;
+ 	unsigned short rsv_window_size;
+@@ -278,9 +278,6 @@ flags_err:
+ #ifdef CONFIG_COMPAT
+ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ {
+-	struct inode *inode = file->f_path.dentry->d_inode;
+-	int ret;
+-
+ 	/* These are just misnamed, they actually get/put from/to user an int */
+ 	switch (cmd) {
+ 	case EXT4_IOC32_GETFLAGS:
+@@ -320,9 +317,6 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ 	default:
+ 		return -ENOIOCTLCMD;
+ 	}
+-	lock_kernel();
+-	ret = ext4_ioctl(inode, file, cmd, (unsigned long) compat_ptr(arg));
+-	unlock_kernel();
+-	return ret;
++	return ext4_ioctl(file, cmd, (unsigned long) compat_ptr(arg));
+ }
+ #endif
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index d203543..ba146b0 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
+@@ -1124,8 +1124,7 @@ extern int ext4_get_block(struct inode *inode, sector_t iblock,
+ 		struct buffer_head *bh_result, int create);
+ 
+ /* ioctl.c */
+-extern int ext4_ioctl (struct inode *, struct file *, unsigned int,
+-		       unsigned long);
++extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
+ extern long ext4_compat_ioctl (struct file *, unsigned int, unsigned long);
+ 
+ /* migrate.c */
