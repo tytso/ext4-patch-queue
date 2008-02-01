@@ -9,11 +9,15 @@ just remove the useless loop.
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
-diff --git a/fs/jbd/commit.c b/fs/jbd/commit.c
-index 610264b..b54948f 100644
---- a/fs/jbd/commit.c
-+++ b/fs/jbd/commit.c
-@@ -104,7 +104,8 @@ static int journal_write_commit_record(journal_t *journal,
+---
+ fs/jbd/commit.c |   14 ++++++--------
+ 1 file changed, 6 insertions(+), 8 deletions(-)
+
+Index: linux-2.6.24/fs/jbd/commit.c
+===================================================================
+--- linux-2.6.24.orig/fs/jbd/commit.c	2008-01-31 16:24:53.000000000 -0800
++++ linux-2.6.24/fs/jbd/commit.c	2008-01-31 16:37:13.000000000 -0800
+@@ -104,7 +104,8 @@ static int journal_write_commit_record(j
  {
  	struct journal_head *descriptor;
  	struct buffer_head *bh;
@@ -23,7 +27,7 @@ index 610264b..b54948f 100644
  	int barrier_done = 0;
  
  	if (is_journal_aborted(journal))
-@@ -116,13 +117,10 @@ static int journal_write_commit_record(journal_t *journal,
+@@ -116,13 +117,10 @@ static int journal_write_commit_record(j
  
  	bh = jh2bh(descriptor);
  
@@ -34,15 +38,10 @@ index 610264b..b54948f 100644
 -		tmp->h_blocktype = cpu_to_be32(JFS_COMMIT_BLOCK);
 -		tmp->h_sequence = cpu_to_be32(commit_transaction->t_tid);
 -	}
-+	header = (journal_header_t*)(bh->b_data);
++	header = (journal_header_t *)(bh->b_data);
 +	header->h_magic = cpu_to_be32(JFS_MAGIC_NUMBER);
 +	header->h_blocktype = cpu_to_be32(JFS_COMMIT_BLOCK);
 +	header->h_sequence = cpu_to_be32(commit_transaction->t_tid);
  
  	JBUFFER_TRACE(descriptor, "write commit block");
  	set_buffer_dirty(bh);
--
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
