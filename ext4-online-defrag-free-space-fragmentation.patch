@@ -69,7 +69,7 @@ index 0dae175..608152e 100644
  {
  	struct ext4_reserve_window_node *next_rsv;
 diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
-index 3d0d3e5..1125f52 100644
+index 3d0d3e5..6370fb8 100644
 --- a/fs/ext4/defrag.c
 +++ b/fs/ext4/defrag.c
 @@ -13,6 +13,13 @@
@@ -86,7 +86,7 @@ index 3d0d3e5..1125f52 100644
  /*
   * this structure is used to gather extents from the tree via ioctl
   */
-@@ -250,6 +257,470 @@ ext4_ext_next_extent(struct inode *inode,
+@@ -250,6 +257,478 @@ ext4_ext_next_extent(struct inode *inode,
  	return 1;
  }
  
@@ -120,9 +120,13 @@ index 3d0d3e5..1125f52 100644
 +	int entries = 0;
 +	int err = 0;
 +
-+	inode = iget(sb, ext_info->ino);
++	inode = iget_locked(sb, ext_info->ino);
 +	if (!inode)
 +		return -EACCES;
++	if (inode->i_state & I_NEW) {
++		sb->s_op->read_inode(inode);
++		unlock_new_inode(inode);
++	}
 +
 +	down_write(&EXT4_I(inode)->i_data_sem);
 +
@@ -421,9 +425,13 @@ index 3d0d3e5..1125f52 100644
 +	ext.len = 0;
 +
 +	/* Get the inode of the victim file */
-+	victim_inode = iget(sb, ex_info->ino);
++	victim_inode = iget_locked(sb, ex_info->ino);
 +	if (!victim_inode)
 +		return -EACCES;
++	if (victim_inode->i_state & I_NEW) {
++		sb->s_op->read_inode(victim_inode);
++		unlock_new_inode(victim_inode);
++	}
 +
 +	/* Setup file for the victim file */
 +	victim_dent.d_inode = victim_inode;
@@ -557,7 +565,7 @@ index 3d0d3e5..1125f52 100644
  int ext4_ext_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
  			unsigned long arg)
  {
-@@ -302,6 +773,74 @@ int ext4_ext_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
+@@ -302,6 +781,74 @@ int ext4_ext_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
  		unlock_kernel();
  
  		return put_user(block, p);
