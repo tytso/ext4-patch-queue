@@ -1,0 +1,28 @@
+JBD2: Fix null pointer deference in jbd2 journal checksum code
+From: Mingming Cao <cmm@u.ibm.com>
+The buffer head pointer passed to journal_wait_on_commit_record()
+could be NULL if the previous journal_submit_commit_record() failed
+or journal has already aborted.
+
+We need to check the error returns from journal_submit_commit_record()
+and avoid calling journal_wait_on_commit_record() in the failure case.
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/jbd2/commit.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+Index: linux-2.6.24/fs/jbd2/commit.c
+===================================================================
+--- linux-2.6.24.orig/fs/jbd2/commit.c	2008-02-04 11:02:42.000000000 -0800
++++ linux-2.6.24/fs/jbd2/commit.c	2008-02-04 11:02:43.000000000 -0800
+@@ -865,7 +865,8 @@ wait_for_iobuf:
+ 		if (err)
+ 			__jbd2_journal_abort_hard(journal);
+ 	}
+-	err = journal_wait_on_commit_record(cbh);
++	if (!err && !is_journal_aborted(journal))
++		err = journal_wait_on_commit_record(cbh);
+ 
+ 	if (err)
+ 		jbd2_journal_abort(journal, err);
