@@ -19,16 +19,16 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
  fs/ext4/migrate.c |    6 ++++++
  fs/ext4/namei.c   |    1 +
- 2 files changed, 7 insertions(+), 0 deletions(-)
+ 2 files changed, 7 insertions(+)
 
-diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
-index 3ebc233..9ee1f7c 100644
---- a/fs/ext4/migrate.c
-+++ b/fs/ext4/migrate.c
-@@ -414,6 +414,12 @@ int ext4_ext_migrate(struct inode *inode, struct file *filp,
+Index: linux-2.6.24/fs/ext4/migrate.c
+===================================================================
+--- linux-2.6.24.orig/fs/ext4/migrate.c	2008-02-04 10:59:16.000000000 -0800
++++ linux-2.6.24/fs/ext4/migrate.c	2008-02-04 11:14:47.000000000 -0800
+@@ -414,6 +414,12 @@ int ext4_ext_migrate(struct inode *inode
  	if ((EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL))
  		return -EINVAL;
-
+ 
 +	if (S_ISLNK(inode->i_mode) && inode->i_blocks == 0)
 +		/*
 +		 * don't migrate fast symlink
@@ -38,10 +38,10 @@ index 3ebc233..9ee1f7c 100644
  	down_write(&EXT4_I(inode)->i_data_sem);
  	handle = ext4_journal_start(inode,
  					EXT4_DATA_TRANS_BLOCKS(inode->i_sb) +
-diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 67b6d8a..71273c5 100644
---- a/fs/ext4/namei.c
-+++ b/fs/ext4/namei.c
+Index: linux-2.6.24/fs/ext4/namei.c
+===================================================================
+--- linux-2.6.24.orig/fs/ext4/namei.c	2008-02-04 10:59:16.000000000 -0800
++++ linux-2.6.24/fs/ext4/namei.c	2008-02-04 11:14:47.000000000 -0800
 @@ -2234,6 +2234,7 @@ retry:
  		inode->i_op = &ext4_fast_symlink_inode_operations;
  		memcpy((char*)&EXT4_I(inode)->i_data,symname,l);
@@ -50,9 +50,3 @@ index 67b6d8a..71273c5 100644
  	}
  	EXT4_I(inode)->i_disksize = inode->i_size;
  	err = ext4_add_nondir(handle, dentry, inode);
-
-
--
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
