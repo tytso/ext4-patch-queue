@@ -1,0 +1,52 @@
+ext4: Don't set EXTENTS_FL flag for fast symlinks
+From: Valerie Clement <valerie.clement@bull.net>
+
+Don't set EXTENTS_FL flag for fast symlinks
+
+From: Valerie Clement <valerie.clement@bull.net>
+
+For fast symbolic links, the file content is stored in the i_block[]
+array, which is not compatible with the new file extents format.
+e2fsck reports error on such files because EXTENTS_FL is set.
+Don't set the EXTENTS_FL flag when creating fast symlinks.
+
+In the case of file migration, skip fast symbolic links.
+
+Signed-off-by: Valerie Clement <valerie.clement@bull.net>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+
+ fs/ext4/migrate.c |    6 ++++++
+ fs/ext4/namei.c   |    1 +
+ 2 files changed, 7 insertions(+)
+
+Index: linux-2.6.24/fs/ext4/migrate.c
+===================================================================
+--- linux-2.6.24.orig/fs/ext4/migrate.c	2008-02-04 10:59:16.000000000 -0800
++++ linux-2.6.24/fs/ext4/migrate.c	2008-02-04 11:14:47.000000000 -0800
+@@ -414,6 +414,12 @@ int ext4_ext_migrate(struct inode *inode
+ 	if ((EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL))
+ 		return -EINVAL;
+ 
++	if (S_ISLNK(inode->i_mode) && inode->i_blocks == 0)
++		/*
++		 * don't migrate fast symlink
++		 */
++		return retval;
++
+ 	down_write(&EXT4_I(inode)->i_data_sem);
+ 	handle = ext4_journal_start(inode,
+ 					EXT4_DATA_TRANS_BLOCKS(inode->i_sb) +
+Index: linux-2.6.24/fs/ext4/namei.c
+===================================================================
+--- linux-2.6.24.orig/fs/ext4/namei.c	2008-02-04 10:59:16.000000000 -0800
++++ linux-2.6.24/fs/ext4/namei.c	2008-02-04 11:14:47.000000000 -0800
+@@ -2234,6 +2234,7 @@ retry:
+ 		inode->i_op = &ext4_fast_symlink_inode_operations;
+ 		memcpy((char*)&EXT4_I(inode)->i_data,symname,l);
+ 		inode->i_size = l-1;
++		EXT4_I(inode)->i_flags &= ~EXT4_EXTENTS_FL;
+ 	}
+ 	EXT4_I(inode)->i_disksize = inode->i_size;
+ 	err = ext4_add_nondir(handle, dentry, inode);

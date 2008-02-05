@@ -1,3 +1,20 @@
+ext4: Add new "development flag" to the ext4 filesystem
+From: Theodore Tso <tytso@MIT.EDU>
+This flag is simply a generic "this is a
+crash/burn test filesystem" marker.  If it is set, then filesystem
+code which is "in development" will be allowed to mount the
+filesystem.  Filesystem code which is not considered ready for
+prime-time will check for this flag, and if it is not set, it will
+refuse to touch the filesystem.
+
+As we start rolling ext4 out to distro's like Fedora, et. al, this
+makes it less likely that a user might accidentally start using ext4
+on a production filesystem; a bad thing, since that will essentially
+make it be unfsckable until e2fsprogs catches up.
+
+Signed-off-by: Theodore Tso <tytso@MIT.EDU>
+Signed-off-by: Mingming Cao<cmm@us.ibm.com>
+
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
 index 055a0cd..8a405ae 100644
 --- a/fs/ext4/super.c
