@@ -1,0 +1,37 @@
+ext4: Fix null bh pointer dereference in mballoc
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+Repoted by Adrian Bunk <bunk@kernel.org>:
+
+The Coverity checker spotted the following NULL dereference:
+
+static int ext4_mb_mark_diskspace_used
+{
+	...
+	if (!bitmap_bh)
+		goto out_err;
+	...
+out_err:
+	sb->s_dirt = 1;
+	put_bh(bitmap_bh);
+	...
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/mballoc.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+Index: linux-2.6.24/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.24.orig/fs/ext4/mballoc.c	2008-02-05 10:55:23.000000000 -0800
++++ linux-2.6.24/fs/ext4/mballoc.c	2008-02-05 10:55:46.000000000 -0800
+@@ -3069,7 +3069,7 @@ static int ext4_mb_mark_diskspace_used(s
+ 
+ out_err:
+ 	sb->s_dirt = 1;
+-	put_bh(bitmap_bh);
++	brelse(bitmap_bh);
+ 	return err;
+ }
+ 
