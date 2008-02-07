@@ -1,0 +1,39 @@
+From: David Howells <dhowells@redhat.com>
+
+Add an ERR_CAST() function to complement ERR_PTR and co.  for the purposes
+of casting an error entyped as one pointer type to an error of another
+pointer type whilst making it explicit as to what is going on.
+
+This provides a replacement for the ERR_PTR(PTR_ERR(p)) construct.
+
+Signed-off-by: David Howells <dhowells@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+
+ include/linux/err.h |   13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff -puN include/linux/err.h~add-an-err_cast-function-to-complement-err_ptr-and-co include/linux/err.h
+--- a/include/linux/err.h~add-an-err_cast-function-to-complement-err_ptr-and-co
++++ a/include/linux/err.h
+@@ -34,6 +34,19 @@ static inline long IS_ERR(const void *pt
+ 	return IS_ERR_VALUE((unsigned long)ptr);
+ }
+ 
++/**
++ * ERR_CAST - Explicitly cast an error-valued pointer to another pointer type
++ * @ptr: The pointer to cast.
++ *
++ * Explicitly cast an error-valued pointer to another pointer type in such a
++ * way as to make it clear that's what's going on.
++ */
++static inline void *ERR_CAST(const void *ptr)
++{
++	/* cast away the const */
++	return (void *) ptr;
++}
++
+ #endif
+ 
+ #endif /* _LINUX_ERR_H */
+_
