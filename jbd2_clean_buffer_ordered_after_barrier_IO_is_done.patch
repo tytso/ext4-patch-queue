@@ -1,0 +1,61 @@
+JBD2:  Clear buffer_ordered flag for barried IO request on success
+From: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
+
+In JBD2 jbd2_journal_write_commit_record(), clear the buffer_ordered flag
+for the bh after barried IO has succeed. This prevents later, if the
+same buffer head were submitted to the underlying device, which has been
+reconfigured to not support barrier request, the JBD2 commit code could
+treat it as a normal IO (without barrier).
+
+This is a port from JBD/ext3 fix from Neil Brown.
+
+More details from Neil:
+
+Some devices - notably dm and md - can change their behaviour in
+response to BIO_RW_BARRIER requests.  They might start out accepting
+such requests but on reconfiguration, they find out that they cannot
+any more. JBD2 deal with this by always testing if BIO_RW_BARRIER
+requests fail with EOPNOTSUPP, and retrying the write
+requests without the barrier (probably after waiting for any pending
+writes to complete).
+
+However there is a bug in the handling this in JBD2 for ext4 .
+
+When ext4/JBD2 to submit a BIO_RW_BARRIER request,
+it sets the buffer_ordered flag on the buffer head.
+If the request completes successfully, the flag STAYS SET.
+
+Other code might then write the same buffer_head after the device has
+been reconfigured to not accept barriers.  This write will then fail,
+but the "other code" is not ready to handle EOPNOTSUPP errors and the
+error will be treated as fatal.
+
+Cc:  Neil Brown <neilb@suse.de>
+Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+ fs/jbd2/commit.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+Index: linux-2.6.24/fs/jbd2/commit.c
+===================================================================
+--- linux-2.6.24.orig/fs/jbd2/commit.c	2008-02-07 16:01:09.000000000 -0800
++++ linux-2.6.24/fs/jbd2/commit.c	2008-02-07 16:15:31.000000000 -0800
+@@ -148,6 +148,8 @@ static int journal_submit_commit_record(
+ 		barrier_done = 1;
+ 	}
+ 	ret = submit_bh(WRITE, bh);
++	if (barrier_done)
++		clear_buffer_ordered(bh);
+ 
+ 	/* is it possible for another commit to fail at roughly
+ 	 * the same time as this one?  If so, we don't want to
+@@ -166,7 +168,6 @@ static int journal_submit_commit_record(
+ 		spin_unlock(&journal->j_state_lock);
+ 
+ 		/* And try again, without the barrier */
+-		clear_buffer_ordered(bh);
+ 		set_buffer_uptodate(bh);
+ 		set_buffer_dirty(bh);
+ 		ret = submit_bh(WRITE, bh);
