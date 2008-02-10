@@ -1,13 +1,17 @@
-JBD2: Fix reference counting on buffer head.
+jbd2: Fix reference counting on the journal commit block's buffer head
+
 From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-With journal checksum patch we added asyn commit of journal commit headers.
-During the conversion we missed to take a reference on buffer head. Before
-the change sync_dirty_buffer did the get_bh(). The associative put_bh is
-done by journal_wait_on_commit_record()
+With journal checksum patch we added asynchronous commits of journal
+commit headers, and accidentally dropped taking a reference on the
+buffer head.
+
+(Before the change, sync_dirty_buffer did the get_bh(). The associative
+put_bh is done by journal_wait_on_commit_record().)
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/jbd2/commit.c |    2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
