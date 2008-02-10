@@ -1,23 +1,24 @@
-ext4: Fix DIO locking
+ext4: Fix Direct I/O locking
+
 From: Jan Kara <jack@suse.cz>
   
-this patch fixes lock inversion in ext4 direct IO path.
+We cannot start transaction in ext4_direct_IO() and just let it last
+during the whole write because dio_get_page() acquires mmap_sem which
+ranks above transaction start (e.g. because we have dependency chain
+mmap_sem->PageLock->journal_start, or because we update atime while
+holding mmap_sem) and thus deadlocks could happen. We solve the problem
+by starting a transaction separately for each ext4_get_block() call.
 
-We cannot start transaction in ext4_direct_IO() and just let it last during the
-whole write because dio_get_page() acquires mmap_sem which ranks above
-transaction start (e.g. because we have dependency chain
-mmap_sem->PageLock->journal_start, or because we update atime while holding
-mmap_sem) and thus deadlocks could happen. We solve the problem by starting
-a transaction separately for each ext4_get_block() call.
-
-We *could* have a problem that we allocate a block and before its data are
-written out the machine crashes and thus we expose stale data. But that
-does not happen because for hole-filling generic code falls back to buffered
-writes and for file extension, we add inode to orphan list and thus in
-case of crash, journal replay will truncate inode back to the original size.
+We *could* have a problem that we allocate a block and before its data
+are written out the machine crashes and thus we expose stale data. But
+that does not happen because for hole-filling generic code falls back to
+buffered writes and for file extension, we add inode to orphan list and
+thus in case of crash, journal replay will truncate inode back to the
+original size.
 
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
  fs/ext4/inode.c |  107 +++++++++++++++++++++++++++-----------------------------

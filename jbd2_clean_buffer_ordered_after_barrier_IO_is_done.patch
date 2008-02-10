@@ -1,11 +1,12 @@
 JBD2:  Clear buffer_ordered flag for barried IO request on success
+
 From: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 
-In JBD2 jbd2_journal_write_commit_record(), clear the buffer_ordered flag
-for the bh after barried IO has succeed. This prevents later, if the
-same buffer head were submitted to the underlying device, which has been
-reconfigured to not support barrier request, the JBD2 commit code could
-treat it as a normal IO (without barrier).
+In JBD2 jbd2_journal_write_commit_record(), clear the buffer_ordered
+flag for the bh after barried IO has succeed. This prevents later, if
+the same buffer head were submitted to the underlying device, which has
+been reconfigured to not support barrier request, the JBD2 commit code
+could treat it as a normal IO (without barrier).
 
 This is a port from JBD/ext3 fix from Neil Brown.
 
@@ -33,6 +34,7 @@ error will be treated as fatal.
 Cc:  Neil Brown <neilb@suse.de>
 Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
  fs/jbd2/commit.c |    3 ++-
