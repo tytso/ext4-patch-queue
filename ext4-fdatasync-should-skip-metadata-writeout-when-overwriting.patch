@@ -66,28 +66,17 @@ Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
  fs/ext4/fsync.c |    3 +++
  1 file changed, 3 insertions(+)
 
-diff -puN fs/ext4/fsync.c~ext4-fdatasync-should-skip-metadata-writeout-when-overwriting fs/ext4/fsync.c
---- a/fs/ext4/fsync.c~ext4-fdatasync-should-skip-metadata-writeout-when-overwriting
-+++ a/fs/ext4/fsync.c
+Index: linux-2.6.25-rc1/fs/ext4/fsync.c
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/fsync.c	2008-02-12 16:42:29.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/fsync.c	2008-02-12 17:22:49.000000000 -0800
 @@ -72,6 +72,9 @@ int ext4_sync_file(struct file * file, s
  		goto out;
  	}
-
+ 
 +        if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
 +                goto out;
 +
  	/*
  	 * The VFS has written the file data.  If the inode is unaltered
  	 * then we need not start a commit.
-_
-
-Patches currently in -mm which might be from hifumi.hisashi@oss.ntt.co.jp are
-
-origin.patch
-ext3-fdatasync-should-skip-metadata-writeout-when-overwriting.patch
-ext4-fdatasync-should-skip-metadata-writeout-when-overwriting.patch
-
--
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html

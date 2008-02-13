@@ -1,0 +1,164 @@
+ext4: Fix circular locking dependency with fallocate and touch.
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+In order to prevent a circular locking dependency when an ext4_create
+operation is racing with an ext4_fallocate, we acquire and release
+i_data_sem for each multiblock request and use i_mutex to
+prevent writes and truncates during the complete fallocate operation.
+
+
+=======================================================
+[ INFO: possible circular locking dependency detected ]
+2.6.25-rc1 #4
+-------------------------------------------------------
+touch/2347 is trying to acquire lock:
+ (&ei->i_data_sem){----}, at: [<c01cffed>] ext4_get_blocks_wrap+0x21/0xca
+
+but task is already holding lock:
+ (jbd2_handle){--..}, at: [<c01ee43c>] jbd2_journal_start+0xce/0xf0
+
+which lock already depends on the new lock.
+
+
+the existing dependency chain (in reverse order) is:
+
+-> #1 (jbd2_handle){--..}:
+       [<c013b2e3>] __lock_acquire+0x960/0xb13
+       [<c01ee43c>] jbd2_journal_start+0xce/0xf0
+       [<c013b502>] lock_acquire+0x6c/0x89
+       [<c01ee43c>] jbd2_journal_start+0xce/0xf0
+       [<c01ee451>] jbd2_journal_start+0xe3/0xf0
+       [<c01ee43c>] jbd2_journal_start+0xce/0xf0
+       [<c01d66c5>] ext4_journal_start_sb+0x40/0x42
+       [<c01dd2bd>] ext4_fallocate+0x156/0x46b
+       [<c01527dd>] __do_fault+0x2ea/0x324
+       [<c0108c60>] native_sched_clock+0x8d/0x9f
+       [<c0108c60>] native_sched_clock+0x8d/0x9f
+       [<c016531a>] fget+0x7d/0x9b
+       [<c016302a>] sys_fallocate+0xcc/0xf0
+       [<c0104992>] sysenter_past_esp+0x5f/0xa5
+       [<ffffffff>] 0xffffffff
+
+-> #0 (&ei->i_data_sem){----}:
+       [<c013b20a>] __lock_acquire+0x887/0xb13
+       [<c013b502>] lock_acquire+0x6c/0x89
+       [<c01cffed>] ext4_get_blocks_wrap+0x21/0xca
+       [<c043353b>] down_read+0x30/0x6a
+       [<c01cffed>] ext4_get_blocks_wrap+0x21/0xca
+       [<c01cffed>] ext4_get_blocks_wrap+0x21/0xca
+       [<c01d00df>] ext4_getblk+0x49/0x18f
+       [<c01dde4d>] __ext4_journal_dirty_metadata+0x19/0x3c
+       [<c01ceff7>] ext4_mark_iloc_dirty+0x380/0x3e5
+       [<c01d0ed0>] ext4_bread+0x14/0x78
+       [<c01d3b49>] ext4_add_entry+0x483/0x775
+       [<c01ce4d5>] ext4_new_inode+0xa13/0xa3d
+       [<c043418c>] _spin_unlock+0x1d/0x20
+       [<c01ee451>] jbd2_journal_start+0xe3/0xf0
+       [<c01d43e0>] ext4_add_nondir+0x15/0x42
+       [<c01d48a7>] ext4_create+0xab/0xdf
+       [<c01d47fc>] ext4_create+0x0/0xdf
+       [<c016ad14>] vfs_create+0x67/0xad
+       [<c016cfc2>] open_namei+0x15c/0x512
+       [<c0162e35>] do_filp_open+0x1f/0x35
+       [<c0162c08>] get_unused_fd_flags+0xd4/0xde
+       [<c043418c>] _spin_unlock+0x1d/0x20
+       [<c0162e8d>] do_sys_open+0x42/0xbc
+       [<c0162f33>] sys_open+0x16/0x18
+       [<c0104992>] sysenter_past_esp+0x5f/0xa5
+       [<ffffffff>] 0xffffffff
+
+other info that might help us debug this:
+
+2 locks held by touch/2347:
+ #0:  (&type->i_mutex_dir_key#5){--..}, at: [<c016cf35>] open_namei+0xcf/0x512
+ #1:  (jbd2_handle){--..}, at: [<c01ee43c>] jbd2_journal_start+0xce/0xf0
+
+stack backtrace:
+Pid: 2347, comm: touch Not tainted 2.6.25-rc1 #4
+ [<c01394cd>] print_circular_bug_tail+0x5b/0x66
+ [<c013b20a>] __lock_acquire+0x887/0xb13
+ [<c013b502>] lock_acquire+0x6c/0x89
+ [<c01cffed>] ? ext4_get_blocks_wrap+0x21/0xca
+ [<c043353b>] down_read+0x30/0x6a
+ [<c01cffed>] ? ext4_get_blocks_wrap+0x21/0xca
+ [<c01cffed>] ext4_get_blocks_wrap+0x21/0xca
+ [<c01d00df>] ext4_getblk+0x49/0x18f
+ [<c01dde4d>] ? __ext4_journal_dirty_metadata+0x19/0x3c
+ [<c01ceff7>] ? ext4_mark_iloc_dirty+0x380/0x3e5
+ [<c01d0ed0>] ext4_bread+0x14/0x78
+ [<c01d3b49>] ext4_add_entry+0x483/0x775
+ [<c01ce4d5>] ? ext4_new_inode+0xa13/0xa3d
+ [<c043418c>] ? _spin_unlock+0x1d/0x20
+ [<c01ee451>] ? jbd2_journal_start+0xe3/0xf0
+ [<c01d43e0>] ext4_add_nondir+0x15/0x42
+ [<c01d48a7>] ext4_create+0xab/0xdf
+ [<c01d47fc>] ? ext4_create+0x0/0xdf
+ [<c016ad14>] vfs_create+0x67/0xad
+ [<c016cfc2>] open_namei+0x15c/0x512
+ [<c0162e35>] do_filp_open+0x1f/0x35
+ [<c0162c08>] ? get_unused_fd_flags+0xd4/0xde
+ [<c043418c>] ? _spin_unlock+0x1d/0x20
+ [<c0162e8d>] do_sys_open+0x42/0xbc
+ [<c0162f33>] sys_open+0x16/0x18
+ [<c0104992>] sysenter_past_esp+0x5f/0xa5
+ =======================
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/extents.c |   10 +++-------
+ 1 file changed, 3 insertions(+), 7 deletions(-)
+
+Index: linux-2.6.25-rc1/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/extents.c	2008-02-12 17:23:36.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/extents.c	2008-02-12 17:25:54.000000000 -0800
+@@ -2623,7 +2623,7 @@ long ext4_fallocate(struct inode *inode,
+ 	 * modify 1 super block, 1 block bitmap and 1 group descriptor.
+ 	 */
+ 	credits = EXT4_DATA_TRANS_BLOCKS(inode->i_sb) + 3;
+-	down_write((&EXT4_I(inode)->i_data_sem));
++	mutex_lock(&inode->i_mutex);
+ retry:
+ 	while (ret >= 0 && ret < max_blocks) {
+ 		block = block + ret;
+@@ -2634,7 +2634,7 @@ retry:
+ 			break;
+ 		}
+ 
+-		ret = ext4_ext_get_blocks(handle, inode, block,
++		ret = ext4_get_blocks_wrap(handle, inode, block,
+ 					  max_blocks, &map_bh,
+ 					  EXT4_CREATE_UNINITIALIZED_EXT, 0);
+ 		WARN_ON(ret <= 0);
+@@ -2680,7 +2680,6 @@ retry:
+ 	if (ret == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
+ 		goto retry;
+ 
+-	up_write((&EXT4_I(inode)->i_data_sem));
+ 	/*
+ 	 * Time to update the file size.
+ 	 * Update only when preallocation was requested beyond the file size.
+@@ -2692,21 +2691,18 @@ retry:
+ 			 * if no error, we assume preallocation succeeded
+ 			 * completely
+ 			 */
+-			mutex_lock(&inode->i_mutex);
+ 			i_size_write(inode, offset + len);
+ 			EXT4_I(inode)->i_disksize = i_size_read(inode);
+-			mutex_unlock(&inode->i_mutex);
+ 		} else if (ret < 0 && nblocks) {
+ 			/* Handle partial allocation scenario */
+ 			loff_t newsize;
+ 
+-			mutex_lock(&inode->i_mutex);
+ 			newsize  = (nblocks << blkbits) + i_size_read(inode);
+ 			i_size_write(inode, EXT4_BLOCK_ALIGN(newsize, blkbits));
+ 			EXT4_I(inode)->i_disksize = i_size_read(inode);
+-			mutex_unlock(&inode->i_mutex);
+ 		}
+ 	}
+ 
++	mutex_unlock(&inode->i_mutex);
+ 	return ret > 0 ? ret2 : ret;
+ }
