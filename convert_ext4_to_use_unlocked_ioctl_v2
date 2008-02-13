@@ -10,11 +10,18 @@ Signed-off-by: Andi Kleen <ak@suse.de>
 v1->v2: drop BKL for online grow. resize.c seems to do enough locking
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 
-diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
-index 33888bb..d9c81ce 100644
---- a/fs/ext4/dir.c
-+++ b/fs/ext4/dir.c
-@@ -42,7 +42,7 @@ const struct file_operations ext4_dir_operations = {
+---
+ fs/ext4/dir.c   |    2 +-
+ fs/ext4/ext4.h  |    3 +--
+ fs/ext4/file.c  |    2 +-
+ fs/ext4/ioctl.c |   12 +++---------
+ 4 files changed, 6 insertions(+), 13 deletions(-)
+
+Index: linux-2.6.25-rc1/fs/ext4/dir.c
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/dir.c	2008-02-12 11:49:33.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/dir.c	2008-02-12 16:03:18.000000000 -0800
+@@ -42,7 +42,7 @@ const struct file_operations ext4_dir_op
  	.llseek		= generic_file_llseek,
  	.read		= generic_read_dir,
  	.readdir	= ext4_readdir,		/* we take BKL. needed?*/
@@ -23,11 +30,11 @@ index 33888bb..d9c81ce 100644
  #ifdef CONFIG_COMPAT
  	.compat_ioctl	= ext4_compat_ioctl,
  #endif
-diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index ac35ec5..20507a2 100644
---- a/fs/ext4/file.c
-+++ b/fs/ext4/file.c
-@@ -129,7 +129,7 @@ const struct file_operations ext4_file_operations = {
+Index: linux-2.6.25-rc1/fs/ext4/file.c
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/file.c	2008-02-12 11:49:33.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/file.c	2008-02-12 16:03:18.000000000 -0800
+@@ -129,7 +129,7 @@ const struct file_operations ext4_file_o
  	.write		= do_sync_write,
  	.aio_read	= generic_file_aio_read,
  	.aio_write	= ext4_file_write,
@@ -36,13 +43,13 @@ index ac35ec5..20507a2 100644
  #ifdef CONFIG_COMPAT
  	.compat_ioctl	= ext4_compat_ioctl,
  #endif
-diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index f362025..2f7524f 100644
---- a/fs/ext4/ioctl.c
-+++ b/fs/ext4/ioctl.c
+Index: linux-2.6.25-rc1/fs/ext4/ioctl.c
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/ioctl.c	2008-02-12 16:00:38.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/ioctl.c	2008-02-12 16:03:18.000000000 -0800
 @@ -17,9 +17,9 @@
- #include <linux/smp_lock.h>
- #include <asm/uaccess.h>
+ #include "ext4.h"
+ #include "ext4_jbd2.h"
  
 -int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
 -		unsigned long arg)
@@ -62,7 +69,7 @@ index f362025..2f7524f 100644
  	/* These are just misnamed, they actually get/put from/to user an int */
  	switch (cmd) {
  	case EXT4_IOC32_GETFLAGS:
-@@ -320,9 +317,6 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+@@ -320,9 +317,6 @@ long ext4_compat_ioctl(struct file *file
  	default:
  		return -ENOIOCTLCMD;
  	}
@@ -73,11 +80,11 @@ index f362025..2f7524f 100644
 +	return ext4_ioctl(file, cmd, (unsigned long) compat_ptr(arg));
  }
  #endif
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index d203543..ba146b0 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
-@@ -1124,8 +1124,7 @@ extern int ext4_get_block(struct inode *inode, sector_t iblock,
+Index: linux-2.6.25-rc1/fs/ext4/ext4.h
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/ext4.h	2008-02-12 15:58:34.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/ext4.h	2008-02-12 16:03:18.000000000 -0800
+@@ -1121,8 +1121,7 @@ extern int ext4_get_block(struct inode *
  		struct buffer_head *bh_result, int create);
  
  /* ioctl.c */

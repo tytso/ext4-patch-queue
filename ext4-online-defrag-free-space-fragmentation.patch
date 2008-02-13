@@ -12,14 +12,14 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
  fs/ext4/balloc.c  |   12 -
- fs/ext4/defrag.c  |  539 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/defrag.c  |  543 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
  fs/ext4/extents.c |   53 ++++-
- 3 files changed, 588 insertions(+), 16 deletions(-)
+ 3 files changed, 590 insertions(+), 18 deletions(-)
 
 Index: linux-2.6.25-rc1/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/balloc.c	2008-02-12 11:26:48.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/balloc.c	2008-02-12 11:27:00.000000000 -0800
+--- linux-2.6.25-rc1.orig/fs/ext4/balloc.c	2008-02-12 16:43:32.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/balloc.c	2008-02-12 16:43:52.000000000 -0800
 @@ -383,7 +383,7 @@ restart:
   * If the goal block is within the reservation window, return 1;
   * otherwise, return 0;
@@ -76,10 +76,24 @@ Index: linux-2.6.25-rc1/fs/ext4/balloc.c
  	struct ext4_reserve_window_node *next_rsv;
 Index: linux-2.6.25-rc1/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/defrag.c	2008-02-12 11:26:56.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/defrag.c	2008-02-12 11:38:46.000000000 -0800
-@@ -13,6 +13,13 @@
+--- linux-2.6.25-rc1.orig/fs/ext4/defrag.c	2008-02-12 16:43:48.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/defrag.c	2008-02-12 16:49:15.000000000 -0800
+@@ -1,7 +1,6 @@
+ #include <linux/module.h>
+ #include <linux/fs.h>
+ #include <linux/time.h>
+-#include <linux/ext4_jbd2.h>
+ #include <linux/jbd2.h>
+ #include <linux/highuid.h>
+ #include <linux/pagemap.h>
+@@ -9,10 +8,18 @@
+ #include <linux/string.h>
+ #include <linux/slab.h>
+ #include <linux/falloc.h>
+-#include <linux/ext4_fs_extents.h>
  #include <asm/uaccess.h>
++#include "ext4_jbd2.h"
++#include "ext4_extents.h"
  #include "group.h"
  
 +#define DIO_CREDITS (EXT4_RESERVE_TRANS_BLOCKS + 32)
@@ -640,8 +654,8 @@ Index: linux-2.6.25-rc1/fs/ext4/defrag.c
  
 Index: linux-2.6.25-rc1/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/extents.c	2008-02-12 11:26:56.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/extents.c	2008-02-12 11:27:00.000000000 -0800
+--- linux-2.6.25-rc1.orig/fs/ext4/extents.c	2008-02-12 16:43:48.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/extents.c	2008-02-12 16:43:52.000000000 -0800
 @@ -177,11 +177,17 @@ ext4_fsblk_t ext4_ext_find_goal(struct i
  static ext4_fsblk_t
  ext4_ext_new_block(handle_t *handle, struct inode *inode,
