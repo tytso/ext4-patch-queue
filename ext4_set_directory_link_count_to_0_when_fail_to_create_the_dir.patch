@@ -1,0 +1,33 @@
+ext4: Set directory link count to zero if we fail to create the directory.
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+With ext4 we fail directory creation if we fail to allocate initial
+block for the directory. With EXT4_FEATURE_RO_COMPAT_DIR_NLINK,
+if we fail to create the directory, the inode link count was wrongly
+set to 1.  This cause e2fsck throws the below warning
+
+Inode 1015 is a zero-length directory.  Clear? yes
+Inode 1120 is a zero-length directory.  Clear? yes
+Inode 1121 is a zero-length directory.  Clear? yes
+
+Fix the same by dropping the inode link count using drop_nlink
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/namei.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+Index: linux-2.6.25-rc1/fs/ext4/namei.c
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/namei.c	2008-02-12 16:42:29.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/namei.c	2008-02-12 17:29:38.000000000 -0800
+@@ -1805,7 +1805,7 @@ retry:
+ 	inode->i_size = EXT4_I(inode)->i_disksize = inode->i_sb->s_blocksize;
+ 	dir_block = ext4_bread (handle, inode, 0, 1, &err);
+ 	if (!dir_block) {
+-		ext4_dec_count(handle, inode); /* is this nlink == 0? */
++		drop_nlink(inode);
+ 		ext4_mark_inode_dirty(handle, inode);
+ 		iput (inode);
+ 		goto out_stop;
