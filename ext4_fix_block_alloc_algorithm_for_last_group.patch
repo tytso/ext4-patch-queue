@@ -1,0 +1,83 @@
+ext4: modify block allocation algorithm for the last group
+From: Valerie Clement <valerie.clement@bull.net>
+
+Modify the block allocation algorithm for the last group
+
+From: Valerie Clement <valerie.clement@bull.net>
+
+When a directory inode is allocated in the last group and the last group
+contains less than s_blocks_per_group blocks, the initial block allocated
+for the directory is not always allocated in the same group as the
+directory inode, but in one of the first groups of the filesystem (group 1
+for example).
+Depending on the current process's pid, ext4_find_near() and 
+ext4_ext_find_goal() can return a block number greater than the maximum
+blocks count in the filesystem and in that case the block will be not
+allocated in the same group as the inode.
+
+The following patch fixes the problem.
+
+Should the modification also be done in ext2/3 code?
+
+Signed-off-by: Valerie Clement <valerie.clement@bull.net>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+
+ fs/ext4/extents.c |    8 +++++++-
+ fs/ext4/inode.c   |    8 +++++++-
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+
+Index: linux-2.6.25-rc1/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/extents.c	2008-02-14 15:06:02.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/extents.c	2008-02-14 15:09:47.000000000 -0800
+@@ -148,6 +148,7 @@ static ext4_fsblk_t ext4_ext_find_goal(s
+ {
+ 	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	ext4_fsblk_t bg_start;
++	ext4_fsblk_t last_block;
+ 	ext4_grpblk_t colour;
+ 	int depth;
+ 
+@@ -169,8 +170,13 @@ static ext4_fsblk_t ext4_ext_find_goal(s
+ 	/* OK. use inode's group */
+ 	bg_start = (ei->i_block_group * EXT4_BLOCKS_PER_GROUP(inode->i_sb)) +
+ 		le32_to_cpu(EXT4_SB(inode->i_sb)->s_es->s_first_data_block);
+-	colour = (current->pid % 16) *
++	last_block = ext4_blocks_count(EXT4_SB(inode->i_sb)->s_es) - 1;
++
++	if (bg_start + EXT4_BLOCKS_PER_GROUP(inode->i_sb) <= last_block)
++		colour = (current->pid % 16) *
+ 			(EXT4_BLOCKS_PER_GROUP(inode->i_sb) / 16);
++	else
++		colour = (current->pid % 16) * ((last_block - bg_start) / 16);
+ 	return bg_start + colour + block;
+ }
+ 
+Index: linux-2.6.25-rc1/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/inode.c	2008-02-14 15:05:58.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/inode.c	2008-02-14 15:09:47.000000000 -0800
+@@ -403,6 +403,7 @@ static ext4_fsblk_t ext4_find_near(struc
+ 	__le32 *start = ind->bh ? (__le32*) ind->bh->b_data : ei->i_data;
+ 	__le32 *p;
+ 	ext4_fsblk_t bg_start;
++	ext4_fsblk_t last_block;
+ 	ext4_grpblk_t colour;
+ 
+ 	/* Try to find previous block */
+@@ -420,8 +421,13 @@ static ext4_fsblk_t ext4_find_near(struc
+ 	 * into the same cylinder group then.
+ 	 */
+ 	bg_start = ext4_group_first_block_no(inode->i_sb, ei->i_block_group);
+-	colour = (current->pid % 16) *
++	last_block = ext4_blocks_count(EXT4_SB(inode->i_sb)->s_es) - 1;
++
++	if (bg_start + EXT4_BLOCKS_PER_GROUP(inode->i_sb) <= last_block)
++		colour = (current->pid % 16) *
+ 			(EXT4_BLOCKS_PER_GROUP(inode->i_sb) / 16);
++	else
++		colour = (current->pid % 16) * ((last_block - bg_start) / 16);
+ 	return bg_start + colour;
+ }
+ 

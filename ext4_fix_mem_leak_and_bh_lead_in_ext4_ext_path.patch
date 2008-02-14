@@ -1,0 +1,76 @@
+ext4: Fix the memory leak and buffer head leak with respect to ext4_ext_path
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+The path variable returned via ext4_ext_find_extent is a kmalloc variable
+and need to be freeded. It also contain refrences to buffer_head which need
+to be dropped.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+ fs/ext4/extents.c               |    6 +++---
+ fs/ext4/migrate.c               |    5 +++++
+ include/linux/ext4_fs_extents.h |    1 +
+ 3 files changed, 9 insertions(+), 3 deletions(-)
+
+Index: linux-2.6.25-rc1/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/extents.c	2008-02-14 15:09:47.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/extents.c	2008-02-14 15:10:54.000000000 -0800
+@@ -355,7 +355,7 @@ static void ext4_ext_show_leaf(struct in
+ #define ext4_ext_show_leaf(inode,path)
+ #endif
+ 
+-static void ext4_ext_drop_refs(struct ext4_ext_path *path)
++void ext4_ext_drop_refs(struct ext4_ext_path *path)
+ {
+ 	int depth = path->p_depth;
+ 	int i;
+@@ -2204,10 +2204,10 @@ static int ext4_ext_convert_to_initializ
+ 		newdepth = ext_depth(inode);
+ 		if (newdepth != depth) {
+ 			depth = newdepth;
+-			path = ext4_ext_find_extent(inode, iblock, NULL);
++			ext4_ext_drop_refs(path);
++			path = ext4_ext_find_extent(inode, iblock, path);
+ 			if (IS_ERR(path)) {
+ 				err = PTR_ERR(path);
+-				path = NULL;
+ 				goto out;
+ 			}
+ 			eh = path[depth].p_hdr;
+Index: linux-2.6.25-rc1/fs/ext4/migrate.c
+===================================================================
+--- linux-2.6.25-rc1.orig/fs/ext4/migrate.c	2008-02-14 11:33:45.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/migrate.c	2008-02-14 15:10:54.000000000 -0800
+@@ -43,6 +43,7 @@ static int finish_range(handle_t *handle
+ 
+ 	if (IS_ERR(path)) {
+ 		retval = PTR_ERR(path);
++		path = NULL;
+ 		goto err_out;
+ 	}
+ 
+@@ -74,6 +75,10 @@ static int finish_range(handle_t *handle
+ 	}
+ 	retval = ext4_ext_insert_extent(handle, inode, path, &newext);
+ err_out:
++	if (path) {
++		ext4_ext_drop_refs(path);
++		kfree(path);
++	}
+ 	lb->first_pblock = 0;
+ 	return retval;
+ }
+Index: linux-2.6.25-rc1/include/linux/ext4_fs_extents.h
+===================================================================
+--- linux-2.6.25-rc1.orig/include/linux/ext4_fs_extents.h	2008-02-14 15:05:57.000000000 -0800
++++ linux-2.6.25-rc1/include/linux/ext4_fs_extents.h	2008-02-14 15:10:54.000000000 -0800
+@@ -227,5 +227,6 @@ extern int ext4_ext_search_left(struct i
+ 						ext4_lblk_t *, ext4_fsblk_t *);
+ extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
+ 						ext4_lblk_t *, ext4_fsblk_t *);
++extern void ext4_ext_drop_refs(struct ext4_ext_path *);
+ #endif /* _LINUX_EXT4_EXTENTS */
+ 
