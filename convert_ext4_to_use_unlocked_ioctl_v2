@@ -11,16 +11,16 @@ v1->v2: drop BKL for online grow. resize.c seems to do enough locking
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 
 ---
- fs/ext4/dir.c   |    2 +-
- fs/ext4/ext4.h  |    3 +--
- fs/ext4/file.c  |    2 +-
- fs/ext4/ioctl.c |   12 +++---------
+ fs/ext4/dir.c           |    2 +-
+ fs/ext4/file.c          |    2 +-
+ fs/ext4/ioctl.c         |   12 +++---------
+ include/linux/ext4_fs.h |    3 +--
  4 files changed, 6 insertions(+), 13 deletions(-)
 
 Index: linux-2.6.25-rc1/fs/ext4/dir.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/dir.c	2008-02-12 17:13:19.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/dir.c	2008-02-12 17:15:01.000000000 -0800
+--- linux-2.6.25-rc1.orig/fs/ext4/dir.c	2008-02-14 11:33:45.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/dir.c	2008-02-14 11:37:36.000000000 -0800
 @@ -42,7 +42,7 @@ const struct file_operations ext4_dir_op
  	.llseek		= generic_file_llseek,
  	.read		= generic_read_dir,
@@ -32,8 +32,8 @@ Index: linux-2.6.25-rc1/fs/ext4/dir.c
  #endif
 Index: linux-2.6.25-rc1/fs/ext4/file.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/file.c	2008-02-12 17:13:19.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/file.c	2008-02-12 17:15:01.000000000 -0800
+--- linux-2.6.25-rc1.orig/fs/ext4/file.c	2008-02-14 11:33:45.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/file.c	2008-02-14 11:37:36.000000000 -0800
 @@ -129,7 +129,7 @@ const struct file_operations ext4_file_o
  	.write		= do_sync_write,
  	.aio_read	= generic_file_aio_read,
@@ -45,11 +45,11 @@ Index: linux-2.6.25-rc1/fs/ext4/file.c
  #endif
 Index: linux-2.6.25-rc1/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/ioctl.c	2008-02-12 17:13:22.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/ioctl.c	2008-02-12 17:15:01.000000000 -0800
+--- linux-2.6.25-rc1.orig/fs/ext4/ioctl.c	2008-02-14 11:33:45.000000000 -0800
++++ linux-2.6.25-rc1/fs/ext4/ioctl.c	2008-02-14 11:37:36.000000000 -0800
 @@ -17,9 +17,9 @@
- #include "ext4.h"
- #include "ext4_jbd2.h"
+ #include <linux/smp_lock.h>
+ #include <asm/uaccess.h>
  
 -int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
 -		unsigned long arg)
@@ -80,11 +80,11 @@ Index: linux-2.6.25-rc1/fs/ext4/ioctl.c
 +	return ext4_ioctl(file, cmd, (unsigned long) compat_ptr(arg));
  }
  #endif
-Index: linux-2.6.25-rc1/fs/ext4/ext4.h
+Index: linux-2.6.25-rc1/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/ext4.h	2008-02-12 17:14:49.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/ext4.h	2008-02-12 17:15:01.000000000 -0800
-@@ -1058,8 +1058,7 @@ extern int ext4_block_truncate_page(hand
+--- linux-2.6.25-rc1.orig/include/linux/ext4_fs.h	2008-02-14 11:35:41.000000000 -0800
++++ linux-2.6.25-rc1/include/linux/ext4_fs.h	2008-02-14 11:37:36.000000000 -0800
+@@ -1061,8 +1061,7 @@ extern int ext4_block_truncate_page(hand
  		struct address_space *mapping, loff_t from);
  
  /* ioctl.c */
