@@ -26,10 +26,10 @@ Cc: Mingming Cao <cmm@us.ibm.com>
  fs/ext4/xattr.c   |    6 ++----
  7 files changed, 22 insertions(+), 38 deletions(-)
 
-Index: linux-2.6.25-rc1/fs/ext4/balloc.c
+Index: linux-2.6.25-rc2/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/balloc.c	2008-02-14 11:35:41.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/balloc.c	2008-02-14 11:38:02.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/ext4/balloc.c	2008-02-18 15:02:48.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/balloc.c	2008-02-18 15:03:02.000000000 -0800
 @@ -754,9 +754,7 @@ do_more:
  	jbd_unlock_bh_state(bitmap_bh);
  
@@ -51,11 +51,11 @@ Index: linux-2.6.25-rc1/fs/ext4/balloc.c
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, group_no, gdp);
  	spin_unlock(sb_bgl_lock(sbi, group_no));
  	percpu_counter_sub(&sbi->s_freeblocks_counter, num);
-Index: linux-2.6.25-rc1/fs/ext4/extents.c
+Index: linux-2.6.25-rc2/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/extents.c	2008-02-14 11:38:01.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/extents.c	2008-02-14 11:38:02.000000000 -0800
-@@ -608,7 +608,7 @@ static int ext4_ext_insert_index(handle_
+--- linux-2.6.25-rc2.orig/fs/ext4/extents.c	2008-02-18 15:02:46.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/extents.c	2008-02-18 15:03:02.000000000 -0800
+@@ -614,7 +614,7 @@ static int ext4_ext_insert_index(handle_
  
  	ix->ei_block = cpu_to_le32(logical);
  	ext4_idx_store_pblock(ix, ptr);
@@ -64,7 +64,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  
  	BUG_ON(le16_to_cpu(curp->p_hdr->eh_entries)
  			     > le16_to_cpu(curp->p_hdr->eh_max));
-@@ -730,7 +730,7 @@ static int ext4_ext_split(handle_t *hand
+@@ -736,7 +736,7 @@ static int ext4_ext_split(handle_t *hand
  	}
  	if (m) {
  		memmove(ex, path[depth].p_ext-m, sizeof(struct ext4_extent)*m);
@@ -73,7 +73,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  	}
  
  	set_buffer_uptodate(bh);
-@@ -747,8 +747,7 @@ static int ext4_ext_split(handle_t *hand
+@@ -753,8 +753,7 @@ static int ext4_ext_split(handle_t *hand
  		err = ext4_ext_get_access(handle, inode, path + depth);
  		if (err)
  			goto cleanup;
@@ -83,7 +83,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  		err = ext4_ext_dirty(handle, inode, path + depth);
  		if (err)
  			goto cleanup;
-@@ -811,8 +810,7 @@ static int ext4_ext_split(handle_t *hand
+@@ -817,8 +816,7 @@ static int ext4_ext_split(handle_t *hand
  		if (m) {
  			memmove(++fidx, path[i].p_idx - m,
  				sizeof(struct ext4_extent_idx) * m);
@@ -93,7 +93,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  		}
  		set_buffer_uptodate(bh);
  		unlock_buffer(bh);
-@@ -828,7 +826,7 @@ static int ext4_ext_split(handle_t *hand
+@@ -834,7 +832,7 @@ static int ext4_ext_split(handle_t *hand
  			err = ext4_ext_get_access(handle, inode, path + i);
  			if (err)
  				goto cleanup;
@@ -102,7 +102,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  			err = ext4_ext_dirty(handle, inode, path + i);
  			if (err)
  				goto cleanup;
-@@ -1363,7 +1361,7 @@ int ext4_ext_try_to_merge(struct inode *
+@@ -1369,7 +1367,7 @@ int ext4_ext_try_to_merge(struct inode *
  				* sizeof(struct ext4_extent);
  			memmove(ex + 1, ex + 2, len);
  		}
@@ -111,7 +111,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  		merge_done = 1;
  		WARN_ON(eh->eh_entries == 0);
  		if (!eh->eh_entries)
-@@ -1554,7 +1552,7 @@ has_space:
+@@ -1560,7 +1558,7 @@ has_space:
  		path[depth].p_ext = nearex;
  	}
  
@@ -120,7 +120,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  	nearex = path[depth].p_ext;
  	nearex->ee_block = newext->ee_block;
  	ext4_ext_store_pblock(nearex, ext_pblock(newext));
-@@ -1693,7 +1691,7 @@ static int ext4_ext_rm_idx(handle_t *han
+@@ -1699,7 +1697,7 @@ static int ext4_ext_rm_idx(handle_t *han
  	err = ext4_ext_get_access(handle, inode, path);
  	if (err)
  		return err;
@@ -129,7 +129,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  	err = ext4_ext_dirty(handle, inode, path);
  	if (err)
  		return err;
-@@ -1896,7 +1894,7 @@ ext4_ext_rm_leaf(handle_t *handle, struc
+@@ -1902,7 +1900,7 @@ ext4_ext_rm_leaf(handle_t *handle, struc
  		if (num == 0) {
  			/* this extent is removed; mark slot entirely unused */
  			ext4_ext_store_pblock(ex, 0);
@@ -138,10 +138,10 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  		}
  
  		ex->ee_block = cpu_to_le32(block);
-Index: linux-2.6.25-rc1/fs/ext4/ialloc.c
+Index: linux-2.6.25-rc2/fs/ext4/ialloc.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/ialloc.c	2008-02-14 11:35:41.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/ialloc.c	2008-02-14 11:38:02.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/ext4/ialloc.c	2008-02-18 15:02:48.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/ialloc.c	2008-02-18 15:03:02.000000000 -0800
 @@ -224,11 +224,9 @@ void ext4_free_inode (handle_t *handle, 
  
  		if (gdp) {
@@ -170,11 +170,11 @@ Index: linux-2.6.25-rc1/fs/ext4/ialloc.c
  	}
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, group, gdp);
  	spin_unlock(sb_bgl_lock(sbi, group));
-Index: linux-2.6.25-rc1/fs/ext4/mballoc.c
+Index: linux-2.6.25-rc2/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/mballoc.c	2008-02-14 11:37:58.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/mballoc.c	2008-02-14 11:38:02.000000000 -0800
-@@ -3084,9 +3084,7 @@ static int ext4_mb_mark_diskspace_used(s
+--- linux-2.6.25-rc2.orig/fs/ext4/mballoc.c	2008-02-18 15:02:50.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/mballoc.c	2008-02-18 15:03:02.000000000 -0800
+@@ -3084,9 +3084,7 @@ static noinline int ext4_mb_mark_diskspa
  						ac->ac_b_ex.fe_group,
  						gdp));
  	}
@@ -195,10 +195,10 @@ Index: linux-2.6.25-rc1/fs/ext4/mballoc.c
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, block_group, gdp);
  	spin_unlock(sb_bgl_lock(sbi, block_group));
  	percpu_counter_add(&sbi->s_freeblocks_counter, count);
-Index: linux-2.6.25-rc1/fs/ext4/resize.c
+Index: linux-2.6.25-rc2/fs/ext4/resize.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/resize.c	2008-02-14 11:33:45.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/resize.c	2008-02-14 11:38:02.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/ext4/resize.c	2008-02-18 15:00:35.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/resize.c	2008-02-18 15:03:02.000000000 -0800
 @@ -502,8 +502,7 @@ static int add_new_gdb(handle_t *handle,
  	EXT4_SB(sb)->s_gdb_count++;
  	kfree(o_group_desc);
@@ -219,10 +219,10 @@ Index: linux-2.6.25-rc1/fs/ext4/resize.c
  
  	/*
  	 * We need to protect s_groups_count against other CPUs seeing
-Index: linux-2.6.25-rc1/fs/ext4/super.c
+Index: linux-2.6.25-rc2/fs/ext4/super.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/super.c	2008-02-14 11:35:41.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/super.c	2008-02-14 11:38:02.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/ext4/super.c	2008-02-18 15:02:48.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/super.c	2008-02-18 15:03:02.000000000 -0800
 @@ -1392,7 +1392,7 @@ static int ext4_setup_super(struct super
  #endif
  	if (!(__s16) le16_to_cpu(es->s_max_mnt_count))
@@ -232,10 +232,10 @@ Index: linux-2.6.25-rc1/fs/ext4/super.c
  	es->s_mtime = cpu_to_le32(get_seconds());
  	ext4_update_dynamic_rev(sb);
  	EXT4_SET_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER);
-Index: linux-2.6.25-rc1/fs/ext4/xattr.c
+Index: linux-2.6.25-rc2/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/xattr.c	2008-02-14 11:33:45.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/xattr.c	2008-02-14 11:38:02.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/ext4/xattr.c	2008-02-18 15:00:35.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/xattr.c	2008-02-18 15:03:02.000000000 -0800
 @@ -484,8 +484,7 @@ ext4_xattr_release_block(handle_t *handl
  		get_bh(bh);
  		ext4_forget(handle, 1, inode, bh, bh->b_blocknr);

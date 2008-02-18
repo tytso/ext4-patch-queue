@@ -17,10 +17,10 @@ Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
  fs/ext4/mballoc.c |    7 
  5 files changed, 791 insertions(+), 5 deletions(-)
 
-Index: linux-2.6.25-rc1/fs/ext4/defrag.c
+Index: linux-2.6.25-rc2/fs/ext4/defrag.c
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.25-rc1/fs/ext4/defrag.c	2008-02-12 17:32:40.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/defrag.c	2008-02-18 15:03:20.000000000 -0800
 @@ -0,0 +1,766 @@
 +#include <linux/module.h>
 +#include <linux/fs.h>
@@ -788,10 +788,10 @@ Index: linux-2.6.25-rc1/fs/ext4/defrag.c
 +
 +	return (ret ? ret : defrag_size);
 +}
-Index: linux-2.6.25-rc1/fs/ext4/extents.c
+Index: linux-2.6.25-rc2/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/extents.c	2008-02-12 17:32:33.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/extents.c	2008-02-12 17:32:40.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/ext4/extents.c	2008-02-18 15:03:09.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/extents.c	2008-02-18 15:03:20.000000000 -0800
 @@ -48,7 +48,7 @@
   * ext_pblock:
   * combine low and high parts of physical block number into ext4_fsblk_t
@@ -819,7 +819,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  			      struct ext4_ext_path *path,
  			      ext4_lblk_t block)
  {
-@@ -1950,7 +1950,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
+@@ -1956,7 +1956,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
  	return 1;
  }
  
@@ -828,11 +828,11 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  {
  	struct super_block *sb = inode->i_sb;
  	int depth = ext_depth(inode);
-Index: linux-2.6.25-rc1/fs/ext4/inode.c
+Index: linux-2.6.25-rc2/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/inode.c	2008-02-12 17:32:35.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/inode.c	2008-02-12 17:32:40.000000000 -0800
-@@ -1495,7 +1495,7 @@ out:
+--- linux-2.6.25-rc2.orig/fs/ext4/inode.c	2008-02-18 15:03:10.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/inode.c	2008-02-18 15:03:20.000000000 -0800
+@@ -1501,7 +1501,7 @@ out:
   * So, if we see any bmap calls here on a modified, data-journaled file,
   * take extra steps to flush any blocks which might be in the cache.
   */
@@ -841,10 +841,10 @@ Index: linux-2.6.25-rc1/fs/ext4/inode.c
  {
  	struct inode *inode = mapping->host;
  	journal_t *journal;
-Index: linux-2.6.25-rc1/fs/ext4/ioctl.c
+Index: linux-2.6.25-rc2/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/ioctl.c	2008-02-12 17:32:29.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/ioctl.c	2008-02-12 17:32:40.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/ext4/ioctl.c	2008-02-18 15:02:49.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/ioctl.c	2008-02-18 15:03:20.000000000 -0800
 @@ -231,6 +231,19 @@ flags_err:
  
  		return err;
@@ -865,10 +865,10 @@ Index: linux-2.6.25-rc1/fs/ext4/ioctl.c
  	case EXT4_IOC_GROUP_ADD: {
  		struct ext4_new_group_data input;
  		struct super_block *sb = inode->i_sb;
-Index: linux-2.6.25-rc1/fs/ext4/mballoc.c
+Index: linux-2.6.25-rc2/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/mballoc.c	2008-02-12 17:32:30.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/mballoc.c	2008-02-12 17:32:40.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/ext4/mballoc.c	2008-02-18 15:03:02.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/mballoc.c	2008-02-18 15:03:20.000000000 -0800
 @@ -528,6 +528,7 @@ struct ext4_allocation_context {
  	struct page *ac_buddy_page;
  	struct ext4_prealloc_space *ac_pa;
@@ -889,7 +889,7 @@ Index: linux-2.6.25-rc1/fs/ext4/mballoc.c
  			/* quick check to skip empty groups */
  			grp = ext4_get_group_info(ac->ac_sb, group);
  			if (grp->bb_free == 0)
-@@ -4207,6 +4213,7 @@ static int ext4_mb_initialize_context(st
+@@ -4207,6 +4213,7 @@ static noinline int ext4_mb_initialize_c
  	ac->ac_bitmap_page = NULL;
  	ac->ac_buddy_page = NULL;
  	ac->ac_lg = NULL;
