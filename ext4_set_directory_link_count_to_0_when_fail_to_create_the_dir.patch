@@ -9,10 +9,14 @@ left at one.  This was caused by an inappropriate call to ext4_dec_count().
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index a9347fb..7970e81 100644
---- a/fs/ext4/namei.c
-+++ b/fs/ext4/namei.c
+---
+ fs/ext4/namei.c |   11 ++++-------
+ 1 file changed, 4 insertions(+), 7 deletions(-)
+
+Index: linux-2.6.25-rc2/fs/ext4/namei.c
+===================================================================
+--- linux-2.6.25-rc2.orig/fs/ext4/namei.c	2008-02-18 14:59:34.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/namei.c	2008-02-19 00:10:55.000000000 -0800
 @@ -1804,12 +1804,8 @@ retry:
  	inode->i_fop = &ext4_dir_operations;
  	inode->i_size = EXT4_I(inode)->i_disksize = inode->i_sb->s_blocksize;
@@ -33,7 +37,7 @@ index a9347fb..7970e81 100644
  	err = ext4_add_entry (handle, dentry, inode);
  	if (err) {
 -		inode->i_nlink = 0;
-+	out_clear_inode:
++out_clear_inode:
 +		clear_nlink(inode);
  		ext4_mark_inode_dirty(handle, inode);
  		iput (inode);

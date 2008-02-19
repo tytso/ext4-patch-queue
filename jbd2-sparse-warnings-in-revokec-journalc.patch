@@ -19,14 +19,14 @@ Cc: <linux-ext4@vger.kernel.org>
 Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
- fs/jbd2/journal.c |   12 ++++++------
+ fs/jbd2/journal.c |   13 +++++++------
  fs/jbd2/revoke.c  |    4 ++--
- 2 files changed, 8 insertions(+), 8 deletions(-)
+ 2 files changed, 9 insertions(+), 8 deletions(-)
 
-Index: linux-2.6.25-rc1/fs/jbd2/journal.c
+Index: linux-2.6.25-rc2/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/jbd2/journal.c	2008-02-14 15:05:58.000000000 -0800
-+++ linux-2.6.25-rc1/fs/jbd2/journal.c	2008-02-14 15:13:37.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/jbd2/journal.c	2008-02-19 00:02:42.000000000 -0800
++++ linux-2.6.25-rc2/fs/jbd2/journal.c	2008-02-19 00:12:49.000000000 -0800
 @@ -219,7 +219,7 @@ static int jbd2_journal_start_thread(jou
  	if (IS_ERR(t))
  		return PTR_ERR(t);
@@ -36,16 +36,17 @@ Index: linux-2.6.25-rc1/fs/jbd2/journal.c
  	return 0;
  }
  
-@@ -231,7 +231,7 @@ static void journal_kill_thread(journal_
+@@ -231,7 +231,8 @@ static void journal_kill_thread(journal_
  	while (journal->j_task) {
  		wake_up(&journal->j_wait_commit);
  		spin_unlock(&journal->j_state_lock);
 -		wait_event(journal->j_wait_done_commit, journal->j_task == 0);
-+		wait_event(journal->j_wait_done_commit, journal->j_task == NULL);
++		wait_event(journal->j_wait_done_commit,
++					journal->j_task == NULL);
  		spin_lock(&journal->j_state_lock);
  	}
  	spin_unlock(&journal->j_state_lock);
-@@ -1969,14 +1969,14 @@ static int journal_init_jbd2_journal_hea
+@@ -1969,14 +1970,14 @@ static int journal_init_jbd2_journal_hea
  {
  	int retval;
  
@@ -62,7 +63,7 @@ Index: linux-2.6.25-rc1/fs/jbd2/journal.c
  		retval = -ENOMEM;
  		printk(KERN_EMERG "JBD: no memory for journal_head cache\n");
  	}
-@@ -2002,14 +2002,14 @@ static struct journal_head *journal_allo
+@@ -2002,14 +2003,14 @@ static struct journal_head *journal_allo
  	atomic_inc(&nr_journal_heads);
  #endif
  	ret = kmem_cache_alloc(jbd2_journal_head_cache, GFP_NOFS);
@@ -79,10 +80,10 @@ Index: linux-2.6.25-rc1/fs/jbd2/journal.c
  			yield();
  			ret = kmem_cache_alloc(jbd2_journal_head_cache, GFP_NOFS);
  		}
-Index: linux-2.6.25-rc1/fs/jbd2/revoke.c
+Index: linux-2.6.25-rc2/fs/jbd2/revoke.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/jbd2/revoke.c	2008-02-10 14:18:14.000000000 -0800
-+++ linux-2.6.25-rc1/fs/jbd2/revoke.c	2008-02-14 15:13:37.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/jbd2/revoke.c	2008-02-19 00:02:42.000000000 -0800
++++ linux-2.6.25-rc2/fs/jbd2/revoke.c	2008-02-19 00:12:11.000000000 -0800
 @@ -174,13 +174,13 @@ int __init jbd2_journal_init_revoke_cach
  					   0,
  					   SLAB_HWCACHE_ALIGN|SLAB_TEMPORARY,
