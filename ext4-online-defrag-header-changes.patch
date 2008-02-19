@@ -72,10 +72,10 @@ Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
  include/linux/ext4_fs_extents.h |   23 ++++++++++++
  3 files changed, 95 insertions(+), 1 deletion(-)
 
-Index: linux-2.6.25-rc1/fs/ext4/Makefile
+Index: linux-2.6.25-rc2/fs/ext4/Makefile
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/Makefile	2008-02-14 15:05:57.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/Makefile	2008-02-14 15:15:50.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/ext4/Makefile	2008-02-18 15:05:40.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/Makefile	2008-02-18 20:58:04.000000000 -0800
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -85,10 +85,10 @@ Index: linux-2.6.25-rc1/fs/ext4/Makefile
  
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-Index: linux-2.6.25-rc1/include/linux/ext4_fs.h
+Index: linux-2.6.25-rc2/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.25-rc1.orig/include/linux/ext4_fs.h	2008-02-14 15:15:41.000000000 -0800
-+++ linux-2.6.25-rc1/include/linux/ext4_fs.h	2008-02-14 15:15:50.000000000 -0800
+--- linux-2.6.25-rc2.orig/include/linux/ext4_fs.h	2008-02-18 20:57:43.000000000 -0800
++++ linux-2.6.25-rc2/include/linux/ext4_fs.h	2008-02-18 21:00:18.000000000 -0800
 @@ -95,6 +95,7 @@ struct ext4_allocation_request {
  	unsigned long len;
  	/* flags. see above EXT4_MB_HINT_* */
@@ -184,16 +184,16 @@ Index: linux-2.6.25-rc1/include/linux/ext4_fs.h
  
  /* fsync.c */
  extern int ext4_sync_file (struct file *, struct dentry *, int);
-@@ -1060,6 +1120,8 @@ extern void ext4_set_aops(struct inode *
- extern int ext4_writepage_trans_blocks(struct inode *);
+@@ -1061,6 +1121,8 @@ extern int ext4_writepage_trans_blocks(s
  extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
  		struct address_space *mapping, loff_t from);
+ extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
 +extern int ext4_get_block(struct inode *inode, sector_t iblock,
 +		struct buffer_head *bh_result, int create);
  
  /* ioctl.c */
  extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
-@@ -1108,6 +1170,14 @@ extern void ext4_inode_bitmap_set(struct
+@@ -1109,6 +1171,14 @@ extern void ext4_inode_bitmap_set(struct
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
@@ -208,7 +208,7 @@ Index: linux-2.6.25-rc1/include/linux/ext4_fs.h
  
  static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
  {
-@@ -1225,6 +1295,7 @@ extern int ext4_get_blocks_wrap(handle_t
+@@ -1226,6 +1296,7 @@ extern int ext4_get_blocks_wrap(handle_t
  			sector_t block, unsigned long max_blocks,
  			struct buffer_head *bh, int create,
  			int extend_disksize);
@@ -216,10 +216,10 @@ Index: linux-2.6.25-rc1/include/linux/ext4_fs.h
  #endif	/* __KERNEL__ */
  
  #endif	/* _LINUX_EXT4_FS_H */
-Index: linux-2.6.25-rc1/include/linux/ext4_fs_extents.h
+Index: linux-2.6.25-rc2/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.25-rc1.orig/include/linux/ext4_fs_extents.h	2008-02-14 15:10:54.000000000 -0800
-+++ linux-2.6.25-rc1/include/linux/ext4_fs_extents.h	2008-02-14 15:17:02.000000000 -0800
+--- linux-2.6.25-rc2.orig/include/linux/ext4_fs_extents.h	2008-02-18 15:05:40.000000000 -0800
++++ linux-2.6.25-rc2/include/linux/ext4_fs_extents.h	2008-02-18 20:58:04.000000000 -0800
 @@ -124,6 +124,19 @@ struct ext4_ext_path {
  #define EXT4_EXT_CACHE_GAP	1
  #define EXT4_EXT_CACHE_EXTENT	2

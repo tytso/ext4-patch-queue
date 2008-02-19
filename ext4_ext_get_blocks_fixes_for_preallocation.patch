@@ -41,14 +41,14 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 ---
  fs/ext4/extents.c |   13 +++++++++++++
- fs/ext4/inode.c   |   41 ++++++++++++++++++++++++++++++++++++++---
- 2 files changed, 51 insertions(+), 3 deletions(-)
+ fs/ext4/inode.c   |   44 +++++++++++++++++++++++++++++++++++++++++---
+ 2 files changed, 54 insertions(+), 3 deletions(-)
 
 Index: linux-2.6.25-rc2/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc2.orig/fs/ext4/extents.c	2008-02-18 15:39:52.000000000 -0800
-+++ linux-2.6.25-rc2/fs/ext4/extents.c	2008-02-18 16:12:30.000000000 -0800
-@@ -2285,9 +2285,22 @@ out:
+--- linux-2.6.25-rc2.orig/fs/ext4/extents.c	2008-02-18 20:52:38.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/extents.c	2008-02-18 20:53:31.000000000 -0800
+@@ -2287,9 +2287,22 @@ out:
  }
  
  /*
@@ -73,9 +73,9 @@ Index: linux-2.6.25-rc2/fs/ext4/extents.c
  			ext4_lblk_t iblock,
 Index: linux-2.6.25-rc2/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25-rc2.orig/fs/ext4/inode.c	2008-02-18 15:07:00.000000000 -0800
-+++ linux-2.6.25-rc2/fs/ext4/inode.c	2008-02-18 16:12:53.000000000 -0800
-@@ -908,6 +908,26 @@ out:
+--- linux-2.6.25-rc2.orig/fs/ext4/inode.c	2008-02-18 20:52:32.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/inode.c	2008-02-18 20:53:31.000000000 -0800
+@@ -908,11 +908,34 @@ out:
   */
  #define DIO_CREDITS 25
  
@@ -102,7 +102,15 @@ Index: linux-2.6.25-rc2/fs/ext4/inode.c
  int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
  			unsigned long max_blocks, struct buffer_head *bh,
  			int create, int extend_disksize)
-@@ -926,12 +946,27 @@ int ext4_get_blocks_wrap(handle_t *handl
+ {
+ 	int retval;
++
++	clear_buffer_mapped(bh);
++
+ 	/*
+ 	 * Try to see if we can get  the block without requesting
+ 	 * for new file system block.
+@@ -926,12 +949,27 @@ int ext4_get_blocks_wrap(handle_t *handl
  				inode, block, max_blocks, bh, 0, 0);
  	}
  	up_read((&EXT4_I(inode)->i_data_sem));
@@ -121,7 +129,7 @@ Index: linux-2.6.25-rc2/fs/ext4/inode.c
 +	 * the preallocated extents, thus needs to update
 +	 * i_data
 +	 */
-+	if (retval > 0 && buffer_mapped(bh)))
++	if (retval > 0 && buffer_mapped(bh))
  		return retval;
  
  	/*
