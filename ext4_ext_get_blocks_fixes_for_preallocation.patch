@@ -34,8 +34,21 @@ Similar to ext4_get_blocks_handle(),  the following
 *
 * return < 0, error case.
 
-The for the write path, at ext4_ext_get_blocks_wrap(), it could check the
-buffer_mapped() status for preallocated extent before quit too early.
+
+This patch clarifies the meaning of return values from blocks look up 
+(ext4_ext_get_blocks() with create = 0),
+differentiate preallocated blocks from holes. So when prepare writing to
+a uninitialized extents, ext4_ext_get_blocks_wrap() could detect the
+preallocated extents(via checking the allocated blocks from first call to
+ext4_ext_get_block() and whether result bufferhead is unmapped), and
+then call the second ext4_ext_get_block() with create=1 to do 
+uninitialized extents split work in that case.
+
+This patch clarifies the meaning of return values from blocks look up 
+(ext4_ext_get_blocks() with create = 0),
+differentiate preallocated blocks from holes. So when prepare writing to
+a uninitialized extents, ext4_ext_get_blocks_wrap() could
+detect the preallocated extents and do uninitialized extents split work.
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
