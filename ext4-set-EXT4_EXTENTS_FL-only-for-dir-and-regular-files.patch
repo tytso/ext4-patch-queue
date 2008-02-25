@@ -2,14 +2,11 @@ ext4: set EXT4_EXTENTS_FL only for directory and regular files
 
 From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-Also don't inherit EXT4_EXTENTS_FL from parent directory.
+In addition, don't inherit EXT4_EXTENTS_FL from parent directory.
 If we have a directory with extent flag set and later mount the file
 system with -o noextents, the files created in that directory will also
 have extent flag set but we would not have called ext4_ext_tree_init for
 them. This will cause error later when we are verifying the extent header
-
-Also we don't want to set extent flag for symlinks, char, block, fifo
-or socket
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Acked-off-by: Eric Sandeen <sandeen@redhat.com>
@@ -48,7 +45,7 @@ Index: linux-2.6.25-rc2/fs/ext4/ialloc.c
 -						EXT4_FEATURE_INCOMPAT_EXTENTS);
 -		if (err)
 -			goto fail;
-+		/* set extent flag only for diretory and file */
++		/* set extent flag only for directory and file */
 +		if (S_ISDIR(mode) || S_ISREG(mode)) {
 +			EXT4_I(inode)->i_flags |= EXT4_EXTENTS_FL;
 +			ext4_ext_tree_init(handle, inode);
