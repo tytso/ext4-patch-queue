@@ -1,67 +1,33 @@
-ext4: ext4_get_blocks_wrap() fix for wrting to preallocated
+ext4: Fix BUG when writing to an unitialized extent
 
 From: Mingming Cao <cmm@us.ibm.com>
 
-This patch fixed a issue with wrting to a preallocated blocks.
-A write hit a BUG_ON() in fs/buffer.c saying the buffer is not mapped.
+This patch fixes a bug when writing to preallocated but uninitialized
+blocks, which resulted in a BUG in fs/buffer.c saying that the buffer
+is not mapped.
 
-On the write path, ext4_get_block_wrap() is called with create=1, but it
-will pass create=0 down to the underlying ext4ext_get_blocks()
-to do a look up first.  In the preallocation case, ext4_ext_get_blocks()
-with create = 0, will return number of blocks pre-allocated and buffer
-head unmapped. ext4_get_blocks_wrap() thinks it succeeds too early, without
-checking if it needs again call ext4_ext_get_blocks with create = 1
-which would split the extent to initialized and uninitialized one and
-returns the mapped buffer head.
+When writing to a file, ext4_get_block_wrap() is called with create=1 in
+order to request that blocks be allocated if necessary.  It currently
+calls ext4_get_blocks() with create=0 in order to do a lookup first.  If
+the inode contains an unitialized data block, the buffer head is left
+unampped, which ext4_get_blocks_wrap() returns, causing the BUG.
 
-Treating preallocated blocks as holes equally
-(i.e. ignoring the number of blocks pre-allocated and returns 0)
- when get_blocks() with create = 0 is not enough. 
-ext4_ext_get_blocks() needs to differentiate these two casesfor delayed
-allocation purpose, as for holes it need to do reservation and prepare for later
-delayed allocation, but for pre-allocated blocks it needs skip that work.
-
-It would makes things more clear if we have clear definition of what
-get_blocks() return value means.
-
-Similar to ext4_get_blocks_handle(),  the following 
-* return > 0, # of blocks already allocated
-*          if these are pre-allocated blocks and create = 0
-*                   buffer head is unmapped
-*          otherwise blocks are mapped.
-*
-* return = 0, if plain look up failed (blocks have not been allocated)
-*          buffer head is unmapped
-*
-* return < 0, error case.
-
-
-This patch clarifies the meaning of return values from blocks look up 
-(ext4_ext_get_blocks() with create = 0),
-differentiate preallocated blocks from holes. So when prepare writing to
-a uninitialized extents, ext4_ext_get_blocks_wrap() could detect the
-preallocated extents(via checking the allocated blocks from first call to
-ext4_ext_get_block() and whether result bufferhead is unmapped), and
-then call the second ext4_ext_get_block() with create=1 to do 
-uninitialized extents split work in that case.
-
-This patch clarifies the meaning of return values from blocks look up 
-(ext4_ext_get_blocks() with create = 0),
-differentiate preallocated blocks from holes. So when prepare writing to
-a uninitialized extents, ext4_ext_get_blocks_wrap() could
-detect the preallocated extents and do uninitialized extents split work.
+We fix this by checking to see if the buffer head is unmapped, and if
+so, we make sure the the buffer head is mapped by calling
+ext4_ext_get_blocks with create=1.
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
  fs/ext4/extents.c |   13 +++++++++++++
- fs/ext4/inode.c   |   44 +++++++++++++++++++++++++++++++++++++++++---
- 2 files changed, 54 insertions(+), 3 deletions(-)
+ fs/ext4/inode.c   |   47 ++++++++++++++++++++++++++++++++++++++++++++---
+ 2 files changed, 57 insertions(+), 3 deletions(-)
 
 Index: linux-2.6.25-rc2/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc2.orig/fs/ext4/extents.c	2008-02-18 20:52:38.000000000 -0800
-+++ linux-2.6.25-rc2/fs/ext4/extents.c	2008-02-19 00:02:46.000000000 -0800
+--- linux-2.6.25-rc2.orig/fs/ext4/extents.c	2008-02-25 11:27:35.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/extents.c	2008-02-25 11:40:52.000000000 -0800
 @@ -2287,9 +2287,22 @@ out:
  }
  
@@ -87,31 +53,35 @@ Index: linux-2.6.25-rc2/fs/ext4/extents.c
  			ext4_lblk_t iblock,
 Index: linux-2.6.25-rc2/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25-rc2.orig/fs/ext4/inode.c	2008-02-18 20:52:32.000000000 -0800
-+++ linux-2.6.25-rc2/fs/ext4/inode.c	2008-02-19 00:03:20.000000000 -0800
-@@ -908,11 +908,34 @@ out:
+--- linux-2.6.25-rc2.orig/fs/ext4/inode.c	2008-02-25 11:27:35.000000000 -0800
++++ linux-2.6.25-rc2/fs/ext4/inode.c	2008-02-25 11:39:01.000000000 -0800
+@@ -908,11 +908,38 @@ out:
   */
  #define DIO_CREDITS 25
  
 +
 +/*
-+ * ext4 get_block() wrapper function
-+ * It first do a look up, returns if the blocks already mapped. Otherwise
-+ * it takes the write sem and do block allocation
 + *
-+ * If file type is extents based, call with ext4_ext_get_blocks()
++ *
++ * ext4_ext4 get_block() wrapper function
++ * It will do a look up first, and returns if the blocks already mapped.
++ * Otherwise it takes the write lock of the i_data_sem and allocate blocks
++ * and store the allocated blocks in the result buffer head and mark it
++ * mapped.
++ *
++ * If file type is extents based, it will call ext4_ext_get_blocks(),
 + * Otherwise, call with ext4_get_blocks_handle() to handle indirect mapping
 + * based files
 + *
-+ * return > 0, number of of blocks already mapped/allocated
-+ *          if create==0 and these are pre-allocated blocks
-+ *          	 buffer head is unmapped
-+ *          otherwise blocks are mapped
++ * On success, it returns the number of blocks being mapped or allocate.
++ * if create==0 and the blocks are pre-allocated and uninitialized block,
++ * the result buffer head is unmapped. If the create ==1, it will make sure
++ * the buffer head is mapped.
 + *
-+ * return = 0, if plain look up failed (blocks have not been allocated)
-+ *          buffer head is unmapped
++ * It returns 0 if plain look up failed (blocks have not been allocated), in
++ * that casem, buffer head is unmapped
 + *
-+ * return < 0, error case.
++ * It returns the error in case of allocation failure.
 + */
  int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
  			unsigned long max_blocks, struct buffer_head *bh,
@@ -124,7 +94,7 @@ Index: linux-2.6.25-rc2/fs/ext4/inode.c
  	/*
  	 * Try to see if we can get  the block without requesting
  	 * for new file system block.
-@@ -926,12 +949,27 @@ int ext4_get_blocks_wrap(handle_t *handl
+@@ -926,12 +953,26 @@ int ext4_get_blocks_wrap(handle_t *handl
  				inode, block, max_blocks, bh, 0, 0);
  	}
  	up_read((&EXT4_I(inode)->i_data_sem));
@@ -138,10 +108,8 @@ Index: linux-2.6.25-rc2/fs/ext4/inode.c
 +	 * Returns if the blocks have already allocated
 +	 *
 +	 * Note that if blocks have been preallocated
-+	 * ext4_ext_get_block() returns with buffer head unmapped.
-+	 * Write to a preallocated space needs to split
-+	 * the preallocated extents, thus needs to update
-+	 * i_data
++	 * ext4_ext_get_block() returns th create = 0
++	 * with buffer head unmapped.
 +	 */
 +	if (retval > 0 && buffer_mapped(bh))
  		return retval;
@@ -149,9 +117,10 @@ Index: linux-2.6.25-rc2/fs/ext4/inode.c
  	/*
 -	 * We need to allocate new blocks which will result
 -	 * in i_data update
-+	 * New blocks and preallocation handling will possiblely result
-+	 * in i_data update, take the write sem, and call get_blocks()
-+	 * with create = 1
++	 * New blocks allocate and/or writing to uninitialized extent
++	 * will possibly result in updating i_data, so we take
++	 * the write lock of i_data_sem, and call get_blocks()
++	 * with create == 1 flag.
  	 */
  	down_write((&EXT4_I(inode)->i_data_sem));
  	/*
