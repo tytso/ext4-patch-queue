@@ -16,10 +16,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/extents.c |   53 ++++-
  3 files changed, 590 insertions(+), 18 deletions(-)
 
-Index: linux-2.6.25-rc1/fs/ext4/balloc.c
+Index: linux-2.6.25-rc3/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/balloc.c	2008-02-14 15:05:57.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/balloc.c	2008-02-14 15:18:44.000000000 -0800
+--- linux-2.6.25-rc3.orig/fs/ext4/balloc.c	2008-02-29 09:57:33.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/balloc.c	2008-02-29 09:59:07.000000000 -0800
 @@ -383,7 +383,7 @@ restart:
   * If the goal block is within the reservation window, return 1;
   * otherwise, return 0;
@@ -74,10 +74,10 @@ Index: linux-2.6.25-rc1/fs/ext4/balloc.c
  			struct super_block *sb, int size)
  {
  	struct ext4_reserve_window_node *next_rsv;
-Index: linux-2.6.25-rc1/fs/ext4/defrag.c
+Index: linux-2.6.25-rc3/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/defrag.c	2008-02-14 15:17:30.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/defrag.c	2008-02-14 15:18:44.000000000 -0800
+--- linux-2.6.25-rc3.orig/fs/ext4/defrag.c	2008-02-29 09:59:03.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/defrag.c	2008-02-29 09:59:07.000000000 -0800
 @@ -1,7 +1,6 @@
  #include <linux/module.h>
  #include <linux/fs.h>
@@ -652,11 +652,11 @@ Index: linux-2.6.25-rc1/fs/ext4/defrag.c
  	} else if (cmd == EXT4_IOC_DEFRAG) {
  		struct ext4_ext_defrag_data defrag;
  
-Index: linux-2.6.25-rc1/fs/ext4/extents.c
+Index: linux-2.6.25-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc1.orig/fs/ext4/extents.c	2008-02-14 15:17:30.000000000 -0800
-+++ linux-2.6.25-rc1/fs/ext4/extents.c	2008-02-14 15:18:44.000000000 -0800
-@@ -183,11 +183,17 @@ ext4_fsblk_t ext4_ext_find_goal(struct i
+--- linux-2.6.25-rc3.orig/fs/ext4/extents.c	2008-02-29 09:59:03.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/extents.c	2008-02-29 09:59:07.000000000 -0800
+@@ -177,11 +177,17 @@ ext4_fsblk_t ext4_ext_find_goal(struct i
  static ext4_fsblk_t
  ext4_ext_new_block(handle_t *handle, struct inode *inode,
  			struct ext4_ext_path *path,
@@ -676,7 +676,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  	newblock = ext4_new_block(handle, inode, goal, err);
  	return newblock;
  }
-@@ -638,7 +644,8 @@ static int ext4_ext_insert_index(handle_
+@@ -632,7 +638,8 @@ static int ext4_ext_insert_index(handle_
   */
  static int ext4_ext_split(handle_t *handle, struct inode *inode,
  				struct ext4_ext_path *path,
@@ -686,7 +686,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  {
  	struct buffer_head *bh = NULL;
  	int depth = ext_depth(inode);
-@@ -688,7 +695,8 @@ static int ext4_ext_split(handle_t *hand
+@@ -682,7 +689,8 @@ static int ext4_ext_split(handle_t *hand
  	/* allocate all needed blocks */
  	ext_debug("allocate %d blocks for indexes/leaf\n", depth - at);
  	for (a = 0; a < depth - at; a++) {
@@ -696,7 +696,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  		if (newblock == 0)
  			goto cleanup;
  		ablocks[a] = newblock;
-@@ -875,7 +883,8 @@ cleanup:
+@@ -869,7 +877,8 @@ cleanup:
   */
  static int ext4_ext_grow_indepth(handle_t *handle, struct inode *inode,
  					struct ext4_ext_path *path,
@@ -706,7 +706,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  {
  	struct ext4_ext_path *curp = path;
  	struct ext4_extent_header *neh;
-@@ -884,7 +893,8 @@ static int ext4_ext_grow_indepth(handle_
+@@ -878,7 +887,8 @@ static int ext4_ext_grow_indepth(handle_
  	ext4_fsblk_t newblock;
  	int err = 0;
  
@@ -716,7 +716,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  	if (newblock == 0)
  		return err;
  
-@@ -960,7 +970,8 @@ out:
+@@ -954,7 +964,8 @@ out:
   */
  static int ext4_ext_create_new_leaf(handle_t *handle, struct inode *inode,
  					struct ext4_ext_path *path,
@@ -726,7 +726,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  {
  	struct ext4_ext_path *curp;
  	int depth, i, err = 0;
-@@ -980,7 +991,8 @@ repeat:
+@@ -974,7 +985,8 @@ repeat:
  	if (EXT_HAS_FREE_INDEX(curp)) {
  		/* if we found index with free entry, then use that
  		 * entry: create all needed subtree and add new leaf */
@@ -736,7 +736,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  
  		/* refill path */
  		ext4_ext_drop_refs(path);
-@@ -991,7 +1003,8 @@ repeat:
+@@ -985,7 +997,8 @@ repeat:
  			err = PTR_ERR(path);
  	} else {
  		/* tree is full, time to grow in depth */
@@ -746,7 +746,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  		if (err)
  			goto out;
  
-@@ -1437,6 +1450,19 @@ int ext4_ext_insert_extent(handle_t *han
+@@ -1431,6 +1444,19 @@ int ext4_ext_insert_extent(handle_t *han
  				struct ext4_ext_path *path,
  				struct ext4_extent *newext)
  {
@@ -766,7 +766,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  	struct ext4_extent_header * eh;
  	struct ext4_extent *ex, *fex;
  	struct ext4_extent *nearex; /* nearest extent */
-@@ -1444,6 +1470,7 @@ int ext4_ext_insert_extent(handle_t *han
+@@ -1438,6 +1464,7 @@ int ext4_ext_insert_extent(handle_t *han
  	int depth, len, err;
  	ext4_lblk_t next;
  	unsigned uninitialized = 0;
@@ -774,7 +774,7 @@ Index: linux-2.6.25-rc1/fs/ext4/extents.c
  
  	BUG_ON(ext4_ext_get_actual_len(newext) == 0);
  	depth = ext_depth(inode);
-@@ -1504,11 +1531,17 @@ repeat:
+@@ -1498,11 +1525,17 @@ repeat:
  			  le16_to_cpu(eh->eh_entries), le16_to_cpu(eh->eh_max));
  	}
  
