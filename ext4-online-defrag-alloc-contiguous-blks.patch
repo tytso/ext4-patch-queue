@@ -20,7 +20,7 @@ Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Index: linux-2.6.25-rc3/fs/ext4/defrag.c
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.25-rc3/fs/ext4/defrag.c	2008-02-29 09:58:42.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/defrag.c	2008-03-03 15:55:30.000000000 -0800
 @@ -0,0 +1,766 @@
 +#include <linux/module.h>
 +#include <linux/fs.h>
@@ -790,8 +790,8 @@ Index: linux-2.6.25-rc3/fs/ext4/defrag.c
 +}
 Index: linux-2.6.25-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc3.orig/fs/ext4/extents.c	2008-02-29 09:58:31.000000000 -0800
-+++ linux-2.6.25-rc3/fs/ext4/extents.c	2008-02-29 09:58:42.000000000 -0800
+--- linux-2.6.25-rc3.orig/fs/ext4/extents.c	2008-03-03 15:55:19.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/extents.c	2008-03-03 15:55:30.000000000 -0800
 @@ -48,7 +48,7 @@
   * ext_pblock:
   * combine low and high parts of physical block number into ext4_fsblk_t
@@ -819,7 +819,7 @@ Index: linux-2.6.25-rc3/fs/ext4/extents.c
  			      struct ext4_ext_path *path,
  			      ext4_lblk_t block)
  {
-@@ -1950,7 +1950,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
+@@ -1956,7 +1956,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
  	return 1;
  }
  
@@ -830,9 +830,9 @@ Index: linux-2.6.25-rc3/fs/ext4/extents.c
  	int depth = ext_depth(inode);
 Index: linux-2.6.25-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25-rc3.orig/fs/ext4/inode.c	2008-02-29 09:57:35.000000000 -0800
-+++ linux-2.6.25-rc3/fs/ext4/inode.c	2008-02-29 09:58:42.000000000 -0800
-@@ -1512,7 +1512,7 @@ out:
+--- linux-2.6.25-rc3.orig/fs/ext4/inode.c	2008-03-03 15:53:00.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/inode.c	2008-03-03 15:55:30.000000000 -0800
+@@ -1558,7 +1558,7 @@ out:
   * So, if we see any bmap calls here on a modified, data-journaled file,
   * take extra steps to flush any blocks which might be in the cache.
   */
@@ -843,8 +843,8 @@ Index: linux-2.6.25-rc3/fs/ext4/inode.c
  	journal_t *journal;
 Index: linux-2.6.25-rc3/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.25-rc3.orig/fs/ext4/ioctl.c	2008-02-29 09:57:35.000000000 -0800
-+++ linux-2.6.25-rc3/fs/ext4/ioctl.c	2008-02-29 09:58:42.000000000 -0800
+--- linux-2.6.25-rc3.orig/fs/ext4/ioctl.c	2008-03-03 15:52:12.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/ioctl.c	2008-03-03 15:55:30.000000000 -0800
 @@ -231,6 +231,19 @@ flags_err:
  
  		return err;
@@ -867,8 +867,8 @@ Index: linux-2.6.25-rc3/fs/ext4/ioctl.c
  		struct super_block *sb = inode->i_sb;
 Index: linux-2.6.25-rc3/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.25-rc3.orig/fs/ext4/mballoc.c	2008-02-29 09:57:35.000000000 -0800
-+++ linux-2.6.25-rc3/fs/ext4/mballoc.c	2008-02-29 09:58:42.000000000 -0800
+--- linux-2.6.25-rc3.orig/fs/ext4/mballoc.c	2008-03-03 15:52:42.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/mballoc.c	2008-03-03 15:55:30.000000000 -0800
 @@ -528,6 +528,7 @@ struct ext4_allocation_context {
  	struct page *ac_buddy_page;
  	struct ext4_prealloc_space *ac_pa;
@@ -877,7 +877,7 @@ Index: linux-2.6.25-rc3/fs/ext4/mballoc.c
  };
  
  #define AC_STATUS_CONTINUE	1
-@@ -2016,6 +2017,11 @@ repeat:
+@@ -2044,6 +2045,11 @@ repeat:
  			if (group == EXT4_SB(sb)->s_groups_count)
  				group = 0;
  
@@ -889,7 +889,7 @@ Index: linux-2.6.25-rc3/fs/ext4/mballoc.c
  			/* quick check to skip empty groups */
  			grp = ext4_get_group_info(ac->ac_sb, group);
  			if (grp->bb_free == 0)
-@@ -4188,6 +4194,7 @@ ext4_mb_initialize_context(struct ext4_a
+@@ -4220,6 +4226,7 @@ ext4_mb_initialize_context(struct ext4_a
  	ac->ac_bitmap_page = NULL;
  	ac->ac_buddy_page = NULL;
  	ac->ac_lg = NULL;

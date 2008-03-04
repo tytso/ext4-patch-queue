@@ -68,15 +68,14 @@ Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 ---
 ---
  fs/ext4/Makefile                |    2 -
- fs/ext4/extents.c               |    2 -
  include/linux/ext4_fs.h         |   71 ++++++++++++++++++++++++++++++++++++++++
  include/linux/ext4_fs_extents.h |   23 ++++++++++++
- 4 files changed, 96 insertions(+), 2 deletions(-)
+ 3 files changed, 95 insertions(+), 1 deletion(-)
 
 Index: linux-2.6.25-rc3/fs/ext4/Makefile
 ===================================================================
---- linux-2.6.25-rc3.orig/fs/ext4/Makefile	2008-02-24 13:25:54.000000000 -0800
-+++ linux-2.6.25-rc3/fs/ext4/Makefile	2008-02-29 09:50:59.000000000 -0800
+--- linux-2.6.25-rc3.orig/fs/ext4/Makefile	2008-03-03 11:45:57.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/Makefile	2008-03-03 15:53:25.000000000 -0800
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -88,8 +87,8 @@ Index: linux-2.6.25-rc3/fs/ext4/Makefile
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
 Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.25-rc3.orig/include/linux/ext4_fs.h	2008-02-29 09:46:30.000000000 -0800
-+++ linux-2.6.25-rc3/include/linux/ext4_fs.h	2008-02-29 09:50:59.000000000 -0800
+--- linux-2.6.25-rc3.orig/include/linux/ext4_fs.h	2008-03-03 15:52:57.000000000 -0800
++++ linux-2.6.25-rc3/include/linux/ext4_fs.h	2008-03-03 15:53:25.000000000 -0800
 @@ -95,6 +95,7 @@ struct ext4_allocation_request {
  	unsigned long len;
  	/* flags. see above EXT4_MB_HINT_* */
@@ -219,8 +218,8 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
  #endif	/* _LINUX_EXT4_FS_H */
 Index: linux-2.6.25-rc3/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.25-rc3.orig/include/linux/ext4_fs_extents.h	2008-02-24 13:25:54.000000000 -0800
-+++ linux-2.6.25-rc3/include/linux/ext4_fs_extents.h	2008-02-29 09:55:11.000000000 -0800
+--- linux-2.6.25-rc3.orig/include/linux/ext4_fs_extents.h	2008-03-03 15:52:02.000000000 -0800
++++ linux-2.6.25-rc3/include/linux/ext4_fs_extents.h	2008-03-03 15:54:53.000000000 -0800
 @@ -124,6 +124,19 @@ struct ext4_ext_path {
  #define EXT4_EXT_CACHE_GAP	1
  #define EXT4_EXT_CACHE_EXTENT	2
@@ -241,10 +240,10 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs_extents.h
  
  #define EXT_MAX_BLOCK	0xffffffff
  
-@@ -227,5 +240,15 @@ extern int ext4_ext_search_left(struct i
- 						ext4_lblk_t *, ext4_fsblk_t *);
+@@ -228,5 +241,15 @@ extern int ext4_ext_search_left(struct i
  extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
  						ext4_lblk_t *, ext4_fsblk_t *);
+ extern void ext4_ext_drop_refs(struct ext4_ext_path *);
 +extern ext4_fsblk_t ext_pblock(struct ext4_extent *ex);
 +extern void ext4_ext_drop_refs(struct ext4_ext_path *path);
 +extern ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
@@ -257,16 +256,3 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs_extents.h
 +
  #endif /* _LINUX_EXT4_EXTENTS */
  
-Index: linux-2.6.25-rc3/fs/ext4/extents.c
-===================================================================
---- linux-2.6.25-rc3.orig/fs/ext4/extents.c	2008-02-29 09:58:19.000000000 -0800
-+++ linux-2.6.25-rc3/fs/ext4/extents.c	2008-02-29 09:58:31.000000000 -0800
-@@ -349,7 +349,7 @@ static void ext4_ext_show_leaf(struct in
- #define ext4_ext_show_leaf(inode,path)
- #endif
- 
--static void ext4_ext_drop_refs(struct ext4_ext_path *path)
-+void ext4_ext_drop_refs(struct ext4_ext_path *path)
- {
- 	int depth = path->p_depth;
- 	int i;
