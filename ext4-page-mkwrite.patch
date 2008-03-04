@@ -1,0 +1,91 @@
+ext4: Use page_mkwrite vma_operations to get mmap write notification.
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+We would like to get notified when we are doing a write on mmap section.
+This is needed with respect to preallocated area. We split the preallocated
+area into initialzed extent and uninitialzed extent in the call back. This
+let us handle ENOSPC better. Otherwise we get ENOSPC in the writepage and
+that would result in data loss. The changes are also needed to handle ENOSPC
+when writing to an mmap section of files with holes.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/file.c          |   19 ++++++++++++++++++-
+ fs/ext4/inode.c         |   15 +++++++++++++++
+ include/linux/ext4_fs.h |    1 +
+ 3 files changed, 34 insertions(+), 1 deletion(-)
+
+Index: linux-2.6.25-rc3/fs/ext4/file.c
+===================================================================
+--- linux-2.6.25-rc3.orig/fs/ext4/file.c	2008-03-04 11:51:33.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/file.c	2008-03-04 11:52:58.000000000 -0800
+@@ -123,6 +123,23 @@ force_commit:
+ 	return ret;
+ }
+ 
++static struct vm_operations_struct ext4_file_vm_ops = {
++	.fault		= filemap_fault,
++	.page_mkwrite   = ext4_page_mkwrite,
++};
++
++static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
++{
++	struct address_space *mapping = file->f_mapping;
++
++	if (!mapping->a_ops->readpage)
++		return -ENOEXEC;
++	file_accessed(file);
++	vma->vm_ops = &ext4_file_vm_ops;
++	vma->vm_flags |= VM_CAN_NONLINEAR;
++	return 0;
++}
++
+ const struct file_operations ext4_file_operations = {
+ 	.llseek		= generic_file_llseek,
+ 	.read		= do_sync_read,
+@@ -133,7 +150,7 @@ const struct file_operations ext4_file_o
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= ext4_compat_ioctl,
+ #endif
+-	.mmap		= generic_file_mmap,
++	.mmap		= ext4_file_mmap,
+ 	.open		= generic_file_open,
+ 	.release	= ext4_release_file,
+ 	.fsync		= ext4_sync_file,
+Index: linux-2.6.25-rc3/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.25-rc3.orig/fs/ext4/inode.c	2008-03-04 11:51:33.000000000 -0800
++++ linux-2.6.25-rc3/fs/ext4/inode.c	2008-03-04 11:52:58.000000000 -0800
+@@ -3493,3 +3493,18 @@ int ext4_change_inode_journal_flag(struc
+ 
+ 	return err;
+ }
++
++int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page)
++{
++	/*
++	 * if ext4_get_block resulted in a split of an uninitialized extent,
++	 * in file system full case, we will have to take the journal write
++	 * access and zero out the page. The journal handle get initialized
++	 * in ext4_get_block.
++	 */
++	/* FIXME!! should we take inode->i_mutex ? Currently we can't because
++	 * it has a circular locking dependency with DIO. But migrate expect
++	 * i_mutex to ensure no i_data changes
++	 */
++	return block_page_mkwrite(vma, page, ext4_get_block);
++}
+Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.25-rc3.orig/include/linux/ext4_fs.h	2008-03-04 11:51:34.000000000 -0800
++++ linux-2.6.25-rc3/include/linux/ext4_fs.h	2008-03-04 11:52:58.000000000 -0800
+@@ -1059,6 +1059,7 @@ extern void ext4_set_aops(struct inode *
+ extern int ext4_writepage_trans_blocks(struct inode *);
+ extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
+ 		struct address_space *mapping, loff_t from);
++extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
+ 
+ /* ioctl.c */
+ extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
