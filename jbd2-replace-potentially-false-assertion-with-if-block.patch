@@ -1,0 +1,38 @@
+jbd2: replace potentially false assertion with if block
+From: "Duane Griffin" <duaneg@dghda.com>
+
+If an error occurs during jbd2 cache initialisation it is possible for the
+journal_head_cache to be NULL when jbd2_journal_destroy_journal_head_cache is
+called.  Replace the J_ASSERT with an if block to handle the situation
+correctly.
+
+Note that even with this fix things will break badly if jbd2 is statically
+compiled in and cache initialisation fails.
+
+Signed-off-by: Duane Griffin <duaneg@dghda.com>
+Cc: <linux-ext4@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+
+ fs/jbd2/journal.c |    7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+Index: linux-2.6.25-rc4/fs/jbd2/journal.c
+===================================================================
+--- linux-2.6.25-rc4.orig/fs/jbd2/journal.c	2008-03-07 15:26:13.000000000 -0800
++++ linux-2.6.25-rc4/fs/jbd2/journal.c	2008-03-07 15:26:15.000000000 -0800
+@@ -1986,9 +1986,10 @@ static int journal_init_jbd2_journal_hea
+ 
+ static void jbd2_journal_destroy_jbd2_journal_head_cache(void)
+ {
+-	J_ASSERT(jbd2_journal_head_cache != NULL);
+-	kmem_cache_destroy(jbd2_journal_head_cache);
+-	jbd2_journal_head_cache = NULL;
++	if (jbd2_journal_head_cache) {
++		kmem_cache_destroy(jbd2_journal_head_cache);
++		jbd2_journal_head_cache = NULL;
++	}
+ }
+ 
+ /*

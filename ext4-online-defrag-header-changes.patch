@@ -17,23 +17,8 @@ If there is no contiguous free blocks in the filesystem,
 the other files are moved to make sufficient space to allocate
 contiguous blocks for the target file.
 
-Current status:
-These patches are at the experimental stage so they have some
-items to improve. But these are worth enough to examine my trial.
-
-Dependencies:
-My patches depend on the multi-block allocation in ext4 patch queue.
-
-Outstanding issues:
-Nothing for the moment.
-
-Next steps:
-- Make carry out movement of data as atomic transaction.
 
 Summary of patches:
-*These patches are applied on the top of
- ext4 git tree(linux-2.6.24-rc5).
-http://repo.or.cz/r/ext4-patch-queue.git
 
 [PATCH 1/5] ext4 online defrag header file changes
 - Header file changes used by online defrag.
@@ -63,21 +48,18 @@ o Defrag for all files on ext4.
 
 Header file changes used by online defrag.
 
-Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
-Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
+--
+ fs/ext4/Makefile                |    2 +-
+ include/linux/ext4_fs.h         |   68 +++++++++++++++++++++++++++++++++++++++
+ include/linux/ext4_fs_extents.h |   10 ++++++
+ 3 files changed, 79 insertions(+), 1 deletions(-)
 
----
----
- fs/ext4/Makefile                |    2 -
- include/linux/ext4_fs.h         |   71 ++++++++++++++++++++++++++++++++++++++++
- include/linux/ext4_fs_extents.h |   23 ++++++++++++
- 3 files changed, 95 insertions(+), 1 deletion(-)
-
-Index: linux-2.6.25-rc3/fs/ext4/Makefile
-===================================================================
---- linux-2.6.25-rc3.orig/fs/ext4/Makefile	2008-03-03 11:45:57.000000000 -0800
-+++ linux-2.6.25-rc3/fs/ext4/Makefile	2008-03-03 15:53:25.000000000 -0800
+diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
+index ac6fa8c..8028102 100644
+--- a/fs/ext4/Makefile
++++ b/fs/ext4/Makefile
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -87,10 +69,10 @@ Index: linux-2.6.25-rc3/fs/ext4/Makefile
  
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.25-rc3.orig/include/linux/ext4_fs.h	2008-03-03 15:52:57.000000000 -0800
-+++ linux-2.6.25-rc3/include/linux/ext4_fs.h	2008-03-03 15:53:25.000000000 -0800
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index 893182e..03b4154 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
 @@ -95,6 +95,7 @@ struct ext4_allocation_request {
  	unsigned long len;
  	/* flags. see above EXT4_MB_HINT_* */
@@ -99,13 +81,10 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
  };
  
  /*
-@@ -299,6 +300,17 @@ struct ext4_new_group_data {
+@@ -299,6 +300,14 @@ struct ext4_new_group_data {
  #define EXT4_IOC_GETRSVSZ		_IOR('f', 5, long)
  #define EXT4_IOC_SETRSVSZ		_IOW('f', 6, long)
  #define EXT4_IOC_MIGRATE		_IO('f', 7)
-+#define EXT4_IOC_GET_EXTENTS		_IOR('f', 7, long)
-+#define EXT4_IOC_GET_TREE_DEPTH		_IOR('f', 8, long)
-+#define EXT4_IOC_GET_TREE_STATS		_IOR('f', 9, long)
 +#define EXT4_IOC_FIBMAP			_IOW('f', 9, ext4_fsblk_t)
 +#define EXT4_IOC_DEFRAG		_IOW('f', 10, struct ext4_ext_defrag_data)
 +#define EXT4_IOC_GROUP_INFO	_IOW('f', 11, struct ext4_group_data_info)
@@ -113,11 +92,11 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
 +#define EXT4_IOC_EXTENTS_INFO		_IOW('f', 13, struct ext4_extents_info)
 +#define EXT4_IOC_RESERVE_BLOCK		_IOW('f', 14, struct ext4_extents_info)
 +#define EXT4_IOC_MOVE_VICTIM		_IOW('f', 15, struct ext4_extents_info)
-+#define EXT4_IOC_BLOCK_RELEASE		_IO('f', 16)
++#define EXT4_IOC_BLOCK_RELEASE		_IO('f', 8)
  
  /*
   * ioctl commands in 32 bit emulation
-@@ -316,6 +328,42 @@ struct ext4_new_group_data {
+@@ -316,6 +325,42 @@ struct ext4_new_group_data {
  #define EXT4_IOC32_GETVERSION_OLD	FS_IOC32_GETVERSION
  #define EXT4_IOC32_SETVERSION_OLD	FS_IOC32_SETVERSION
  
@@ -160,7 +139,7 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
  
  /*
   *  Mount options
-@@ -991,6 +1039,17 @@ extern struct ext4_group_desc * ext4_get
+@@ -991,6 +1036,17 @@ extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
  extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
  extern void ext4_init_block_alloc_info(struct inode *);
  extern void ext4_rsv_window_add(struct super_block *sb, struct ext4_reserve_window_node *rsv);
@@ -178,7 +157,7 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
  
  /* dir.c */
  extern int ext4_check_dir_entry(const char *, struct inode *,
-@@ -1000,6 +1059,7 @@ extern int ext4_htree_store_dirent(struc
+@@ -1000,6 +1056,7 @@ extern int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
  				    __u32 minor_hash,
  				    struct ext4_dir_entry_2 *dirent);
  extern void ext4_htree_free_dir_info(struct dir_private_info *p);
@@ -186,7 +165,7 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
  
  /* fsync.c */
  extern int ext4_sync_file (struct file *, struct dentry *, int);
-@@ -1061,6 +1121,8 @@ extern int ext4_writepage_trans_blocks(s
+@@ -1061,6 +1118,8 @@ extern int ext4_writepage_trans_blocks(struct inode *);
  extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
  		struct address_space *mapping, loff_t from);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
@@ -195,22 +174,22 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
  
  /* ioctl.c */
  extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
-@@ -1109,6 +1171,14 @@ extern void ext4_inode_bitmap_set(struct
+@@ -1109,6 +1168,14 @@ extern void ext4_inode_bitmap_set(struct super_block *sb,
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
 +/* extents.c */
 +extern handle_t *ext4_ext_journal_restart(handle_t *handle, int needed);
 +/* defrag.c */
-+extern int ext4_ext_defrag(struct file *filp, ext4_lblk_t block_start,
-+				ext4_lblk_t defrag_size, ext4_fsblk_t goal,
-+				int flag, struct ext4_extent_data *ext);
-+extern int ext4_ext_ioctl(struct inode *, struct file *, unsigned int,
++extern int ext4_defrag(struct file *filp, ext4_lblk_t block_start,
++			ext4_lblk_t defrag_size, ext4_fsblk_t goal,
++			int flag, struct ext4_extent_data *ext);
++extern int ext4_defrag_ioctl(struct inode *, struct file *, unsigned int,
 +				unsigned long);
  
  static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
  {
-@@ -1226,6 +1296,7 @@ extern int ext4_get_blocks_wrap(handle_t
+@@ -1226,6 +1293,7 @@ extern int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode,
  			sector_t block, unsigned long max_blocks,
  			struct buffer_head *bh, int create,
  			int extend_disksize);
@@ -218,31 +197,11 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs.h
  #endif	/* __KERNEL__ */
  
  #endif	/* _LINUX_EXT4_FS_H */
-Index: linux-2.6.25-rc3/include/linux/ext4_fs_extents.h
-===================================================================
---- linux-2.6.25-rc3.orig/include/linux/ext4_fs_extents.h	2008-03-03 15:52:02.000000000 -0800
-+++ linux-2.6.25-rc3/include/linux/ext4_fs_extents.h	2008-03-03 15:54:53.000000000 -0800
-@@ -124,6 +124,19 @@ struct ext4_ext_path {
- #define EXT4_EXT_CACHE_GAP	1
- #define EXT4_EXT_CACHE_EXTENT	2
- 
-+/*
-+ * to be called by ext4_ext_walk_space()
-+ * negative retcode - error
-+ * positive retcode - signal for ext4_ext_walk_space(), see below
-+ * callback must return valid extent (passed or newly created)
-+ */
-+typedef int (*ext_prepare_callback)(struct inode *, struct ext4_ext_path *,
-+					struct ext4_ext_cache *,
-+					void *);
-+
-+#define EXT_CONTINUE	0
-+#define EXT_BREAK	1
-+#define EXT_REPEAT	2
- 
- #define EXT_MAX_BLOCK	0xffffffff
- 
-@@ -228,5 +241,15 @@ extern int ext4_ext_search_left(struct i
+diff --git a/include/linux/ext4_fs_extents.h b/include/linux/ext4_fs_extents.h
+index 1285c58..6fb42b1 100644
+--- a/include/linux/ext4_fs_extents.h
++++ b/include/linux/ext4_fs_extents.h
+@@ -228,5 +228,15 @@ extern int ext4_ext_search_left(struct inode *, struct ext4_ext_path *,
  extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
  						ext4_lblk_t *, ext4_fsblk_t *);
  extern void ext4_ext_drop_refs(struct ext4_ext_path *);
@@ -257,4 +216,3 @@ Index: linux-2.6.25-rc3/include/linux/ext4_fs_extents.h
 +extern ext4_lblk_t ext4_ext_next_allocated_block(struct ext4_ext_path *path);
 +
  #endif /* _LINUX_EXT4_EXTENTS */
- 
