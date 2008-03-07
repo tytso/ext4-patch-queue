@@ -1,0 +1,134 @@
+jdb2: replace remaining __FUNCTION__ occurrences
+
+From: Harvey Harrison <harvey.harrison@gmail.com>
+
+__FUNCTION__ is gcc-specific, use __func__
+
+Signed-off-by: Harvey Harrison <harvey.harrison@gmail.com>
+Cc: <linux-ext4@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+
+ fs/jbd2/journal.c     |   18 +++++++++---------
+ fs/jbd2/revoke.c      |    2 +-
+ fs/jbd2/transaction.c |    4 ++--
+ 3 files changed, 12 insertions(+), 12 deletions(-)
+
+Index: linux-2.6.25-rc4/fs/jbd2/journal.c
+===================================================================
+--- linux-2.6.25-rc4.orig/fs/jbd2/journal.c	2008-03-07 15:51:18.000000000 -0800
++++ linux-2.6.25-rc4/fs/jbd2/journal.c	2008-03-07 15:51:53.000000000 -0800
+@@ -535,7 +535,7 @@ int jbd2_log_wait_commit(journal_t *jour
+ 	if (!tid_geq(journal->j_commit_request, tid)) {
+ 		printk(KERN_EMERG
+ 		       "%s: error: j_commit_request=%d, tid=%d\n",
+-		       __FUNCTION__, journal->j_commit_request, tid);
++		       __func__, journal->j_commit_request, tid);
+ 	}
+ 	spin_unlock(&journal->j_state_lock);
+ #endif
+@@ -600,7 +600,7 @@ int jbd2_journal_bmap(journal_t *journal
+ 
+ 			printk(KERN_ALERT "%s: journal block not found "
+ 					"at offset %lu on %s\n",
+-				__FUNCTION__,
++				__func__,
+ 				blocknr,
+ 				bdevname(journal->j_dev, b));
+ 			err = -EIO;
+@@ -1037,7 +1037,7 @@ journal_t * jbd2_journal_init_dev(struct
+ 	journal->j_wbuf = kmalloc(n * sizeof(struct buffer_head*), GFP_KERNEL);
+ 	if (!journal->j_wbuf) {
+ 		printk(KERN_ERR "%s: Cant allocate bhs for commit thread\n",
+-			__FUNCTION__);
++			__func__);
+ 		kfree(journal);
+ 		journal = NULL;
+ 		goto out;
+@@ -1093,7 +1093,7 @@ journal_t * jbd2_journal_init_inode (str
+ 	journal->j_wbuf = kmalloc(n * sizeof(struct buffer_head*), GFP_KERNEL);
+ 	if (!journal->j_wbuf) {
+ 		printk(KERN_ERR "%s: Cant allocate bhs for commit thread\n",
+-			__FUNCTION__);
++			__func__);
+ 		kfree(journal);
+ 		return NULL;
+ 	}
+@@ -1102,7 +1102,7 @@ journal_t * jbd2_journal_init_inode (str
+ 	/* If that failed, give up */
+ 	if (err) {
+ 		printk(KERN_ERR "%s: Cannnot locate journal superblock\n",
+-		       __FUNCTION__);
++		       __func__);
+ 		kfree(journal);
+ 		return NULL;
+ 	}
+@@ -1188,7 +1188,7 @@ int jbd2_journal_create(journal_t *journ
+ 		 */
+ 		printk(KERN_EMERG
+ 		       "%s: creation of journal on external device!\n",
+-		       __FUNCTION__);
++		       __func__);
+ 		BUG();
+ 	}
+ 
+@@ -2008,7 +2008,7 @@ static struct journal_head *journal_allo
+ 		jbd_debug(1, "out of memory for journal_head\n");
+ 		if (time_after(jiffies, last_warning + 5*HZ)) {
+ 			printk(KERN_NOTICE "ENOMEM in %s, retrying.\n",
+-			       __FUNCTION__);
++			       __func__);
+ 			last_warning = jiffies;
+ 		}
+ 		while (!ret) {
+@@ -2145,13 +2145,13 @@ static void __journal_remove_journal_hea
+ 			if (jh->b_frozen_data) {
+ 				printk(KERN_WARNING "%s: freeing "
+ 						"b_frozen_data\n",
+-						__FUNCTION__);
++						__func__);
+ 				jbd2_free(jh->b_frozen_data, bh->b_size);
+ 			}
+ 			if (jh->b_committed_data) {
+ 				printk(KERN_WARNING "%s: freeing "
+ 						"b_committed_data\n",
+-						__FUNCTION__);
++						__func__);
+ 				jbd2_free(jh->b_committed_data, bh->b_size);
+ 			}
+ 			bh->b_private = NULL;
+Index: linux-2.6.25-rc4/fs/jbd2/revoke.c
+===================================================================
+--- linux-2.6.25-rc4.orig/fs/jbd2/revoke.c	2008-03-07 15:25:16.000000000 -0800
++++ linux-2.6.25-rc4/fs/jbd2/revoke.c	2008-03-07 15:51:53.000000000 -0800
+@@ -139,7 +139,7 @@ repeat:
+ oom:
+ 	if (!journal_oom_retry)
+ 		return -ENOMEM;
+-	jbd_debug(1, "ENOMEM in %s, retrying\n", __FUNCTION__);
++	jbd_debug(1, "ENOMEM in %s, retrying\n", __func__);
+ 	yield();
+ 	goto repeat;
+ }
+Index: linux-2.6.25-rc4/fs/jbd2/transaction.c
+===================================================================
+--- linux-2.6.25-rc4.orig/fs/jbd2/transaction.c	2008-03-07 15:24:07.000000000 -0800
++++ linux-2.6.25-rc4/fs/jbd2/transaction.c	2008-03-07 15:51:53.000000000 -0800
+@@ -696,7 +696,7 @@ repeat:
+ 				if (!frozen_buffer) {
+ 					printk(KERN_EMERG
+ 					       "%s: OOM for frozen_buffer\n",
+-					       __FUNCTION__);
++					       __func__);
+ 					JBUFFER_TRACE(jh, "oom!");
+ 					error = -ENOMEM;
+ 					jbd_lock_bh_state(bh);
+@@ -914,7 +914,7 @@ repeat:
+ 		committed_data = jbd2_alloc(jh2bh(jh)->b_size, GFP_NOFS);
+ 		if (!committed_data) {
+ 			printk(KERN_EMERG "%s: No memory for committed data\n",
+-				__FUNCTION__);
++				__func__);
+ 			err = -ENOMEM;
+ 			goto out;
+ 		}
