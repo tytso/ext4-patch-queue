@@ -1,0 +1,32 @@
+ext3: Return EIO if new block is allocated from system zone.
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+If the block allocator gets blocks out of system zone ext3 calls
+ext3_error. But if the file system is mounted with errors=continue
+return with -EIO.
+
+System zone is the block range mapping block bitmap, inode bitmap and inode
+table.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.vnet.ibm.com>
+---
+
+ fs/ext3/balloc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+
+diff --git a/fs/ext3/balloc.c b/fs/ext3/balloc.c
+index da0cb2c..6ce7f7d 100644
+--- a/fs/ext3/balloc.c
++++ b/fs/ext3/balloc.c
+@@ -1642,7 +1642,7 @@ allocated:
+ 			    "Allocating block in system zone - "
+ 			    "blocks from "E3FSBLK", length %lu",
+ 			     ret_block, num);
+-		goto out;
++		goto io_error;
+ 	}
+
+ 	performed_allocation = 1;
