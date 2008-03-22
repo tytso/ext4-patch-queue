@@ -1,0 +1,45 @@
+ext4: Return unwritten buffer head when trying to read from prealloc space.
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+ext4_ext_get_blocks  returns number of blocks allocated with buffer head
+unmapped for a read from prealloc space. This is needed so that delayed
+allocation doesn't do block reservation for prealloc space since the blocks
+are already resevred on disk. Fix ext4_ext_get_blocks to not return greater
+than max_blocks and also mark the buffer head unwritten. Some code path tries
+to read the block if buffer_head is not new and no uptodate. Marking the buffer
+head unwritten avoid this reading.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+
+ fs/ext4/extents.c |   14 +++++++++++++-
+ 1 files changed, 13 insertions(+), 1 deletions(-)
+
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index d6ae40a..edd1bf2 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2600,8 +2600,20 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 			}
+ 			if (create == EXT4_CREATE_UNINITIALIZED_EXT)
+ 				goto out;
+-			if (!create)
++			if (!create) {
++				/*
++				 * We have blocks reserved already. We
++				 * return allocated blocks so that delalloc
++				 * won't do block reservation for us. But
++				 * the buffer head will be unmapped so that
++				 * a read from the block return 0
++				 */
++				if (allocated > max_blocks)
++					allocated = max_blocks;
++				/* mark the buffer unwritten */
++				__set_bit(BH_Unwritten, &bh_result->b_state);
+ 				goto out2;
++			}
+ 
+ 			ret = ext4_ext_convert_to_initialized(handle, inode,
+ 								path, iblock,
