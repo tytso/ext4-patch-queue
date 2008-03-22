@@ -1,0 +1,72 @@
+jbd2: tidy up revoke cache initialisation and destruction
+
+From: "Duane Griffin" <duaneg@dghda.com>
+
+Make revocation cache destruction safe to call if initialisation fails
+partially or entirely. This allows it to be used to cleanup in the case of
+initialisation failure, simplifying that code slightly.
+
+Signed-off-by: Duane Griffin <duaneg@dghda.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+ fs/jbd2/revoke.c |   34 +++++++++++++++++++---------------
+ 1 file changed, 19 insertions(+), 15 deletions(-)
+
+Index: linux-2.6.25-rc6/fs/jbd2/revoke.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/jbd2/revoke.c	2008-03-21 17:36:27.000000000 -0700
++++ linux-2.6.25-rc6/fs/jbd2/revoke.c	2008-03-21 17:46:54.000000000 -0700
+@@ -167,33 +167,37 @@ static struct jbd2_revoke_record_s *find
+ 	return NULL;
+ }
+ 
++void jbd2_journal_destroy_revoke_caches(void)
++{
++	if (jbd2_revoke_record_cache) {
++		kmem_cache_destroy(jbd2_revoke_record_cache);
++		jbd2_revoke_record_cache = NULL;
++	}
++	if (jbd2_revoke_table_cache) {
++		kmem_cache_destroy(jbd2_revoke_table_cache);
++		jbd2_revoke_table_cache = NULL;
++	}
++}
++
+ int __init jbd2_journal_init_revoke_caches(void)
+ {
++	J_ASSERT(!jbd2_revoke_record_cache);
++	J_ASSERT(!jbd2_revoke_table_cache);
++
+ 	jbd2_revoke_record_cache = kmem_cache_create("jbd2_revoke_record",
+ 					   sizeof(struct jbd2_revoke_record_s),
+ 					   0,
+ 					   SLAB_HWCACHE_ALIGN|SLAB_TEMPORARY,
+ 					   NULL);
+-	if (!jbd2_revoke_record_cache)
+-		return -ENOMEM;
+-
+ 	jbd2_revoke_table_cache = kmem_cache_create("jbd2_revoke_table",
+ 					   sizeof(struct jbd2_revoke_table_s),
+ 					   0, SLAB_TEMPORARY, NULL);
+-	if (!jbd2_revoke_table_cache) {
+-		kmem_cache_destroy(jbd2_revoke_record_cache);
+-		jbd2_revoke_record_cache = NULL;
++	if (jbd2_revoke_table_cache && jbd2_revoke_table_cache) {
++		return 0;
++	} else {
++		jbd2_journal_destroy_revoke_caches();
+ 		return -ENOMEM;
+ 	}
+-	return 0;
+-}
+-
+-void jbd2_journal_destroy_revoke_caches(void)
+-{
+-	kmem_cache_destroy(jbd2_revoke_record_cache);
+-	jbd2_revoke_record_cache = NULL;
+-	kmem_cache_destroy(jbd2_revoke_table_cache);
+-	jbd2_revoke_table_cache = NULL;
+ }
+ 
+ static struct jbd2_revoke_table_s *jbd2_journal_init_revoke_table(int hash_size)
