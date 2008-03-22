@@ -51,15 +51,15 @@ Header file changes used by online defrag.
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 ---
- fs/ext4/Makefile                |    2 +-
- include/linux/ext4_fs.h         |   68 +++++++++++++++++++++++++++++++++++++++
- include/linux/ext4_fs_extents.h |   10 ++++++
- 3 files changed, 79 insertions(+), 1 deletions(-)
+ fs/ext4/Makefile                |    2 -
+ include/linux/ext4_fs.h         |   68 ++++++++++++++++++++++++++++++++++++++++
+ include/linux/ext4_fs_extents.h |   10 +++++
+ 3 files changed, 79 insertions(+), 1 deletion(-)
 
-diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
-index ac6fa8c..8028102 100644
---- a/fs/ext4/Makefile
-+++ b/fs/ext4/Makefile
+Index: linux-2.6.25-rc6/fs/ext4/Makefile
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/Makefile	2008-03-21 17:06:21.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/Makefile	2008-03-21 17:06:40.000000000 -0700
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -69,10 +69,10 @@ index ac6fa8c..8028102 100644
  
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 893182e..03b4154 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
+Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.25-rc6.orig/include/linux/ext4_fs.h	2008-03-21 17:06:21.000000000 -0700
++++ linux-2.6.25-rc6/include/linux/ext4_fs.h	2008-03-21 17:06:40.000000000 -0700
 @@ -95,6 +95,7 @@ struct ext4_allocation_request {
  	unsigned long len;
  	/* flags. see above EXT4_MB_HINT_* */
@@ -81,7 +81,7 @@ index 893182e..03b4154 100644
  };
  
  /*
-@@ -299,6 +300,14 @@ struct ext4_new_group_data {
+@@ -300,6 +301,14 @@ struct ext4_new_group_data {
  #define EXT4_IOC_GETRSVSZ		_IOR('f', 5, long)
  #define EXT4_IOC_SETRSVSZ		_IOW('f', 6, long)
  #define EXT4_IOC_MIGRATE		_IO('f', 7)
@@ -96,7 +96,7 @@ index 893182e..03b4154 100644
  
  /*
   * ioctl commands in 32 bit emulation
-@@ -316,6 +325,42 @@ struct ext4_new_group_data {
+@@ -317,6 +326,42 @@ struct ext4_new_group_data {
  #define EXT4_IOC32_GETVERSION_OLD	FS_IOC32_GETVERSION
  #define EXT4_IOC32_SETVERSION_OLD	FS_IOC32_SETVERSION
  
@@ -139,7 +139,7 @@ index 893182e..03b4154 100644
  
  /*
   *  Mount options
-@@ -991,6 +1036,17 @@ extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
+@@ -992,6 +1037,17 @@ extern struct ext4_group_desc * ext4_get
  extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
  extern void ext4_init_block_alloc_info(struct inode *);
  extern void ext4_rsv_window_add(struct super_block *sb, struct ext4_reserve_window_node *rsv);
@@ -157,7 +157,7 @@ index 893182e..03b4154 100644
  
  /* dir.c */
  extern int ext4_check_dir_entry(const char *, struct inode *,
-@@ -1000,6 +1056,7 @@ extern int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
+@@ -1001,6 +1057,7 @@ extern int ext4_htree_store_dirent(struc
  				    __u32 minor_hash,
  				    struct ext4_dir_entry_2 *dirent);
  extern void ext4_htree_free_dir_info(struct dir_private_info *p);
@@ -165,7 +165,7 @@ index 893182e..03b4154 100644
  
  /* fsync.c */
  extern int ext4_sync_file (struct file *, struct dentry *, int);
-@@ -1061,6 +1118,8 @@ extern int ext4_writepage_trans_blocks(struct inode *);
+@@ -1062,6 +1119,8 @@ extern int ext4_writepage_trans_blocks(s
  extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
  		struct address_space *mapping, loff_t from);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
@@ -174,7 +174,7 @@ index 893182e..03b4154 100644
  
  /* ioctl.c */
  extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
-@@ -1109,6 +1168,14 @@ extern void ext4_inode_bitmap_set(struct super_block *sb,
+@@ -1110,6 +1169,14 @@ extern void ext4_inode_bitmap_set(struct
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
@@ -189,7 +189,7 @@ index 893182e..03b4154 100644
  
  static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
  {
-@@ -1226,6 +1293,7 @@ extern int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode,
+@@ -1227,6 +1294,7 @@ extern int ext4_get_blocks_wrap(handle_t
  			sector_t block, unsigned long max_blocks,
  			struct buffer_head *bh, int create,
  			int extend_disksize);
@@ -197,11 +197,11 @@ index 893182e..03b4154 100644
  #endif	/* __KERNEL__ */
  
  #endif	/* _LINUX_EXT4_FS_H */
-diff --git a/include/linux/ext4_fs_extents.h b/include/linux/ext4_fs_extents.h
-index 1285c58..6fb42b1 100644
---- a/include/linux/ext4_fs_extents.h
-+++ b/include/linux/ext4_fs_extents.h
-@@ -228,5 +228,15 @@ extern int ext4_ext_search_left(struct inode *, struct ext4_ext_path *,
+Index: linux-2.6.25-rc6/include/linux/ext4_fs_extents.h
+===================================================================
+--- linux-2.6.25-rc6.orig/include/linux/ext4_fs_extents.h	2008-03-21 17:06:21.000000000 -0700
++++ linux-2.6.25-rc6/include/linux/ext4_fs_extents.h	2008-03-21 17:06:40.000000000 -0700
+@@ -228,5 +228,15 @@ extern int ext4_ext_search_left(struct i
  extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
  						ext4_lblk_t *, ext4_fsblk_t *);
  extern void ext4_ext_drop_refs(struct ext4_ext_path *);

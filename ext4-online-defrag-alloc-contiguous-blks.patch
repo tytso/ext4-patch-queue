@@ -8,18 +8,17 @@ and allocate them for the temporary inode.
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 --
- fs/ext4/defrag.c  |  684 +++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/extents.c |    8 +-
- fs/ext4/inode.c   |    2 +-
- fs/ext4/ioctl.c   |   10 +
- fs/ext4/mballoc.c |    6 +
+ fs/ext4/defrag.c  |  684 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/extents.c |    8 
+ fs/ext4/inode.c   |    2 
+ fs/ext4/ioctl.c   |   10 
+ fs/ext4/mballoc.c |    6 
  5 files changed, 705 insertions(+), 5 deletions(-)
 
-diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
-new file mode 100644
-index 0000000..6121705
---- /dev/null
-+++ b/fs/ext4/defrag.c
+Index: linux-2.6.25-rc6/fs/ext4/defrag.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-2.6.25-rc6/fs/ext4/defrag.c	2008-03-21 17:06:44.000000000 -0700
 @@ -0,0 +1,684 @@
 +/*
 + * Copyright (c) 2008, NEC Software Tohoku, Ltd.
@@ -705,10 +704,10 @@ index 0000000..6121705
 +
 +	return (ret ? ret : defrag_size);
 +}
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 39d5315..f8828ff 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
+Index: linux-2.6.25-rc6/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/extents.c	2008-03-21 17:06:21.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/extents.c	2008-03-21 17:06:44.000000000 -0700
 @@ -48,7 +48,7 @@
   * ext_pblock:
   * combine low and high parts of physical block number into ext4_fsblk_t
@@ -718,7 +717,7 @@ index 39d5315..f8828ff 100644
  {
  	ext4_fsblk_t block;
  
-@@ -92,7 +92,7 @@ static void ext4_idx_store_pblock(struct ext4_extent_idx *ix, ext4_fsblk_t pb)
+@@ -92,7 +92,7 @@ static void ext4_idx_store_pblock(struct
  	ix->ei_leaf_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1) & 0xffff);
  }
  
@@ -727,7 +726,7 @@ index 39d5315..f8828ff 100644
  {
  	int err;
  
-@@ -142,7 +142,7 @@ static int ext4_ext_dirty(handle_t *handle, struct inode *inode,
+@@ -142,7 +142,7 @@ static int ext4_ext_dirty(handle_t *hand
  	return err;
  }
  
@@ -736,7 +735,7 @@ index 39d5315..f8828ff 100644
  			      struct ext4_ext_path *path,
  			      ext4_lblk_t block)
  {
-@@ -1956,7 +1956,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path *path)
+@@ -1956,7 +1956,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
  	return 1;
  }
  
@@ -745,11 +744,11 @@ index 39d5315..f8828ff 100644
  {
  	struct super_block *sb = inode->i_sb;
  	int depth = ext_depth(inode);
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 63e3cff..0f252db 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -1558,7 +1558,7 @@ out:
+Index: linux-2.6.25-rc6/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/inode.c	2008-03-21 17:06:33.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/inode.c	2008-03-21 17:06:44.000000000 -0700
+@@ -1568,7 +1568,7 @@ out:
   * So, if we see any bmap calls here on a modified, data-journaled file,
   * take extra steps to flush any blocks which might be in the cache.
   */
@@ -758,10 +757,10 @@ index 63e3cff..0f252db 100644
  {
  	struct inode *inode = mapping->host;
  	journal_t *journal;
-diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 53a010b..ed3876b 100644
---- a/fs/ext4/ioctl.c
-+++ b/fs/ext4/ioctl.c
+Index: linux-2.6.25-rc6/fs/ext4/ioctl.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/ioctl.c	2008-03-21 17:06:21.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/ioctl.c	2008-03-21 17:06:44.000000000 -0700
 @@ -231,6 +231,16 @@ flags_err:
  
  		return err;
@@ -779,10 +778,10 @@ index 53a010b..ed3876b 100644
  	case EXT4_IOC_GROUP_ADD: {
  		struct ext4_new_group_data input;
  		struct super_block *sb = inode->i_sb;
-diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index ad6bf37..b07f34f 100644
---- a/fs/ext4/mballoc.c
-+++ b/fs/ext4/mballoc.c
+Index: linux-2.6.25-rc6/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/mballoc.c	2008-03-21 17:06:21.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/mballoc.c	2008-03-21 17:06:44.000000000 -0700
 @@ -528,6 +528,7 @@ struct ext4_allocation_context {
  	struct page *ac_buddy_page;
  	struct ext4_prealloc_space *ac_pa;
@@ -802,7 +801,7 @@ index ad6bf37..b07f34f 100644
  			/* quick check to skip empty groups */
  			grp = ext4_get_group_info(ac->ac_sb, group);
  			if (grp->bb_free == 0)
-@@ -4220,6 +4225,7 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
+@@ -4222,6 +4227,7 @@ ext4_mb_initialize_context(struct ext4_a
  	ac->ac_bitmap_page = NULL;
  	ac->ac_buddy_page = NULL;
  	ac->ac_lg = NULL;

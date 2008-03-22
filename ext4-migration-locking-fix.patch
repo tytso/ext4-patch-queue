@@ -19,34 +19,34 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Acked-by: Jan Kara <jack@suse.cz>
 ---
 
- fs/ext4/inode.c         |   17 ++++++++++++-----
- fs/ext4/migrate.c       |   28 +++++++++++++++++++++++++---
+ fs/ext4/inode.c         |   13 ++++++++++++-
+ fs/ext4/migrate.c       |   39 ++++++++++++++++++++++++++++++++++-----
  include/linux/ext4_fs.h |    1 +
- 3 files changed, 38 insertions(+), 8 deletions(-)
+ 3 files changed, 47 insertions(+), 6 deletions(-)
 
 
-Index: linux-2.6.25-rc5/fs/ext4/inode.c
-===================================================================
---- linux-2.6.25-rc5.orig/fs/ext4/inode.c	2008-03-13 13:14:06.000000000 -0700
-+++ linux-2.6.25-rc5/fs/ext4/inode.c	2008-03-13 15:40:08.000000000 -0700
-@@ -986,6 +986,16 @@ int ext4_get_blocks_wrap(handle_t *handl
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index a52904b..9587226 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -985,6 +985,16 @@ int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+ 	} else {
  		retval = ext4_get_blocks_handle(handle, inode, block,
  				max_blocks, bh, create, extend_disksize);
- 	}
 +
-+	if (retval > 0) {
-+		/*
-+		 * We allocated new blocks which will result in i_data
-+		 * format to change.  Force the migrate to fail by
-+		 * clearing migrate flags
-+		 */
-+		EXT4_I(inode)->i_flags = EXT4_I(inode)->i_flags &
++		if (retval > 0 && buffer_new(bh)) {
++			/*
++			 * We allocated new blocks which will result in
++			 * i_data format to change.  Force the migrate
++			 * to fail by * clearing migrate flags
++			 */
++			EXT4_I(inode)->i_flags = EXT4_I(inode)->i_flags &
 +							~EXT4_EXT_MIGRATE;
-+	}
++		}
+ 	}
  	up_write((&EXT4_I(inode)->i_data_sem));
  	return retval;
- }
-@@ -2962,7 +2972,8 @@ static int ext4_do_update_inode(handle_t
+@@ -2962,7 +2972,8 @@ static int ext4_do_update_inode(handle_t *handle,
  	if (ext4_inode_blocks_set(handle, raw_inode, ei))
  		goto out_brelse;
  	raw_inode->i_dtime = cpu_to_le32(ei->i_dtime);
@@ -56,21 +56,11 @@ Index: linux-2.6.25-rc5/fs/ext4/inode.c
  	if (EXT4_SB(inode->i_sb)->s_es->s_creator_os !=
  	    cpu_to_le32(EXT4_OS_HURD))
  		raw_inode->i_file_acl_high =
-@@ -3502,9 +3513,5 @@ int ext4_page_mkwrite(struct vm_area_str
- 	 * access and zero out the page. The journal handle get initialized
- 	 * in ext4_get_block.
- 	 */
--	/* FIXME!! should we take inode->i_mutex ? Currently we can't because
--	 * it has a circular locking dependency with DIO. But migrate expect
--	 * i_mutex to ensure no i_data changes
--	 */
- 	return block_page_mkwrite(vma, page, ext4_get_block);
- }
-Index: linux-2.6.25-rc5/fs/ext4/migrate.c
-===================================================================
---- linux-2.6.25-rc5.orig/fs/ext4/migrate.c	2008-03-09 22:22:27.000000000 -0700
-+++ linux-2.6.25-rc5/fs/ext4/migrate.c	2008-03-13 15:40:08.000000000 -0700
-@@ -327,7 +327,7 @@ static int free_ind_block(handle_t *hand
+diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
+index 5c1e27d..6285ce1 100644
+--- a/fs/ext4/migrate.c
++++ b/fs/ext4/migrate.c
+@@ -327,7 +327,7 @@ static int free_ind_block(handle_t *handle, struct inode *inode, __le32 *i_data)
  }
  
  static int ext4_ext_swap_inode_data(handle_t *handle, struct inode *inode,
@@ -79,7 +69,16 @@ Index: linux-2.6.25-rc5/fs/ext4/migrate.c
  {
  	int retval;
  	__le32	i_data[3];
-@@ -351,6 +351,18 @@ static int ext4_ext_swap_inode_data(hand
+@@ -339,7 +339,7 @@ static int ext4_ext_swap_inode_data(handle_t *handle, struct inode *inode,
+ 	 * i_data field of the original inode
+ 	 */
+ 	retval = ext4_journal_extend(handle, 1);
+-	if (retval != 0) {
++	if (retval) {
+ 		retval = ext4_journal_restart(handle, 1);
+ 		if (retval)
+ 			goto err_out;
+@@ -351,6 +351,18 @@ static int ext4_ext_swap_inode_data(handle_t *handle, struct inode *inode,
  
  	down_write(&EXT4_I(inode)->i_data_sem);
  	/*
@@ -98,7 +97,7 @@ Index: linux-2.6.25-rc5/fs/ext4/migrate.c
  	 * We have the extent map build with the tmp inode.
  	 * Now copy the i_data across
  	 */
-@@ -508,6 +520,17 @@ int ext4_ext_migrate(struct inode *inode
+@@ -508,6 +520,17 @@ int ext4_ext_migrate(struct inode *inode, struct file *filp,
  	 * switch the inode format to prevent read.
  	 */
  	mutex_lock(&(inode->i_mutex));
@@ -116,20 +115,29 @@ Index: linux-2.6.25-rc5/fs/ext4/migrate.c
  	handle = ext4_journal_start(inode, 1);
  
  	ei = EXT4_I(inode);
-@@ -560,8 +583,7 @@ err_out:
+@@ -559,9 +582,15 @@ err_out:
+ 		 * tmp_inode
  		 */
  		free_ext_block(handle, tmp_inode);
- 	else
+-	else
 -		retval = ext4_ext_swap_inode_data(handle, inode,
 -							tmp_inode);
++	else {
 +		retval = ext4_ext_swap_inode_data(handle, inode, tmp_inode);
++		if (retval)
++			/*
++			 * if we fail to swap inode data free the extent
++			 * details of the tmp inode
++			 */
++			free_ext_block(handle, tmp_inode);
++	}
  
  	/* We mark the tmp_inode dirty via ext4_ext_tree_init. */
  	if (ext4_journal_extend(handle, 1) != 0)
-Index: linux-2.6.25-rc5/include/linux/ext4_fs.h
-===================================================================
---- linux-2.6.25-rc5.orig/include/linux/ext4_fs.h	2008-03-13 13:14:06.000000000 -0700
-+++ linux-2.6.25-rc5/include/linux/ext4_fs.h	2008-03-13 15:40:08.000000000 -0700
+diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
+index 8f5a563..2d15f16 100644
+--- a/include/linux/ext4_fs.h
++++ b/include/linux/ext4_fs.h
 @@ -240,6 +240,7 @@ struct flex_groups {
  #define EXT4_TOPDIR_FL			0x00020000 /* Top of directory hierarchies*/
  #define EXT4_HUGE_FILE_FL               0x00040000 /* Set to each huge file */
