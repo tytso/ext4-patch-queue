@@ -14,42 +14,43 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
 
  fs/ext4/balloc.c  |    2 +-
- fs/ext4/mballoc.c |   17 +++++++++++++----
- 2 files changed, 14 insertions(+), 5 deletions(-)
+ fs/ext4/mballoc.c |   18 +++++++++++++-----
+ 2 files changed, 14 insertions(+), 6 deletions(-)
 
 
-diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 1e6c5dc..4a8cb53 100644
---- a/fs/ext4/balloc.c
-+++ b/fs/ext4/balloc.c
-@@ -1779,7 +1779,7 @@ allocated:
+Index: linux-2.6.25-rc6/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/balloc.c	2008-03-24 14:24:15.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/balloc.c	2008-03-24 14:34:49.000000000 -0700
+@@ -1772,7 +1772,7 @@ allocated:
  			    "Allocating block in system zone - "
  			    "blocks from %llu, length %lu",
  			     ret_block, num);
 -		goto out;
 +		goto io_error;
  	}
-
+ 
  	performed_allocation = 1;
-diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 340daae..2eb8bd2 100644
---- a/fs/ext4/mballoc.c
-+++ b/fs/ext4/mballoc.c
-@@ -3079,9 +3079,11 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+Index: linux-2.6.25-rc6/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/mballoc.c	2008-03-24 14:24:15.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/mballoc.c	2008-03-24 14:35:45.000000000 -0700
+@@ -3077,10 +3077,11 @@ static int ext4_mb_mark_diskspace_used(s
+ 			block == ext4_inode_bitmap(sb, gdp) ||
  			in_range(block, ext4_inode_table(sb, gdp),
  				EXT4_SB(sb)->s_itb_per_group)) {
-
+-
 +		err = -EIO;
- 		ext4_error(sb, __func__,
+ 		ext4_error(sb, __FUNCTION__,
  			   "Allocating block in system zone - block = %llu",
  			   block);
 +		goto out_err;
  	}
  #ifdef AGGRESSIVE_CHECK
  	{
-@@ -4345,10 +4347,15 @@ repeat:
+@@ -4352,10 +4353,15 @@ repeat:
  	}
-
+ 
  	if (likely(ac->ac_status == AC_STATUS_FOUND)) {
 -		ext4_mb_mark_diskspace_used(ac, handle);
 -		*errp = 0;
@@ -67,12 +68,12 @@ index 340daae..2eb8bd2 100644
  	} else {
  		freed  = ext4_mb_discard_preallocations(sb, ac->ac_o_ex.fe_len);
  		if (freed)
-@@ -4535,6 +4542,8 @@ do_more:
- 		ext4_error(sb, __func__,
+@@ -4541,6 +4547,8 @@ do_more:
+ 		ext4_error(sb, __FUNCTION__,
  			   "Freeing blocks in system zone - "
  			   "Block = %lu, count = %lu", block, count);
 +		/* err = 0. ext4_std_error should be a no op */
 +		goto error_return;
  	}
-
+ 
  	BUFFER_TRACE(bitmap_bh, "getting write access");

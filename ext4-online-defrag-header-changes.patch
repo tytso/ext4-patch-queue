@@ -58,8 +58,8 @@ Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 
 Index: linux-2.6.25-rc6/fs/ext4/Makefile
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/Makefile	2008-03-21 17:06:21.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/Makefile	2008-03-21 17:06:40.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/Makefile	2008-03-24 14:24:10.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/Makefile	2008-03-24 14:39:13.000000000 -0700
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -71,9 +71,9 @@ Index: linux-2.6.25-rc6/fs/ext4/Makefile
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
 Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.25-rc6.orig/include/linux/ext4_fs.h	2008-03-21 17:06:21.000000000 -0700
-+++ linux-2.6.25-rc6/include/linux/ext4_fs.h	2008-03-21 17:06:40.000000000 -0700
-@@ -95,6 +95,7 @@ struct ext4_allocation_request {
+--- linux-2.6.25-rc6.orig/include/linux/ext4_fs.h	2008-03-24 14:39:02.000000000 -0700
++++ linux-2.6.25-rc6/include/linux/ext4_fs.h	2008-03-24 14:39:13.000000000 -0700
+@@ -94,6 +94,7 @@ struct ext4_allocation_request {
  	unsigned long len;
  	/* flags. see above EXT4_MB_HINT_* */
  	unsigned long flags;
@@ -81,7 +81,7 @@ Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
  };
  
  /*
-@@ -300,6 +301,14 @@ struct ext4_new_group_data {
+@@ -298,6 +299,14 @@ struct ext4_new_group_data {
  #define EXT4_IOC_GETRSVSZ		_IOR('f', 5, long)
  #define EXT4_IOC_SETRSVSZ		_IOW('f', 6, long)
  #define EXT4_IOC_MIGRATE		_IO('f', 7)
@@ -96,7 +96,7 @@ Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
  
  /*
   * ioctl commands in 32 bit emulation
-@@ -317,6 +326,42 @@ struct ext4_new_group_data {
+@@ -315,6 +324,42 @@ struct ext4_new_group_data {
  #define EXT4_IOC32_GETVERSION_OLD	FS_IOC32_GETVERSION
  #define EXT4_IOC32_SETVERSION_OLD	FS_IOC32_SETVERSION
  
@@ -139,7 +139,7 @@ Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
  
  /*
   *  Mount options
-@@ -992,6 +1037,17 @@ extern struct ext4_group_desc * ext4_get
+@@ -990,6 +1035,17 @@ extern struct ext4_group_desc * ext4_get
  extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
  extern void ext4_init_block_alloc_info(struct inode *);
  extern void ext4_rsv_window_add(struct super_block *sb, struct ext4_reserve_window_node *rsv);
@@ -157,7 +157,7 @@ Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
  
  /* dir.c */
  extern int ext4_check_dir_entry(const char *, struct inode *,
-@@ -1001,6 +1057,7 @@ extern int ext4_htree_store_dirent(struc
+@@ -999,6 +1055,7 @@ extern int ext4_htree_store_dirent(struc
  				    __u32 minor_hash,
  				    struct ext4_dir_entry_2 *dirent);
  extern void ext4_htree_free_dir_info(struct dir_private_info *p);
@@ -165,7 +165,7 @@ Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
  
  /* fsync.c */
  extern int ext4_sync_file (struct file *, struct dentry *, int);
-@@ -1062,6 +1119,8 @@ extern int ext4_writepage_trans_blocks(s
+@@ -1060,6 +1117,8 @@ extern int ext4_writepage_trans_blocks(s
  extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
  		struct address_space *mapping, loff_t from);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
@@ -174,7 +174,7 @@ Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
  
  /* ioctl.c */
  extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
-@@ -1110,6 +1169,14 @@ extern void ext4_inode_bitmap_set(struct
+@@ -1108,6 +1167,14 @@ extern void ext4_inode_bitmap_set(struct
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
@@ -189,7 +189,7 @@ Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
  
  static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
  {
-@@ -1227,6 +1294,7 @@ extern int ext4_get_blocks_wrap(handle_t
+@@ -1225,6 +1292,7 @@ extern int ext4_get_blocks_wrap(handle_t
  			sector_t block, unsigned long max_blocks,
  			struct buffer_head *bh, int create,
  			int extend_disksize);
@@ -199,8 +199,8 @@ Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
  #endif	/* _LINUX_EXT4_FS_H */
 Index: linux-2.6.25-rc6/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.25-rc6.orig/include/linux/ext4_fs_extents.h	2008-03-21 17:06:21.000000000 -0700
-+++ linux-2.6.25-rc6/include/linux/ext4_fs_extents.h	2008-03-21 17:06:40.000000000 -0700
+--- linux-2.6.25-rc6.orig/include/linux/ext4_fs_extents.h	2008-03-24 14:24:10.000000000 -0700
++++ linux-2.6.25-rc6/include/linux/ext4_fs_extents.h	2008-03-24 14:39:13.000000000 -0700
 @@ -228,5 +228,15 @@ extern int ext4_ext_search_left(struct i
  extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
  						ext4_lblk_t *, ext4_fsblk_t *);

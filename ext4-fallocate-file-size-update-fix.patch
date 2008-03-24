@@ -12,18 +12,18 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
 
- fs/ext4/extents.c |   89 +++++++++++++++++++++++------------------------------
- 1 files changed, 38 insertions(+), 51 deletions(-)
+ fs/ext4/extents.c |   89 +++++++++++++++++++++++-------------------------------
+ 1 file changed, 38 insertions(+), 51 deletions(-)
 
 
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 0ad0042..69f1dee 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -2783,6 +2783,28 @@ int ext4_ext_writepage_trans_blocks(struct inode *inode, int num)
+Index: linux-2.6.25-rc6/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/extents.c	2008-03-24 14:33:29.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/extents.c	2008-03-24 14:33:34.000000000 -0700
+@@ -2785,6 +2785,28 @@ int ext4_ext_writepage_trans_blocks(stru
  	return needed;
  }
-
+ 
 +static void ext4_falloc_update_inode(struct inode *inode,
 +				int mode, loff_t new_size, int update_ctime)
 +{
@@ -49,7 +49,7 @@ index 0ad0042..69f1dee 100644
  /*
   * preallocate space for a file. This implements ext4's fallocate inode
   * operation, which gets called from sys_fallocate system call.
-@@ -2794,8 +2816,8 @@ long ext4_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
+@@ -2796,8 +2818,8 @@ long ext4_fallocate(struct inode *inode,
  {
  	handle_t *handle;
  	ext4_lblk_t block;
@@ -59,9 +59,9 @@ index 0ad0042..69f1dee 100644
  	int ret = 0;
  	int ret2 = 0;
  	int retries = 0;
-@@ -2814,9 +2836,12 @@ long ext4_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
+@@ -2816,9 +2838,12 @@ long ext4_fallocate(struct inode *inode,
  		return -ENODEV;
-
+ 
  	block = offset >> blkbits;
 +	/*
 +	 * We can't just convert len to max_blocks because
@@ -74,7 +74,7 @@ index 0ad0042..69f1dee 100644
  	/*
  	 * credits to insert 1 extent into extent tree + buffers to be able to
  	 * modify 1 super block, 1 block bitmap and 1 group descriptor.
-@@ -2832,7 +2857,6 @@ retry:
+@@ -2834,7 +2859,6 @@ retry:
  			ret = PTR_ERR(handle);
  			break;
  		}
@@ -82,7 +82,7 @@ index 0ad0042..69f1dee 100644
  		ret = ext4_get_blocks_wrap(handle, inode, block,
  					  max_blocks, &map_bh,
  					  EXT4_CREATE_UNINITIALIZED_EXT, 0);
-@@ -2848,61 +2872,24 @@ retry:
+@@ -2850,61 +2874,24 @@ retry:
  			ret2 = ext4_journal_stop(handle);
  			break;
  		}
@@ -113,7 +113,7 @@ index 0ad0042..69f1dee 100644
 +			new_size = offset + len;
 +		else
 +			new_size = (block + ret) << blkbits;
-
+ 
 +		ext4_falloc_update_inode(inode, mode, new_size,
 +						buffer_new(&map_bh));
  		ext4_mark_inode_dirty(handle, inode);

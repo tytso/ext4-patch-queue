@@ -15,11 +15,11 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/extents.c |   63 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
  1 file changed, 63 insertions(+)
 
-Index: linux-2.6.25-rc3/fs/ext4/extents.c
+Index: linux-2.6.25-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc3.orig/fs/ext4/extents.c	2008-03-04 11:52:56.000000000 -0800
-+++ linux-2.6.25-rc3/fs/ext4/extents.c	2008-03-04 11:53:01.000000000 -0800
-@@ -2210,6 +2210,8 @@ static int ext4_ext_zeroout(struct inode
+--- linux-2.6.25-rc6.orig/fs/ext4/extents.c	2008-03-24 14:33:24.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/extents.c	2008-03-24 14:33:29.000000000 -0700
+@@ -2212,6 +2212,8 @@ static int ext4_ext_zeroout(struct inode
  	return ret;
  }
  
@@ -28,7 +28,7 @@ Index: linux-2.6.25-rc3/fs/ext4/extents.c
  /*
   * This function is called by ext4_ext_get_blocks() if someone tries to write
   * to an uninitialized extent. It may result in splitting the uninitialized
-@@ -2252,6 +2254,18 @@ static int ext4_ext_convert_to_initializ
+@@ -2254,6 +2256,18 @@ static int ext4_ext_convert_to_initializ
  	err = ext4_ext_get_access(handle, inode, path + depth);
  	if (err)
  		goto out;
@@ -47,7 +47,7 @@ Index: linux-2.6.25-rc3/fs/ext4/extents.c
  
  	/* ex1: ee_block to iblock - 1 : uninitialized */
  	if (iblock > ee_block) {
-@@ -2270,6 +2284,38 @@ static int ext4_ext_convert_to_initializ
+@@ -2272,6 +2286,38 @@ static int ext4_ext_convert_to_initializ
  	/* ex3: to ee_block + ee_len : uninitialised */
  	if (allocated > max_blocks) {
  		unsigned int newdepth;
@@ -86,7 +86,7 @@ Index: linux-2.6.25-rc3/fs/ext4/extents.c
  		ex3 = &newex;
  		ex3->ee_block = cpu_to_le32(iblock + max_blocks);
  		ext4_ext_store_pblock(ex3, newblock + max_blocks);
-@@ -2318,6 +2364,23 @@ static int ext4_ext_convert_to_initializ
+@@ -2320,6 +2366,23 @@ static int ext4_ext_convert_to_initializ
  				goto out;
  		}
  		allocated = max_blocks;

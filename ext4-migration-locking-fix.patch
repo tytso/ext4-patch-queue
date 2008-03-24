@@ -25,11 +25,11 @@ Acked-by: Jan Kara <jack@suse.cz>
  3 files changed, 47 insertions(+), 6 deletions(-)
 
 
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index a52904b..9587226 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -985,6 +985,16 @@ int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+Index: linux-2.6.25-rc6/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/inode.c	2008-03-24 14:33:27.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/inode.c	2008-03-24 14:33:31.000000000 -0700
+@@ -985,6 +985,16 @@ int ext4_get_blocks_wrap(handle_t *handl
  	} else {
  		retval = ext4_get_blocks_handle(handle, inode, block,
  				max_blocks, bh, create, extend_disksize);
@@ -46,7 +46,7 @@ index a52904b..9587226 100644
  	}
  	up_write((&EXT4_I(inode)->i_data_sem));
  	return retval;
-@@ -2962,7 +2972,8 @@ static int ext4_do_update_inode(handle_t *handle,
+@@ -2976,7 +2986,8 @@ static int ext4_do_update_inode(handle_t
  	if (ext4_inode_blocks_set(handle, raw_inode, ei))
  		goto out_brelse;
  	raw_inode->i_dtime = cpu_to_le32(ei->i_dtime);
@@ -56,11 +56,11 @@ index a52904b..9587226 100644
  	if (EXT4_SB(inode->i_sb)->s_es->s_creator_os !=
  	    cpu_to_le32(EXT4_OS_HURD))
  		raw_inode->i_file_acl_high =
-diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
-index 5c1e27d..6285ce1 100644
---- a/fs/ext4/migrate.c
-+++ b/fs/ext4/migrate.c
-@@ -327,7 +327,7 @@ static int free_ind_block(handle_t *handle, struct inode *inode, __le32 *i_data)
+Index: linux-2.6.25-rc6/fs/ext4/migrate.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/migrate.c	2008-03-24 14:24:12.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/migrate.c	2008-03-24 14:33:31.000000000 -0700
+@@ -327,7 +327,7 @@ static int free_ind_block(handle_t *hand
  }
  
  static int ext4_ext_swap_inode_data(handle_t *handle, struct inode *inode,
@@ -69,7 +69,7 @@ index 5c1e27d..6285ce1 100644
  {
  	int retval;
  	__le32	i_data[3];
-@@ -339,7 +339,7 @@ static int ext4_ext_swap_inode_data(handle_t *handle, struct inode *inode,
+@@ -339,7 +339,7 @@ static int ext4_ext_swap_inode_data(hand
  	 * i_data field of the original inode
  	 */
  	retval = ext4_journal_extend(handle, 1);
@@ -78,7 +78,7 @@ index 5c1e27d..6285ce1 100644
  		retval = ext4_journal_restart(handle, 1);
  		if (retval)
  			goto err_out;
-@@ -351,6 +351,18 @@ static int ext4_ext_swap_inode_data(handle_t *handle, struct inode *inode,
+@@ -351,6 +351,18 @@ static int ext4_ext_swap_inode_data(hand
  
  	down_write(&EXT4_I(inode)->i_data_sem);
  	/*
@@ -97,7 +97,7 @@ index 5c1e27d..6285ce1 100644
  	 * We have the extent map build with the tmp inode.
  	 * Now copy the i_data across
  	 */
-@@ -508,6 +520,17 @@ int ext4_ext_migrate(struct inode *inode, struct file *filp,
+@@ -508,6 +520,17 @@ int ext4_ext_migrate(struct inode *inode
  	 * switch the inode format to prevent read.
  	 */
  	mutex_lock(&(inode->i_mutex));
@@ -134,11 +134,11 @@ index 5c1e27d..6285ce1 100644
  
  	/* We mark the tmp_inode dirty via ext4_ext_tree_init. */
  	if (ext4_journal_extend(handle, 1) != 0)
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 8f5a563..2d15f16 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
-@@ -240,6 +240,7 @@ struct flex_groups {
+Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.25-rc6.orig/include/linux/ext4_fs.h	2008-03-24 14:33:27.000000000 -0700
++++ linux-2.6.25-rc6/include/linux/ext4_fs.h	2008-03-24 14:33:31.000000000 -0700
+@@ -231,6 +231,7 @@ struct ext4_group_desc
  #define EXT4_TOPDIR_FL			0x00020000 /* Top of directory hierarchies*/
  #define EXT4_HUGE_FILE_FL               0x00040000 /* Set to each huge file */
  #define EXT4_EXTENTS_FL			0x00080000 /* Inode uses extents */

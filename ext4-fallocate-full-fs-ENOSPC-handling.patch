@@ -20,11 +20,11 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/extents.c |  106 ++++++++++++++++++++++++++++++++++++++++++++++++++----
  1 file changed, 99 insertions(+), 7 deletions(-)
 
-Index: linux-2.6.25-rc3/fs/ext4/extents.c
+Index: linux-2.6.25-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc3.orig/fs/ext4/extents.c	2008-03-04 11:52:46.000000000 -0800
-+++ linux-2.6.25-rc3/fs/ext4/extents.c	2008-03-04 11:52:56.000000000 -0800
-@@ -2136,6 +2136,80 @@ void ext4_ext_release(struct super_block
+--- linux-2.6.25-rc6.orig/fs/ext4/extents.c	2008-03-24 14:33:16.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/extents.c	2008-03-24 14:33:24.000000000 -0700
+@@ -2138,6 +2138,80 @@ void ext4_ext_release(struct super_block
  #endif
  }
  
@@ -105,7 +105,7 @@ Index: linux-2.6.25-rc3/fs/ext4/extents.c
  /*
   * This function is called by ext4_ext_get_blocks() if someone tries to write
   * to an uninitialized extent. It may result in splitting the uninitialized
-@@ -2202,14 +2276,19 @@ static int ext4_ext_convert_to_initializ
+@@ -2204,14 +2278,19 @@ static int ext4_ext_convert_to_initializ
  		ex3->ee_len = cpu_to_le16(allocated - max_blocks);
  		ext4_ext_mark_uninitialized(ex3);
  		err = ext4_ext_insert_extent(handle, inode, path, ex3);
@@ -129,7 +129,7 @@ Index: linux-2.6.25-rc3/fs/ext4/extents.c
  		/*
  		 * The depth, and hence eh & ex might change
  		 * as part of the insert above.
-@@ -2295,15 +2374,28 @@ static int ext4_ext_convert_to_initializ
+@@ -2297,15 +2376,28 @@ static int ext4_ext_convert_to_initializ
  	goto out;
  insert:
  	err = ext4_ext_insert_extent(handle, inode, path, &newex);
