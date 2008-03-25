@@ -1,0 +1,146 @@
+ext4: Retry block allocation if new blocks are allocated from system zone.
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+If the block allocator gets blocks out of system zone ext4 calls
+ext4_error. But if the file system is mounted with errors=continue
+retry block allocation. We need to mark the system zone blocks as
+in use to make sure retry don't pick them again
+
+System zone is the block range mapping block bitmap, inode bitmap and inode
+table.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/balloc.c  |   17 +++++++++++------
+ fs/ext4/mballoc.c |   47 ++++++++++++++++++++++++++++++++++++-----------
+ 2 files changed, 47 insertions(+), 17 deletions(-)
+
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index 1e6c5dc..0a7249b 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -289,11 +289,11 @@ read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
+ 			    (int)block_group, (unsigned long long)bitmap_blk);
+ 		return NULL;
+ 	}
+-	if (!ext4_valid_block_bitmap(sb, desc, block_group, bh)) {
+-		put_bh(bh);
+-		return NULL;
+-	}
+-
++	ext4_valid_block_bitmap(sb, desc, block_group, bh);
++	/*
++	 * file system mounted not to panic on error,
++	 * continue with corrput bitmap
++	 */
+ 	return bh;
+ }
+ /*
+@@ -1779,7 +1779,12 @@ allocated:
+ 			    "Allocating block in system zone - "
+ 			    "blocks from %llu, length %lu",
+ 			     ret_block, num);
+-		goto out;
++		/*
++		 * claim_block marked the blocks we allocated
++		 * as in use. So we may want to selectively
++		 * mark some of the blocks as free
++		 */
++		goto retry_alloc;
+ 	}
+
+ 	performed_allocation = 1;
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 340daae..7718826 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -3040,7 +3040,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+ 	struct ext4_sb_info *sbi;
+ 	struct super_block *sb;
+ 	ext4_fsblk_t block;
+-	int err;
++	int err, len;
+
+ 	BUG_ON(ac->ac_status != AC_STATUS_FOUND);
+ 	BUG_ON(ac->ac_b_ex.fe_len <= 0);
+@@ -3074,14 +3074,27 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+ 		+ ac->ac_b_ex.fe_start
+ 		+ le32_to_cpu(es->s_first_data_block);
+
+-	if (block == ext4_block_bitmap(sb, gdp) ||
+-			block == ext4_inode_bitmap(sb, gdp) ||
+-			in_range(block, ext4_inode_table(sb, gdp),
+-				EXT4_SB(sb)->s_itb_per_group)) {
+-
++	len = ac->ac_b_ex.fe_len;
++	if (in_range(ext4_block_bitmap(sb, gdp), block, len) ||
++	    in_range(ext4_inode_bitmap(sb, gdp), block, len) ||
++	    in_range(block, ext4_inode_table(sb, gdp),
++		     EXT4_SB(sb)->s_itb_per_group) ||
++	    in_range(block + len - 1, ext4_inode_table(sb, gdp),
++		     EXT4_SB(sb)->s_itb_per_group)) {
+ 		ext4_error(sb, __func__,
+ 			   "Allocating block in system zone - block = %llu",
+ 			   block);
++		/* File system mounted not to panic on error
++		 * Fix the bitmap and repeat the block allocation
++		 * We leak some of the blocks here.
++		 */
++		mb_set_bits(sb_bgl_lock(sbi, ac->ac_b_ex.fe_group),
++				bitmap_bh->b_data, ac->ac_b_ex.fe_start,
++				ac->ac_b_ex.fe_len);
++		err = ext4_journal_dirty_metadata(handle, bitmap_bh);
++		if (!err)
++			err = -EAGAIN;
++		goto out_err;
+ 	}
+ #ifdef AGGRESSIVE_CHECK
+ 	{
+@@ -4331,7 +4344,6 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+
+ 		ac->ac_op = EXT4_MB_HISTORY_ALLOC;
+ 		ext4_mb_normalize_request(ac, ar);
+-
+ repeat:
+ 		/* allocate space in core */
+ 		ext4_mb_regular_allocator(ac);
+@@ -4345,10 +4357,21 @@ repeat:
+ 	}
+
+ 	if (likely(ac->ac_status == AC_STATUS_FOUND)) {
+-		ext4_mb_mark_diskspace_used(ac, handle);
+-		*errp = 0;
+-		block = ext4_grp_offs_to_block(sb, &ac->ac_b_ex);
+-		ar->len = ac->ac_b_ex.fe_len;
++		*errp = ext4_mb_mark_diskspace_used(ac, handle);
++		if (*errp ==  -EAGAIN) {
++			ac->ac_b_ex.fe_group = 0;
++			ac->ac_b_ex.fe_start = 0;
++			ac->ac_b_ex.fe_len = 0;
++			ac->ac_status = AC_STATUS_CONTINUE;
++			goto repeat;
++		} else if (*errp) {
++			ac->ac_b_ex.fe_len = 0;
++			ar->len = 0;
++			ext4_mb_show_ac(ac);
++		} else {
++			block = ext4_grp_offs_to_block(sb, &ac->ac_b_ex);
++			ar->len = ac->ac_b_ex.fe_len;
++		}
+ 	} else {
+ 		freed  = ext4_mb_discard_preallocations(sb, ac->ac_o_ex.fe_len);
+ 		if (freed)
+@@ -4535,6 +4558,8 @@ do_more:
+ 		ext4_error(sb, __func__,
+ 			   "Freeing blocks in system zone - "
+ 			   "Block = %lu, count = %lu", block, count);
++		/* err = 0. ext4_std_error should be a no op */
++		goto error_return;
+ 	}
+
+ 	BUFFER_TRACE(bitmap_bh, "getting write access");
+-- 
+1.5.5.rc0.16.g02b00.dirty
+

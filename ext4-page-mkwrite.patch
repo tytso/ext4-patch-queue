@@ -1,6 +1,6 @@
 ext4: Use page_mkwrite vma_operations to get mmap write notification.
 
-From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+From: \"Aneesh Kumar K.V\" <aneesh.kumar@linux.vnet.ibm.com>
 
 We would like to get notified when we are doing a write on mmap section.
 This is needed with respect to preallocated area. We split the preallocated
@@ -17,12 +17,13 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/file.c          |   19 ++++++++++++++++++-
  fs/ext4/inode.c         |   11 +++++++++++
  include/linux/ext4_fs.h |    1 +
- 3 files changed, 30 insertions(+), 1 deletions(-)
+ 3 files changed, 30 insertions(+), 1 deletion(-)
 
-diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index ac35ec5..6a2f28a 100644
---- a/fs/ext4/file.c
-+++ b/fs/ext4/file.c
+
+Index: linux-2.6.25-rc6/fs/ext4/file.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/file.c	2008-03-24 14:24:15.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/file.c	2008-03-24 14:33:27.000000000 -0700
 @@ -123,6 +123,23 @@ force_commit:
  	return ret;
  }
@@ -47,7 +48,7 @@ index ac35ec5..6a2f28a 100644
  const struct file_operations ext4_file_operations = {
  	.llseek		= generic_file_llseek,
  	.read		= do_sync_read,
-@@ -133,7 +150,7 @@ const struct file_operations ext4_file_operations = {
+@@ -133,7 +150,7 @@ const struct file_operations ext4_file_o
  #ifdef CONFIG_COMPAT
  	.compat_ioctl	= ext4_compat_ioctl,
  #endif
@@ -56,11 +57,11 @@ index ac35ec5..6a2f28a 100644
  	.open		= generic_file_open,
  	.release	= ext4_release_file,
  	.fsync		= ext4_sync_file,
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 945cbf6..883f564 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -3507,3 +3507,14 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
+Index: linux-2.6.25-rc6/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/ext4/inode.c	2008-03-24 14:24:14.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/inode.c	2008-03-24 14:33:27.000000000 -0700
+@@ -3507,3 +3507,14 @@ int ext4_change_inode_journal_flag(struc
  
  	return err;
  }
@@ -75,11 +76,11 @@ index 945cbf6..883f564 100644
 +	 */
 +	return block_page_mkwrite(vma, page, ext4_get_block);
 +}
-diff --git a/include/linux/ext4_fs.h b/include/linux/ext4_fs.h
-index 2500325..00f5924 100644
---- a/include/linux/ext4_fs.h
-+++ b/include/linux/ext4_fs.h
-@@ -1047,6 +1047,7 @@ extern void ext4_set_aops(struct inode *inode);
+Index: linux-2.6.25-rc6/include/linux/ext4_fs.h
+===================================================================
+--- linux-2.6.25-rc6.orig/include/linux/ext4_fs.h	2008-03-24 14:24:15.000000000 -0700
++++ linux-2.6.25-rc6/include/linux/ext4_fs.h	2008-03-24 14:33:27.000000000 -0700
+@@ -1047,6 +1047,7 @@ extern void ext4_set_aops(struct inode *
  extern int ext4_writepage_trans_blocks(struct inode *);
  extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
  		struct address_space *mapping, loff_t from);
