@@ -7,16 +7,11 @@ files from the journal.  Something that will make this easier is if we
 can put the time of the commit into commit block.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/jbd2/commit.c     |    3 +++
- include/linux/jbd2.h |    2 ++
- 2 files changed, 5 insertions(+)
-
-Index: linux-2.6.25-rc6/fs/jbd2/commit.c
-===================================================================
---- linux-2.6.25-rc6.orig/fs/jbd2/commit.c	2008-03-25 11:36:37.000000000 -0700
-+++ linux-2.6.25-rc6/fs/jbd2/commit.c	2008-03-25 11:50:08.000000000 -0700
-@@ -112,6 +112,7 @@ static int journal_submit_commit_record(
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index e013978..ccc3b5c 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -112,6 +112,7 @@ static int journal_submit_commit_record(journal_t *journal,
  	struct buffer_head *bh;
  	int ret;
  	int barrier_done = 0;
@@ -24,24 +19,24 @@ Index: linux-2.6.25-rc6/fs/jbd2/commit.c
  
  	if (is_journal_aborted(journal))
  		return 0;
-@@ -126,6 +127,8 @@ static int journal_submit_commit_record(
+@@ -126,6 +127,8 @@ static int journal_submit_commit_record(journal_t *journal,
  	tmp->h_magic = cpu_to_be32(JBD2_MAGIC_NUMBER);
  	tmp->h_blocktype = cpu_to_be32(JBD2_COMMIT_BLOCK);
  	tmp->h_sequence = cpu_to_be32(commit_transaction->t_tid);
-+	tmp->h_commit_sec = cpu_to_be32(now.tv_sec);
++	tmp->h_commit_sec = cpu_to_be64(now.tv_sec);
 +	tmp->h_commit_nsec = cpu_to_be32(now.tv_nsec);
  
  	if (JBD2_HAS_COMPAT_FEATURE(journal,
  				    JBD2_FEATURE_COMPAT_CHECKSUM)) {
-Index: linux-2.6.25-rc6/include/linux/jbd2.h
-===================================================================
---- linux-2.6.25-rc6.orig/include/linux/jbd2.h	2008-03-16 16:32:14.000000000 -0700
-+++ linux-2.6.25-rc6/include/linux/jbd2.h	2008-03-25 11:46:46.000000000 -0700
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 2cbf6fd..545abcb 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
 @@ -170,6 +170,8 @@ struct commit_header {
  	unsigned char   h_chksum_size;
  	unsigned char 	h_padding[2];
  	__be32 		h_chksum[JBD2_CHECKSUM_BYTES];
-+	__be32		h_commit_sec;
++	__be64		h_commit_sec;
 +	__be32		h_commit_nsec;
  };
  
