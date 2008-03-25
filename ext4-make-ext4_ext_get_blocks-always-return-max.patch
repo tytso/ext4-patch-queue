@@ -2,14 +2,15 @@ ext4: make ext4_ext_get_blocks always return <= max_blocks
 
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
-ext4_ext_get_blocks  returns number of blocks allocated with buffer head
-unmapped for a read from prealloc space. This is needed so that delayed
-allocation doesn't do block reservation for prealloc space since the blocks
-are already resevred on disk. Fix ext4_ext_get_blocks to not return greater
-than max_blocks. Some of the code path cannot handle a return value greater
-than max_blocks.
+ext4_ext_get_blocks() returns number of blocks allocated with buffer
+head unmapped for a read from prealloc space.  This is needed so that
+delayed allocation doesn't do block reservation for prealloc space since
+the blocks are already resevred on disk.  Fix ext4_ext_get_blocks to not
+return greater than max_blocks. since some of the code pathes cannot
+handle such a return value.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
 
  fs/ext4/extents.c |   12 +++++++++++-

@@ -2,28 +2,31 @@ jbd2: fix possible journal overflow issues
 
 From: Josef Bacik <jbacik@redhat.com>
 
-There are several cases where the running transaction can get buffers added to
-its BJ_Metadata list which it never dirtied, which makes its t_nr_buffers
-counter end up larger than its t_outstanding_credits counter.
+There are several cases where the running transaction can get buffers
+added to its BJ_Metadata list which it never dirtied, which makes its
+t_nr_buffers counter end up larger than its t_outstanding_credits
+counter.
 
-This will cause issues when starting new transactions as while we are logging
-buffers we decrement t_outstanding_buffers, so when t_outstanding_buffers goes
-negative, we will report that we need less space in the journal than we
-actually need, so transactions will be started even though there may not be
-enough room for them.  In the worst case scenario (which admittedly is almost
-impossible to reproduce) this will result in the journal running out of space.
+This will cause issues when starting new transactions as while we are
+logging buffers we decrement t_outstanding_buffers, so when
+t_outstanding_buffers goes negative, we will report that we need less
+space in the journal than we actually need, so transactions will be
+started even though there may not be enough room for them.  In the worst
+case scenario (which admittedly is almost impossible to reproduce) this
+will result in the journal running out of space.
 
-The fix is to only
-refile buffers from the committing transaction to the running transactions
-BJ_Modified list when b_modified is set on that journal, which is the only way
-to be sure if the running transaction has modified that buffer.
+The fix is to only refile buffers from the committing transaction to the
+running transactions BJ_Modified list when b_modified is set on that
+journal, which is the only way to be sure if the running transaction has
+modified that buffer.
 
-This patch also fixes an accounting error in journal_forget, it is possible
-that we can call journal_forget on a buffer without having modified it, only
-gotten write access to it, so instead of freeing a credit, we only do so if
-the buffer was modified.  The assert will help catch if this problem occurs. 
-Without these two patches I could hit this assert within minutes of running
-postmark, with them this issue no longer arises.  Thank you,
+This patch also fixes an accounting error in journal_forget, it is
+possible that we can call journal_forget on a buffer without having
+modified it, only gotten write access to it, so instead of freeing a
+credit, we only do so if the buffer was modified.  The assert will help
+catch if this problem occurs.  Without these two patches I could hit
+this assert within minutes of running postmark, with them this issue no
+longer arises.
 
 Cc: <linux-ext4@vger.kernel.org>
 Cc: Jan Kara <jack@ucw.cz>

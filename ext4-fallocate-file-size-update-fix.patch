@@ -3,13 +3,14 @@ ext4: Fix fallocate to update the file size in each transaction.
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 ext4_fallocate need to update file size in each transaction. Otherwise
-ife we crash the file size won't be updated. We were also not marking
+if we crash the file size won't be updated.  We were also not marking
 the inode dirty after updating file size before. Also when we try to
-retry allocation due to ENOSPC make sure we reset the variable ret so
+retry allocation due to ENOSPC, make sure we reset the variable ret so
 that we actually do a retry.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
 
  fs/ext4/extents.c |   89 +++++++++++++++++++++++-------------------------------
