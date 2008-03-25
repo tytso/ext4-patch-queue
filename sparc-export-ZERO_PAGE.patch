@@ -1,0 +1,36 @@
+sparc: Export needed symbol for ZERO_PAGE usage in modules.
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+ext4 use ZERO_PAGE(0) to zero out blocks. We need to export
+different symbols in different arch for the usage of ZERO_PAGE
+in modules.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+ arch/sparc/kernel/sparc_ksyms.c |    2 ++
+ arch/sparc64/mm/init.c          |    1 +
+ 2 files changed, 3 insertions(+)
+
+Index: linux-2.6.25-rc6/arch/sparc/kernel/sparc_ksyms.c
+===================================================================
+--- linux-2.6.25-rc6.orig/arch/sparc/kernel/sparc_ksyms.c	2008-03-16 16:32:14.000000000 -0700
++++ linux-2.6.25-rc6/arch/sparc/kernel/sparc_ksyms.c	2008-03-25 14:47:53.000000000 -0700
+@@ -295,3 +295,5 @@ EXPORT_SYMBOL(do_BUG);
+ 
+ /* Sun Power Management Idle Handler */
+ EXPORT_SYMBOL(pm_idle);
++
++EXPORT_SYMBOL(empty_zero_page);
+Index: linux-2.6.25-rc6/arch/sparc64/mm/init.c
+===================================================================
+--- linux-2.6.25-rc6.orig/arch/sparc64/mm/init.c	2008-03-16 16:32:14.000000000 -0700
++++ linux-2.6.25-rc6/arch/sparc64/mm/init.c	2008-03-25 14:47:53.000000000 -0700
+@@ -159,6 +159,7 @@ extern unsigned int sparc_ramdisk_image;
+ extern unsigned int sparc_ramdisk_size;
+ 
+ struct page *mem_map_zero __read_mostly;
++EXPORT_SYMBOL(mem_map_zero);
+ 
+ unsigned int sparc64_highest_unlocked_tlb_ent __read_mostly;
+ 
