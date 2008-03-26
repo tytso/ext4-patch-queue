@@ -24,8 +24,8 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 Index: linux-2.6.25-rc6/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/balloc.c	2008-03-25 14:15:39.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/balloc.c	2008-03-25 14:16:21.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/balloc.c	2008-03-26 15:18:31.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/balloc.c	2008-03-26 15:20:23.000000000 -0700
 @@ -58,7 +58,7 @@ unsigned ext4_init_block_bitmap(struct s
  		/* If checksum is bad mark all blocks used to prevent allocation
  		 * essentially implementing a per-group read-only flag. */
@@ -91,14 +91,14 @@ Index: linux-2.6.25-rc6/fs/ext4/balloc.c
  	}
 Index: linux-2.6.25-rc6/fs/ext4/ext4_jbd2.c
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/ext4_jbd2.c	2008-03-25 13:59:33.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/ext4_jbd2.c	2008-03-25 14:16:21.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/ext4_jbd2.c	2008-03-26 15:18:31.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/ext4_jbd2.c	2008-03-26 15:20:23.000000000 -0700
 @@ -9,7 +9,7 @@ int __ext4_journal_get_undo_access(const
  {
  	int err = jbd2_journal_get_undo_access(handle, bh);
  	if (err)
 -		ext4_journal_abort_handle(where, __FUNCTION__, bh, handle,err);
-+		ext4_journal_abort_handle(where, __func__, bh, handle,err);
++		ext4_journal_abort_handle(where, __func__, bh, handle, err);
  	return err;
  }
  
@@ -107,7 +107,7 @@ Index: linux-2.6.25-rc6/fs/ext4/ext4_jbd2.c
  	int err = jbd2_journal_get_write_access(handle, bh);
  	if (err)
 -		ext4_journal_abort_handle(where, __FUNCTION__, bh, handle,err);
-+		ext4_journal_abort_handle(where, __func__, bh, handle,err);
++		ext4_journal_abort_handle(where, __func__, bh, handle, err);
  	return err;
  }
  
@@ -116,7 +116,7 @@ Index: linux-2.6.25-rc6/fs/ext4/ext4_jbd2.c
  	int err = jbd2_journal_forget(handle, bh);
  	if (err)
 -		ext4_journal_abort_handle(where, __FUNCTION__, bh, handle,err);
-+		ext4_journal_abort_handle(where, __func__, bh, handle,err);
++		ext4_journal_abort_handle(where, __func__, bh, handle, err);
  	return err;
  }
  
@@ -125,7 +125,7 @@ Index: linux-2.6.25-rc6/fs/ext4/ext4_jbd2.c
  	int err = jbd2_journal_revoke(handle, blocknr, bh);
  	if (err)
 -		ext4_journal_abort_handle(where, __FUNCTION__, bh, handle,err);
-+		ext4_journal_abort_handle(where, __func__, bh, handle,err);
++		ext4_journal_abort_handle(where, __func__, bh, handle, err);
  	return err;
  }
  
@@ -134,7 +134,7 @@ Index: linux-2.6.25-rc6/fs/ext4/ext4_jbd2.c
  	int err = jbd2_journal_get_create_access(handle, bh);
  	if (err)
 -		ext4_journal_abort_handle(where, __FUNCTION__, bh, handle,err);
-+		ext4_journal_abort_handle(where, __func__, bh, handle,err);
++		ext4_journal_abort_handle(where, __func__, bh, handle, err);
  	return err;
  }
  
@@ -143,13 +143,13 @@ Index: linux-2.6.25-rc6/fs/ext4/ext4_jbd2.c
  	int err = jbd2_journal_dirty_metadata(handle, bh);
  	if (err)
 -		ext4_journal_abort_handle(where, __FUNCTION__, bh, handle,err);
-+		ext4_journal_abort_handle(where, __func__, bh, handle,err);
++		ext4_journal_abort_handle(where, __func__, bh, handle, err);
  	return err;
  }
 Index: linux-2.6.25-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/extents.c	2008-03-25 14:15:39.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/extents.c	2008-03-25 14:16:21.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/extents.c	2008-03-26 15:18:31.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/extents.c	2008-03-26 15:20:23.000000000 -0700
 @@ -308,7 +308,7 @@ corrupted:
  }
  
@@ -161,8 +161,8 @@ Index: linux-2.6.25-rc6/fs/ext4/extents.c
  static void ext4_ext_show_path(struct inode *inode, struct ext4_ext_path *path)
 Index: linux-2.6.25-rc6/fs/ext4/ialloc.c
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/ialloc.c	2008-03-25 14:15:39.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/ialloc.c	2008-03-25 14:16:21.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/ialloc.c	2008-03-26 15:18:31.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/ialloc.c	2008-03-26 15:20:23.000000000 -0700
 @@ -75,7 +75,7 @@ unsigned ext4_init_inode_bitmap(struct s
  	/* If checksum is bad mark all blocks and inodes use to prevent
  	 * allocation, essentially implementing a per-group read-only flag. */
@@ -210,8 +210,8 @@ Index: linux-2.6.25-rc6/fs/ext4/ialloc.c
  	       bit, (unsigned long long)bitmap_bh->b_blocknr,
 Index: linux-2.6.25-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/inode.c	2008-03-25 14:15:39.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/inode.c	2008-03-25 14:16:21.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/inode.c	2008-03-26 15:18:31.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/inode.c	2008-03-26 15:20:23.000000000 -0700
 @@ -93,7 +93,7 @@ int ext4_forget(handle_t *handle, int is
  	BUFFER_TRACE(bh, "call ext4_journal_revoke");
  	err = ext4_journal_revoke(handle, blocknr, bh);
@@ -250,8 +250,8 @@ Index: linux-2.6.25-rc6/fs/ext4/inode.c
  				current_handle);
 Index: linux-2.6.25-rc6/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/mballoc.c	2008-03-25 14:15:39.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/mballoc.c	2008-03-25 14:17:14.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/mballoc.c	2008-03-26 15:18:31.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/mballoc.c	2008-03-26 15:20:23.000000000 -0700
 @@ -734,7 +734,7 @@ static void mb_free_blocks_double(struct
  			blocknr +=
  			    le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
@@ -344,8 +344,8 @@ Index: linux-2.6.25-rc6/fs/ext4/mballoc.c
  	}
 Index: linux-2.6.25-rc6/fs/ext4/namei.c
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/namei.c	2008-03-25 14:15:39.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/namei.c	2008-03-25 14:16:21.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/namei.c	2008-03-26 15:18:31.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/namei.c	2008-03-26 15:20:23.000000000 -0700
 @@ -353,7 +353,7 @@ dx_probe(struct dentry *dentry, struct i
  	if (root->info.hash_version != DX_HASH_TEA &&
  	    root->info.hash_version != DX_HASH_HALF_MD4 &&
@@ -461,8 +461,8 @@ Index: linux-2.6.25-rc6/fs/ext4/namei.c
  						   err, inode->i_ino, offset);
 Index: linux-2.6.25-rc6/fs/ext4/resize.c
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/resize.c	2008-03-25 14:15:39.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/resize.c	2008-03-25 14:16:21.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/resize.c	2008-03-26 15:18:31.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/resize.c	2008-03-26 15:20:23.000000000 -0700
 @@ -50,63 +50,63 @@ static int verify_group_input(struct sup
  
  	ext4_get_group_no_and_offset(sb, start, NULL, &offset);
@@ -573,7 +573,7 @@ Index: linux-2.6.25-rc6/fs/ext4/resize.c
  	if (!n_group_desc) {
  		err = -ENOMEM;
 -		ext4_warning (sb, __FUNCTION__,
-+		ext4_warning (sb, __func__,
++		ext4_warning(sb, __func__,
  			      "not enough memory for %lu groups", gdb_num + 1);
  		goto exit_inode;
  	}
@@ -700,7 +700,7 @@ Index: linux-2.6.25-rc6/fs/ext4/resize.c
  	if (IS_ERR(handle)) {
  		err = PTR_ERR(handle);
 -		ext4_warning(sb, __FUNCTION__, "error %d on journal start",err);
-+		ext4_warning(sb, __func__, "error %d on journal start",err);
++		ext4_warning(sb, __func__, "error %d on journal start", err);
  		goto exit_put;
  	}
  
@@ -722,8 +722,8 @@ Index: linux-2.6.25-rc6/fs/ext4/resize.c
  		ext4_journal_stop(handle);
 Index: linux-2.6.25-rc6/fs/ext4/super.c
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/super.c	2008-03-25 14:15:39.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/super.c	2008-03-25 14:16:21.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/super.c	2008-03-26 15:18:31.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/super.c	2008-03-26 15:20:23.000000000 -0700
 @@ -135,7 +135,7 @@ handle_t *ext4_journal_start_sb(struct s
  	 * take the FS itself readonly cleanly. */
  	journal = EXT4_SB(sb)->s_journal;
@@ -792,8 +792,8 @@ Index: linux-2.6.25-rc6/fs/ext4/super.c
  		((sbi->s_mount_opt & EXT4_MOUNT_POSIX_ACL) ? MS_POSIXACL : 0);
 Index: linux-2.6.25-rc6/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.25-rc6.orig/fs/ext4/xattr.c	2008-03-25 14:15:39.000000000 -0700
-+++ linux-2.6.25-rc6/fs/ext4/xattr.c	2008-03-25 14:16:21.000000000 -0700
+--- linux-2.6.25-rc6.orig/fs/ext4/xattr.c	2008-03-26 15:18:31.000000000 -0700
++++ linux-2.6.25-rc6/fs/ext4/xattr.c	2008-03-26 15:20:23.000000000 -0700
 @@ -227,7 +227,7 @@ ext4_xattr_block_get(struct inode *inode
  	ea_bdebug(bh, "b_count=%d, refcount=%d",
  		atomic_read(&(bh->b_count)), le32_to_cpu(BHDR(bh)->h_refcount));
