@@ -1,0 +1,34 @@
+ext4: Fix update of mtime and ctime on rename
+
+From: Jan Kara <jack@suse.cz>
+
+The patch below makes ext4 update mtime and ctime of the directory
+into which we move file even if the directory entry already exists.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/namei.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 28aa2ed..d04bc73 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -2347,6 +2347,9 @@ static int ext4_rename (struct inode * old_dir, struct dentry *old_dentry,
+ 					      EXT4_FEATURE_INCOMPAT_FILETYPE))
+ 			new_de->file_type = old_de->file_type;
+ 		new_dir->i_version++;
++		new_dir->i_ctime = new_dir->i_mtime =
++					ext4_current_time(new_dir);
++		ext4_mark_inode_dirty(handle, new_dir);
+ 		BUFFER_TRACE(new_bh, "call ext4_journal_dirty_metadata");
+ 		ext4_journal_dirty_metadata(handle, new_bh);
+ 		brelse(new_bh);
+-- 
+1.5.2.4
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
