@@ -9,10 +9,45 @@ Signed-off-by: Christoph Hellwig <hch@lst.de>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
-Index: linux-2.6/fs/ext4/acl.c
+---
+ fs/ext4/acl.c                   |    4 
+ fs/ext4/balloc.c                |    6 
+ fs/ext4/bitmap.c                |    2 
+ fs/ext4/dir.c                   |    2 
+ fs/ext4/ext4.h                  | 1229 ++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/ext4_extents.h          |  232 +++++++
+ fs/ext4/ext4_i.h                |  167 +++++
+ fs/ext4/ext4_jbd2.c             |    2 
+ fs/ext4/ext4_jbd2.h             |  231 +++++++
+ fs/ext4/ext4_sb.h               |  151 ++++
+ fs/ext4/extents.c               |    4 
+ fs/ext4/file.c                  |    4 
+ fs/ext4/fsync.c                 |    4 
+ fs/ext4/hash.c                  |    2 
+ fs/ext4/ialloc.c                |    5 
+ fs/ext4/inode.c                 |    2 
+ fs/ext4/ioctl.c                 |    4 
+ fs/ext4/mballoc.c               |    4 
+ fs/ext4/migrate.c               |    4 
+ fs/ext4/namei.c                 |    4 
+ fs/ext4/resize.c                |    3 
+ fs/ext4/super.c                 |    5 
+ fs/ext4/symlink.c               |    2 
+ fs/ext4/xattr.c                 |    4 
+ fs/ext4/xattr_security.c        |    4 
+ fs/ext4/xattr_trusted.c         |    4 
+ fs/ext4/xattr_user.c            |    4 
+ include/linux/ext4_fs.h         | 1229 ----------------------------------------
+ include/linux/ext4_fs_extents.h |  232 -------
+ include/linux/ext4_fs_i.h       |  167 -----
+ include/linux/ext4_fs_sb.h      |  151 ----
+ include/linux/ext4_jbd2.h       |  231 -------
+ 32 files changed, 2048 insertions(+), 2051 deletions(-)
+
+Index: linux-2.6.25-rc7/fs/ext4/acl.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/acl.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/acl.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/acl.c	2008-03-28 15:23:51.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/acl.c	2008-03-28 15:27:57.000000000 -0700
 @@ -9,8 +9,8 @@
  #include <linux/slab.h>
  #include <linux/capability.h>
@@ -24,10 +59,10 @@ Index: linux-2.6/fs/ext4/acl.c
  #include "xattr.h"
  #include "acl.h"
  
-Index: linux-2.6/fs/ext4/balloc.c
+Index: linux-2.6.25-rc7/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/balloc.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/balloc.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/balloc.c	2008-03-28 15:23:51.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/balloc.c	2008-03-28 15:27:57.000000000 -0700
 @@ -15,12 +15,12 @@
  #include <linux/capability.h>
  #include <linux/fs.h>
@@ -44,10 +79,10 @@ Index: linux-2.6/fs/ext4/balloc.c
  /*
   * balloc.c contains the blocks allocation and deallocation routines
   */
-Index: linux-2.6/fs/ext4/bitmap.c
+Index: linux-2.6.25-rc7/fs/ext4/bitmap.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/bitmap.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/bitmap.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/bitmap.c	2008-03-28 15:23:51.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/bitmap.c	2008-03-28 15:27:57.000000000 -0700
 @@ -9,7 +9,7 @@
  
  #include <linux/buffer_head.h>
@@ -57,10 +92,10 @@ Index: linux-2.6/fs/ext4/bitmap.c
  
  #ifdef EXT4FS_DEBUG
  
-Index: linux-2.6/fs/ext4/dir.c
+Index: linux-2.6.25-rc7/fs/ext4/dir.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/dir.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/dir.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/dir.c	2008-03-28 15:23:51.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/dir.c	2008-03-28 15:27:57.000000000 -0700
 @@ -23,10 +23,10 @@
  
  #include <linux/fs.h>
@@ -73,12 +108,14 @@ Index: linux-2.6/fs/ext4/dir.c
  
  static unsigned char ext4_filetype_table[] = {
  	DT_UNKNOWN, DT_REG, DT_DIR, DT_CHR, DT_BLK, DT_FIFO, DT_SOCK, DT_LNK
-Index: linux-2.6/fs/ext4/ext4.h
+Index: linux-2.6.25-rc7/fs/ext4/ext4.h
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6/fs/ext4/ext4.h	2008-02-10 15:14:39.000000000 +0100
-@@ -0,0 +1,1205 @@
++++ linux-2.6.25-rc7/fs/ext4/ext4.h	2008-03-28 15:34:31.000000000 -0700
+@@ -0,0 +1,1229 @@
 +/*
++ *  ext4.h
++ *
 + * Copyright (C) 1992, 1993, 1994, 1995
 + * Remy Card (card@masi.ibp.fr)
 + * Laboratoire MASI - Institut Blaise Pascal
@@ -90,13 +127,13 @@ Index: linux-2.6/fs/ext4/ext4.h
 + *
 + *  Copyright (C) 1991, 1992  Linus Torvalds
 + */
-+#ifndef _EXT4_EXT4_FS_H
-+#define _EXT4_EXT4_FS_H
++
++#ifndef _LINUX_EXT4_FS_H
++#define _LINUX_EXT4_FS_H
 +
 +#include <linux/types.h>
 +#include <linux/blkdev.h>
 +#include <linux/magic.h>
-+
 +#include "ext4_i.h"
 +
 +/*
@@ -248,12 +285,20 @@ Index: linux-2.6/fs/ext4/ext4.h
 +	__u32	bg_reserved2[3];
 +};
 +
++/*
++ * Structure of a flex block group info
++ */
++
++struct flex_groups {
++	__u32 free_inodes;
++	__u32 free_blocks;
++};
++
 +#define EXT4_BG_INODE_UNINIT	0x0001 /* Inode table/bitmap not in use */
 +#define EXT4_BG_BLOCK_UNINIT	0x0002 /* Block bitmap not in use */
 +#define EXT4_BG_INODE_ZEROED	0x0004 /* On-disk itable initialized to zero */
 +
 +#ifdef __KERNEL__
-+#include "ext4_i.h"
 +#include "ext4_sb.h"
 +#endif
 +/*
@@ -308,6 +353,7 @@ Index: linux-2.6/fs/ext4/ext4.h
 +#define EXT4_TOPDIR_FL			0x00020000 /* Top of directory hierarchies*/
 +#define EXT4_HUGE_FILE_FL               0x00040000 /* Set to each huge file */
 +#define EXT4_EXTENTS_FL			0x00080000 /* Inode uses extents */
++#define EXT4_EXT_MIGRATE		0x00100000 /* Inode is migrating */
 +#define EXT4_RESERVED_FL		0x80000000 /* reserved for ext4 lib */
 +
 +#define EXT4_FL_USER_VISIBLE		0x000BDFFF /* User visible flags */
@@ -725,7 +771,10 @@ Index: linux-2.6/fs/ext4/ext4.h
 +	__le16  s_mmp_interval;         /* # seconds to wait in MMP checking */
 +	__le64  s_mmp_block;            /* Block for multi-mount protection */
 +	__le32  s_raid_stripe_width;    /* blocks on all data disks (N*stride)*/
-+	__u32   s_reserved[163];        /* Padding to the end of the block */
++	__u8	s_log_groups_per_flex;  /* FLEX_BG group size */
++	__u8	s_reserved_char_pad2;
++	__le16  s_reserved_pad;
++	__u32   s_reserved[162];        /* Padding to the end of the block */
 +};
 +
 +#ifdef __KERNEL__
@@ -1124,10 +1173,10 @@ Index: linux-2.6/fs/ext4/ext4.h
 +extern int ext4_writepage_trans_blocks(struct inode *);
 +extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
 +		struct address_space *mapping, loff_t from);
++extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
 +
 +/* ioctl.c */
-+extern int ext4_ioctl (struct inode *, struct file *, unsigned int,
-+		       unsigned long);
++extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
 +extern long ext4_compat_ioctl (struct file *, unsigned int, unsigned long);
 +
 +/* migrate.c */
@@ -1238,6 +1287,17 @@ Index: linux-2.6/fs/ext4/ext4.h
 +}
 +
 +
++static inline ext4_group_t ext4_flex_group(struct ext4_sb_info *sbi,
++					     ext4_group_t block_group)
++{
++	return block_group >> sbi->s_log_groups_per_flex;
++}
++
++static inline unsigned int ext4_flex_bg_size(struct ext4_sb_info *sbi)
++{
++	return 1 << sbi->s_log_groups_per_flex;
++}
++
 +#define ext4_std_error(sb, errno)				\
 +do {								\
 +	if ((errno))						\
@@ -1279,15 +1339,14 @@ Index: linux-2.6/fs/ext4/ext4.h
 +			sector_t block, unsigned long max_blocks,
 +			struct buffer_head *bh, int create,
 +			int extend_disksize);
++#endif	/* __KERNEL__ */
 +
-+#endif /* __KERNEL__ */
-+
-+#endif	/* _EXT4_EXT4_FS_H */
-Index: linux-2.6/fs/ext4/ext4_extents.h
++#endif	/* _EXT4_H */
+Index: linux-2.6.25-rc7/fs/ext4/ext4_extents.h
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6/fs/ext4/ext4_extents.h	2008-02-10 15:13:48.000000000 +0100
-@@ -0,0 +1,230 @@
++++ linux-2.6.25-rc7/fs/ext4/ext4_extents.h	2008-03-28 15:34:04.000000000 -0700
+@@ -0,0 +1,232 @@
 +/*
 + * Copyright (c) 2003-2006, Cluster File Systems, Inc, info@clusterfs.com
 + * Written by Alex Tomas <alex@clusterfs.com>
@@ -1306,8 +1365,8 @@ Index: linux-2.6/fs/ext4/ext4_extents.h
 + * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-
 + */
 +
-+#ifndef _EXT4_EXT4_EXTENTS
-+#define _EXT4_EXT4_EXTENTS
++#ifndef _LINUX_EXT4_EXTENTS
++#define _LINUX_EXT4_EXTENTS
 +
 +#include "ext4.h"
 +
@@ -1517,11 +1576,13 @@ Index: linux-2.6/fs/ext4/ext4_extents.h
 +						ext4_lblk_t *, ext4_fsblk_t *);
 +extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
 +						ext4_lblk_t *, ext4_fsblk_t *);
-+#endif /* _EXT4_EXT4_EXTENTS */
-Index: linux-2.6/fs/ext4/ext4_jbd2.c
++extern void ext4_ext_drop_refs(struct ext4_ext_path *);
++#endif /* _EXT4_EXTENTS */
++
+Index: linux-2.6.25-rc7/fs/ext4/ext4_jbd2.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/ext4_jbd2.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/ext4_jbd2.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/ext4_jbd2.c	2008-03-28 15:23:51.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/ext4_jbd2.c	2008-03-28 15:27:57.000000000 -0700
 @@ -2,7 +2,7 @@
   * Interface between ext4 and JBD
   */
@@ -1531,12 +1592,14 @@ Index: linux-2.6/fs/ext4/ext4_jbd2.c
  
  int __ext4_journal_get_undo_access(const char *where, handle_t *handle,
  				struct buffer_head *bh)
-Index: linux-2.6/fs/ext4/ext4_jbd2.h
+Index: linux-2.6.25-rc7/fs/ext4/ext4_jbd2.h
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6/fs/ext4/ext4_jbd2.h	2008-02-10 15:13:48.000000000 +0100
-@@ -0,0 +1,229 @@
++++ linux-2.6.25-rc7/fs/ext4/ext4_jbd2.h	2008-03-28 15:35:29.000000000 -0700
+@@ -0,0 +1,231 @@
 +/*
++ * ext4_jbd2.h
++ *
 + * Written by Stephen C. Tweedie <sct@redhat.com>, 1999
 + *
 + * Copyright 1998--1999 Red Hat corp --- All Rights Reserved
@@ -1548,8 +1611,8 @@ Index: linux-2.6/fs/ext4/ext4_jbd2.h
 + * Ext4-specific journaling extensions.
 + */
 +
-+#ifndef _EXT4_EXT4_JBD2_H
-+#define _EXT4_EXT4_JBD2_H
++#ifndef _LINUX_EXT4_JBD2_H
++#define _LINUX_EXT4_JBD2_H
 +
 +#include <linux/fs.h>
 +#include <linux/jbd2.h>
@@ -1764,11 +1827,11 @@ Index: linux-2.6/fs/ext4/ext4_jbd2.h
 +	return 0;
 +}
 +
-+#endif	/* _EXT4_EXT4_JBD2_H */
-Index: linux-2.6/fs/ext4/extents.c
++#endif	/* _EXT4_JBD2_H */
+Index: linux-2.6.25-rc7/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/extents.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/extents.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/extents.c	2008-03-28 15:23:51.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/extents.c	2008-03-28 15:27:57.000000000 -0700
 @@ -32,7 +32,6 @@
  #include <linux/module.h>
  #include <linux/fs.h>
@@ -1788,10 +1851,10 @@ Index: linux-2.6/fs/ext4/extents.c
  
  
  /*
-Index: linux-2.6/fs/ext4/file.c
+Index: linux-2.6.25-rc7/fs/ext4/file.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/file.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/file.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/file.c	2008-03-28 15:23:51.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/file.c	2008-03-28 15:27:57.000000000 -0700
 @@ -21,8 +21,8 @@
  #include <linux/time.h>
  #include <linux/fs.h>
@@ -1803,10 +1866,10 @@ Index: linux-2.6/fs/ext4/file.c
  #include "xattr.h"
  #include "acl.h"
  
-Index: linux-2.6/fs/ext4/fsync.c
+Index: linux-2.6.25-rc7/fs/ext4/fsync.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/fsync.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/fsync.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/fsync.c	2008-03-28 15:23:51.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/fsync.c	2008-03-28 15:27:57.000000000 -0700
 @@ -27,8 +27,8 @@
  #include <linux/sched.h>
  #include <linux/writeback.h>
@@ -1818,10 +1881,10 @@ Index: linux-2.6/fs/ext4/fsync.c
  
  /*
   * akpm: A new design for ext4_sync_file().
-Index: linux-2.6/fs/ext4/hash.c
+Index: linux-2.6.25-rc7/fs/ext4/hash.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/hash.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/hash.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/hash.c	2008-03-28 15:23:51.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/hash.c	2008-03-28 15:27:57.000000000 -0700
 @@ -11,8 +11,8 @@
  
  #include <linux/fs.h>
@@ -1832,10 +1895,10 @@ Index: linux-2.6/fs/ext4/hash.c
  
  #define DELTA 0x9E3779B9
  
-Index: linux-2.6/fs/ext4/ialloc.c
+Index: linux-2.6.25-rc7/fs/ext4/ialloc.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/ialloc.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/ialloc.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/ialloc.c	2008-03-28 15:23:51.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/ialloc.c	2008-03-28 15:27:57.000000000 -0700
 @@ -15,8 +15,6 @@
  #include <linux/time.h>
  #include <linux/fs.h>
@@ -1855,10 +1918,10 @@ Index: linux-2.6/fs/ext4/ialloc.c
  #include "xattr.h"
  #include "acl.h"
  #include "group.h"
-Index: linux-2.6/fs/ext4/inode.c
+Index: linux-2.6.25-rc7/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/inode.c	2008-02-10 15:11:30.000000000 +0100
-+++ linux-2.6/fs/ext4/inode.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/inode.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/inode.c	2008-03-28 15:27:57.000000000 -0700
 @@ -25,7 +25,6 @@
  #include <linux/module.h>
  #include <linux/fs.h>
@@ -1875,10 +1938,10 @@ Index: linux-2.6/fs/ext4/inode.c
  #include "xattr.h"
  #include "acl.h"
  
-Index: linux-2.6/fs/ext4/ioctl.c
+Index: linux-2.6.25-rc7/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/ioctl.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/ioctl.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/ioctl.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/ioctl.c	2008-03-28 15:27:57.000000000 -0700
 @@ -10,12 +10,12 @@
  #include <linux/fs.h>
  #include <linux/jbd2.h>
@@ -1892,12 +1955,12 @@ Index: linux-2.6/fs/ext4/ioctl.c
 +#include "ext4.h"
 +#include "ext4_jbd2.h"
  
- int ext4_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
- 		unsigned long arg)
-Index: linux-2.6/fs/ext4/mballoc.c
+ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
+Index: linux-2.6.25-rc7/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/mballoc.c	2008-02-10 15:11:30.000000000 +0100
-+++ linux-2.6/fs/ext4/mballoc.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/mballoc.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/mballoc.c	2008-03-28 15:27:57.000000000 -0700
 @@ -24,8 +24,6 @@
  #include <linux/time.h>
  #include <linux/fs.h>
@@ -1916,10 +1979,10 @@ Index: linux-2.6/fs/ext4/mballoc.c
  #include "group.h"
  
  /*
-Index: linux-2.6/fs/ext4/migrate.c
+Index: linux-2.6.25-rc7/fs/ext4/migrate.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/migrate.c	2008-02-10 15:11:30.000000000 +0100
-+++ linux-2.6/fs/ext4/migrate.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/migrate.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/migrate.c	2008-03-28 15:27:57.000000000 -0700
 @@ -13,8 +13,8 @@
   */
  
@@ -1931,10 +1994,10 @@ Index: linux-2.6/fs/ext4/migrate.c
  
  /*
   * The contiguous blocks details which can be
-Index: linux-2.6/fs/ext4/namei.c
+Index: linux-2.6.25-rc7/fs/ext4/namei.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/namei.c	2008-02-10 15:11:30.000000000 +0100
-+++ linux-2.6/fs/ext4/namei.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/namei.c	2008-03-28 15:27:54.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/namei.c	2008-03-28 15:27:57.000000000 -0700
 @@ -28,14 +28,14 @@
  #include <linux/pagemap.h>
  #include <linux/jbd2.h>
@@ -1952,10 +2015,10 @@ Index: linux-2.6/fs/ext4/namei.c
  
  #include "namei.h"
  #include "xattr.h"
-Index: linux-2.6/fs/ext4/resize.c
+Index: linux-2.6.25-rc7/fs/ext4/resize.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/resize.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/resize.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/resize.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/resize.c	2008-03-28 15:27:57.000000000 -0700
 @@ -11,11 +11,10 @@
  
  #define EXT4FS_DEBUG
@@ -1969,10 +2032,10 @@ Index: linux-2.6/fs/ext4/resize.c
  #include "group.h"
  
  #define outside(b, first, last)	((b) < (first) || (b) >= (last))
-Index: linux-2.6/fs/ext4/super.c
+Index: linux-2.6.25-rc7/fs/ext4/super.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/super.c	2008-02-10 15:11:30.000000000 +0100
-+++ linux-2.6/fs/ext4/super.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/super.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/super.c	2008-03-28 15:27:57.000000000 -0700
 @@ -21,8 +21,6 @@
  #include <linux/fs.h>
  #include <linux/time.h>
@@ -1994,10 +2057,10 @@ Index: linux-2.6/fs/ext4/super.c
  #include "xattr.h"
  #include "acl.h"
  #include "namei.h"
-Index: linux-2.6/fs/ext4/symlink.c
+Index: linux-2.6.25-rc7/fs/ext4/symlink.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/symlink.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/symlink.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/symlink.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/symlink.c	2008-03-28 15:27:57.000000000 -0700
 @@ -19,8 +19,8 @@
  
  #include <linux/fs.h>
@@ -2008,10 +2071,10 @@ Index: linux-2.6/fs/ext4/symlink.c
  #include "xattr.h"
  
  static void * ext4_follow_link(struct dentry *dentry, struct nameidata *nd)
-Index: linux-2.6/fs/ext4/xattr.c
+Index: linux-2.6.25-rc7/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/xattr.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/xattr.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/xattr.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/xattr.c	2008-03-28 15:27:57.000000000 -0700
 @@ -53,11 +53,11 @@
  #include <linux/init.h>
  #include <linux/fs.h>
@@ -2026,10 +2089,10 @@ Index: linux-2.6/fs/ext4/xattr.c
  #include "xattr.h"
  #include "acl.h"
  
-Index: linux-2.6/fs/ext4/xattr_security.c
+Index: linux-2.6.25-rc7/fs/ext4/xattr_security.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/xattr_security.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/xattr_security.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/xattr_security.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/xattr_security.c	2008-03-28 15:27:57.000000000 -0700
 @@ -6,9 +6,9 @@
  #include <linux/module.h>
  #include <linux/string.h>
@@ -2042,10 +2105,10 @@ Index: linux-2.6/fs/ext4/xattr_security.c
  #include "xattr.h"
  
  static size_t
-Index: linux-2.6/fs/ext4/xattr_trusted.c
+Index: linux-2.6.25-rc7/fs/ext4/xattr_trusted.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/xattr_trusted.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/xattr_trusted.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/xattr_trusted.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/xattr_trusted.c	2008-03-28 15:27:57.000000000 -0700
 @@ -9,8 +9,8 @@
  #include <linux/string.h>
  #include <linux/capability.h>
@@ -2057,10 +2120,10 @@ Index: linux-2.6/fs/ext4/xattr_trusted.c
  #include "xattr.h"
  
  #define XATTR_TRUSTED_PREFIX "trusted."
-Index: linux-2.6/fs/ext4/xattr_user.c
+Index: linux-2.6.25-rc7/fs/ext4/xattr_user.c
 ===================================================================
---- linux-2.6.orig/fs/ext4/xattr_user.c	2008-02-10 15:10:59.000000000 +0100
-+++ linux-2.6/fs/ext4/xattr_user.c	2008-02-10 15:13:48.000000000 +0100
+--- linux-2.6.25-rc7.orig/fs/ext4/xattr_user.c	2008-03-28 15:23:52.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/xattr_user.c	2008-03-28 15:27:57.000000000 -0700
 @@ -8,8 +8,8 @@
  #include <linux/module.h>
  #include <linux/string.h>
@@ -2072,11 +2135,11 @@ Index: linux-2.6/fs/ext4/xattr_user.c
  #include "xattr.h"
  
  #define XATTR_USER_PREFIX "user."
-Index: linux-2.6/include/linux/ext4_fs_extents.h
+Index: linux-2.6.25-rc7/include/linux/ext4_fs_extents.h
 ===================================================================
---- linux-2.6.orig/include/linux/ext4_fs_extents.h	2008-02-10 15:10:59.000000000 +0100
+--- linux-2.6.25-rc7.orig/include/linux/ext4_fs_extents.h	2008-03-28 15:23:52.000000000 -0700
 +++ /dev/null	1970-01-01 00:00:00.000000000 +0000
-@@ -1,231 +0,0 @@
+@@ -1,232 +0,0 @@
 -/*
 - * Copyright (c) 2003-2006, Cluster File Systems, Inc, info@clusterfs.com
 - * Written by Alex Tomas <alex@clusterfs.com>
@@ -2306,11 +2369,12 @@ Index: linux-2.6/include/linux/ext4_fs_extents.h
 -						ext4_lblk_t *, ext4_fsblk_t *);
 -extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
 -						ext4_lblk_t *, ext4_fsblk_t *);
+-extern void ext4_ext_drop_refs(struct ext4_ext_path *);
 -#endif /* _LINUX_EXT4_EXTENTS */
 -
-Index: linux-2.6/include/linux/ext4_jbd2.h
+Index: linux-2.6.25-rc7/include/linux/ext4_jbd2.h
 ===================================================================
---- linux-2.6.orig/include/linux/ext4_jbd2.h	2008-02-10 15:10:59.000000000 +0100
+--- linux-2.6.25-rc7.orig/include/linux/ext4_jbd2.h	2008-03-28 15:23:52.000000000 -0700
 +++ /dev/null	1970-01-01 00:00:00.000000000 +0000
 @@ -1,231 +0,0 @@
 -/*
@@ -2544,12 +2608,14 @@ Index: linux-2.6/include/linux/ext4_jbd2.h
 -}
 -
 -#endif	/* _LINUX_EXT4_JBD2_H */
-Index: linux-2.6/fs/ext4/ext4_i.h
+Index: linux-2.6.25-rc7/fs/ext4/ext4_i.h
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6/fs/ext4/ext4_i.h	2008-02-10 15:13:48.000000000 +0100
-@@ -0,0 +1,165 @@
++++ linux-2.6.25-rc7/fs/ext4/ext4_i.h	2008-03-28 15:34:48.000000000 -0700
+@@ -0,0 +1,167 @@
 +/*
++ *  ext4_i.h
++ *
 + * Copyright (C) 1992, 1993, 1994, 1995
 + * Remy Card (card@masi.ibp.fr)
 + * Laboratoire MASI - Institut Blaise Pascal
@@ -2713,13 +2779,15 @@ Index: linux-2.6/fs/ext4/ext4_i.h
 +	spinlock_t i_prealloc_lock;
 +};
 +
-+#endif	/* _LINUX_EXT4_FS_I */
-Index: linux-2.6/fs/ext4/ext4_sb.h
++#endif	/* _EXT4_I */
+Index: linux-2.6.25-rc7/fs/ext4/ext4_sb.h
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6/fs/ext4/ext4_sb.h	2008-02-10 15:13:48.000000000 +0100
-@@ -0,0 +1,146 @@
++++ linux-2.6.25-rc7/fs/ext4/ext4_sb.h	2008-03-28 15:34:17.000000000 -0700
+@@ -0,0 +1,151 @@
 +/*
++ *  ext4_sb.h
++ *
 + * Copyright (C) 1992, 1993, 1994, 1995
 + * Remy Card (card@masi.ibp.fr)
 + * Laboratoire MASI - Institut Blaise Pascal
@@ -2862,14 +2930,17 @@ Index: linux-2.6/fs/ext4/ext4_sb.h
 +
 +	/* locality groups */
 +	struct ext4_locality_group *s_locality_groups;
++
++	unsigned int s_log_groups_per_flex;
++	struct flex_groups *s_flex_groups;
 +};
 +
-+#endif	/* _LINUX_EXT4_FS_SB */
-Index: linux-2.6/include/linux/ext4_fs.h
++#endif	/* _EXT4_SB */
+Index: linux-2.6.25-rc7/include/linux/ext4_fs.h
 ===================================================================
---- linux-2.6.orig/include/linux/ext4_fs.h	2008-02-10 15:11:30.000000000 +0100
+--- linux-2.6.25-rc7.orig/include/linux/ext4_fs.h	2008-03-28 15:23:52.000000000 -0700
 +++ /dev/null	1970-01-01 00:00:00.000000000 +0000
-@@ -1,1207 +0,0 @@
+@@ -1,1229 +0,0 @@
 -/*
 - *  linux/include/linux/ext4_fs.h
 - *
@@ -2891,7 +2962,6 @@ Index: linux-2.6/include/linux/ext4_fs.h
 -#include <linux/types.h>
 -#include <linux/blkdev.h>
 -#include <linux/magic.h>
--
 -#include <linux/ext4_fs_i.h>
 -
 -/*
@@ -3043,12 +3113,20 @@ Index: linux-2.6/include/linux/ext4_fs.h
 -	__u32	bg_reserved2[3];
 -};
 -
+-/*
+- * Structure of a flex block group info
+- */
+-
+-struct flex_groups {
+-	__u32 free_inodes;
+-	__u32 free_blocks;
+-};
+-
 -#define EXT4_BG_INODE_UNINIT	0x0001 /* Inode table/bitmap not in use */
 -#define EXT4_BG_BLOCK_UNINIT	0x0002 /* Block bitmap not in use */
 -#define EXT4_BG_INODE_ZEROED	0x0004 /* On-disk itable initialized to zero */
 -
 -#ifdef __KERNEL__
--#include <linux/ext4_fs_i.h>
 -#include <linux/ext4_fs_sb.h>
 -#endif
 -/*
@@ -3103,6 +3181,7 @@ Index: linux-2.6/include/linux/ext4_fs.h
 -#define EXT4_TOPDIR_FL			0x00020000 /* Top of directory hierarchies*/
 -#define EXT4_HUGE_FILE_FL               0x00040000 /* Set to each huge file */
 -#define EXT4_EXTENTS_FL			0x00080000 /* Inode uses extents */
+-#define EXT4_EXT_MIGRATE		0x00100000 /* Inode is migrating */
 -#define EXT4_RESERVED_FL		0x80000000 /* reserved for ext4 lib */
 -
 -#define EXT4_FL_USER_VISIBLE		0x000BDFFF /* User visible flags */
@@ -3520,7 +3599,10 @@ Index: linux-2.6/include/linux/ext4_fs.h
 -	__le16  s_mmp_interval;         /* # seconds to wait in MMP checking */
 -	__le64  s_mmp_block;            /* Block for multi-mount protection */
 -	__le32  s_raid_stripe_width;    /* blocks on all data disks (N*stride)*/
--	__u32   s_reserved[163];        /* Padding to the end of the block */
+-	__u8	s_log_groups_per_flex;  /* FLEX_BG group size */
+-	__u8	s_reserved_char_pad2;
+-	__le16  s_reserved_pad;
+-	__u32   s_reserved[162];        /* Padding to the end of the block */
 -};
 -
 -#ifdef __KERNEL__
@@ -3919,10 +4001,10 @@ Index: linux-2.6/include/linux/ext4_fs.h
 -extern int ext4_writepage_trans_blocks(struct inode *);
 -extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
 -		struct address_space *mapping, loff_t from);
+-extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
 -
 -/* ioctl.c */
--extern int ext4_ioctl (struct inode *, struct file *, unsigned int,
--		       unsigned long);
+-extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
 -extern long ext4_compat_ioctl (struct file *, unsigned int, unsigned long);
 -
 -/* migrate.c */
@@ -4033,6 +4115,17 @@ Index: linux-2.6/include/linux/ext4_fs.h
 -}
 -
 -
+-static inline ext4_group_t ext4_flex_group(struct ext4_sb_info *sbi,
+-					     ext4_group_t block_group)
+-{
+-	return block_group >> sbi->s_log_groups_per_flex;
+-}
+-
+-static inline unsigned int ext4_flex_bg_size(struct ext4_sb_info *sbi)
+-{
+-	return 1 << sbi->s_log_groups_per_flex;
+-}
+-
 -#define ext4_std_error(sb, errno)				\
 -do {								\
 -	if ((errno))						\
@@ -4077,9 +4170,9 @@ Index: linux-2.6/include/linux/ext4_fs.h
 -#endif	/* __KERNEL__ */
 -
 -#endif	/* _LINUX_EXT4_FS_H */
-Index: linux-2.6/include/linux/ext4_fs_i.h
+Index: linux-2.6.25-rc7/include/linux/ext4_fs_i.h
 ===================================================================
---- linux-2.6.orig/include/linux/ext4_fs_i.h	2008-02-10 15:10:59.000000000 +0100
+--- linux-2.6.25-rc7.orig/include/linux/ext4_fs_i.h	2008-03-28 15:23:52.000000000 -0700
 +++ /dev/null	1970-01-01 00:00:00.000000000 +0000
 @@ -1,167 +0,0 @@
 -/*
@@ -4249,11 +4342,11 @@ Index: linux-2.6/include/linux/ext4_fs_i.h
 -};
 -
 -#endif	/* _LINUX_EXT4_FS_I */
-Index: linux-2.6/include/linux/ext4_fs_sb.h
+Index: linux-2.6.25-rc7/include/linux/ext4_fs_sb.h
 ===================================================================
---- linux-2.6.orig/include/linux/ext4_fs_sb.h	2008-02-10 15:10:59.000000000 +0100
+--- linux-2.6.25-rc7.orig/include/linux/ext4_fs_sb.h	2008-03-28 15:23:52.000000000 -0700
 +++ /dev/null	1970-01-01 00:00:00.000000000 +0000
-@@ -1,148 +0,0 @@
+@@ -1,151 +0,0 @@
 -/*
 - *  linux/include/linux/ext4_fs_sb.h
 - *
@@ -4399,6 +4492,9 @@ Index: linux-2.6/include/linux/ext4_fs_sb.h
 -
 -	/* locality groups */
 -	struct ext4_locality_group *s_locality_groups;
+-
+-	unsigned int s_log_groups_per_flex;
+-	struct flex_groups *s_flex_groups;
 -};
 -
 -#endif	/* _LINUX_EXT4_FS_SB */
