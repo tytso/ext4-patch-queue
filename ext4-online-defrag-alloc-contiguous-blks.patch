@@ -13,13 +13,14 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/extents.c |    8 
  fs/ext4/inode.c   |    2 
  fs/ext4/ioctl.c   |   10 
- fs/ext4/mballoc.c |    6 
- 5 files changed, 705 insertions(+), 5 deletions(-)
+ fs/ext4/mballoc.c |    5 
+ fs/ext4/mballoc.h |    1 
+ 6 files changed, 705 insertions(+), 5 deletions(-)
 
 Index: linux-2.6.25-rc7/fs/ext4/defrag.c
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.25-rc7/fs/ext4/defrag.c	2008-03-28 17:30:12.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/defrag.c	2008-03-31 11:11:37.000000000 -0700
 @@ -0,0 +1,684 @@
 +/*
 + * Copyright (c) 2008, NEC Software Tohoku, Ltd.
@@ -707,8 +708,8 @@ Index: linux-2.6.25-rc7/fs/ext4/defrag.c
 +}
 Index: linux-2.6.25-rc7/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc7.orig/fs/ext4/extents.c	2008-03-28 17:24:32.000000000 -0700
-+++ linux-2.6.25-rc7/fs/ext4/extents.c	2008-03-28 17:30:12.000000000 -0700
+--- linux-2.6.25-rc7.orig/fs/ext4/extents.c	2008-03-31 10:45:31.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/extents.c	2008-03-31 11:11:37.000000000 -0700
 @@ -48,7 +48,7 @@
   * ext_pblock:
   * combine low and high parts of physical block number into ext4_fsblk_t
@@ -747,8 +748,8 @@ Index: linux-2.6.25-rc7/fs/ext4/extents.c
  	int depth = ext_depth(inode);
 Index: linux-2.6.25-rc7/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25-rc7.orig/fs/ext4/inode.c	2008-03-28 17:24:32.000000000 -0700
-+++ linux-2.6.25-rc7/fs/ext4/inode.c	2008-03-28 17:30:12.000000000 -0700
+--- linux-2.6.25-rc7.orig/fs/ext4/inode.c	2008-03-31 11:11:10.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/inode.c	2008-03-31 11:11:37.000000000 -0700
 @@ -1606,7 +1606,7 @@ out:
   * So, if we see any bmap calls here on a modified, data-journaled file,
   * take extra steps to flush any blocks which might be in the cache.
@@ -760,8 +761,8 @@ Index: linux-2.6.25-rc7/fs/ext4/inode.c
  	journal_t *journal;
 Index: linux-2.6.25-rc7/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.25-rc7.orig/fs/ext4/ioctl.c	2008-03-28 17:24:32.000000000 -0700
-+++ linux-2.6.25-rc7/fs/ext4/ioctl.c	2008-03-28 17:24:39.000000000 -0700
+--- linux-2.6.25-rc7.orig/fs/ext4/ioctl.c	2008-03-31 10:45:27.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/ioctl.c	2008-03-31 11:11:37.000000000 -0700
 @@ -231,6 +231,16 @@ flags_err:
  
  		return err;
@@ -781,17 +782,9 @@ Index: linux-2.6.25-rc7/fs/ext4/ioctl.c
  		struct super_block *sb = inode->i_sb;
 Index: linux-2.6.25-rc7/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.25-rc7.orig/fs/ext4/mballoc.c	2008-03-28 17:24:32.000000000 -0700
-+++ linux-2.6.25-rc7/fs/ext4/mballoc.c	2008-03-28 17:24:39.000000000 -0700
-@@ -528,6 +528,7 @@ struct ext4_allocation_context {
- 	struct page *ac_buddy_page;
- 	struct ext4_prealloc_space *ac_pa;
- 	struct ext4_locality_group *ac_lg;
-+	long long ac_excepted_group;
- };
- 
- #define AC_STATUS_CONTINUE	1
-@@ -2044,6 +2045,10 @@ repeat:
+--- linux-2.6.25-rc7.orig/fs/ext4/mballoc.c	2008-03-31 11:00:53.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/mballoc.c	2008-03-31 11:11:37.000000000 -0700
+@@ -1750,6 +1750,10 @@ repeat:
  			if (group == EXT4_SB(sb)->s_groups_count)
  				group = 0;
  
@@ -802,7 +795,7 @@ Index: linux-2.6.25-rc7/fs/ext4/mballoc.c
  			/* quick check to skip empty groups */
  			grp = ext4_get_group_info(ac->ac_sb, group);
  			if (grp->bb_free == 0)
-@@ -4233,6 +4238,7 @@ ext4_mb_initialize_context(struct ext4_a
+@@ -3939,6 +3943,7 @@ ext4_mb_initialize_context(struct ext4_a
  	ac->ac_bitmap_page = NULL;
  	ac->ac_buddy_page = NULL;
  	ac->ac_lg = NULL;
@@ -810,3 +803,15 @@ Index: linux-2.6.25-rc7/fs/ext4/mballoc.c
  
  	/* we have to define context: we'll we work with a file or
  	 * locality group. this is a policy, actually */
+Index: linux-2.6.25-rc7/fs/ext4/mballoc.h
+===================================================================
+--- linux-2.6.25-rc7.orig/fs/ext4/mballoc.h	2008-03-31 11:12:16.000000000 -0700
++++ linux-2.6.25-rc7/fs/ext4/mballoc.h	2008-03-31 11:12:58.000000000 -0700
+@@ -205,6 +205,7 @@ struct ext4_allocation_context {
+ 	struct page *ac_buddy_page;
+ 	struct ext4_prealloc_space *ac_pa;
+ 	struct ext4_locality_group *ac_lg;
++	long long ac_excepted_group;
+ };
+ 
+ #define AC_STATUS_CONTINUE	1
