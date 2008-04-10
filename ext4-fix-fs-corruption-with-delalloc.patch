@@ -1,0 +1,42 @@
+ext4: Fix filesystem corruption on FS mounted with delalloc
+
+From: Valerie Clement <valerie.clement@bull.net>
+
+This patch fixes a filesystem corruption issue when the filesystem is
+mounted with the delalloc option and blocksize < pagesize.
+
+In the  mpage_put_bnr_to_bhs() function, when skipping the first blocks
+at the beginning of the first page, pblock should not be incremented,
+otherwise the last blocks are corrupted. When writing into blocks at the
+end of a group, the first blocks of the following group can be corrupted.
+In that case, we've got the error message below:
+EXT4-fs error (device sdc1): ext4_valid_block_bitmap: Invalid block bitmap -
+block_group = 6233, block = 51060737 
+
+(Issue found when using fsstress tool on ext4 FS with 1K blocksize)
+
+Signed-off-by: Valerie Clement <valerie.clement@bull.net>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+ mpage.c |    1 -
+ 1 file changed, 1 deletion(-)
+
+Index: linux-2.6.25-rc6/fs/mpage.c
+===================================================================
+--- linux-2.6.25-rc6.orig/fs/mpage.c	2008-04-02 17:12:03.000000000 +0200
++++ linux-2.6.25-rc6/fs/mpage.c	2008-04-02 17:12:11.000000000 +0200
+@@ -844,7 +844,6 @@ static void mpage_put_bnr_to_bhs(struct 
+ 				if (cur_logical >= logical)
+ 					break;
+ 				cur_logical++;
+-				pblock++;
+ 			} while ((bh = bh->b_this_page) != head);
+
+ 			do {
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
