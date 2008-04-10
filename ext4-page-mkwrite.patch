@@ -14,16 +14,16 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
 
- fs/ext4/file.c          |   19 ++++++++++++++++++-
- fs/ext4/inode.c         |   11 +++++++++++
- include/linux/ext4_fs.h |    1 +
+ fs/ext4/ext4.h  |    1 +
+ fs/ext4/file.c  |   19 ++++++++++++++++++-
+ fs/ext4/inode.c |   11 +++++++++++
  3 files changed, 30 insertions(+), 1 deletion(-)
 
 
 Index: linux-2.6.25-rc8/fs/ext4/file.c
 ===================================================================
---- linux-2.6.25-rc8.orig/fs/ext4/file.c	2008-04-09 17:43:39.000000000 -0700
-+++ linux-2.6.25-rc8/fs/ext4/file.c	2008-04-09 17:44:22.000000000 -0700
+--- linux-2.6.25-rc8.orig/fs/ext4/file.c	2008-04-10 07:37:19.000000000 -0700
++++ linux-2.6.25-rc8/fs/ext4/file.c	2008-04-10 07:52:11.000000000 -0700
 @@ -123,6 +123,23 @@ force_commit:
  	return ret;
  }
@@ -59,9 +59,9 @@ Index: linux-2.6.25-rc8/fs/ext4/file.c
  	.fsync		= ext4_sync_file,
 Index: linux-2.6.25-rc8/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25-rc8.orig/fs/ext4/inode.c	2008-04-09 17:43:39.000000000 -0700
-+++ linux-2.6.25-rc8/fs/ext4/inode.c	2008-04-09 17:44:22.000000000 -0700
-@@ -3507,3 +3507,14 @@ int ext4_change_inode_journal_flag(struc
+--- linux-2.6.25-rc8.orig/fs/ext4/inode.c	2008-04-10 07:37:19.000000000 -0700
++++ linux-2.6.25-rc8/fs/ext4/inode.c	2008-04-10 07:52:11.000000000 -0700
+@@ -3504,3 +3504,14 @@ int ext4_change_inode_journal_flag(struc
  
  	return err;
  }
@@ -76,15 +76,15 @@ Index: linux-2.6.25-rc8/fs/ext4/inode.c
 +	 */
 +	return block_page_mkwrite(vma, page, ext4_get_block);
 +}
-Index: linux-2.6.25-rc8/include/linux/ext4_fs.h
+Index: linux-2.6.25-rc8/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.25-rc8.orig/include/linux/ext4_fs.h	2008-04-09 17:43:39.000000000 -0700
-+++ linux-2.6.25-rc8/include/linux/ext4_fs.h	2008-04-09 17:44:22.000000000 -0700
-@@ -1047,6 +1047,7 @@ extern void ext4_set_aops(struct inode *
+--- linux-2.6.25-rc8.orig/fs/ext4/ext4.h	2008-04-10 07:50:53.000000000 -0700
++++ linux-2.6.25-rc8/fs/ext4/ext4.h	2008-04-10 07:52:11.000000000 -0700
+@@ -1058,6 +1058,7 @@ extern void ext4_set_aops(struct inode *
  extern int ext4_writepage_trans_blocks(struct inode *);
  extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
  		struct address_space *mapping, loff_t from);
 +extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
  
  /* ioctl.c */
- extern int ext4_ioctl (struct inode *, struct file *, unsigned int,
+ extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
