@@ -1,0 +1,159 @@
+ext4:  BUG: sleeping function called from invalid context
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+We can't do GFP_NOFS allocation after taking ext4_lock_group
+
+BUG: sleeping function called from invalid context at mm/slab.c:3054
+in_atomic():1, irqs_disabled():0
+1 lock held by vi/2426:
+#0:  (&ei->i_data_sem){----}, at: [<c01cf665>] ext4_release_file+0x23/0x66
+Pid: 2426, comm: vi Not tainted 2.6.25-rc7 #24
+[<c011a3dc>] __might_sleep+0xbe/0xc5
+[<c01620c9>] kmem_cache_alloc+0x22/0xa6
+[<c01e382a>] ext4_mb_release_inode_pa+0x73/0x1b3
+[<c01e6adf>] ext4_mb_discard_inode_preallocations+0x22d/0x2d4
+[<c013000a>] ? param_set_ushort+0x32/0x39
+[<c01ceba1>] ext4_discard_reservation+0x27/0x6a
+[<c01cf66c>] ext4_release_file+0x2a/0x66
+[<c0165bd6>] __fput+0xae/0x155
+[<c0165e46>] fput+0x17/0x19
+[<c0163756>] filp_close+0x50/0x5a
+[<c01647c0>] sys_close+0x71/0xad
+[<c0104aba>] sysenter_past_esp+0x5f/0xa5
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/mballoc.c |   29 +++++++++++++++--------------
+ 1 file changed, 15 insertions(+), 14 deletions(-)
+
+Index: linux-2.6.25-rc8/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.25-rc8.orig/fs/ext4/mballoc.c	2008-04-09 21:01:26.000000000 -0700
++++ linux-2.6.25-rc8/fs/ext4/mballoc.c	2008-04-09 21:10:27.000000000 -0700
+@@ -3733,9 +3733,9 @@ static int ext4_mb_new_preallocation(str
+  */
+ static noinline int ext4_mb_release_inode_pa(struct ext4_buddy *e4b,
+ 				struct buffer_head *bitmap_bh,
+-				struct ext4_prealloc_space *pa)
++				struct ext4_prealloc_space *pa,
++				struct ext4_allocation_context *ac)
+ {
+-	struct ext4_allocation_context *ac;
+ 	struct super_block *sb = e4b->bd_sb;
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 	unsigned long end;
+@@ -3751,8 +3751,6 @@ static noinline int ext4_mb_release_inod
+ 	BUG_ON(group != e4b->bd_group && pa->pa_len != 0);
+ 	end = bit + pa->pa_len;
+ 
+-	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
+-
+ 	if (ac) {
+ 		ac->ac_sb = sb;
+ 		ac->ac_inode = pa->pa_inode;
+@@ -3797,22 +3795,18 @@ static noinline int ext4_mb_release_inod
+ 		 */
+ 	}
+ 	atomic_add(free, &sbi->s_mb_discarded);
+-	if (ac)
+-		kmem_cache_free(ext4_ac_cachep, ac);
+ 
+ 	return err;
+ }
+ 
+ static noinline int ext4_mb_release_group_pa(struct ext4_buddy *e4b,
+-				struct ext4_prealloc_space *pa)
++				struct ext4_prealloc_space *pa,
++				struct ext4_allocation_context *ac)
+ {
+-	struct ext4_allocation_context *ac;
+ 	struct super_block *sb = e4b->bd_sb;
+ 	ext4_group_t group;
+ 	ext4_grpblk_t bit;
+ 
+-	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
+-
+ 	if (ac)
+ 		ac->ac_op = EXT4_MB_HISTORY_DISCARD;
+ 
+@@ -3830,7 +3824,6 @@ static noinline int ext4_mb_release_grou
+ 		ac->ac_b_ex.fe_len = pa->pa_len;
+ 		ac->ac_b_ex.fe_logical = 0;
+ 		ext4_mb_store_history(ac);
+-		kmem_cache_free(ext4_ac_cachep, ac);
+ 	}
+ 
+ 	return 0;
+@@ -3851,6 +3844,7 @@ static noinline int ext4_mb_discard_grou
+ 	struct ext4_group_info *grp = ext4_get_group_info(sb, group);
+ 	struct buffer_head *bitmap_bh = NULL;
+ 	struct ext4_prealloc_space *pa, *tmp;
++	struct ext4_allocation_context *ac;
+ 	struct list_head list;
+ 	struct ext4_buddy e4b;
+ 	int err;
+@@ -3878,6 +3872,7 @@ static noinline int ext4_mb_discard_grou
+ 	grp = ext4_get_group_info(sb, group);
+ 	INIT_LIST_HEAD(&list);
+ 
++	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
+ repeat:
+ 	ext4_lock_group(sb, group);
+ 	list_for_each_entry_safe(pa, tmp,
+@@ -3932,9 +3927,9 @@ repeat:
+ 		spin_unlock(pa->pa_obj_lock);
+ 
+ 		if (pa->pa_linear)
+-			ext4_mb_release_group_pa(&e4b, pa);
++			ext4_mb_release_group_pa(&e4b, pa, ac);
+ 		else
+-			ext4_mb_release_inode_pa(&e4b, bitmap_bh, pa);
++			ext4_mb_release_inode_pa(&e4b, bitmap_bh, pa, ac);
+ 
+ 		list_del(&pa->u.pa_tmp_list);
+ 		call_rcu(&(pa)->u.pa_rcu, ext4_mb_pa_callback);
+@@ -3942,6 +3937,8 @@ repeat:
+ 
+ out:
+ 	ext4_unlock_group(sb, group);
++	if (ac)
++		kmem_cache_free(ext4_ac_cachep, ac);
+ 	ext4_mb_release_desc(&e4b);
+ 	put_bh(bitmap_bh);
+ 	return free;
+@@ -3962,6 +3959,7 @@ void ext4_mb_discard_inode_preallocation
+ 	struct super_block *sb = inode->i_sb;
+ 	struct buffer_head *bitmap_bh = NULL;
+ 	struct ext4_prealloc_space *pa, *tmp;
++	struct ext4_allocation_context *ac;
+ 	ext4_group_t group = 0;
+ 	struct list_head list;
+ 	struct ext4_buddy e4b;
+@@ -3976,6 +3974,7 @@ void ext4_mb_discard_inode_preallocation
+ 
+ 	INIT_LIST_HEAD(&list);
+ 
++	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
+ repeat:
+ 	/* first, collect all pa's in the inode */
+ 	spin_lock(&ei->i_prealloc_lock);
+@@ -4040,7 +4039,7 @@ repeat:
+ 
+ 		ext4_lock_group(sb, group);
+ 		list_del(&pa->pa_group_list);
+-		ext4_mb_release_inode_pa(&e4b, bitmap_bh, pa);
++		ext4_mb_release_inode_pa(&e4b, bitmap_bh, pa, ac);
+ 		ext4_unlock_group(sb, group);
+ 
+ 		ext4_mb_release_desc(&e4b);
+@@ -4049,6 +4048,8 @@ repeat:
+ 		list_del(&pa->u.pa_tmp_list);
+ 		call_rcu(&(pa)->u.pa_rcu, ext4_mb_pa_callback);
+ 	}
++	if (ac)
++		kmem_cache_free(ext4_ac_cachep, ac);
+ }
+ 
+ /*
