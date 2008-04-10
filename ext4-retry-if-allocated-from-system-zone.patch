@@ -17,11 +17,11 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  fs/ext4/mballoc.c |   47 ++++++++++++++++++++++++++++++++++++-----------
  2 files changed, 47 insertions(+), 17 deletions(-)
 
-diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 1e6c5dc..0a7249b 100644
---- a/fs/ext4/balloc.c
-+++ b/fs/ext4/balloc.c
-@@ -289,11 +289,11 @@ read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
+Index: linux-2.6.25-rc8/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.25-rc8.orig/fs/ext4/balloc.c	2008-04-09 17:45:36.000000000 -0700
++++ linux-2.6.25-rc8/fs/ext4/balloc.c	2008-04-09 17:45:44.000000000 -0700
+@@ -289,11 +289,11 @@ read_block_bitmap(struct super_block *sb
  			    (int)block_group, (unsigned long long)bitmap_blk);
  		return NULL;
  	}
@@ -50,25 +50,25 @@ index 1e6c5dc..0a7249b 100644
 +		 */
 +		goto retry_alloc;
  	}
-
+ 
  	performed_allocation = 1;
-diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 340daae..7718826 100644
---- a/fs/ext4/mballoc.c
-+++ b/fs/ext4/mballoc.c
-@@ -3040,7 +3040,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+Index: linux-2.6.25-rc8/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.25-rc8.orig/fs/ext4/mballoc.c	2008-04-09 17:45:36.000000000 -0700
++++ linux-2.6.25-rc8/fs/ext4/mballoc.c	2008-04-09 17:45:44.000000000 -0700
+@@ -3040,7 +3040,7 @@ ext4_mb_mark_diskspace_used(struct ext4_
  	struct ext4_sb_info *sbi;
  	struct super_block *sb;
  	ext4_fsblk_t block;
 -	int err;
 +	int err, len;
-
+ 
  	BUG_ON(ac->ac_status != AC_STATUS_FOUND);
  	BUG_ON(ac->ac_b_ex.fe_len <= 0);
-@@ -3074,14 +3074,27 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+@@ -3074,14 +3074,27 @@ ext4_mb_mark_diskspace_used(struct ext4_
  		+ ac->ac_b_ex.fe_start
  		+ le32_to_cpu(es->s_first_data_block);
-
+ 
 -	if (block == ext4_block_bitmap(sb, gdp) ||
 -			block == ext4_inode_bitmap(sb, gdp) ||
 -			in_range(block, ext4_inode_table(sb, gdp),
@@ -98,8 +98,8 @@ index 340daae..7718826 100644
  	}
  #ifdef AGGRESSIVE_CHECK
  	{
-@@ -4331,7 +4344,6 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
-
+@@ -4331,7 +4344,6 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t
+ 
  		ac->ac_op = EXT4_MB_HISTORY_ALLOC;
  		ext4_mb_normalize_request(ac, ar);
 -
@@ -108,7 +108,7 @@ index 340daae..7718826 100644
  		ext4_mb_regular_allocator(ac);
 @@ -4345,10 +4357,21 @@ repeat:
  	}
-
+ 
  	if (likely(ac->ac_status == AC_STATUS_FOUND)) {
 -		ext4_mb_mark_diskspace_used(ac, handle);
 -		*errp = 0;
@@ -139,8 +139,5 @@ index 340daae..7718826 100644
 +		/* err = 0. ext4_std_error should be a no op */
 +		goto error_return;
  	}
-
+ 
  	BUFFER_TRACE(bitmap_bh, "getting write access");
--- 
-1.5.5.rc0.16.g02b00.dirty
-

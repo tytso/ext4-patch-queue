@@ -7,11 +7,16 @@ files from the journal.  Something that will make this easier is if we
 can put the time of the commit into commit block.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index e013978..ccc3b5c 100644
---- a/fs/jbd2/commit.c
-+++ b/fs/jbd2/commit.c
-@@ -112,6 +112,7 @@ static int journal_submit_commit_record(journal_t *journal,
+---
+ fs/jbd2/commit.c     |    3 +++
+ include/linux/jbd2.h |    2 ++
+ 2 files changed, 5 insertions(+)
+
+Index: linux-2.6.25-rc8/fs/jbd2/commit.c
+===================================================================
+--- linux-2.6.25-rc8.orig/fs/jbd2/commit.c	2008-04-09 17:43:55.000000000 -0700
++++ linux-2.6.25-rc8/fs/jbd2/commit.c	2008-04-09 17:46:24.000000000 -0700
+@@ -112,6 +112,7 @@ static int journal_submit_commit_record(
  	struct buffer_head *bh;
  	int ret;
  	int barrier_done = 0;
@@ -19,7 +24,7 @@ index e013978..ccc3b5c 100644
  
  	if (is_journal_aborted(journal))
  		return 0;
-@@ -126,6 +127,8 @@ static int journal_submit_commit_record(journal_t *journal,
+@@ -126,6 +127,8 @@ static int journal_submit_commit_record(
  	tmp->h_magic = cpu_to_be32(JBD2_MAGIC_NUMBER);
  	tmp->h_blocktype = cpu_to_be32(JBD2_COMMIT_BLOCK);
  	tmp->h_sequence = cpu_to_be32(commit_transaction->t_tid);
@@ -28,10 +33,10 @@ index e013978..ccc3b5c 100644
  
  	if (JBD2_HAS_COMPAT_FEATURE(journal,
  				    JBD2_FEATURE_COMPAT_CHECKSUM)) {
-diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 2cbf6fd..545abcb 100644
---- a/include/linux/jbd2.h
-+++ b/include/linux/jbd2.h
+Index: linux-2.6.25-rc8/include/linux/jbd2.h
+===================================================================
+--- linux-2.6.25-rc8.orig/include/linux/jbd2.h	2008-04-09 17:43:28.000000000 -0700
++++ linux-2.6.25-rc8/include/linux/jbd2.h	2008-04-09 17:46:24.000000000 -0700
 @@ -170,6 +170,8 @@ struct commit_header {
  	unsigned char   h_chksum_size;
  	unsigned char 	h_padding[2];

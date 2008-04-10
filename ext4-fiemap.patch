@@ -14,10 +14,10 @@ Signed-off-by: Eric Sandeen <sandeen@redhat.com>
  fs/ext4/file.c         |    4 +
  4 files changed, 189 insertions(+), 2 deletions(-)
 
-Index: linux-2.6.25-rc7/fs/ext4/extents.c
+Index: linux-2.6.25-rc8/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc7.orig/fs/ext4/extents.c	2008-03-28 17:04:19.000000000 -0700
-+++ linux-2.6.25-rc7/fs/ext4/extents.c	2008-03-28 17:06:09.000000000 -0700
+--- linux-2.6.25-rc8.orig/fs/ext4/extents.c	2008-04-09 17:46:31.000000000 -0700
++++ linux-2.6.25-rc8/fs/ext4/extents.c	2008-04-09 17:46:34.000000000 -0700
 @@ -40,6 +40,7 @@
  #include <linux/slab.h>
  #include <linux/falloc.h>
@@ -35,7 +35,7 @@ Index: linux-2.6.25-rc7/fs/ext4/extents.c
  		ext4_ext_drop_refs(path);
  
  		if (err < 0)
-@@ -3043,3 +3044,183 @@ retry:
+@@ -3080,3 +3081,183 @@ retry:
  	mutex_unlock(&inode->i_mutex);
  	return ret > 0 ? ret2 : ret;
  }
@@ -219,10 +219,10 @@ Index: linux-2.6.25-rc7/fs/ext4/extents.c
 +	return err;
 +}
 +
-Index: linux-2.6.25-rc7/fs/ext4/file.c
+Index: linux-2.6.25-rc8/fs/ext4/file.c
 ===================================================================
---- linux-2.6.25-rc7.orig/fs/ext4/file.c	2008-03-28 15:37:51.000000000 -0700
-+++ linux-2.6.25-rc7/fs/ext4/file.c	2008-03-28 17:05:36.000000000 -0700
+--- linux-2.6.25-rc8.orig/fs/ext4/file.c	2008-04-09 17:45:36.000000000 -0700
++++ linux-2.6.25-rc8/fs/ext4/file.c	2008-04-09 17:46:34.000000000 -0700
 @@ -140,6 +140,9 @@ static int ext4_file_mmap(struct file *f
  	return 0;
  }
@@ -240,10 +240,10 @@ Index: linux-2.6.25-rc7/fs/ext4/file.c
 +	.fiemap		= ext4_fiemap,
  };
  
-Index: linux-2.6.25-rc7/fs/ext4/ext4.h
+Index: linux-2.6.25-rc8/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.25-rc7.orig/fs/ext4/ext4.h	2008-03-28 16:53:50.000000000 -0700
-+++ linux-2.6.25-rc7/fs/ext4/ext4.h	2008-03-28 17:05:36.000000000 -0700
+--- linux-2.6.25-rc8.orig/fs/ext4/ext4.h	2008-04-09 17:46:12.000000000 -0700
++++ linux-2.6.25-rc8/fs/ext4/ext4.h	2008-04-09 17:46:34.000000000 -0700
 @@ -437,6 +437,8 @@ struct ext4_inode {
  	__le32  i_version_hi;	/* high 32 bits for 64-bit version */
  };
@@ -253,10 +253,10 @@ Index: linux-2.6.25-rc7/fs/ext4/ext4.h
  
  #define EXT4_EPOCH_BITS 2
  #define EXT4_EPOCH_MASK ((1 << EXT4_EPOCH_BITS) - 1)
-Index: linux-2.6.25-rc7/fs/ext4/ext4_extents.h
+Index: linux-2.6.25-rc8/fs/ext4/ext4_extents.h
 ===================================================================
---- linux-2.6.25-rc7.orig/fs/ext4/ext4_extents.h	2008-03-28 17:04:19.000000000 -0700
-+++ linux-2.6.25-rc7/fs/ext4/ext4_extents.h	2008-03-28 17:05:36.000000000 -0700
+--- linux-2.6.25-rc8.orig/fs/ext4/ext4_extents.h	2008-04-09 17:46:31.000000000 -0700
++++ linux-2.6.25-rc8/fs/ext4/ext4_extents.h	2008-04-09 17:46:34.000000000 -0700
 @@ -132,7 +132,7 @@ struct ext4_ext_path {
   */
  typedef int (*ext_prepare_callback)(struct inode *, struct ext4_ext_path *,
