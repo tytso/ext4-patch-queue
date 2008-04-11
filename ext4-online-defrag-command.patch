@@ -1,5 +1,28 @@
+ext4: online defrag-- Online defrag command
+
+From: Akira Fujita <a-fujita@rs.jp.nec.com>
+
+- The defrag command. Usage is as follows:
+  - Put the multiple files closer together.
+    # e4defrag -r directory-name
+  - Defrag for free space fragmentation.
+    # e4defrag -f file-name
+  - Defrag for a single file.
+    # e4defrag file-name
+  - Defrag for all files on ext4.
+    # e4defrag device-name
+
+Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
+Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
 /*
  * e4defrag.c - ext4 filesystem defragmenter
+ *
+ * Copyright (C) 2008 NEC Software Tohoku, Ltd.
+ *
+ * Author: Akira Fujita	<a-fujita@rs.jp.nec.com>
+ *         Takashi Sato	<t-sato@yk.jp.nec.com>
  */
 
 #ifndef _LARGEFILE_SOURCE
@@ -37,7 +60,7 @@
 #define EXT4_IOC_EXTENTS_INFO	_IOW('f', 13, struct ext4_extents_info)
 #define EXT4_IOC_RESERVE_BLOCK	_IOW('f', 14, struct ext4_extents_info)
 #define EXT4_IOC_MOVE_VICTIM	_IOW('f', 15, struct ext4_extents_info)
-#define EXT4_IOC_BLOCK_RELEASE	_IO('f', 16)
+#define EXT4_IOC_BLOCK_RELEASE	_IO('f', 8)
 
 #define DEFRAG_MAX_ENT	32
 
@@ -406,7 +429,8 @@ int force_defrag(int fd, const struct stat64 *buf, int blocksize);
  * @ftwbuf:		the pointer of a struct FTW.
  */
 int
-ftw_fn(const char *file, const struct stat64 *buf, int flag, struct FTW *ftwbuf)
+ftw_fn(const char *file, const struct stat64 *buf, int flag, struct FTW
+*ftwbuf)
 {
 	int	fd;
 	int	blocksize;
@@ -431,7 +455,8 @@ ftw_fn(const char *file, const struct stat64 *buf, int flag, struct FTW *ftwbuf)
 
 	if (flag == FTW_F) {
 		amount_cnt++;
-		if ((fd = open64(file, O_RDONLY)) < 0) {
+		fd = open64(file, O_RDWR);
+		if (fd < 0) {
 			if (detail_flag) {
 				perror(NGMSG_FILE_OPEN);
 				PRINT_FILE_NAME(file);
@@ -776,7 +801,8 @@ int is_ext4(const char *filename)
  * @mount_point:	the mount point.
  * @dir_path_len:	the length of directory.
  */
-int get_mount_point(const char *devname, char *mount_point, int dir_path_len)
+int get_mount_point(const char *devname, char *mount_point, int
+dir_path_len)
 {
 	char	*mtab = MOUNTED;	/* Refer to /etc/mtab */
 	FILE	*fp = NULL;
@@ -1382,7 +1408,7 @@ int get_used_extent(int fd, extent_t **ext_list_head,
 			       DEFRAG_MAX_ENT);
 			ret = ioctl(fd, EXT4_IOC_EXTENTS_INFO, &extents_info);
 			if (ret < 0) {
-				if (errno == ENOENT) {
+				if (errno == ENOENT || errno == ESTALE) {
 					continue;
 				} else {
 					/* Without ENOENT case*/
@@ -1416,9 +1442,8 @@ int get_used_extent(int fd, extent_t **ext_list_head,
 	}
 
 	if (ret < 0) {
-		if (errno == ENOENT) {
+		if (errno == ENOENT || errno == ESTALE)
 			return RETURN_OK;
-		}
 	}
 	return ret;
 }
@@ -1922,3 +1947,7 @@ freelist:
 	free_ext(extlist_head);
 	return ret;
 }
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
