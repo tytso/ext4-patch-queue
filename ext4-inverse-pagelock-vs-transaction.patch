@@ -10,10 +10,10 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  fs/ext4/inode.c   |  327 +++++++++++++++++++++++++++++-------------------------
  3 files changed, 183 insertions(+), 163 deletions(-)
 
-Index: linux-2.6.25-rc9/fs/ext4/ext4.h
+Index: linux-2.6.25/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.25-rc9.orig/fs/ext4/ext4.h	2008-04-16 12:16:58.000000000 -0700
-+++ linux-2.6.25-rc9/fs/ext4/ext4.h	2008-04-16 12:16:58.000000000 -0700
+--- linux-2.6.25.orig/fs/ext4/ext4.h	2008-04-22 15:55:55.000000000 -0700
++++ linux-2.6.25/fs/ext4/ext4.h	2008-04-22 15:56:07.000000000 -0700
 @@ -1135,7 +1135,7 @@ extern void ext4_set_inode_flags(struct 
  extern void ext4_get_inode_flags(struct ext4_inode_info *);
  extern void ext4_set_aops(struct inode *inode);
@@ -32,10 +32,10 @@ Index: linux-2.6.25-rc9/fs/ext4/ext4.h
  extern void ext4_ext_init(struct super_block *);
  extern void ext4_ext_release(struct super_block *);
  extern long ext4_fallocate(struct inode *inode, int mode, loff_t offset,
-Index: linux-2.6.25-rc9/fs/ext4/extents.c
+Index: linux-2.6.25/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25-rc9.orig/fs/ext4/extents.c	2008-04-16 12:16:58.000000000 -0700
-+++ linux-2.6.25-rc9/fs/ext4/extents.c	2008-04-16 12:16:58.000000000 -0700
+--- linux-2.6.25.orig/fs/ext4/extents.c	2008-04-22 15:55:55.000000000 -0700
++++ linux-2.6.25/fs/ext4/extents.c	2008-04-22 15:56:07.000000000 -0700
 @@ -2882,7 +2882,7 @@ out2:
  	return err ? err : allocated;
  }
@@ -67,10 +67,10 @@ Index: linux-2.6.25-rc9/fs/ext4/extents.c
  
  	down_write(&EXT4_I(inode)->i_data_sem);
  	ext4_ext_invalidate_cache(inode);
-Index: linux-2.6.25-rc9/fs/ext4/inode.c
+Index: linux-2.6.25/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25-rc9.orig/fs/ext4/inode.c	2008-04-16 12:16:55.000000000 -0700
-+++ linux-2.6.25-rc9/fs/ext4/inode.c	2008-04-16 12:17:42.000000000 -0700
+--- linux-2.6.25.orig/fs/ext4/inode.c	2008-04-22 15:55:54.000000000 -0700
++++ linux-2.6.25/fs/ext4/inode.c	2008-04-22 15:57:32.000000000 -0700
 @@ -1204,19 +1204,20 @@ static int ext4_write_begin(struct file 
   	to = from + len;
  
@@ -152,12 +152,12 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  		new_i_size = pos + copied;
  		if (new_i_size > EXT4_I(inode)->i_disksize)
  			EXT4_I(inode)->i_disksize = new_i_size;
--		copied = ext4_generic_write_end(file, mapping, pos, len, copied,
-+		copied = generic_write_end(file, mapping, pos, len, copied,
+-		ret2 = ext4_generic_write_end(file, mapping, pos, len, copied,
++		ret2 = generic_write_end(file, mapping, pos, len, copied,
  							page, fsdata);
- 		if (copied < 0)
- 			ret = copied;
-@@ -1320,8 +1298,6 @@ static int ext4_ordered_write_end(struct
+ 		copied = ret2;
+ 		if (ret2 < 0)
+@@ -1321,8 +1299,6 @@ static int ext4_ordered_write_end(struct
  	ret2 = ext4_journal_stop(handle);
  	if (!ret)
  		ret = ret2;
@@ -166,7 +166,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  
  	return ret ? ret : copied;
  }
-@@ -1332,7 +1308,7 @@ static int ext4_writeback_write_end(stru
+@@ -1333,7 +1309,7 @@ static int ext4_writeback_write_end(stru
  				struct page *page, void *fsdata)
  {
  	handle_t *handle = ext4_journal_current_handle();
@@ -175,16 +175,16 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  	int ret = 0, ret2;
  	loff_t new_i_size;
  
-@@ -1340,7 +1316,7 @@ static int ext4_writeback_write_end(stru
+@@ -1341,7 +1317,7 @@ static int ext4_writeback_write_end(stru
  	if (new_i_size > EXT4_I(inode)->i_disksize)
  		EXT4_I(inode)->i_disksize = new_i_size;
  
--	copied = ext4_generic_write_end(file, mapping, pos, len, copied,
-+	copied = generic_write_end(file, mapping, pos, len, copied,
+-	ret2 = ext4_generic_write_end(file, mapping, pos, len, copied,
++	ret2 = generic_write_end(file, mapping, pos, len, copied,
  							page, fsdata);
- 	if (copied < 0)
- 		ret = copied;
-@@ -1348,8 +1324,6 @@ static int ext4_writeback_write_end(stru
+ 	copied = ret2;
+ 	if (ret2 < 0)
+@@ -1350,8 +1326,6 @@ static int ext4_writeback_write_end(stru
  	ret2 = ext4_journal_stop(handle);
  	if (!ret)
  		ret = ret2;
@@ -193,7 +193,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  
  	return ret ? ret : copied;
  }
-@@ -1388,10 +1362,10 @@ static int ext4_journalled_write_end(str
+@@ -1390,10 +1364,10 @@ static int ext4_journalled_write_end(str
  			ret = ret2;
  	}
  
@@ -205,7 +205,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  	page_cache_release(page);
  
  	return ret ? ret : copied;
-@@ -1663,11 +1637,10 @@ static int jbd2_journal_dirty_data_fn(ha
+@@ -1665,11 +1639,10 @@ static int jbd2_journal_dirty_data_fn(ha
  }
  
  /*
@@ -221,7 +221,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
   *
   * In all journalling modes block_write_full_page() will start the I/O.
   *
-@@ -1711,10 +1684,8 @@ static int jbd2_journal_dirty_data_fn(ha
+@@ -1713,10 +1686,8 @@ static int jbd2_journal_dirty_data_fn(ha
   * disastrous.  Any write() or metadata operation will sync the fs for
   * us.
   *
@@ -233,7 +233,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  				struct writeback_control *wbc)
  {
  	struct inode *inode = page->mapping->host;
-@@ -1723,22 +1694,6 @@ static int ext4_ordered_writepage(struct
+@@ -1725,22 +1696,6 @@ static int ext4_ordered_writepage(struct
  	int ret = 0;
  	int err;
  
@@ -256,7 +256,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  	if (!page_has_buffers(page)) {
  		create_empty_buffers(page, inode->i_sb->s_blocksize,
  				(1 << BH_Dirty)|(1 << BH_Uptodate));
-@@ -1762,114 +1717,139 @@ static int ext4_ordered_writepage(struct
+@@ -1764,114 +1719,139 @@ static int ext4_ordered_writepage(struct
  	 * and generally junk.
  	 */
  	if (ret == 0) {
@@ -450,7 +450,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  }
  
  static int ext4_readpage(struct file *file, struct page *page)
-@@ -2084,7 +2064,7 @@ void ext4_set_aops(struct inode *inode)
+@@ -2086,7 +2066,7 @@ void ext4_set_aops(struct inode *inode)
   * This required during truncate. We need to physically zero the tail end
   * of that block so it doesn't yield old data if the file is later grown.
   */
@@ -459,7 +459,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  		struct address_space *mapping, loff_t from)
  {
  	ext4_fsblk_t index = from >> PAGE_CACHE_SHIFT;
-@@ -2093,8 +2073,13 @@ int ext4_block_truncate_page(handle_t *h
+@@ -2095,8 +2075,13 @@ int ext4_block_truncate_page(handle_t *h
  	ext4_lblk_t iblock;
  	struct inode *inode = mapping->host;
  	struct buffer_head *bh;
@@ -473,7 +473,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  	blocksize = inode->i_sb->s_blocksize;
  	length = blocksize - (offset & (blocksize - 1));
  	iblock = index << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
-@@ -2558,7 +2543,6 @@ void ext4_truncate(struct inode *inode)
+@@ -2560,7 +2545,6 @@ void ext4_truncate(struct inode *inode)
  	int n;
  	ext4_lblk_t last_block;
  	unsigned blocksize = inode->i_sb->s_blocksize;
@@ -481,7 +481,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  
  	if (!(S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
  	    S_ISLNK(inode->i_mode)))
-@@ -2568,41 +2552,21 @@ void ext4_truncate(struct inode *inode)
+@@ -2570,41 +2554,21 @@ void ext4_truncate(struct inode *inode)
  	if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
  		return;
  
@@ -528,7 +528,7 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
  
  	n = ext4_block_to_path(inode, last_block, offsets, NULL);
  	if (n == 0)
-@@ -3718,13 +3682,76 @@ int ext4_change_inode_journal_flag(struc
+@@ -3720,13 +3684,76 @@ int ext4_change_inode_journal_flag(struc
  	return err;
  }
  
