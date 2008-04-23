@@ -13,9 +13,9 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.25/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/inode.c	2008-04-22 15:57:32.000000000 -0700
-+++ linux-2.6.25/fs/ext4/inode.c	2008-04-22 15:57:42.000000000 -0700
-@@ -1412,18 +1412,13 @@ static int ext4_da_get_block_prep(struct
+--- linux-2.6.25.orig/fs/ext4/inode.c	2008-04-23 15:37:02.000000000 -0700
++++ linux-2.6.25/fs/ext4/inode.c	2008-04-23 15:46:51.000000000 -0700
+@@ -1412,18 +1412,14 @@ static int ext4_da_get_block_prep(struct
  static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
  				   struct buffer_head *bh_result, int create)
  {
@@ -32,12 +32,13 @@ Index: linux-2.6.25/fs/ext4/inode.c
 -			goto out;
 -		}
 -	}
-+	J_ASSERT(handle != NULL || create == 0);
 +	handle = ext4_journal_current_handle();
++	BUG_ON(handle == 0);
++	BUG_ON(create == 0);
  
  	ret = ext4_get_blocks_wrap(handle, inode, iblock, max_blocks,
  				   bh_result, create, 0);
-@@ -1458,29 +1453,17 @@ static int ext4_da_get_block_write(struc
+@@ -1458,29 +1454,17 @@ static int ext4_da_get_block_write(struc
  		ret = 0;
  	}
  
@@ -69,7 +70,7 @@ Index: linux-2.6.25/fs/ext4/inode.c
  
  	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
  		ret = nobh_writepage(page, ext4_get_block, wbc);
-@@ -1492,21 +1475,76 @@ static int ext4_da_writepage(struct page
+@@ -1492,21 +1476,76 @@ static int ext4_da_writepage(struct page
  		ext4_mark_inode_dirty(handle, inode);
  	}
  
@@ -154,8 +155,8 @@ Index: linux-2.6.25/fs/ext4/inode.c
  static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
 Index: linux-2.6.25/mm/page-writeback.c
 ===================================================================
---- linux-2.6.25.orig/mm/page-writeback.c	2008-04-22 15:54:16.000000000 -0700
-+++ linux-2.6.25/mm/page-writeback.c	2008-04-22 15:57:42.000000000 -0700
+--- linux-2.6.25.orig/mm/page-writeback.c	2008-04-16 19:49:44.000000000 -0700
++++ linux-2.6.25/mm/page-writeback.c	2008-04-23 15:37:02.000000000 -0700
 @@ -816,7 +816,7 @@ int write_cache_pages(struct address_spa
  	pagevec_init(&pvec, 0);
  	if (wbc->range_cyclic) {
