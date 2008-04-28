@@ -2,15 +2,15 @@ ext4: ENOSPC error handling for writing to an uninitialized extent
 
 From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-This patch handles possible ENOSPC error when writing to an
-uninitialized extent in case filesystem is full.
+This patch handles possible ENOSPC errors when writing to an
+uninitialized extent in case the filesystem is full.
 
-A write to prealloc area cause the split of unititalized extent
-into a initialized and uninitialized extent. If we don't have
-space to add new extent information instead of returning error
-,convert the existing uninitialized extent to initialized one. We
-need to zero out the blocks corresponding to the extent to prevent
-wrong data reaching userspace.
+A write to a prealloc area causes the split of an unititalized extent
+into initialized and uninitialized extents.  If we don't have
+space to add new extent information, instead of returning error,
+convert the existing uninitialized extent to initialized one.  We
+need to zero out the blocks corresponding to the entire extent to
+prevent uninitialized data reaching userspace.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
@@ -33,7 +33,7 @@ Index: linux-2.6.25-rc9/fs/ext4/extents.c
 +	complete((struct completion *)bio->bi_private);
 +}
 +
-+/* FIXME!! we need to try to merge to left or right after zerout  */
++/* FIXME!! we need to try to merge to left or right after zero-out  */
 +static int ext4_ext_zeroout(struct inode *inode, struct ext4_extent *ex)
 +{
 +	int ret = -EIO;
@@ -49,9 +49,8 @@ Index: linux-2.6.25-rc9/fs/ext4/extents.c
 +	ee_len    = ext4_ext_get_actual_len(ex);
 +	ee_pblock = ext_pblock(ex);
 +
-+	/* convert ee_pblock in 512 byte sector */
++	/* convert ee_pblock to 512 byte sectors */
 +	ee_pblock = ee_pblock << (blkbits - 9);
-+
 +
 +	while (ee_len > 0) {
 +
@@ -72,8 +71,9 @@ Index: linux-2.6.25-rc9/fs/ext4/extents.c
 +			ret = bio_add_page(bio, ZERO_PAGE(0),
 +							blocksize, offset);
 +			if (ret != blocksize) {
-+				/* We can't add any more page because of
-+				 * hardware limitation. Start a new bio
++				/*
++				 * We can't add any more pages because of
++				 * hardware limitations.  Start a new bio.
 +				 */
 +				break;
 +			}
