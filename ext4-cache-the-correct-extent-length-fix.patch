@@ -1,11 +1,11 @@
-ext4: Cache the correct extent length for uninit extent.
+ext4: Cache the correct extent length for uninit extents
 
 From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-When we convert uninitialized extent to initialized extent
+When we convert an uninitialized extent to an initialized extent
 we need to make sure we return the number of blocks in the
 extent from the file system block corresponding to logical
-file block. Other wise we cache wrong extent details and this
+file block.  Otherwise we cache wrong extent details and this
 results in file system corruption.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
@@ -28,7 +28,7 @@ Index: linux-2.6.25-rc9/fs/ext4/extents.c
  	}
  
  	/* ex1: ee_block to iblock - 1 : uninitialized */
-@@ -2311,11 +2312,44 @@ static int ext4_ext_convert_to_initializ
+@@ -2311,11 +2312,45 @@ static int ext4_ext_convert_to_initializ
  				ex->ee_len   = orig_ex.ee_len;
  				ext4_ext_store_pblock(ex, ext_pblock(&orig_ex));
  				ext4_ext_dirty(handle, inode, path + depth);
@@ -39,11 +39,12 @@ Index: linux-2.6.25-rc9/fs/ext4/extents.c
  			} else if (err)
  				goto fix_extent_len;
  
-+			/* We need to zero out the second half because
-+			 * fallocate request can update file size and
++			/*
++			 * We need to zero out the second half because
++			 * an fallocate request can update file size and
 +			 * converting the second half to initialized extent
 +			 * implies that we can leak some junk data to user
-+			 * space
++			 * space.
 +			 */
 +			err =  ext4_ext_zeroout(inode, ex3);
 +			if (err) {

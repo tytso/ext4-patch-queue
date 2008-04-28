@@ -4,15 +4,15 @@ From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 Fail migrate if we allocated new blocks via mmap write.
 
-If we write to holes in the file via mmap, we endup allocating
+If we write to holes in the file via mmap, we end up allocating
 new blocks. This block allocation happens without taking inode->i_mutex.
-Since migrate is protected by i_mutex and migrate expect no
+Since migrate is protected by i_mutex and migrate expects that no
 new blocks get allocated during migrate, fail migrate if new blocks
 get allocated.
 
 We can't take inode->i_mutex in the mmap write path because that
 would result in a locking order violation between i_mutex and mmap_sem.
-Also adding a seprate rw_sempahore for protecion is really high overhead
+Also adding a separate rw_sempahore for protection is really high overhead
 for a rare operation such as migrate.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
@@ -38,8 +38,8 @@ Index: linux-2.6.25-rc9/fs/ext4/inode.c
 +		if (retval > 0 && buffer_new(bh)) {
 +			/*
 +			 * We allocated new blocks which will result in
-+			 * i_data format to change.  Force the migrate
-+			 * to fail by * clearing migrate flags
++			 * i_data's format changing.  Force the migrate
++			 * to fail by clearing migrate flags
 +			 */
 +			EXT4_I(inode)->i_flags = EXT4_I(inode)->i_flags &
 +							~EXT4_EXT_MIGRATE;
@@ -105,7 +105,7 @@ Index: linux-2.6.25-rc9/fs/ext4/migrate.c
 +	/*
 +	 * Even though we take i_mutex we can still cause block allocation
 +	 * via mmap write to holes. If we have allocated new blocks we fail
-+	 * migrate. New block allocation will clear EXT4_EXT_MIGRATE flag
++	 * migrate.  New block allocation will clear EXT4_EXT_MIGRATE flag.
 +	 * The flag is updated with i_data_sem held to prevent racing with
 +	 * block allocation.
 +	 */
