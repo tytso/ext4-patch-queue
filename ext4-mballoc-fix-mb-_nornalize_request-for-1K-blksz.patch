@@ -3,12 +3,12 @@ ext4: mballoc fix mb_normalize_request algorithm for 1KB block size filesystems
 From: Valerie Clement <valerie.clement@bull.net>
 
 In case of inode preallocation, the number of blocks to allocate depends
-on the file size and it is calculated in ext4_mb_normalize_group_request().
+on the file size and it is calculated in ext4_mb_normalize_request().
 Each group in the filesystem is then checked to find one that can be used
 for allocation; this is done in ext4_mb_good_group().
 
 When a file bigger than 4MB is created, the requested number of blocks to
-preallocate, calculated by ext4_mb_normalize_group_request is 4096.
+preallocate, calculated by ext4_mb_normalize_request is 4096.
 However for a filesystem with 1KB block size, the maximum size of the
 block buddies used by the multiblock allocator is 2048, so none of
 groups in the filesystem satisfies the search criteria in
@@ -45,6 +45,8 @@ ensure that those cases don't regress.
 
 Signed-off-by: Valerie Clement <valerie.clement@bull.net>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
 
 ---
 
@@ -53,8 +55,8 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.25-git15/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.25-git15.orig/fs/ext4/mballoc.c	2008-05-02 11:16:14.000000000 -0700
-+++ linux-2.6.25-git15/fs/ext4/mballoc.c	2008-05-02 11:18:00.000000000 -0700
+--- linux-2.6.25-git15.orig/fs/ext4/mballoc.c	2008-05-02 14:10:17.000000000 -0700
++++ linux-2.6.25-git15/fs/ext4/mballoc.c	2008-05-02 14:10:45.000000000 -0700
 @@ -2882,12 +2882,11 @@ ext4_mb_normalize_request(struct ext4_al
  	if (size < i_size_read(ac->ac_inode))
  		size = i_size_read(ac->ac_inode);
@@ -83,7 +85,7 @@ Index: linux-2.6.25-git15/fs/ext4/mballoc.c
 -		size = 1024 * 1024;
 -	} else if (NRL_CHECK_SIZE(size, 8 * 1024 * 1024, max, bsbits)) {
 +						(21 - bsbits)) << 21;
-+		size = 2* 1024 * 1024;
++		size = 2 * 1024 * 1024;
 +	} else if (NRL_CHECK_SIZE(size, 8 * 1024 * 1024, max, 4 * 1024)) {
  		start_off = ((loff_t)ac->ac_o_ex.fe_logical >>
  							(22 - bsbits)) << 22;
