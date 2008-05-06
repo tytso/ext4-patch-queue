@@ -33,10 +33,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  6 files changed, 210 insertions(+), 1 deletion(-)
 
 
-Index: linux-2.6.25/fs/ext4/balloc.c
+Index: linux-2.6.26-rc1/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/balloc.c	2008-04-25 08:47:34.000000000 -0700
-+++ linux-2.6.25/fs/ext4/balloc.c	2008-04-25 08:47:37.000000000 -0700
+--- linux-2.6.26-rc1.orig/fs/ext4/balloc.c	2008-05-05 17:10:14.000000000 -0700
++++ linux-2.6.26-rc1/fs/ext4/balloc.c	2008-05-05 17:10:15.000000000 -0700
 @@ -127,6 +127,8 @@ unsigned ext4_init_block_bitmap(struct s
  		mark_bitmap_end(group_blocks, sb->s_blocksize * 8, bh->b_data);
  	}
@@ -74,10 +74,10 @@ Index: linux-2.6.25/fs/ext4/balloc.c
  	BUFFER_TRACE(gdp_bh, "journal_dirty_metadata for group descriptor");
  	err = ext4_journal_dirty_metadata(handle, gdp_bh);
  	if (!fatal)
-Index: linux-2.6.25/fs/ext4/ext4.h
+Index: linux-2.6.26-rc1/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/ext4.h	2008-04-25 08:47:33.000000000 -0700
-+++ linux-2.6.25/fs/ext4/ext4.h	2008-04-25 08:47:37.000000000 -0700
+--- linux-2.6.26-rc1.orig/fs/ext4/ext4.h	2008-05-05 17:10:14.000000000 -0700
++++ linux-2.6.26-rc1/fs/ext4/ext4.h	2008-05-05 17:10:15.000000000 -0700
 @@ -170,6 +170,15 @@ struct ext4_group_desc
  	__u32	bg_reserved2[3];
  };
@@ -124,10 +124,10 @@ Index: linux-2.6.25/fs/ext4/ext4.h
  #define ext4_std_error(sb, errno)				\
  do {								\
  	if ((errno))						\
-Index: linux-2.6.25/fs/ext4/ext4_sb.h
+Index: linux-2.6.26-rc1/fs/ext4/ext4_sb.h
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/ext4_sb.h	2008-04-25 08:46:35.000000000 -0700
-+++ linux-2.6.25/fs/ext4/ext4_sb.h	2008-04-25 08:47:37.000000000 -0700
+--- linux-2.6.26-rc1.orig/fs/ext4/ext4_sb.h	2008-05-05 17:10:10.000000000 -0700
++++ linux-2.6.26-rc1/fs/ext4/ext4_sb.h	2008-05-05 17:10:15.000000000 -0700
 @@ -143,6 +143,9 @@ struct ext4_sb_info {
  
  	/* locality groups */
@@ -138,10 +138,10 @@ Index: linux-2.6.25/fs/ext4/ext4_sb.h
  };
  
  #endif	/* _EXT4_SB */
-Index: linux-2.6.25/fs/ext4/ialloc.c
+Index: linux-2.6.26-rc1/fs/ext4/ialloc.c
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/ialloc.c	2008-04-25 08:46:35.000000000 -0700
-+++ linux-2.6.25/fs/ext4/ialloc.c	2008-04-25 08:47:37.000000000 -0700
+--- linux-2.6.26-rc1.orig/fs/ext4/ialloc.c	2008-05-05 17:10:10.000000000 -0700
++++ linux-2.6.26-rc1/fs/ext4/ialloc.c	2008-05-05 17:10:15.000000000 -0700
 @@ -157,6 +157,7 @@ void ext4_free_inode (handle_t *handle, 
  	struct ext4_super_block * es;
  	struct ext4_sb_info *sbi;
@@ -287,11 +287,11 @@ Index: linux-2.6.25/fs/ext4/ialloc.c
  	inode->i_uid = current->fsuid;
  	if (test_opt (sb, GRPID))
  		inode->i_gid = dir->i_gid;
-Index: linux-2.6.25/fs/ext4/mballoc.c
+Index: linux-2.6.26-rc1/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/mballoc.c	2008-04-25 08:47:34.000000000 -0700
-+++ linux-2.6.25/fs/ext4/mballoc.c	2008-04-25 08:47:37.000000000 -0700
-@@ -2824,6 +2824,13 @@ ext4_mb_mark_diskspace_used(struct ext4_
+--- linux-2.6.26-rc1.orig/fs/ext4/mballoc.c	2008-05-05 17:10:14.000000000 -0700
++++ linux-2.6.26-rc1/fs/ext4/mballoc.c	2008-05-05 17:10:15.000000000 -0700
+@@ -2820,6 +2820,13 @@ ext4_mb_mark_diskspace_used(struct ext4_
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, ac->ac_b_ex.fe_group, gdp);
  	spin_unlock(sb_bgl_lock(sbi, ac->ac_b_ex.fe_group));
  	percpu_counter_sub(&sbi->s_freeblocks_counter, ac->ac_b_ex.fe_len);
@@ -319,10 +319,10 @@ Index: linux-2.6.25/fs/ext4/mballoc.c
  	ext4_mb_release_desc(&e4b);
  
  	*freed += count;
-Index: linux-2.6.25/fs/ext4/super.c
+Index: linux-2.6.26-rc1/fs/ext4/super.c
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/super.c	2008-04-25 08:46:35.000000000 -0700
-+++ linux-2.6.25/fs/ext4/super.c	2008-04-25 08:47:37.000000000 -0700
+--- linux-2.6.26-rc1.orig/fs/ext4/super.c	2008-05-05 17:10:12.000000000 -0700
++++ linux-2.6.26-rc1/fs/ext4/super.c	2008-05-05 17:10:15.000000000 -0700
 @@ -517,6 +517,7 @@ static void ext4_put_super (struct super
  	for (i = 0; i < sbi->s_gdb_count; i++)
  		brelse(sbi->s_group_desc[i]);
@@ -331,7 +331,7 @@ Index: linux-2.6.25/fs/ext4/super.c
  	percpu_counter_destroy(&sbi->s_freeblocks_counter);
  	percpu_counter_destroy(&sbi->s_freeinodes_counter);
  	percpu_counter_destroy(&sbi->s_dirs_counter);
-@@ -1417,6 +1418,54 @@ static int ext4_setup_super(struct super
+@@ -1435,6 +1436,54 @@ static int ext4_setup_super(struct super
  	return res;
  }
  
@@ -386,7 +386,7 @@ Index: linux-2.6.25/fs/ext4/super.c
  __le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 block_group,
  			    struct ext4_group_desc *gdp)
  {
-@@ -2111,6 +2160,14 @@ static int ext4_fill_super (struct super
+@@ -2129,6 +2178,14 @@ static int ext4_fill_super (struct super
  		printk(KERN_ERR "EXT4-fs: group descriptors corrupted!\n");
  		goto failed_mount2;
  	}

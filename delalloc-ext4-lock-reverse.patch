@@ -7,14 +7,14 @@ Inverse locking ordering of page_lock and transaction start in delalloc
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 ---
- fs/ext4/inode.c     |   94 ++++++++++++++++++++++++++++++++++++----------------
+ fs/ext4/inode.c     |   95 ++++++++++++++++++++++++++++++++++++----------------
  mm/page-writeback.c |    2 -
- 2 files changed, 67 insertions(+), 29 deletions(-)
+ 2 files changed, 68 insertions(+), 29 deletions(-)
 
-Index: linux-2.6.25/fs/ext4/inode.c
+Index: linux-2.6.26-rc1/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/inode.c	2008-04-23 15:37:02.000000000 -0700
-+++ linux-2.6.25/fs/ext4/inode.c	2008-04-23 15:46:51.000000000 -0700
+--- linux-2.6.26-rc1.orig/fs/ext4/inode.c	2008-05-05 17:10:23.000000000 -0700
++++ linux-2.6.26-rc1/fs/ext4/inode.c	2008-05-05 17:10:23.000000000 -0700
 @@ -1412,18 +1412,14 @@ static int ext4_da_get_block_prep(struct
  static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
  				   struct buffer_head *bh_result, int create)
@@ -153,11 +153,11 @@ Index: linux-2.6.25/fs/ext4/inode.c
  }
  
  static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
-Index: linux-2.6.25/mm/page-writeback.c
+Index: linux-2.6.26-rc1/mm/page-writeback.c
 ===================================================================
---- linux-2.6.25.orig/mm/page-writeback.c	2008-04-16 19:49:44.000000000 -0700
-+++ linux-2.6.25/mm/page-writeback.c	2008-04-23 15:37:02.000000000 -0700
-@@ -816,7 +816,7 @@ int write_cache_pages(struct address_spa
+--- linux-2.6.26-rc1.orig/mm/page-writeback.c	2008-05-05 17:10:07.000000000 -0700
++++ linux-2.6.26-rc1/mm/page-writeback.c	2008-05-05 17:10:23.000000000 -0700
+@@ -881,7 +881,7 @@ int write_cache_pages(struct address_spa
  	pagevec_init(&pvec, 0);
  	if (wbc->range_cyclic) {
  		index = mapping->writeback_index; /* Start from prev offset */

@@ -10,10 +10,10 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  fs/ext4/inode.c   |  327 +++++++++++++++++++++++++++++-------------------------
  3 files changed, 183 insertions(+), 163 deletions(-)
 
-Index: linux-2.6.25/fs/ext4/ext4.h
+Index: linux-2.6.26-rc1/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/ext4.h	2008-04-22 15:55:55.000000000 -0700
-+++ linux-2.6.25/fs/ext4/ext4.h	2008-04-22 15:56:07.000000000 -0700
+--- linux-2.6.26-rc1.orig/fs/ext4/ext4.h	2008-05-05 17:10:23.000000000 -0700
++++ linux-2.6.26-rc1/fs/ext4/ext4.h	2008-05-05 17:10:23.000000000 -0700
 @@ -1135,7 +1135,7 @@ extern void ext4_set_inode_flags(struct 
  extern void ext4_get_inode_flags(struct ext4_inode_info *);
  extern void ext4_set_aops(struct inode *inode);
@@ -32,11 +32,11 @@ Index: linux-2.6.25/fs/ext4/ext4.h
  extern void ext4_ext_init(struct super_block *);
  extern void ext4_ext_release(struct super_block *);
  extern long ext4_fallocate(struct inode *inode, int mode, loff_t offset,
-Index: linux-2.6.25/fs/ext4/extents.c
+Index: linux-2.6.26-rc1/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/extents.c	2008-04-22 15:55:55.000000000 -0700
-+++ linux-2.6.25/fs/ext4/extents.c	2008-04-22 15:56:07.000000000 -0700
-@@ -2882,7 +2882,7 @@ out2:
+--- linux-2.6.26-rc1.orig/fs/ext4/extents.c	2008-05-05 17:10:23.000000000 -0700
++++ linux-2.6.26-rc1/fs/ext4/extents.c	2008-05-05 17:10:23.000000000 -0700
+@@ -2883,7 +2883,7 @@ out2:
  	return err ? err : allocated;
  }
  
@@ -45,7 +45,7 @@ Index: linux-2.6.25/fs/ext4/extents.c
  {
  	struct address_space *mapping = inode->i_mapping;
  	struct super_block *sb = inode->i_sb;
-@@ -2895,18 +2895,11 @@ void ext4_ext_truncate(struct inode * in
+@@ -2896,18 +2896,11 @@ void ext4_ext_truncate(struct inode * in
  	 */
  	err = ext4_writepage_trans_blocks(inode) + 3;
  	handle = ext4_journal_start(inode, err);
@@ -67,10 +67,10 @@ Index: linux-2.6.25/fs/ext4/extents.c
  
  	down_write(&EXT4_I(inode)->i_data_sem);
  	ext4_ext_invalidate_cache(inode);
-Index: linux-2.6.25/fs/ext4/inode.c
+Index: linux-2.6.26-rc1/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.25.orig/fs/ext4/inode.c	2008-04-22 15:55:54.000000000 -0700
-+++ linux-2.6.25/fs/ext4/inode.c	2008-04-22 15:57:32.000000000 -0700
+--- linux-2.6.26-rc1.orig/fs/ext4/inode.c	2008-05-05 17:10:20.000000000 -0700
++++ linux-2.6.26-rc1/fs/ext4/inode.c	2008-05-05 17:10:23.000000000 -0700
 @@ -1204,19 +1204,20 @@ static int ext4_write_begin(struct file 
   	to = from + len;
  
