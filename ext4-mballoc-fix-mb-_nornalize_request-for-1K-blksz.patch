@@ -4,37 +4,25 @@ From: Valerie Clement <valerie.clement@bull.net>
 
 In case of inode preallocation, the number of blocks to allocate depends
 on the file size and it is calculated in ext4_mb_normalize_request().
-Each group in the filesystem is then checked to find one that can be used
-for allocation; this is done in ext4_mb_good_group().
+Each group in the filesystem is then checked to find one that can be
+used for allocation; this is done in ext4_mb_good_group().
 
-When a file bigger than 4MB is created, the requested number of blocks to
-preallocate, calculated by ext4_mb_normalize_request is 4096.
+When a file bigger than 4MB is created, the requested number of blocks
+to preallocate, calculated by ext4_mb_normalize_request is 4096.
 However for a filesystem with 1KB block size, the maximum size of the
 block buddies used by the multiblock allocator is 2048, so none of
 groups in the filesystem satisfies the search criteria in
 ext4_mb_good_group(). Scanning all the filesystem groups impacts
 performance.
 
-The following numbers show that:
-- on an ext4 FS with 1KB block size mounted with nodelalloc option:
-# dd if=/dev/zero of=/mnt/test/foo bs=8k count=1k conv=fsync
-1024+0 records in
-1024+0 records out
-8388608 bytes (8.4 MB) copied, 35.5091 seconds, 236 kB/s
-
-- on an ext4 FS with 1KB block size mounted with nodelalloc and nomballoc
-options:
-# dd if=/dev/zero of=/mnt/test/foo bs=8k count=1k conv=fsync
-1024+0 records in
-1024+0 records out
-8388608 bytes (8.4 MB) copied, 0.233754 seconds, 35.9 MB/s
-
-In the two cases, dd is done after creating the FS with -b1024 option,
-mounting the FS with the options specified before and flushing all caches
-using echo 3 > /proc/sys/vm/drop_caches.
-The partition size is 70GB.
-I did the same test on a 1TB partition, it took several minutes to write
-8MB!
+This was demonstrated by using a freshly created, 70GB, 1k block
+filesystem, with caches dropped write before the test via
+/proc/sys/vm/drop_caches, and with the filesystem mounted with
+nodelalloc and nodealloc,nomballoc.  The time to write an 8 megabyte
+file using "dd if=/dev/zero of=/mnt/test/fo bs=8k count=1k conv=fsync"
+took 35.5091 seconds (236kB/s) with nodellaloc, and 0.233754 seconds
+(35.9 MB/s) with the nodelloc,nomballoc options.  With a 1TB partition,
+it took several minutes to write 8MB!
 
 This patch modifies the algorithm in ext4_mb_normalize_group_request to
 calculate the number of blocks to allocate by taking into account the
@@ -43,11 +31,10 @@ maximum size of free blocks chunks handled by the multiblock allocator.
 It has also been tested for filesystems with 2KB and 4KB block sizes to
 ensure that those cases don't regress.
 
+Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Valerie Clement <valerie.clement@bull.net>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
-Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
-
-
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
 
  fs/ext4/mballoc.c |   19 +++++++++----------
