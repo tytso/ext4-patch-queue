@@ -1,0 +1,50 @@
+From: Julia Lawall <julia@diku.dk>
+
+if (...) BUG(); should be replaced with BUG_ON(...) when the test has no
+side-effects to allow a definition of BUG_ON that drops the code completely.
+
+The semantic patch that makes this change is as follows:
+(http://www.emn.fr/x-info/coccinelle/)
+
+// <smpl>
+@ disable unlikely @ expression E,f; @@
+
+(
+  if (<... f(...) ...>) { BUG(); }
+|
+- if (unlikely(E)) { BUG(); }
++ BUG_ON(E);
+)
+
+@@ expression E,f; @@
+
+(
+  if (<... f(...) ...>) { BUG(); }
+|
+- if (E) { BUG(); }
++ BUG_ON(E);
+)
+// </smpl>
+
+Signed-off-by: Julia Lawall <julia@diku.dk>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+ fs/ext4/balloc.c |    3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff -puN fs/ext4/balloc.c~fs-ext4-use-bug_on fs/ext4/balloc.c
+--- a/fs/ext4/balloc.c~fs-ext4-use-bug_on
++++ a/fs/ext4/balloc.c
+@@ -358,8 +358,7 @@ restart:
+ 		prev = rsv;
+ 	}
+ 	printk("Window map complete.\n");
+-	if (bad)
+-		BUG();
++	BUG_ON(bad);
+ }
+ #define rsv_window_dump(root, verbose) \
+ 	__rsv_window_dump((root), (verbose), __FUNCTION__)
+_
