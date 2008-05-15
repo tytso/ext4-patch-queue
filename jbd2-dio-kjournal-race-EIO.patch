@@ -1,3 +1,7 @@
+jbd2: Fix jbd2_commit_transaction()/jbd2_journal_try_to_drop_buffers() race
+
+From: Mingming Cao <cmm@us.ibm.com>
+
 There are a few cases direct IO could race with kjournal flushing
 data buffers which could result direct IO return EIO error.
 
@@ -21,7 +25,12 @@ journal_try_to_free_buffers() could clean up the journal head of bh1 and
 remove it from the t_syncdata_list. Then try_to_free_buffers() would
 fail because the reference held by journal_submit_data_buffers()
 
-4) journal_submit_data_buffers() already removed the jh from the bh (when found the buffers are already being synced), but still keep a reference to the buffer head. journal_try_to_free_buffers() could be called. In that case try_to_free_buffers() will be called since there is no jh related to this buffer, and failed due to journal_submit_data_buffers() hasn't finish the cleanup business yet. 
+4) journal_submit_data_buffers() already removed the jh from the bh
+(when found the buffers are already being synced), but still keep a
+reference to the buffer head. journal_try_to_free_buffers() could be
+called. In that case try_to_free_buffers() will be called since there is
+no jh related to this buffer, and failed due to
+journal_submit_data_buffers() hasn't finish the cleanup business yet.
 
 Fix for first three races is to drop the reference on the buffer head
  when release the j_list_lock,
