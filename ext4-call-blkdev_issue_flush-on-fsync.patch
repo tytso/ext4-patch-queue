@@ -1,0 +1,45 @@
+ext4: call blkdev_issue_flush on fsync
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+To ensure that bits are truly on-disk after an fsync,
+we should call blkdev_issue_flush if barriers are supported.
+
+Inspired by an old thread on barriers, by reiserfs & xfs
+which do the same, and by a patch SuSE ships with their kernel
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/fsync.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+Index: linux-2.6.26-rc2/fs/ext4/fsync.c
+===================================================================
+--- linux-2.6.26-rc2.orig/fs/ext4/fsync.c	2008-05-11 17:09:41.000000000 -0700
++++ linux-2.6.26-rc2/fs/ext4/fsync.c	2008-05-16 11:55:35.000000000 -0700
+@@ -27,6 +27,7 @@
+ #include <linux/sched.h>
+ #include <linux/writeback.h>
+ #include <linux/jbd2.h>
++#include <linux/blkdev.h>
+ #include "ext4.h"
+ #include "ext4_jbd2.h"
+ 
+@@ -45,6 +46,7 @@
+ int ext4_sync_file(struct file * file, struct dentry *dentry, int datasync)
+ {
+ 	struct inode *inode = dentry->d_inode;
++	journal_t *journal = EXT4_SB(inode->i_sb)->s_journal;
+ 	int ret = 0;
+ 
+ 	J_ASSERT(ext4_journal_current_handle() == NULL);
+@@ -85,6 +87,8 @@ int ext4_sync_file(struct file * file, s
+ 			.nr_to_write = 0, /* sys_fsync did this */
+ 		};
+ 		ret = sync_inode(inode, &wbc);
++		if (journal && (journal->j_flags & JBD2_BARRIER))
++			blkdev_issue_flush(inode->i_sb->s_bdev, NULL);
+ 	}
+ out:
+ 	return ret;

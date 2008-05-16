@@ -1,0 +1,82 @@
+ext4: enable barriers by default
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+I can't think of any valid reason for ext4 to not use barriers when
+they are available;  I believe this is necessary for filesystem
+integrity in the face of a volatile write cache on storage.
+
+An administrator who trusts that the cache is sufficiently battery-
+backed (and power supplies are sufficiently redundant, etc...)
+can always turn it back off again.
+
+SuSE has carried such a patch for ext3 for quite some time now.
+
+Also document the mount option while we're at it.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ Documentation/filesystems/ext4.txt |   12 ++++++++++--
+ fs/ext4/super.c                    |   11 +++++++++--
+ 2 files changed, 19 insertions(+), 4 deletions(-)
+
+Index: linux-2.6.26-rc2/Documentation/filesystems/ext4.txt
+===================================================================
+--- linux-2.6.26-rc2.orig/Documentation/filesystems/ext4.txt	2008-05-11 17:09:41.000000000 -0700
++++ linux-2.6.26-rc2/Documentation/filesystems/ext4.txt	2008-05-16 11:55:28.000000000 -0700
+@@ -139,8 +139,16 @@ commit=nrsec	(*)	Ext4 can be told to syn
+ 			Setting it to very large values will improve
+ 			performance.
+ 
+-barrier=1		This enables/disables barriers.  barrier=0 disables
+-			it, barrier=1 enables it.
++barrier=<0|1(*)>	This enables/disables the use of write barriers in
++			the jbd code.  barrier=0 disables, barrier=1 enables.
++			This also requires an IO stack which can support
++			barriers, and if jbd gets an error on a barrier
++			write, it will disable again with a warning.
++			Write barriers enforce proper on-disk ordering
++			of journal commits, making volatile disk write caches
++			safe to use, at some performance penalty.  If
++			your disks are battery-backed in one way or another,
++			disabling barriers may safely improve performance.
+ 
+ orlov		(*)	This enables the new Orlov block allocator. It is
+ 			enabled by default.
+Index: linux-2.6.26-rc2/fs/ext4/super.c
+===================================================================
+--- linux-2.6.26-rc2.orig/fs/ext4/super.c	2008-05-16 11:54:48.000000000 -0700
++++ linux-2.6.26-rc2/fs/ext4/super.c	2008-05-16 11:55:28.000000000 -0700
+@@ -671,6 +671,7 @@ static int ext4_show_options(struct seq_
+ 	unsigned long def_mount_opts;
+ 	struct super_block *sb = vfs->mnt_sb;
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
++	journal_t *journal = sbi->s_journal;
+ 	struct ext4_super_block *es = sbi->s_es;
+ 
+ 	def_mount_opts = le32_to_cpu(es->s_default_mount_opts);
+@@ -729,8 +730,13 @@ static int ext4_show_options(struct seq_
+ 		seq_printf(seq, ",commit=%u",
+ 			   (unsigned) (sbi->s_commit_interval / HZ));
+ 	}
+-	if (test_opt(sb, BARRIER))
+-		seq_puts(seq, ",barrier=1");
++	/*
++	 * jbd2 inherits the barrier flag from ext4, and may actually
++	 * turn off barriers if a write fails, so it's the real test.
++	 */
++	if (!test_opt(sb, BARRIER) ||
++	    (journal && !(journal->j_flags & JBD2_BARRIER)))
++		seq_puts(seq, ",barrier=0");
+ 	if (test_opt(sb, NOBH))
+ 		seq_puts(seq, ",nobh");
+ 	if (!test_opt(sb, EXTENTS))
+@@ -1907,6 +1913,7 @@ static int ext4_fill_super (struct super
+ 	sbi->s_resgid = le16_to_cpu(es->s_def_resgid);
+ 
+ 	set_opt(sbi->s_mount_opt, RESERVATION);
++	set_opt(sbi->s_mount_opt, BARRIER);
+ 
+ 	/*
+ 	 * turn on extents feature by default in ext4 filesystem
