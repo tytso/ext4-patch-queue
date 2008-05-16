@@ -45,14 +45,14 @@ by journal_submit_data_buffers() but did not get a chance to release
 Signed-off-by: Badari Pulavarty <pbadari@us.ibm.com>
 Signed-off-by: Mingming Cao <mcao@us.ibm.com>
 ---
- fs/jbd2/commit.c      |   21 ++++++++++++++++-----
+ fs/jbd2/commit.c      |   23 ++++++++++++++++-------
  fs/jbd2/transaction.c |   13 +++++++++++++
- 2 files changed, 29 insertions(+), 5 deletions(-)
+ 2 files changed, 29 insertions(+), 7 deletions(-)
 
-Index: linux-2.6.26-rc1/fs/jbd2/commit.c
+Index: linux-2.6.26-rc2/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.26-rc1.orig/fs/jbd2/commit.c	2008-05-09 15:22:13.000000000 -0700
-+++ linux-2.6.26-rc1/fs/jbd2/commit.c	2008-05-09 15:31:00.000000000 -0700
+--- linux-2.6.26-rc2.orig/fs/jbd2/commit.c	2008-05-16 11:03:25.000000000 -0700
++++ linux-2.6.26-rc2/fs/jbd2/commit.c	2008-05-16 11:03:27.000000000 -0700
 @@ -81,12 +81,16 @@ nope:
  
  /*
@@ -72,7 +72,7 @@ Index: linux-2.6.26-rc1/fs/jbd2/commit.c
  		spin_unlock(&journal->j_list_lock);
  		schedule();
  		return 0;
-@@ -217,7 +221,7 @@ static int journal_wait_on_locked_list(j
+@@ -220,7 +224,7 @@ static int journal_wait_on_locked_list(j
  				ret = -EIO;
  			spin_lock(&journal->j_list_lock);
  		}
@@ -81,7 +81,7 @@ Index: linux-2.6.26-rc1/fs/jbd2/commit.c
  			put_bh(bh);
  			spin_lock(&journal->j_list_lock);
  			continue;
-@@ -287,19 +291,24 @@ write_out_data:
+@@ -290,19 +294,24 @@ write_out_data:
  		if (buffer_dirty(bh)) {
  			if (test_set_buffer_locked(bh)) {
  				BUFFER_TRACE(bh, "needs blocking lock");
@@ -110,10 +110,10 @@ Index: linux-2.6.26-rc1/fs/jbd2/commit.c
  		}
  		/* Someone already cleaned up the buffer? */
  		if (!buffer_jbd(bh)
-Index: linux-2.6.26-rc1/fs/jbd2/transaction.c
+Index: linux-2.6.26-rc2/fs/jbd2/transaction.c
 ===================================================================
---- linux-2.6.26-rc1.orig/fs/jbd2/transaction.c	2008-05-03 11:59:44.000000000 -0700
-+++ linux-2.6.26-rc1/fs/jbd2/transaction.c	2008-05-09 15:29:15.000000000 -0700
+--- linux-2.6.26-rc2.orig/fs/jbd2/transaction.c	2008-05-16 11:03:20.000000000 -0700
++++ linux-2.6.26-rc2/fs/jbd2/transaction.c	2008-05-16 11:03:27.000000000 -0700
 @@ -1722,6 +1722,19 @@ int jbd2_journal_try_to_free_buffers(jou
  			goto busy;
  	} while ((bh = bh->b_this_page) != head);
