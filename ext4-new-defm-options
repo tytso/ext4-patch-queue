@@ -1,0 +1,54 @@
+ext4: Add EXT4_DEFM_BARRIER and EXT4_DEFM_I_VERSION default mount options
+
+Allow the i_version and barrier mount options to be set by default via
+flags in the ext4 superblock.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index b7ffb91..afeba1f 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -785,6 +785,8 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
+ #define EXT4_DEFM_JMODE_DATA	0x0020
+ #define EXT4_DEFM_JMODE_ORDERED	0x0040
+ #define EXT4_DEFM_JMODE_WBACK	0x0060
++#define EXT4_DEFM_BARRIER	0x0080
++#define EXT4_DEFM_I_VERSION	0x0100
+ 
+ /*
+  * Structure of a directory entry
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 09d9359..c0a657c 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -729,7 +729,7 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+ 		seq_printf(seq, ",commit=%u",
+ 			   (unsigned) (sbi->s_commit_interval / HZ));
+ 	}
+-	if (test_opt(sb, BARRIER))
++	if (test_opt(sb, BARRIER) && !(def_mount_opts & EXT4_DEFM_BARRIER))
+ 		seq_puts(seq, ",barrier=1");
+ 	if (test_opt(sb, NOBH))
+ 		seq_puts(seq, ",nobh");
+@@ -737,7 +737,7 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+ 		seq_puts(seq, ",noextents");
+ 	if (!test_opt(sb, MBALLOC))
+ 		seq_puts(seq, ",nomballoc");
+-	if (test_opt(sb, I_VERSION))
++	if (test_opt(sb, I_VERSION) && !(def_mount_opts & EXT4_DEFM_I_VERSION))
+ 		seq_puts(seq, ",i_version");
+ 
+ 	if (sbi->s_stripe)
+@@ -1896,6 +1896,12 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
+ 	else if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_WBACK)
+ 		sbi->s_mount_opt |= EXT4_MOUNT_WRITEBACK_DATA;
+ 
++	if (def_mount_opts & EXT4_DEFM_BARRIER)
++		set_opt(sbi->s_mount_opt, BARRIER);
++
++	if (def_mount_opts & EXT4_DEFM_I_VERSION)
++		sb->s_flags |= MS_I_VERSION;
++
+ 	if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_PANIC)
+ 		set_opt(sbi->s_mount_opt, ERRORS_PANIC);
+ 	else if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_CONTINUE)
