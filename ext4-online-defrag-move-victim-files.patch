@@ -19,11 +19,11 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  fs/ext4/mballoc.h      |    1 
  8 files changed, 493 insertions(+), 42 deletions(-)
 
-Index: linux-2.6.26-rc2/fs/ext4/balloc.c
+Index: linux-2.6.26-rc3/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.26-rc2.orig/fs/ext4/balloc.c	2008-05-19 17:52:13.000000000 -0700
-+++ linux-2.6.26-rc2/fs/ext4/balloc.c	2008-05-19 17:52:35.000000000 -0700
-@@ -380,7 +380,7 @@ restart:
+--- linux-2.6.26-rc3.orig/fs/ext4/balloc.c	2008-05-21 16:16:43.000000000 -0700
++++ linux-2.6.26-rc3/fs/ext4/balloc.c	2008-05-21 16:16:43.000000000 -0700
+@@ -433,7 +433,7 @@ restart:
   * If the goal block is within the reservation window, return 1;
   * otherwise, return 0;
   */
@@ -32,7 +32,7 @@ Index: linux-2.6.26-rc2/fs/ext4/balloc.c
  goal_in_my_reservation(struct ext4_reserve_window *rsv, ext4_grpblk_t grp_goal,
  			ext4_group_t group, struct super_block *sb)
  {
-@@ -485,7 +485,7 @@ void ext4_rsv_window_add(struct super_bl
+@@ -538,7 +538,7 @@ void ext4_rsv_window_add(struct super_bl
   * from the filesystem reservation window rb tree. Must be called with
   * rsv_lock hold.
   */
@@ -41,7 +41,7 @@ Index: linux-2.6.26-rc2/fs/ext4/balloc.c
  			      struct ext4_reserve_window_node *rsv)
  {
  	rsv->rsv_start = EXT4_RESERVE_WINDOW_NOT_ALLOCATED;
-@@ -500,7 +500,7 @@ static void rsv_window_remove(struct sup
+@@ -553,7 +553,7 @@ static void rsv_window_remove(struct sup
   *
   * returns 1 if the end block is EXT4_RESERVE_WINDOW_NOT_ALLOCATED.
   */
@@ -50,7 +50,7 @@ Index: linux-2.6.26-rc2/fs/ext4/balloc.c
  {
  	/* a valid reservation end block could not be 0 */
  	return rsv->_rsv_end == EXT4_RESERVE_WINDOW_NOT_ALLOCATED;
-@@ -1236,7 +1236,7 @@ static int find_next_reservable_window(
+@@ -1289,7 +1289,7 @@ static int find_next_reservable_window(
   *	@bitmap_bh: the block group block bitmap
   *
   */
@@ -59,7 +59,7 @@ Index: linux-2.6.26-rc2/fs/ext4/balloc.c
  		ext4_grpblk_t grp_goal, struct super_block *sb,
  		ext4_group_t group, struct buffer_head *bitmap_bh)
  {
-@@ -1380,7 +1380,7 @@ retry:
+@@ -1433,7 +1433,7 @@ retry:
   * expand the reservation window size if necessary on a best-effort
   * basis before ext4_new_blocks() tries to allocate blocks,
   */
@@ -68,10 +68,10 @@ Index: linux-2.6.26-rc2/fs/ext4/balloc.c
  			struct super_block *sb, int size)
  {
  	struct ext4_reserve_window_node *next_rsv;
-Index: linux-2.6.26-rc2/fs/ext4/defrag.c
+Index: linux-2.6.26-rc3/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.26-rc2.orig/fs/ext4/defrag.c	2008-05-19 17:52:13.000000000 -0700
-+++ linux-2.6.26-rc2/fs/ext4/defrag.c	2008-05-19 17:52:35.000000000 -0700
+--- linux-2.6.26-rc3.orig/fs/ext4/defrag.c	2008-05-21 16:16:43.000000000 -0700
++++ linux-2.6.26-rc3/fs/ext4/defrag.c	2008-05-21 16:16:43.000000000 -0700
 @@ -217,6 +217,268 @@ out:
  }
  
@@ -754,10 +754,10 @@ Index: linux-2.6.26-rc2/fs/ext4/defrag.c
  			if (ret < 0)
  				goto out;
  
-Index: linux-2.6.26-rc2/fs/ext4/ext4.h
+Index: linux-2.6.26-rc3/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc2.orig/fs/ext4/ext4.h	2008-05-19 17:52:13.000000000 -0700
-+++ linux-2.6.26-rc2/fs/ext4/ext4.h	2008-05-19 17:52:35.000000000 -0700
+--- linux-2.6.26-rc3.orig/fs/ext4/ext4.h	2008-05-21 16:16:43.000000000 -0700
++++ linux-2.6.26-rc3/fs/ext4/ext4.h	2008-05-21 16:16:43.000000000 -0700
 @@ -94,6 +94,11 @@ struct ext4_allocation_request {
  	unsigned long len;
  	/* flags. see above EXT4_MB_HINT_* */
@@ -833,10 +833,10 @@ Index: linux-2.6.26-rc2/fs/ext4/ext4.h
  extern int ext4_defrag_ioctl(struct inode *, struct file *, unsigned int,
  				unsigned long);
  
-Index: linux-2.6.26-rc2/fs/ext4/ext4_extents.h
+Index: linux-2.6.26-rc3/fs/ext4/ext4_extents.h
 ===================================================================
---- linux-2.6.26-rc2.orig/fs/ext4/ext4_extents.h	2008-05-19 17:52:13.000000000 -0700
-+++ linux-2.6.26-rc2/fs/ext4/ext4_extents.h	2008-05-19 17:52:35.000000000 -0700
+--- linux-2.6.26-rc3.orig/fs/ext4/ext4_extents.h	2008-05-21 16:16:42.000000000 -0700
++++ linux-2.6.26-rc3/fs/ext4/ext4_extents.h	2008-05-21 16:16:43.000000000 -0700
 @@ -233,5 +233,10 @@ extern void ext4_ext_drop_refs(struct ex
  extern ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
  					struct ext4_ext_path *path,
@@ -848,10 +848,10 @@ Index: linux-2.6.26-rc2/fs/ext4/ext4_extents.h
 +
  #endif /* _EXT4_EXTENTS */
  
-Index: linux-2.6.26-rc2/fs/ext4/extents.c
+Index: linux-2.6.26-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc2.orig/fs/ext4/extents.c	2008-05-19 17:52:13.000000000 -0700
-+++ linux-2.6.26-rc2/fs/ext4/extents.c	2008-05-19 17:57:13.000000000 -0700
+--- linux-2.6.26-rc3.orig/fs/ext4/extents.c	2008-05-21 16:16:42.000000000 -0700
++++ linux-2.6.26-rc3/fs/ext4/extents.c	2008-05-21 16:16:43.000000000 -0700
 @@ -183,11 +183,16 @@ ext4_fsblk_t ext4_ext_find_goal(struct i
  static ext4_fsblk_t
  ext4_ext_new_block(handle_t *handle, struct inode *inode,
@@ -996,10 +996,10 @@ Index: linux-2.6.26-rc2/fs/ext4/extents.c
  	if (err)
  		goto cleanup;
  	depth = ext_depth(inode);
-Index: linux-2.6.26-rc2/fs/ext4/ioctl.c
+Index: linux-2.6.26-rc3/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.26-rc2.orig/fs/ext4/ioctl.c	2008-05-19 17:52:13.000000000 -0700
-+++ linux-2.6.26-rc2/fs/ext4/ioctl.c	2008-05-19 17:52:35.000000000 -0700
+--- linux-2.6.26-rc3.orig/fs/ext4/ioctl.c	2008-05-21 16:16:43.000000000 -0700
++++ linux-2.6.26-rc3/fs/ext4/ioctl.c	2008-05-21 16:16:43.000000000 -0700
 @@ -245,7 +245,10 @@ setversion_out:
  	case EXT4_IOC_DEFRAG:
  	case EXT4_IOC_GROUP_INFO:
@@ -1012,10 +1012,10 @@ Index: linux-2.6.26-rc2/fs/ext4/ioctl.c
  		return ext4_defrag_ioctl(inode, filp, cmd, arg);
  	}
  	case EXT4_IOC_GROUP_ADD: {
-Index: linux-2.6.26-rc2/fs/ext4/mballoc.c
+Index: linux-2.6.26-rc3/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.26-rc2.orig/fs/ext4/mballoc.c	2008-05-19 17:52:02.000000000 -0700
-+++ linux-2.6.26-rc2/fs/ext4/mballoc.c	2008-05-19 17:52:35.000000000 -0700
+--- linux-2.6.26-rc3.orig/fs/ext4/mballoc.c	2008-05-21 16:16:37.000000000 -0700
++++ linux-2.6.26-rc3/fs/ext4/mballoc.c	2008-05-21 16:16:43.000000000 -0700
 @@ -1752,6 +1752,10 @@ repeat:
  			if (group == EXT4_SB(sb)->s_groups_count)
  				group = 0;
@@ -1035,10 +1035,10 @@ Index: linux-2.6.26-rc2/fs/ext4/mballoc.c
  
  	/* we have to define context: we'll we work with a file or
  	 * locality group. this is a policy, actually */
-Index: linux-2.6.26-rc2/fs/ext4/mballoc.h
+Index: linux-2.6.26-rc3/fs/ext4/mballoc.h
 ===================================================================
---- linux-2.6.26-rc2.orig/fs/ext4/mballoc.h	2008-05-19 17:50:39.000000000 -0700
-+++ linux-2.6.26-rc2/fs/ext4/mballoc.h	2008-05-19 17:52:35.000000000 -0700
+--- linux-2.6.26-rc3.orig/fs/ext4/mballoc.h	2008-05-21 16:16:27.000000000 -0700
++++ linux-2.6.26-rc3/fs/ext4/mballoc.h	2008-05-21 16:16:43.000000000 -0700
 @@ -205,6 +205,7 @@ struct ext4_allocation_context {
  	struct page *ac_buddy_page;
  	struct ext4_prealloc_space *ac_pa;
