@@ -18,15 +18,15 @@ journal_commit_transaction() to finish commit the current committing transaction
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Reviewed-by: Badari Pulavarty <pbadari@us.ibm.com> 
 ---
- fs/jbd/transaction.c |   56 +++++++++++++++++++++++++++++++++++++++++++++++++--
+ fs/jbd/transaction.c |   57 +++++++++++++++++++++++++++++++++++++++++++++++++--
  mm/filemap.c         |    3 --
- 2 files changed, 55 insertions(+), 4 deletions(-)
+ 2 files changed, 56 insertions(+), 4 deletions(-)
 
 Index: linux-2.6.26-rc3/fs/jbd/transaction.c
 ===================================================================
---- linux-2.6.26-rc3.orig/fs/jbd/transaction.c	2008-05-21 16:16:30.000000000 -0700
-+++ linux-2.6.26-rc3/fs/jbd/transaction.c	2008-05-21 16:16:35.000000000 -0700
-@@ -1648,12 +1648,39 @@ out:
+--- linux-2.6.26-rc3.orig/fs/jbd/transaction.c	2008-05-21 16:17:51.000000000 -0700
++++ linux-2.6.26-rc3/fs/jbd/transaction.c	2008-05-21 16:20:11.000000000 -0700
+@@ -1648,12 +1648,40 @@ out:
  	return;
  }
  
@@ -62,12 +62,13 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
   * @journal: journal for operation
   * @page: to try and free
 - * @unused_gfp_mask: unused
-+ * @gfp_mask: specifies whether the call may block
-+ * 		(__GFP_WAIT & __GFP_FS via GFP_KERNEL)
++ * @gfp_mask: we use the mask to detect how hard should we try to release
++ * buffers. If __GFP_WAIT and __GFP_FS is set, we wait for commit code to
++ * release the buffers.
   *
   *
   * For all the buffers on this page,
-@@ -1682,9 +1709,11 @@ out:
+@@ -1682,9 +1710,11 @@ out:
   * journal_try_to_free_buffer() is changing its state.  But that
   * cannot happen because we never reallocate freed data as metadata
   * while the data is part of a transaction.  Yes?
@@ -80,7 +81,7 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
  {
  	struct buffer_head *head;
  	struct buffer_head *bh;
-@@ -1713,7 +1742,30 @@ int journal_try_to_free_buffers(journal_
+@@ -1713,7 +1743,30 @@ int journal_try_to_free_buffers(journal_
  		if (buffer_jbd(bh))
  			goto busy;
  	} while ((bh = bh->b_this_page) != head);
@@ -101,7 +102,7 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
 +	 * dirty data buffers, then try to free those buffers again,
 +	 * with the journal locked.
 +	 */
-+	if (ret == 0 && gfp_mask & GFP_KERNEL) {
++	if (ret == 0 && (gfp_mask & GFP_KERNEL == GFP_KERNEL)) {
 +        	spin_lock(&journal->j_state_lock);
 +		journal_wait_for_transaction_sync_data(journal);
 +		ret = try_to_free_buffers(page);
@@ -113,8 +114,8 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
  }
 Index: linux-2.6.26-rc3/mm/filemap.c
 ===================================================================
---- linux-2.6.26-rc3.orig/mm/filemap.c	2008-05-21 16:16:30.000000000 -0700
-+++ linux-2.6.26-rc3/mm/filemap.c	2008-05-21 16:16:35.000000000 -0700
+--- linux-2.6.26-rc3.orig/mm/filemap.c	2008-05-21 16:17:51.000000000 -0700
++++ linux-2.6.26-rc3/mm/filemap.c	2008-05-21 16:17:58.000000000 -0700
 @@ -2581,9 +2581,8 @@ out:
   * Otherwise return zero.
   *
