@@ -24,9 +24,9 @@ Reviewed-by: Badari Pulavarty <pbadari@us.ibm.com>
 
 Index: linux-2.6.26-rc3/fs/jbd/transaction.c
 ===================================================================
---- linux-2.6.26-rc3.orig/fs/jbd/transaction.c	2008-05-21 16:17:51.000000000 -0700
-+++ linux-2.6.26-rc3/fs/jbd/transaction.c	2008-05-21 16:20:11.000000000 -0700
-@@ -1648,12 +1648,40 @@ out:
+--- linux-2.6.26-rc3.orig/fs/jbd/transaction.c	2008-05-28 10:55:37.000000000 -0700
++++ linux-2.6.26-rc3/fs/jbd/transaction.c	2008-05-28 10:57:32.000000000 -0700
+@@ -1648,12 +1648,42 @@ out:
  	return;
  }
  
@@ -46,15 +46,17 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
 +	transaction_t *transaction = NULL;
 +	tid_t tid;
 +
++	spin_lock(&journal->j_state_lock);
 +	transaction = journal->j_committing_transaction;
 +
-+	if (!transaction)
++	if (!transaction) {
++		spin_unlock(&journal->j_state_lock);
 +		return;
++	}
 +
 +	tid = transaction->t_tid;
 +	spin_unlock(&journal->j_state_lock);
 +	log_wait_commit(journal, tid);
-+	spin_lock(&journal->j_state_lock);
 +}
  
  /**
@@ -68,7 +70,7 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
   *
   *
   * For all the buffers on this page,
-@@ -1682,9 +1710,11 @@ out:
+@@ -1682,9 +1712,11 @@ out:
   * journal_try_to_free_buffer() is changing its state.  But that
   * cannot happen because we never reallocate freed data as metadata
   * while the data is part of a transaction.  Yes?
@@ -81,7 +83,7 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
  {
  	struct buffer_head *head;
  	struct buffer_head *bh;
-@@ -1713,7 +1743,30 @@ int journal_try_to_free_buffers(journal_
+@@ -1713,7 +1745,28 @@ int journal_try_to_free_buffers(journal_
  		if (buffer_jbd(bh))
  			goto busy;
  	} while ((bh = bh->b_this_page) != head);
@@ -103,10 +105,8 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
 +	 * with the journal locked.
 +	 */
 +	if (ret == 0 && (gfp_mask & GFP_KERNEL == GFP_KERNEL)) {
-+        	spin_lock(&journal->j_state_lock);
 +		journal_wait_for_transaction_sync_data(journal);
 +		ret = try_to_free_buffers(page);
-+		spin_unlock(&journal->j_state_lock);
 +	}
 +
  busy:
@@ -114,8 +114,8 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
  }
 Index: linux-2.6.26-rc3/mm/filemap.c
 ===================================================================
---- linux-2.6.26-rc3.orig/mm/filemap.c	2008-05-21 16:17:51.000000000 -0700
-+++ linux-2.6.26-rc3/mm/filemap.c	2008-05-21 16:17:58.000000000 -0700
+--- linux-2.6.26-rc3.orig/mm/filemap.c	2008-05-28 10:55:38.000000000 -0700
++++ linux-2.6.26-rc3/mm/filemap.c	2008-05-28 10:55:43.000000000 -0700
 @@ -2581,9 +2581,8 @@ out:
   * Otherwise return zero.
   *
