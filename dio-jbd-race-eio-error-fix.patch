@@ -24,8 +24,8 @@ Reviewed-by: Badari Pulavarty <pbadari@us.ibm.com>
 
 Index: linux-2.6.26-rc3/fs/jbd/transaction.c
 ===================================================================
---- linux-2.6.26-rc3.orig/fs/jbd/transaction.c	2008-05-28 10:55:37.000000000 -0700
-+++ linux-2.6.26-rc3/fs/jbd/transaction.c	2008-05-28 10:57:32.000000000 -0700
+--- linux-2.6.26-rc3.orig/fs/jbd/transaction.c	2008-05-28 14:16:41.000000000 -0700
++++ linux-2.6.26-rc3/fs/jbd/transaction.c	2008-05-28 16:12:15.000000000 -0700
 @@ -1648,12 +1648,42 @@ out:
  	return;
  }
@@ -104,7 +104,7 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
 +	 * dirty data buffers, then try to free those buffers again,
 +	 * with the journal locked.
 +	 */
-+	if (ret == 0 && (gfp_mask & GFP_KERNEL == GFP_KERNEL)) {
++	if (ret == 0 && (gfp_mask & __GFP_WAIT) && (gfp_mask & __GFP_FS)) {
 +		journal_wait_for_transaction_sync_data(journal);
 +		ret = try_to_free_buffers(page);
 +	}
@@ -114,8 +114,8 @@ Index: linux-2.6.26-rc3/fs/jbd/transaction.c
  }
 Index: linux-2.6.26-rc3/mm/filemap.c
 ===================================================================
---- linux-2.6.26-rc3.orig/mm/filemap.c	2008-05-28 10:55:38.000000000 -0700
-+++ linux-2.6.26-rc3/mm/filemap.c	2008-05-28 10:55:43.000000000 -0700
+--- linux-2.6.26-rc3.orig/mm/filemap.c	2008-05-28 14:16:41.000000000 -0700
++++ linux-2.6.26-rc3/mm/filemap.c	2008-05-28 14:17:17.000000000 -0700
 @@ -2581,9 +2581,8 @@ out:
   * Otherwise return zero.
   *
