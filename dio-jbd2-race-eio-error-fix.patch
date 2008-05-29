@@ -24,16 +24,16 @@ Reviewed-by: Badari Pulavarty <pbadari@us.ibm.com>
 Index: linux-2.6.26-rc4/fs/jbd2/transaction.c
 ===================================================================
 --- linux-2.6.26-rc4.orig/fs/jbd2/transaction.c	2008-05-29 12:21:40.000000000 -0700
-+++ linux-2.6.26-rc4/fs/jbd2/transaction.c	2008-05-29 12:28:27.000000000 -0700
++++ linux-2.6.26-rc4/fs/jbd2/transaction.c	2008-05-29 12:38:30.000000000 -0700
 @@ -1656,12 +1656,43 @@ out:
  	return;
  }
  
 +/*
-+ * jbd2_journal_try_to_free_buffers() could race with 
-+ * jbd2_journal_commit_transaction()
-+ * The later might still hold the reference count to the buffers
-+ * when inspecting them on t_syncdata_list or t_locked_list.
++ * jbd2_journal_try_to_free_buffers() could race with
++ * jbd2_journal_commit_transaction(). The later might still hold the
++ * reference count to the buffers when inspecting them on
++ * t_syncdata_list or t_locked_list.
 + *
 + * jbd2_journal_try_to_free_buffers() will call this function to
 + * wait for the current transaction to finish syncing data buffers, before
@@ -88,7 +88,7 @@ Index: linux-2.6.26-rc4/fs/jbd2/transaction.c
  		 * We take our own ref against the journal_head here to avoid
  		 * having to add tons of locking around each instance of
 -		 * jbd2_journal_remove_journal_head() and jbd2_journal_put_journal_head().
-+		 * jbd2_journal_remove_journal_head() and 
++		 * jbd2_journal_remove_journal_head() and
 +		 * jbd2_journal_put_journal_head().
  		 */
  		jh = jbd2_journal_grab_journal_head(bh);
