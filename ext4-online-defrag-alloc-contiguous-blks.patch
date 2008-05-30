@@ -7,38 +7,23 @@ and allocate them for the temporary inode.
 
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
-Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
- fs/ext4/defrag.c       |  286 +++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/ext4.h         |    5 
+ fs/ext4/defrag.c       |  281 ++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/ext4.h         |    4 
  fs/ext4/ext4_extents.h |    3 
  fs/ext4/extents.c      |    6 -
- 4 files changed, 297 insertions(+), 3 deletions(-)
+ 4 files changed, 289 insertions(+), 5 deletions(-)
 
 Index: linux-2.6.26-rc4/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/defrag.c	2008-05-29 10:52:42.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/defrag.c	2008-05-29 10:52:43.000000000 -0700
-@@ -6,6 +6,75 @@
- #include "group.h"
- 
- /**
-+ * ext4_defrag_next_extent - Search for the next extent and set it to "extent"
-+ *
-+ * @inode:	inode of the the original file
-+ * @path:	this will obtain data for the next extent
-+ * @extent:	pointer to the next extent we have just gotten
-+ *
-+ * This function returns 0 or 1(last entry) if succeeded, otherwise
-+ * returns -EIO.
-+ */
-+static int
-+ext4_defrag_next_extent(struct inode *inode,
-+			struct ext4_ext_path *path,
-+			struct ext4_extent **extent)
-+{
-+	int ppos;
-+	int leaf_ppos = path->p_depth;
+--- linux-2.6.26-rc4.orig/fs/ext4/defrag.c	2008-05-30 11:41:10.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/defrag.c	2008-05-30 11:41:19.000000000 -0700
+@@ -34,7 +34,60 @@ static int
+ ext4_defrag_next_extent(struct inode *inode, struct ext4_ext_path *path,
+ 			struct ext4_extent **extent)
+ {
+-	return 0;
++	int ppos, leaf_ppos = path->p_depth;
 +
 +	ppos = leaf_ppos;
 +	if (EXT_LAST_EXTENT(path[ppos].p_hdr) > path[ppos].p_ext) {
@@ -54,14 +39,13 @@ Index: linux-2.6.26-rc4/fs/ext4/defrag.c
 +
 +			/* index block */
 +			path[ppos].p_idx++;
-+			path[ppos].p_block =
-+				idx_pblock(path[ppos].p_idx);
++			path[ppos].p_block = idx_pblock(path[ppos].p_idx);
 +			if (path[ppos+1].p_bh)
 +				brelse(path[ppos+1].p_bh);
 +			path[ppos+1].p_bh =
 +				sb_bread(inode->i_sb, path[ppos].p_block);
 +			if (!path[ppos+1].p_bh)
-+				return  -EIO;
++				goto err;
 +			path[ppos+1].p_hdr =
 +				ext_block_hdr(path[ppos+1].p_bh);
 +
@@ -76,7 +60,7 @@ Index: linux-2.6.26-rc4/fs/ext4/defrag.c
 +				path[cur_ppos+1].p_bh = sb_bread(inode->i_sb,
 +					path[cur_ppos].p_block);
 +				if (!path[cur_ppos+1].p_bh)
-+					return  -EIO;
++					goto err;
 +				path[cur_ppos+1].p_hdr =
 +					ext_block_hdr(path[cur_ppos+1].p_bh);
 +			}
@@ -89,263 +73,282 @@ Index: linux-2.6.26-rc4/fs/ext4/defrag.c
 +	}
 +	/* We found the last extent */
 +	return 1;
-+}
-+
-+/**
-  * ext4_defrag_merge_across_blocks - Merge extents across leaf block
-  *
-  * @handle	journal handle
-@@ -618,6 +687,148 @@ out:
++err:
++	if (path)
++		ext4_ext_drop_refs(path);
++	return -EIO;
+ }
+ 
+ int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
+@@ -81,6 +134,86 @@ int ext4_defrag_ioctl(struct inode *inod
  }
  
  /**
++ * ext4_defrag_fill_ar - Prepare to multiple block allocate for tmp inode
++ *
++ * @org_inode:		original inode
++ * @dest_inode:		temporary inode
++ * @ar:			allocation request for multiple block allocation
++ * @org_path:		indicating the original inode's extent
++ * @dest_path:		indicating the temporary inode's extent
++ * @req_blocks:		contiguous blocks count we need
++ * @iblock:		target file offset
++ *
++ */
++static void
++ext4_defrag_fill_ar(struct inode *org_inode, struct inode *dest_inode,
++			struct ext4_allocation_request *ar,
++			struct ext4_ext_path *org_path,
++			struct ext4_ext_path *dest_path,
++			ext4_fsblk_t req_blocks, ext4_lblk_t iblock)
++{
++	ar->inode = dest_inode;
++	ar->len = req_blocks;
++	ar->logical = iblock;
++	ar->flags = EXT4_MB_HINT_DATA | EXT4_MB_HINT_RESERVED
++		| EXT4_MB_HINT_NOPREALLOC;
++	ar->lleft = 0;
++	ar->pleft = 0;
++	ar->lright = 0;
++	ar->pright = 0;
++
++	ar->goal = ext4_ext_find_goal(dest_inode, dest_path, iblock);
++}
++
++/**
 + * ext4_defrag_alloc_blocks - Allocate contiguous blocks to temporary inode
 + *
-+ * @dest_inode		temporary inode for multiple block allocation
-+ * @org_inode		original inode
-+ * @iblock		file related offset
-+ * @total_blocks	contiguous blocks count
++ * @handle:		journal handle
++ * @org_inode:		original inode
++ * @dest_inode:		temporary inode for multiple block allocation
++ * @ar:			allocation request for multiple block allocation
++ * @dest_path:		indicating the temporary inode's extent
++ * @newblock:		start offset of contiguous blocks
 + *
-+ * If succeed, fuction returns count of extent we got,
-+ * otherwise returns err.
++ * This function returns 0 if succeeed, otherwise returns error value.
 + */
-+static int ext4_defrag_alloc_blocks(struct inode *dest_inode,
-+		struct inode *org_inode, ext4_lblk_t iblock,
-+		ext4_fsblk_t total_blocks)
++static int
++ext4_defrag_alloc_blocks(handle_t *handle, struct inode *org_inode,
++		struct inode *dest_inode, struct ext4_allocation_request *ar,
++		struct ext4_ext_path *dest_path, ext4_fsblk_t *newblock)
 +{
-+	handle_t *handle = NULL;
-+	struct ext4_ext_path *dest_path = NULL;
-+	struct ext4_ext_path *org_path = NULL;
-+	struct ext4_extent newex;
-+	struct ext4_allocation_request ar;
++	struct super_block *sb = org_inode->i_sb;
 +	struct buffer_head *bh = NULL;
-+	struct super_block *org_sb = org_inode->i_sb;
-+	ext4_fsblk_t newblock = 0;
-+	ext4_fsblk_t rest = total_blocks;
-+	ext4_fsblk_t alloc_total = 0;
-+	unsigned long org_len;
-+	ext4_group_t dest_grp_no;
-+	ext4_grpblk_t dest_blk_off;
-+	int metadata = 1;
-+	int count = 0;
-+	int credits = 0;
-+	int err = 0;
-+	int err2 = 0;
-+	int len_cnt = 0;
++	int err, i, credits = 0;
 +
-+	ar.len = total_blocks;
-+	org_len = ar.len;
-+
-+	/* Find first extent */
-+	dest_path = ext4_ext_find_extent(dest_inode, iblock, dest_path);
-+	if (IS_ERR(dest_path)) {
-+		err = PTR_ERR(dest_path);
-+		dest_path = NULL;
-+		goto out2;
-+	}
-+
-+	ar.inode = dest_inode;
-+	ar.flags = EXT4_MB_HINT_DATA | EXT4_MB_HINT_RESERVED
-+		| EXT4_MB_HINT_NOPREALLOC;
-+
-+	ar.goal = ext4_ext_find_goal(dest_inode, dest_path, iblock);
-+
-+	ar.logical = iblock;
-+	ar.lleft = 0;
-+	ar.pleft = 0;
-+	ar.lright = 0;
-+	ar.pright = 0;
-+
-+	handle = ext4_journal_start(dest_inode, credits);
++	credits = ext4_ext_calc_credits_for_insert(dest_inode, dest_path);
++	handle = ext4_ext_journal_restart(handle,
++				credits + EXT4_TRANS_META_BLOCKS);
 +	if (IS_ERR(handle)) {
 +		err = PTR_ERR(handle);
-+		goto out2;
++		return err;
 +	}
 +
-+	while (alloc_total != total_blocks) {
-+		credits = ext4_ext_calc_credits_for_insert(dest_inode,
-+							dest_path);
-+		handle = ext4_ext_journal_restart(handle,
-+				credits + EXT4_TRANS_META_BLOCKS);
++	*newblock = ext4_mb_new_blocks(handle, ar, &err);
++	if (err)
++		return err;
 +
-+		if (IS_ERR(handle))
-+			return PTR_ERR(handle);
-+
-+		newblock = ext4_mb_new_blocks(handle, &ar, &err);
-+
-+		if (err) {
-+			/* Failed to get the contiguous blocks */
-+			goto out;
-+		} else {
-+			/*
-+			 * Dirty buffer_head causes the overwriting
-+			 * if ext4_mb_new_blocks() allocates the block
-+			 * which used to be the metadata block.
-+			 * We should call unmap_underlying_metadata()
-+			 * to clear the dirty flag.
-+			 */
-+			for (len_cnt = 0; len_cnt < ar.len; len_cnt++) {
-+				bh = sb_find_get_block(org_sb,
-+							newblock + len_cnt);
-+				unmap_underlying_metadata(org_sb->s_bdev,
-+							newblock + len_cnt);
-+			}
-+
-+			alloc_total += ar.len;
-+			ext4_get_group_no_and_offset(dest_inode->i_sb,
-+				newblock, &dest_grp_no, &dest_blk_off);
-+
-+			newex.ee_block = cpu_to_le32(alloc_total - ar.len);
-+			ext4_ext_store_pblock(&newex, newblock);
-+			newex.ee_len = cpu_to_le16(ar.len);
-+
-+			ar.goal = newblock + ar.len;
-+			rest = rest - ar.len;
-+			ar.len = rest;
-+
-+			err = ext4_ext_insert_extent(handle, dest_inode,
-+						dest_path, &newex);
-+			if (!err) {
-+				count++;
-+			} else {
-+				ext4_free_blocks(handle, org_inode,
-+					newblock, ar.len, metadata);
-+				goto out;
-+			}
-+		}
++	/*
++	 * Dirty buffer_head causes the overwriting
++	 * if ext4_mb_new_blocks() allocates the block
++	 * which used to be the metadata block.
++	 * We should call unmap_underlying_metadata()
++	 * to clear the dirty flag.
++	 */
++	for (i = 0; i < ar->len; i++) {
++		bh = sb_find_get_block(sb, *newblock + i);
++		unmap_underlying_metadata(sb->s_bdev, *newblock + i);
 +	}
 +
-+out:
-+	if (err) {
-+		/* Faild case: We have to remove halfway blocks */
-+		err2 = ext4_ext_remove_space(dest_inode, 0);
-+		if (err2)
-+			printk(KERN_ERR "ext4 defrag: "
-+				"Failed to remove temporary inode blocks\n");
-+	}
-+out2:
-+	if (dest_path) {
-+		ext4_ext_drop_refs(dest_path);
-+		kfree(dest_path);
-+	}
-+	if (org_path) {
-+		ext4_ext_drop_refs(org_path);
-+		kfree(org_path);
-+	}
-+
-+	ext4_journal_stop(handle);
-+
-+	/* Return extents count or err value */
-+	return (!err ? count : err);
-+
++	return err;
 +}
 +
 +/**
   * ext4_defrag_partial - Defrag a file per page
   *
-  * @tmp_inode:		the inode which has blocks to swap with original
-@@ -736,3 +947,78 @@ out:
- 
- 	return (ret < 0 ? ret : 0);
+  * @tmp_inode:		temporary inode
+@@ -99,6 +232,70 @@ ext4_defrag_partial(struct inode *tmp_in
  }
-+
-+/**
-+ * ext4_defrag_new_extent_tree - Check extents improves or not
+ 
+ /**
++ * ext4_defrag_comp_ext_count- Check whether fragments are improved or not
 + *
-+ * @inode:		inode of the original file
-+ * @tmp_inode:		inode of the temporary file
++ * @org_inode:		original inode
 + * @path:		the structure holding some info about
 + *			original extent tree
-+ * @tar_start:		starting offset to allocate in blocks
-+ * @tar_blocks:		the number of blocks to allocate
-+ * @iblock:		file related offset
++ * @tar_end:		the last block number of the allocated blocks
++ * @sum_tmp:		the extents count  in the allocated blocks
 + *
-+ * This function returns the value as below:
-+ *	0(succeeded)
-+ *	1(not improved)
-+ *	negative value(error)
++ *
++ * This function returns the values as below.
++ *	0 (improved)
++ *	1 (not improved)
++ *	negative value (error case)
 + */
 +static int
-+ext4_defrag_new_extent_tree(struct inode *inode, struct inode *tmp_inode,
-+			struct ext4_ext_path *path, ext4_lblk_t tar_start,
-+			ext4_lblk_t tar_blocks, ext4_lblk_t iblock)
++ext4_defrag_comp_ext_count(struct inode *org_inode,
++			struct ext4_ext_path *org_path, ext4_lblk_t tar_end,
++			int sum_tmp)
 +{
 +	struct ext4_extent *ext = NULL;
-+	struct ext4_extent_header *eh = NULL;
-+	ext4_lblk_t tar_end = tar_start + tar_blocks - 1;
-+	int sum_org = 0, sum_tmp = 0;
-+	int ret = 0, depth;
++	int depth = ext_depth(org_inode);
 +	int last_extent = 0;
++	int sum_org = 0;
++	int ret = 0;
 +
-+	eh = ext_inode_hdr(tmp_inode);
-+	eh->eh_depth = 0;
++	ext = org_path[depth].p_ext;
 +
-+	/* Allocate contiguous blocks */
-+	sum_tmp = ext4_defrag_alloc_blocks(tmp_inode, inode, iblock,
-+					tar_blocks);
-+	if (sum_tmp < 0) {
-+		ret = sum_tmp;
-+		goto out;
-+	}
-+
-+	depth = ext_depth(inode);
-+	ext = path[depth].p_ext;
-+	/* Compare the number of the original extents with new one. */
++	/*
++	 * Compare the number of the newly allocated extents to
++	 * that of existing one.
++	 */
 +	while (1) {
 +		if (!last_extent)
 +			++sum_org;
-+
-+		if (tar_end <= le32_to_cpu(ext->ee_block) +
-+			       le16_to_cpu(ext->ee_len) - 1 ||
++		if (tar_end <= (le32_to_cpu(ext->ee_block) +
++			       le16_to_cpu(ext->ee_len) - 1) ||
 +			       last_extent) {
-+
++			/*
++			 * Fail if goal is not set and the fragmentation
++			 * is not improved.
++			 */
 +			if (sum_org == sum_tmp) {
 +				/* Not improved */
-+				ret = ext4_ext_remove_space(tmp_inode, 0);
-+				if (!ret)
-+					ret = 1;
++				ret = 1;
 +			} else if (sum_org < sum_tmp) {
 +				/* Fragment increased */
-+				ret = ext4_ext_remove_space(tmp_inode, 0);
-+				if (!ret)
-+					ret = -ENOSPC;
++				ret = -ENOSPC;
 +				printk(KERN_ERR "ext4 defrag: "
 +					"Insufficient free blocks\n");
-+				}
++			}
 +			break;
 +		}
-+		last_extent = ext4_defrag_next_extent(tmp_inode, path, &ext);
++		last_extent =
++			ext4_defrag_next_extent(org_inode, org_path, &ext);
 +		if (last_extent < 0) {
 +			ret = last_extent;
 +			break;
 +		}
 +	}
-+out:
++
 +	return ret;
 +}
++
++/**
+  * ext4_defrag_new_extent_tree - Get contiguous blocks and build an extent tree
+  *
+  * @org_inode:		original inode
+@@ -119,7 +316,87 @@ ext4_defrag_new_extent_tree(struct inode
+ 			struct ext4_ext_path *org_path, ext4_lblk_t tar_start,
+ 			ext4_lblk_t tar_blocks, ext4_lblk_t iblock)
+ {
+-	return 0;
++	handle_t *handle;
++	struct ext4_extent_header *eh = NULL;
++	struct ext4_allocation_request ar;
++	struct ext4_ext_path *dest_path = NULL;
++	struct ext4_extent newex;
++	ext4_fsblk_t alloc_total = 0;
++	ext4_fsblk_t newblock = 0;
++	ext4_lblk_t tar_end = tar_start + tar_blocks - 1;
++	int sum_tmp = 0;
++	int metadata = 1;
++	int ret, ret2;
++
++	eh = ext_inode_hdr(tmp_inode);
++	eh->eh_depth = 0;
++
++	dest_path = ext4_ext_find_extent(tmp_inode, iblock, NULL);
++	if (IS_ERR(dest_path)) {
++		ret = PTR_ERR(dest_path);
++		dest_path = NULL;
++		goto out2;
++	}
++
++	/* Fill struct ext4_allocation_request with necessary info */
++	ext4_defrag_fill_ar(org_inode, tmp_inode, &ar, org_path,
++				dest_path, tar_blocks, iblock);
++
++	handle = ext4_journal_start(tmp_inode, 0);
++	if (IS_ERR(handle)) {
++		ret = PTR_ERR(handle);
++		goto out2;
++	}
++
++	while (alloc_total != tar_blocks) {
++		/* Allocate blocks */
++		ret = ext4_defrag_alloc_blocks(handle, org_inode, tmp_inode,
++						&ar, dest_path, &newblock);
++		if (ret < 0)
++			goto out;
++
++		alloc_total += ar.len;
++
++		newex.ee_block = cpu_to_le32(alloc_total - ar.len);
++		ext4_ext_store_pblock(&newex, newblock);
++		newex.ee_len = cpu_to_le16(ar.len);
++
++		ret = ext4_ext_insert_extent(handle, tmp_inode,
++						dest_path, &newex);
++		if (ret < 0)
++			goto out;
++
++		ar.goal = newblock + ar.len;
++		ar.len = tar_blocks - alloc_total;
++		sum_tmp++;
++	}
++
++	ret = ext4_defrag_comp_ext_count(org_inode, org_path, tar_end,
++					sum_tmp);
++
++out:
++	if (ret < 0 || ret == 1) {
++		if (ar.len)
++			ext4_free_blocks(handle, tmp_inode, newblock, ar.len,
++					metadata);
++		/* Faild case: We have to remove halfway blocks */
++		ret2 = ext4_ext_remove_space(tmp_inode, 0);
++		if (ret2) {
++			printk(KERN_ERR "ext4 defrag: "
++				"Failed to remove temporary inode blocks\n");
++			ret = ret2;
++		}
++	}
++
++	ext4_journal_stop(handle);
++
++out2:
++	if (dest_path) {
++		ext4_ext_drop_refs(dest_path);
++		kfree(dest_path);
++	}
++
++	return ret;
+ }
+ 
+ /**
 Index: linux-2.6.26-rc4/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/ext4.h	2008-05-29 10:52:42.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/ext4.h	2008-05-29 10:52:43.000000000 -0700
-@@ -315,6 +315,8 @@ struct ext4_new_group_data {
- #define EXT4_IOC32_GETVERSION_OLD	FS_IOC32_GETVERSION
- #define EXT4_IOC32_SETVERSION_OLD	FS_IOC32_SETVERSION
+--- linux-2.6.26-rc4.orig/fs/ext4/ext4.h	2008-05-30 11:41:10.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/ext4.h	2008-05-30 11:41:19.000000000 -0700
+@@ -328,6 +328,7 @@ struct ext4_ext_defrag_data {
+ 	ext4_fsblk_t goal;		/* block offset for allocation */
+ };
  
 +#define EXT4_TRANS_META_BLOCKS 4 /* bitmap + group desc + sb + inode */
-+
  
  /*
   *  Mount options
-@@ -1115,6 +1117,8 @@ extern void ext4_inode_bitmap_set(struct
+@@ -1126,6 +1127,8 @@ extern void ext4_inode_bitmap_set(struct
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
 +/* extents.c */
 +extern handle_t *ext4_ext_journal_restart(handle_t *handle, int needed);
- 
- static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
- {
-@@ -1232,6 +1236,7 @@ extern int ext4_get_blocks_wrap(handle_t
+ /* defrag.c */
+ extern int ext4_defrag(struct file *filp, ext4_lblk_t block_start,
+ 			ext4_lblk_t defrag_size);
+@@ -1248,6 +1251,7 @@ extern int ext4_get_blocks_wrap(handle_t
  			sector_t block, unsigned long max_blocks,
  			struct buffer_head *bh, int create,
  			int extend_disksize);
@@ -355,8 +358,8 @@ Index: linux-2.6.26-rc4/fs/ext4/ext4.h
  #endif	/* _EXT4_H */
 Index: linux-2.6.26-rc4/fs/ext4/ext4_extents.h
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/ext4_extents.h	2008-05-29 10:52:42.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/ext4_extents.h	2008-05-29 10:52:43.000000000 -0700
+--- linux-2.6.26-rc4.orig/fs/ext4/ext4_extents.h	2008-05-30 11:41:10.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/ext4_extents.h	2008-05-30 11:41:19.000000000 -0700
 @@ -230,5 +230,8 @@ extern int ext4_ext_search_right(struct 
  extern void ext4_ext_drop_refs(struct ext4_ext_path *);
  extern ext4_fsblk_t ext_pblock(struct ext4_extent *ex);
@@ -368,8 +371,8 @@ Index: linux-2.6.26-rc4/fs/ext4/ext4_extents.h
  
 Index: linux-2.6.26-rc4/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/extents.c	2008-05-29 10:52:42.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/extents.c	2008-05-29 10:52:43.000000000 -0700
+--- linux-2.6.26-rc4.orig/fs/ext4/extents.c	2008-05-30 11:41:10.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/extents.c	2008-05-30 11:41:19.000000000 -0700
 @@ -92,7 +92,7 @@ static void ext4_idx_store_pblock(struct
  	ix->ei_leaf_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1) & 0xffff);
  }

@@ -14,7 +14,6 @@ From: Akira Fujita <a-fujita@rs.jp.nec.com>
 
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
-Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
 /*
  * e4defrag.c - ext4 filesystem defragmenter
@@ -180,6 +179,8 @@ typedef int ext4_grpblk_t;
 #define NGMSG_FILE_MAP		"\te4defrag  : get file map fail."
 #define NGMSG_FILE_DROP_BUFFER	"\te4defrag  : free page fail."
 #define NGMSG_FADVISE_SYSCALL	"\tfadvise fail."
+#define NGMSG_FORCE_DEFRAG_SIZE	\
+"\te4defrag : Cannot specify a file larger than %luMB in force defrag mode."
 
 struct ext4_extent_data {
 	ext4_lblk_t  block;		/* start logical block number */
@@ -283,13 +284,11 @@ int page_in_core(int fd, struct ext4_ext_defrag_data defrag_data,
 	void *page = NULL;
 	loff_t offset, end_offset, length;
 
-	if (vec == NULL || *vec != NULL) {
+	if (vec == NULL || *vec != NULL)
 		return RETURN_NG;
-	}
 
-	if (ioctl(fd, FIGETBSZ, &blocksize) < 0) {
+	if (ioctl(fd, FIGETBSZ, &blocksize) < 0)
 		return RETURN_NG;
-	}
 
 	/*in mmap, offset should be a multiple of the page size */
 	offset = defrag_data.start_offset * blocksize;
@@ -300,29 +299,25 @@ int page_in_core(int fd, struct ext4_ext_defrag_data defrag_data,
 	length = end_offset - offset;
 
 	page = mmap(NULL, length, PROT_READ, MAP_SHARED, fd, offset);
-	if (page == MAP_FAILED) {
+	if (page == MAP_FAILED)
 		return RETURN_NG;
-	}
 
 	*page_num = 0;
 	*page_num = (length + pagesize - 1) / pagesize;
 	*vec = (unsigned char *)calloc(*page_num, 1);
-	if (*vec == NULL) {
+	if (*vec == NULL)
 		return RETURN_NG;
-	}
 
 	/* get information on whether pages are in core */
 	if (mincore(page, (size_t)length, *vec) == -1) {
-		if (*vec) {
+		if (*vec)
 			free(*vec);
-		}
 		return RETURN_NG;
 	}
 
 	if (munmap(page, length) == -1) {
-		if (*vec) {
+		if (*vec)
 			free(*vec);
-		}
 		return RETURN_NG;
 	}
 
@@ -349,18 +344,16 @@ int defrag_fadvise(int fd, struct ext4_ext_defrag_data defrag_data,
 	unsigned long i;
 	loff_t offset;
 
-	if (ioctl(fd, FIGETBSZ, &blocksize) < 0) {
+	if (ioctl(fd, FIGETBSZ, &blocksize) < 0)
 		return RETURN_NG;
-	}
 
 	offset = (loff_t)defrag_data.start_offset * blocksize;
 	offset = (offset / pagesize) * pagesize;
 
 	/* sync file for fadvise process */
-	if (sync_file_range(fd, offset, (loff_t)pagesize*page_num, sync_flag)
-	    != 0) {
+	if (sync_file_range(fd, offset,
+		(loff_t)pagesize*page_num, sync_flag) != 0)
 		return RETURN_NG;
-	}
 
 	/* try to release buffer cache this process used,
 	 * then other process can use the released buffer */
@@ -396,22 +389,19 @@ int check_free_size(int fd, const struct stat64 *buf)
 	size = buf->st_size;
 
 	if (fstatfs(fd, &fsbuf) < 0) {
-		if (detail_flag) {
+		if (detail_flag)
 			perror(NGMSG_FS_INFO);
-		}
 		return RETURN_NG;
 	}
 
 	/* Compute free space for root and normal user separately */
-	if (getuid() == ROOT_UID) {
+	if (getuid() == ROOT_UID)
 		free_size = (off64_t)fsbuf.f_bsize * fsbuf.f_bfree;
-	} else {
+	else
 		free_size = (off64_t)fsbuf.f_bsize * fsbuf.f_bavail;
-	}
 
-	if (free_size >= size) {
+	if (free_size >= size)
 		return RETURN_OK;
-	}
 
 	return RETURN_NG;
 }
@@ -428,9 +418,8 @@ int force_defrag(int fd, const struct stat64 *buf, int blocksize);
  * @flag:		file type.
  * @ftwbuf:		the pointer of a struct FTW.
  */
-int
-ftw_fn(const char *file, const struct stat64 *buf, int flag, struct FTW
-*ftwbuf)
+int ftw_fn(const char *file, const struct stat64 *buf, int flag,
+	   struct FTW *ftwbuf)
 {
 	int	fd;
 	int	blocksize;
@@ -453,198 +442,193 @@ ftw_fn(const char *file, const struct stat64 *buf, int flag, struct FTW
 		return FTW_CONT;
 	}
 
-	if (flag == FTW_F) {
-		amount_cnt++;
-		fd = open64(file, O_RDWR);
-		if (fd < 0) {
-			if (detail_flag) {
-				perror(NGMSG_FILE_OPEN);
-				PRINT_FILE_NAME(file);
-			}
-			return FTW_CONT;
-		}
+	if (flag != FTW_F)
+		goto out;
 
-		if (file_check(fd, buf, file) == FILE_CHK_NG) {
-			close(fd);
-			return FTW_CONT;
-		}
-
-		if (fsync(fd) < 0) {
-			if (detail_flag) {
-				perror(NGMSG_FILE_SYNC);
-				PRINT_FILE_NAME(file);
-			}
-			close(fd);
-			return FTW_CONT;
-		}
-		/* Get blocksize */
-		if (ioctl(fd, FIGETBSZ, &blocksize) < 0) {
-			if (detail_flag) {
-				perror(NGMSG_FILE_BLOCKSIZE);
-				PRINT_FILE_NAME(file);
-			}
-			close(fd);
-			return FTW_CONT;
-		}
-		/* Ioctl call does the actual defragment job. */
-		df_data.start_offset = 0;
-		df_data.goal = goal;
-		df_data.ext.len = 0;
-
-		if (force_flag)
-			df_data.flag = 1;
-
-		/* count file frags before defrag if detail_flag set */
+	amount_cnt++;
+	fd = open64(file, O_RDONLY);
+	if (fd < 0) {
 		if (detail_flag) {
-			pos = 0;
-			file_frags_start = 0;
-			memset(&extents_info, 0,
-				sizeof(struct ext4_extents_info));
-			extents_info.ino = buf->st_ino;
-			extents_info.max_entries = DEFRAG_MAX_ENT;
-			extents_info.entries = 0;
-
-			do {
-				extents_info.entries += pos;
-				pos = extents_info.entries;
-				ret = ioctl(fd, EXT4_IOC_EXTENTS_INFO,
-					    &extents_info);
-				if (ret < 0) {
-					perror(NGMSG_FILE_INFO);
-					PRINT_FILE_NAME(file);
-					close(fd);
-					return FTW_CONT;
-				}
-				file_frags_start += extents_info.entries;
-			} while (extents_info.entries == DEFRAG_MAX_ENT &&
-				 ret == 0);
+			perror(NGMSG_FILE_OPEN);
+			PRINT_FILE_NAME(file);
 		}
+		return FTW_CONT;
+	}
+
+	if (file_check(fd, buf, file) == FILE_CHK_NG) {
+		close(fd);
+		return FTW_CONT;
+	}
+
+	if (fsync(fd) < 0) {
+		if (detail_flag) {
+			perror(NGMSG_FILE_SYNC);
+			PRINT_FILE_NAME(file);
+		}
+		close(fd);
+		return FTW_CONT;
+	}
+	/* Get blocksize */
+	if (ioctl(fd, FIGETBSZ, &blocksize) < 0) {
+		if (detail_flag) {
+			perror(NGMSG_FILE_BLOCKSIZE);
+			PRINT_FILE_NAME(file);
+		}
+		close(fd);
+		return FTW_CONT;
+	}
+	/* Ioctl call does the actual defragment job. */
+	df_data.start_offset = 0;
+	df_data.goal = goal;
+	df_data.ext.len = 0;
+	if (force_flag)
+		df_data.flag = 1;
+	else
+		df_data.flag = 0;
+
+	/* count file frags before defrag if detail_flag set */
+	if (detail_flag) {
+		pos = 0;
+		file_frags_start = 0;
+		memset(&extents_info, 0, sizeof(struct ext4_extents_info));
+		extents_info.ino = buf->st_ino;
+		extents_info.max_entries = DEFRAG_MAX_ENT;
+		extents_info.entries = 0;
+
+		do {
+			extents_info.entries += pos;
+			pos = extents_info.entries;
+			ret = ioctl(fd, EXT4_IOC_EXTENTS_INFO, &extents_info);
+			if (ret < 0) {
+				perror(NGMSG_FILE_INFO);
+				PRINT_FILE_NAME(file);
+				close(fd);
+				return FTW_CONT;
+			}
+			file_frags_start += extents_info.entries;
+		} while (extents_info.entries == DEFRAG_MAX_ENT && ret == 0);
+	}
+
+	/* print process progress */
+	printf("\tprocessing -------> %s:\n", file);
+	percent = (start * 100) / buf->st_size;
+	printf("\033[79;16H\033[K progressing ====> %d%%", percent);
+	fflush(stdout);
+
+	while (1) {
+		df_data.defrag_size = (min((buf->st_size - start),
+			DEFRAG_SIZE) + blocksize - 1) / blocksize;
+		ret = page_in_core(fd, df_data, &vec, &page_num);
+		if (ret == RETURN_NG) {
+			if (detail_flag) {
+				perror(NGMSG_FILE_MAP);
+				PRINT_FILE_NAME(file);
+			} else {
+				printf("\n");
+			}
+			close(fd);
+			return FTW_CONT;
+		}
+
+		/* EXT4_IOC_DEFRAG */
+		defraged_size = ioctl(fd, EXT4_IOC_DEFRAG, &df_data);
+
+		/* free page */
+		ret = defrag_fadvise(fd, df_data, vec, page_num);
+		if (vec) {
+			free(vec);
+			vec = NULL;
+		}
+		if (ret == RETURN_NG) {
+			if (detail_flag) {
+				perror(NGMSG_FILE_DROP_BUFFER);
+				PRINT_FILE_NAME(file);
+			} else {
+				printf("\n");
+			}
+			close(fd);
+			return FTW_CONT;
+		}
+
+		/* Go into force defrag mode */
+		if (defraged_size < 0 && force_flag == 1 && errno == ENOSPC) {
+			/*
+			 * File size is larger than max size of
+			 * force defrag mode
+			 */
+			if (buf->st_size > MAX_FILE_SIZE) {
+				fprintf(stderr, NGMSG_FORCE_DEFRAG_SIZE,
+					(MAX_FILE_SIZE) / (1024 * 1024));
+				close(fd);
+				return FTW_CONT;
+			}
+
+			defraged_size = force_defrag(fd, buf, blocksize);
+			if (defraged_size * blocksize >= buf->st_size)
+				/* Whole file is enforcedly defraged */
+				break;
+			else
+				defraged_size = RETURN_NG;
+		}
+		if (defraged_size < 0) {
+			if (detail_flag) {
+				perror(NGMSG_FILE_DEFRAG);
+				PRINT_FILE_NAME(file);
+			} else {
+				printf("\n");
+			}
+			close(fd);
+			return FTW_CONT;
+		}
+		df_data.start_offset += defraged_size;
+		start = (long long)df_data.start_offset * blocksize;
 
 		/* print process progress */
-		printf("\tprocessing -------> %s:\n", file);
 		percent = (start * 100) / buf->st_size;
+
+		/* disk space file used is bigger than logical size */
+		if (percent > 100)
+			percent = 100;
 		printf("\033[79;16H\033[K progressing ====> %d%%", percent);
 		fflush(stdout);
 
-		while (1) {
-			df_data.defrag_size =
-					(min((buf->st_size - start),
-					     DEFRAG_SIZE) + blocksize - 1) /
-					blocksize;
+		/* End of file */
+		if (start >= buf->st_size)
+			break;
+	}
 
-			ret = page_in_core(fd, df_data, &vec, &page_num);
-			if (ret == RETURN_NG) {
-				if (detail_flag) {
-					perror(NGMSG_FILE_MAP);
-					PRINT_FILE_NAME(file);
-				} else {
-					printf("\n");
-				}
+	/* count file frags after defrag and print extents info */
+	if (detail_flag) {
+		pos = 0;
+		ret = RETURN_NG;
+		file_frags_end = 0;
+		extents_info.entries = 0;
+
+		do {
+			extents_info.entries += pos;
+			pos = extents_info.entries;
+			ret = ioctl(fd, EXT4_IOC_EXTENTS_INFO, &extents_info);
+			if (ret < 0) {
+				printf("\n");
+				perror(NGMSG_FILE_INFO);
+				PRINT_FILE_NAME(file);
 				close(fd);
 				return FTW_CONT;
 			}
+			file_frags_end += extents_info.entries;
+		} while (extents_info.entries == DEFRAG_MAX_ENT &&  ret == 0);
 
-			/* EXT4_IOC_DEFRAG */
-			defraged_size = ioctl(fd, EXT4_IOC_DEFRAG, &df_data);
+		printf("\n\t\textents: %d ==> %d",
+			file_frags_start, file_frags_end);
+	}
+	printf("\n");
+	close(fd);
+	succeed_cnt++;
 
-			/* free page */
-			ret = defrag_fadvise(fd, df_data, vec, page_num);
-			if (vec) {
-				free(vec);
-				vec = NULL;
-			}
-			if (ret == RETURN_NG) {
-				if (detail_flag) {
-					perror(NGMSG_FILE_DROP_BUFFER);
-					PRINT_FILE_NAME(file);
-				} else {
-					printf("\n");
-				}
-				close(fd);
-				return FTW_CONT;
-			}
-
-			if ((defraged_size < 0) && (force_flag == 1) &&
-			 (errno == ENOSPC) && buf->st_size <= MAX_FILE_SIZE) {
-				defraged_size = force_defrag(fd, buf,
-							     blocksize);
-				if (defraged_size * blocksize >= buf->st_size) {
-					/* Whole file is enforcedly defraged */
-					break;
-				} else {
-					defraged_size = RETURN_NG;
-				}
-			}
-			if (defraged_size < 0) {
-				if (detail_flag) {
-					perror(NGMSG_FILE_DEFRAG);
-					PRINT_FILE_NAME(file);
-				} else {
-					printf("\n");
-				}
-				close(fd);
-				return FTW_CONT;
-			}
-			df_data.start_offset += defraged_size;
-			start = df_data.start_offset * blocksize;
-
-			/* print process progress */
-			if (start > ((long long)1 << 56)) {
-			/* consider overflow("start * 100" beyond 64bits) */
-				start = start >> 8;
-				percent = (start * 100) / (buf->st_size >> 8);
-			} else {
-				percent = (start * 100) / buf->st_size;
-			}
-
-			/* disk space file used is bigger than logical size */
-			if (percent > 100) {
-				percent = 100;
-			}
-			printf("\033[79;16H\033[K progressing ====> %d%%",
-				percent);
-			fflush(stdout);
-
-			/* End of file */
-			if (start >= buf->st_size) {
-				break;
-			}
-		}
-
-		/* count file frags after defrag and print extents info */
-		if (detail_flag) {
-			pos = 0;
-			ret = RETURN_NG;
-			file_frags_end = 0;
-			extents_info.entries = 0;
-
-			do {
-				extents_info.entries += pos;
-				pos = extents_info.entries;
-				ret = ioctl(fd, EXT4_IOC_EXTENTS_INFO,
-					    &extents_info);
-				if (ret < 0) {
-					printf("\n");
-					perror(NGMSG_FILE_INFO);
-					PRINT_FILE_NAME(file);
-					close(fd);
-					return FTW_CONT;
-				}
-				file_frags_end += extents_info.entries;
-			} while (extents_info.entries == DEFRAG_MAX_ENT &&
-				 ret == 0);
-
-			printf("\n\t\textents: %d ==> %d",
-				file_frags_start, file_frags_end);
-		}
-		printf("\n");
-		close(fd);
-		succeed_cnt++;
-	} else {
-		if (detail_flag) {
-			PRINT_ERR_MSG(NGMSG_FILE_UNREG);
-			PRINT_FILE_NAME(file);
-		}
+out:
+	if (flag != FTW_F && detail_flag) {
+		PRINT_ERR_MSG(NGMSG_FILE_UNREG);
+		PRINT_FILE_NAME(file);
 	}
 
 	return FTW_CONT;
@@ -677,7 +661,6 @@ int file_check(int fd, const struct stat64 *buf, const char *file_name)
 
 	/* Free space */
 	if (check_free_size(fd, buf) == RETURN_NG) {
-
 		if (detail_flag) {
 			PRINT_ERR_MSG(NGMSG_FILE_LARGE);
 			PRINT_FILE_NAME(file_name);
@@ -780,15 +763,13 @@ int is_ext4(const char *filename)
 
 	if (strcmp(mnt_type, FS_EXT4) == 0) {
 		endmntent(fp);
-		if (mnt_type) {
+		if (mnt_type)
 			free(mnt_type);
-		}
 		return RETURN_OK;
 	} else {
 		endmntent(fp);
-		if (mnt_type) {
+		if (mnt_type)
 			free(mnt_type);
-		}
 		PRINT_ERR_MSG(NGMSG_EXT4);
 		return RETURN_NG;
 	}
@@ -885,7 +866,7 @@ int main(int argc, char *argv[])
 				int res_strlen;
 				res_strlen = strlen(argv[3]);
 				for (res_strlen -= 1; res_strlen >= 0;
-								res_strlen--) {
+							res_strlen--) {
 					if (!isdigit(argv[3][res_strlen])) {
 						printf("Illegal argument\n\n");
 						printf(MSG_USAGE);
@@ -924,7 +905,7 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		/* Regular file is acceptalbe with force mode */
+		/* Regular file is acceptalbe with force defrag mode */
 		if (force_flag && !S_ISREG(buf.st_mode)) {
 			printf("Inappropriate file type \n\n");
 			printf(MSG_USAGE);
@@ -934,10 +915,9 @@ int main(int argc, char *argv[])
 		/* Block device */
 		if (S_ISBLK(buf.st_mode)) {
 			arg_type = DEVNAME;
-			if (get_mount_point(argv[i], dir_name, PATH_MAX) ==
-				RETURN_NG) {
+			if (get_mount_point(argv[i], dir_name, PATH_MAX)
+							== RETURN_NG)
 				continue;
-			}
 			printf("Start defragment for device(%s)\n", argv[i]);
 		} else if (S_ISDIR(buf.st_mode)) {
 			/* Directory */
@@ -959,9 +939,8 @@ int main(int argc, char *argv[])
 
 		/* Device's ext4 check is in get_mount_point() */
 		if (arg_type == FILENAME || arg_type == DIRNAME) {
-			if (is_ext4(argv[i]) == RETURN_NG) {
+			if (is_ext4(argv[i]) == RETURN_NG)
 				continue;
-			}
 			if (realpath(argv[i], dir_name) == NULL) {
 				perror(NGMSG_REALPATH);
 				PRINT_FILE_NAME(argv[i]);
@@ -1059,11 +1038,8 @@ int main(int argc, char *argv[])
 			printf("Start defragment for %s\n", argv[i]);
 			/* Single file process */
 			ftw_fn(argv[i], &buf, FTW_F, NULL);
-			if (succeed_cnt != 0) {
-				printf(
-				"\tSUCCESS\t:file defrag success.\n"
-				);
-			}
+			if (succeed_cnt != 0)
+				printf("\tSUCCESS\t:file defrag success.\n");
 			detail_flag = detail_tmp;
 			break;
 		}
@@ -1087,9 +1063,9 @@ int insert_extent(extent_t **extlist_head, extent_t *ext)
 {
 	extent_t	*ext_tmp = *extlist_head;
 
-	if (ext == NULL) {
+	if (ext == NULL)
 		return RETURN_NG;
-	}
+
 	/* First element */
 	if (*extlist_head == NULL) {
 		(*extlist_head) = ext;
@@ -1100,18 +1076,16 @@ int insert_extent(extent_t **extlist_head, extent_t *ext)
 
 	if (ext->data.start <= ext_tmp->data.start) {
 		/* Insert before head */
-		if (ext_tmp->data.start < ext->data.start + ext->data.len) {
+		if (ext_tmp->data.start < ext->data.start + ext->data.len)
 			/* Overlap */
 			return RETURN_NG;
-		}
 		/* Adjust head */
 		*extlist_head = ext;
 	} else {
 		/* Insert into the middle or last of the list */
 		do {
-			if (ext->data.start < ext_tmp->data.start) {
+			if (ext->data.start < ext_tmp->data.start)
 				break;
-			}
 			ext_tmp = ext_tmp->next;
 		} while (ext_tmp != (*extlist_head));
 		if (ext->data.start <
@@ -1142,9 +1116,8 @@ int insert_exts_group(exts_group_t **exts_group_list_head,
 {
 	exts_group_t	*exts_group_tmp = NULL;
 
-	if (exts_group == NULL) {
+	if (exts_group == NULL)
 		return RETURN_NG;
-	}
 
 	/* Initialize list */
 	if (*exts_group_list_head == NULL) {
@@ -1166,9 +1139,8 @@ int insert_exts_group(exts_group_t **exts_group_list_head,
 	for (exts_group_tmp = (*exts_group_list_head)->next;
 	     exts_group_tmp != *exts_group_list_head;
 	     exts_group_tmp = exts_group_tmp->next) {
-		if (exts_group_tmp->len < exts_group->len) {
+		if (exts_group_tmp->len < exts_group->len)
 			break;
-		}
 	}
 	exts_group_tmp = exts_group_tmp->prev;
 	insert(exts_group_tmp, exts_group);
@@ -1185,13 +1157,13 @@ int insert_exts_group(exts_group_t **exts_group_list_head,
 exts_group_t *get_exts_group(exts_group_t **exts_group_list_head,
 			      exts_group_t *exts_group)
 {
-	if (exts_group == NULL || *exts_group_list_head == NULL) {
+	if (exts_group == NULL || *exts_group_list_head == NULL)
 		return NULL;
-	}
+
 	/* Keep "exts_group_list_head" point to the largest extent group*/
-	if (exts_group == *exts_group_list_head) {
+	if (exts_group == *exts_group_list_head)
 		*exts_group_list_head = exts_group->next;
-	}
+
 	if (*exts_group_list_head == (*exts_group_list_head)->next &&
 	    exts_group == *exts_group_list_head) {
 		/* Delete the last element in the list */
@@ -1212,9 +1184,9 @@ exts_group_t *get_exts_group(exts_group_t **exts_group_list_head,
 {
 	exts_group_t *exts_group_tmp = NULL;
 
-	if (exts_group_list_head == NULL) {
+	if (exts_group_list_head == NULL)
 		return;
-	}
+
 	while (exts_group_list_head->next != exts_group_list_head) {
 		exts_group_tmp = exts_group_list_head;
 		exts_group_list_head->prev->next = exts_group_list_head->next;
@@ -1234,9 +1206,9 @@ void free_ext(extent_t *extent_list_head)
 {
 	extent_t *extent_tmp = NULL;
 
-	if (extent_list_head == NULL) {
+	if (extent_list_head == NULL)
 		return;
-	}
+
 	while (extent_list_head->next != extent_list_head) {
 		extent_tmp = extent_list_head;
 		extent_list_head->prev->next = extent_list_head->next;
@@ -1257,15 +1229,14 @@ void free_ext(extent_t *extent_list_head)
 int move_wrap(extent_wrap_t **from, extent_wrap_t **to,
 		   extent_wrap_t *entry)
 {
-	if (!to || !entry) {
+	if (!to || !entry)
 		return RETURN_NG;
-	}
+
 	if (from && *from == entry) {
-		if ((*from)->next == *from) {
+		if ((*from)->next == *from)
 			*from = NULL;
-		} else {
+		else
 			*from = (*from)->next;
-		}
 	}
 	entry->next->prev = entry->prev;
 	entry->prev->next = entry->next;
@@ -1290,9 +1261,9 @@ void mark_wrap(extent_wrap_t *ext_wrap_list)
 {
 	extent_wrap_t *wrap = ext_wrap_list;
 
-	if (!ext_wrap_list) {
+	if (!ext_wrap_list)
 		return;
-	}
+
 	do {
 		wrap->group_ext->tag |= EXT4_EXT_RESERVE;
 		wrap = wrap->next;
@@ -1308,9 +1279,9 @@ void free_wrap_list(extent_wrap_t **ext_wrap_head)
 {
 	extent_wrap_t *wrap, *ext_wrap_tmp;
 
-	if (!ext_wrap_head || !(*ext_wrap_head)) {
+	if (!ext_wrap_head || !(*ext_wrap_head))
 		return;
-	}
+
 	wrap = *ext_wrap_head;
 	do {
 		ext_wrap_tmp = wrap;
@@ -1345,20 +1316,18 @@ static inline int do_defrag(int fd, exts_group_t *exts_group,
 	defrag_data.flag = DEFRAG_FORCE_VICTIM;
 	defrag_data.goal = exts_group->start->data.start;
 
-	if (page_in_core(fd, defrag_data, &vec, &page_num) == RETURN_NG) {
+	if (page_in_core(fd, defrag_data, &vec, &page_num) == RETURN_NG)
 		return RETURN_NG;
-	}
 
 	defraged_size = ioctl(fd, EXT4_IOC_DEFRAG, &defrag_data);
 
 	/* free pages */
 	fadvise_ret = defrag_fadvise(fd, defrag_data, vec, page_num);
-	if (vec) {
+	if (vec)
 		free(vec);
-	}
-	if (fadvise_ret == RETURN_NG || defraged_size < 0) {
+
+	if (fadvise_ret == RETURN_NG || defraged_size < 0)
 		return RETURN_NG;
-	}
 
 	/* Release reserved sign */
 	extent = exts_group->start;
@@ -1408,33 +1377,28 @@ int get_used_extent(int fd, extent_t **ext_list_head,
 			       DEFRAG_MAX_ENT);
 			ret = ioctl(fd, EXT4_IOC_EXTENTS_INFO, &extents_info);
 			if (ret < 0) {
-				if (errno == ENOENT || errno == ESTALE) {
+				if (errno != ENOMEM)
 					continue;
-				} else {
-					/* Without ENOENT case*/
+				else
 					return RETURN_NG;
-				}
 			}
 
 			for (i = 0; i < extents_info.entries; i++) {
 				extent_t	*extent = NULL;
 				/* Is this extent in current block group? */
 				if (extents_info.ext[i].start < bstart ||
-				    extents_info.ext[i].start > bend) {
+				    extents_info.ext[i].start > bend)
 					continue;
-				}
 				extent = malloc(sizeof(extent_t));
-				if (extent == NULL) {
+				if (extent == NULL)
 					return RETURN_NG;
-				}
 				memset(extent, 0, sizeof(extent_t));
 				memcpy(&(extent->data), &extents_info.ext[i],
 				       sizeof(struct ext4_extent_data));
 				extent->ino = inode;
 				if (insert_extent(ext_list_head, extent) < 0) {
-					if (extent) {
+					if (extent)
 						free(extent);
-					}
 					return RETURN_NG;
 				}
 			}
@@ -1467,9 +1431,8 @@ int get_free_extent(int fd, unsigned long long inode,
 	extents_info.max_entries = DEFRAG_MAX_ENT;
 	while (pos < blocks_per_group) {
 		int	i;
-		if (ioctl(fd, EXT4_IOC_FREE_BLOCKS_INFO, &extents_info) < 0) {
+		if (ioctl(fd, EXT4_IOC_FREE_BLOCKS_INFO, &extents_info) < 0)
 			return RETURN_NG;
-		}
 		/*
 		 * No free extent after the logical block number "pos".
 		 * In other word, offset this time equals to prev recursion.
@@ -1479,17 +1442,15 @@ int get_free_extent(int fd, unsigned long long inode,
 			/* Alloc list node store extent */
 			extent_t	*extent = NULL;
 			extent = malloc(sizeof(extent_t));
-			if (extent == NULL) {
+			if (extent == NULL)
 				return RETURN_NG;
-			}
 			memset(extent, 0, sizeof(extent_t));
 			memcpy(&(extent->data), &(extents_info.ext[i]),
 			       sizeof(struct ext4_extent_data));
 			extent->tag = EXT4_EXT_FREE;/* Free extent */
 			if (insert_extent(ext_list_head, extent) < 0) {
-				if (extent) {
+				if (extent)
 					free(extent);
-				}
 				return RETURN_NG;
 			}
 		}
@@ -1497,12 +1458,10 @@ int get_free_extent(int fd, unsigned long long inode,
 		 * No free extent after the logical block number "pos".
 		 * In other word, offset this time equals to prev recursion.
 		 */
-		if (pos == extents_info.g_offset) {
+		if (pos == extents_info.g_offset)
 			break;
-		}
-		if (i < DEFRAG_MAX_ENT) {
+		if (i < DEFRAG_MAX_ENT)
 			break;
-		}
 		/* Record the offset of logical block number this time */
 		pos = extents_info.g_offset;
 		memset(extents_info.ext, 0,
@@ -1541,18 +1500,17 @@ int join_extents(extent_t *ext_list_head,
 			 */
 			exts_group_t	*exts_group_tmp = NULL;
 			exts_group_tmp = malloc(sizeof(exts_group_t));
-			if (!exts_group_tmp) {
+			if (!exts_group_tmp)
 				return RETURN_NG;
-			}
+
 			exts_group_tmp->prev = exts_group_tmp->next = NULL;
 			exts_group_tmp->start = ext_start;
 			exts_group_tmp->end = extent_tmp->prev;
 			exts_group_tmp->len = len;
 			if (insert_exts_group(target_exts_group_list_head,
 					      exts_group_tmp) < 0) {
-				if (exts_group_tmp) {
+				if (exts_group_tmp)
 					free(exts_group_tmp);
-				}
 				return RETURN_NG;
 			}
 			return CHECK_FRAG_COUNT;
@@ -1562,12 +1520,12 @@ int join_extents(extent_t *ext_list_head,
 		 * so, all previous extents is treated as an extent group.
 		 */
 		if ((extent_tmp->prev->data.start + extent_tmp->prev->data.len)
-		    != extent_tmp->data.start) {
+					    != extent_tmp->data.start) {
 			exts_group_t	*exts_group_tmp = NULL;
 			exts_group_tmp = malloc(sizeof(exts_group_t));
-			if (exts_group_tmp == NULL) {
+			if (exts_group_tmp == NULL)
 				return RETURN_NG;
-			}
+
 			memset(exts_group_tmp, 0, sizeof(exts_group_t));
 			exts_group_tmp->len = len;
 			exts_group_tmp->start = ext_start;
@@ -1575,9 +1533,8 @@ int join_extents(extent_t *ext_list_head,
 
 			if (insert_exts_group(exts_group_list_head,
 					      exts_group_tmp) < 0) {
-				if (exts_group_tmp) {
+				if (exts_group_tmp)
 					free(exts_group_tmp);
-				}
 				return RETURN_NG;
 			}
 			*max += len;
@@ -1614,9 +1571,8 @@ int find_exts_group(int	*ext_count, unsigned long filesize,
 
 	len = 0;/* Blocks we found for target file */
 
-	if (!(*exts_group_list_head)) {
+	if (!(*exts_group_list_head))
 		return RETURN_NG;
-	}
 
 	while (*exts_group_list_head) {
 		exts_group_t	*exts_group_tmp;
@@ -1635,9 +1591,8 @@ int find_exts_group(int	*ext_count, unsigned long filesize,
 					if (insert_exts_group
 						(target_exts_group_list_head,
 						 exts_group_tmp) < 0) {
-						if (exts_group_tmp) {
+						if (exts_group_tmp)
 							free(exts_group_tmp);
-						}
 						return RETURN_NG;
 					}
 					(*ext_count)++;
@@ -1653,9 +1608,8 @@ int find_exts_group(int	*ext_count, unsigned long filesize,
 						*exts_group_list_head);
 		if (insert_exts_group(target_exts_group_list_head,
 				      exts_group_tmp) < 0) {
-			if (exts_group_tmp) {
+			if (exts_group_tmp)
 				free(exts_group_tmp);
-			}
 			return RETURN_NG;
 		}
 		(*ext_count)++;
@@ -1689,9 +1643,8 @@ int check_frag_count(int fd, unsigned long long inode, int extent_count)
 		extents_info.entries += pos;
 		pos = extents_info.entries;
 		ret = ioctl(fd, EXT4_IOC_EXTENTS_INFO, &extents_info);
-		if (ret < 0) {
+		if (ret < 0)
 			return RETURN_NG;
-		}
 		file_extent_count += extents_info.entries;
 	} while (extents_info.entries == DEFRAG_MAX_ENT && ret == 0);
 
@@ -1726,10 +1679,9 @@ int defrag_proc(int fd, exts_group_t *target_exts_group_head,
 	extent_wrap_t *wrap_list = NULL;
 
 	/* Reserve free extents */
-	if (!target_exts_group_head) {
+	if (!target_exts_group_head)
 		/* Fault */
 		return RETURN_NG;
-	}
 
 	/* get file size */
 	memset(&buf, 0, sizeof(struct stat64));
@@ -1773,31 +1725,27 @@ int defrag_proc(int fd, exts_group_t *target_exts_group_head,
 			memcpy(extents_info.ext, &extent->data,
 			       sizeof(struct ext4_extent_data));
 			wrap = malloc(sizeof(extent_wrap_t));
-			if (!wrap) {
+			if (!wrap)
 				goto release_blocks;
-			}
 			wrap->group_ext = extent;
 			wrap->next = wrap->prev = wrap;
 			if (move_wrap(NULL, &wrap_list, wrap) < 0) {
-				if (wrap) {
+				if (wrap)
 					free(wrap);
-				}
 				goto release_blocks;
 			}
 			extent = extent->next;
 			extents_info.entries = 1;
 			ret = ioctl(fd, EXT4_IOC_MOVE_VICTIM, &extents_info);
-			if (ret < 0) {
+			if (ret < 0)
 				goto release_blocks;
-			}
 			mark_wrap(wrap_list);
 			free_wrap_list(&wrap_list);
 		} while (extent != exts_group->end->next);
 
 		if (fsync(fd) < 0) {
-			if (detail_flag) {
+			if (detail_flag)
 				perror(NGMSG_FILE_SYNC);
-			}
 			return ret;
 		}
 
@@ -1823,9 +1771,8 @@ int defrag_proc(int fd, exts_group_t *target_exts_group_head,
 		if (detail_flag) {
 			percent = ((long long)ret * blocksize * 100) /
 				  buf.st_size;
-			if (percent > 100) {
+			if (percent > 100)
 				percent = 100;
-			}
 			printf("\033[79;16H\033[K progressing ====> %d%%",
 			percent);
 			fflush(stdout);
@@ -1838,15 +1785,14 @@ int defrag_proc(int fd, exts_group_t *target_exts_group_head,
 release_blocks:
 	free_wrap_list(&wrap_list);
 	ret = ioctl(fd, EXT4_IOC_BLOCK_RELEASE);
-	if (ret < 0) {
+	if (ret < 0)
 		return RETURN_NG;
-	}
 
 	return ret;
 }
 
 /**
- * force_defrag() -	Execute the defrag program in force mode.
+ * force_defrag() -	Execute the defrag program in force defrag mode.
  *
  * @fd:			the file's descriptor.
  * @buf:		a pointer of the struct stat64.
@@ -1869,9 +1815,8 @@ int force_defrag(int fd, const struct stat64 *buf, int blocksize)
 
 	/* Get group info */
 	memset(&ext4_group_data, 0, sizeof(struct ext4_group_data_info));
-	if (ioctl(fd, EXT4_IOC_GROUP_INFO, &ext4_group_data) < 0) {
+	if (ioctl(fd, EXT4_IOC_GROUP_INFO, &ext4_group_data) < 0)
 		return RETURN_NG;
-	}
 
 	gnumber = (buf->st_ino - 1) / ext4_group_data.s_inodes_per_group;
 	istart = gnumber * ext4_group_data.s_inodes_per_group;
@@ -1884,16 +1829,14 @@ int force_defrag(int fd, const struct stat64 *buf, int blocksize)
 
 	/* Get used extents in the block group */
 	ret = get_used_extent(fd, &extlist_head, istart, iend, bstart, bend);
-	if (ret == RETURN_NG) {
+	if (ret == RETURN_NG)
 		goto freelist;
-	}
 
 	/* Get free extents in the group */
 	ret = get_free_extent(fd, buf->st_ino,
 			     ext4_group_data.s_blocks_per_group, &extlist_head);
-	if (ret == RETURN_NG) {
+	if (ret == RETURN_NG)
 		goto freelist;
-	}
 
 	/* All space in this group is used by other groups' inodes */
 	if (extlist_head == NULL) {
@@ -1904,9 +1847,8 @@ int force_defrag(int fd, const struct stat64 *buf, int blocksize)
 	/* Get continuous region(extents group) */
 	ret = join_extents(extlist_head, &exts_group_list_target_head,
 				  &exts_group_list_head, filesize, &maxlen);
-	if (ret == RETURN_NG) {
+	if (ret == RETURN_NG)
 		goto freelist;
-	}
 	if (ret == CHECK_FRAG_COUNT) {
 		exts = 1;
 		goto frag_check;
@@ -1927,16 +1869,14 @@ int force_defrag(int fd, const struct stat64 *buf, int blocksize)
 	/* Find target extents group */
 	ret = find_exts_group(&exts, filesize, &exts_group_list_head,
 				      &exts_group_list_target_head);
-	if (ret == RETURN_NG) {
+	if (ret == RETURN_NG)
 		goto freelist;
-	}
 
 frag_check:
 	/* Check file extent count*/
 	ret = check_frag_count(fd, buf->st_ino, exts);
-	if (ret == RETURN_NG) {
+	if (ret == RETURN_NG)
 		goto freelist;
-	}
 
 	/* Reserve extent group and execute the defrag program */
 	ret = defrag_proc(fd, exts_group_list_target_head, buf->st_ino);
@@ -1947,6 +1887,7 @@ freelist:
 	free_ext(extlist_head);
 	return ret;
 }
+
 --
 To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
 the body of a message to majordomo@vger.kernel.org

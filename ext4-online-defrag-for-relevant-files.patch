@@ -8,26 +8,28 @@ the block containing the directory data.
 
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
-Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
- fs/ext4/defrag.c |   51 ++++++++++++++++++++++++++++++++++++++++-----------
+ fs/ext4/defrag.c |   48 +++++++++++++++++++++++++++++++++++-------------
  fs/ext4/ext4.h   |    4 +++-
  fs/ext4/inode.c  |    2 +-
  fs/ext4/ioctl.c  |    1 +
- 4 files changed, 45 insertions(+), 13 deletions(-)
+ 4 files changed, 40 insertions(+), 15 deletions(-)
 
 Index: linux-2.6.26-rc4/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/defrag.c	2008-05-29 10:52:43.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/defrag.c	2008-05-29 10:52:44.000000000 -0700
-@@ -93,10 +93,23 @@ int ext4_defrag_ioctl(struct inode *inod
- 			unsigned long arg)
+--- linux-2.6.26-rc4.orig/fs/ext4/defrag.c	2008-05-30 11:41:23.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/defrag.c	2008-05-30 11:41:25.000000000 -0700
+@@ -95,13 +95,26 @@ int ext4_defrag_ioctl(struct inode *inod
  {
  	int err = 0;
--	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL))
+ 
+-	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL)) {
 +	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL ||
-+		cmd == EXT4_IOC_FIBMAP))
- 			return -EINVAL;
++					cmd == EXT4_IOC_FIBMAP)) {
+ 		printk(KERN_ERR "ext4 defrag: ino[%lu] is not extents "
+ 					"based file\n", inode->i_ino);
+ 		return -EOPNOTSUPP;
+ 	}
  
 -	if (cmd == EXT4_IOC_DEFRAG) {
 +	if (cmd == EXT4_IOC_FIBMAP) {
@@ -44,88 +46,116 @@ Index: linux-2.6.26-rc4/fs/ext4/defrag.c
 +		return put_user(block, p);
 +	} else if (cmd == EXT4_IOC_DEFRAG) {
  		struct ext4_ext_defrag_data defrag;
+ 		struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
  
- 		if (copy_from_user(&defrag,
-@@ -104,7 +117,7 @@ int ext4_defrag_ioctl(struct inode *inod
- 			sizeof(defrag)))
- 			return -EFAULT;
+@@ -127,7 +140,7 @@ int ext4_defrag_ioctl(struct inode *inod
+ 		}
+ 
  		err = ext4_defrag(filp, defrag.start_offset,
 -				defrag.defrag_size);
 +				defrag.defrag_size, defrag.goal);
  	}
  
  	return err;
-@@ -729,13 +742,14 @@ out:
-  * @org_inode		original inode
-  * @iblock		file related offset
-  * @total_blocks	contiguous blocks count
-+ * @goal		block offset for allocation
+@@ -745,6 +758,7 @@ out:
+  * @dest_path:		indicating the temporary inode's extent
+  * @req_blocks:		contiguous blocks count we need
+  * @iblock:		target file offset
++ * @goal:		goal offset
   *
-  * If succeed, fuction returns count of extent we got,
-  * otherwise returns err.
   */
- static int ext4_defrag_alloc_blocks(struct inode *dest_inode,
- 		struct inode *org_inode, ext4_lblk_t iblock,
--		ext4_fsblk_t total_blocks)
-+		ext4_fsblk_t total_blocks, ext4_fsblk_t goal)
+ static void
+@@ -752,7 +766,8 @@ ext4_defrag_fill_ar(struct inode *org_in
+ 			struct ext4_allocation_request *ar,
+ 			struct ext4_ext_path *org_path,
+ 			struct ext4_ext_path *dest_path,
+-			ext4_fsblk_t req_blocks, ext4_lblk_t iblock)
++			ext4_fsblk_t req_blocks, ext4_lblk_t iblock,
++			ext4_fsblk_t goal)
  {
- 	handle_t *handle = NULL;
- 	struct ext4_ext_path *dest_path = NULL;
-@@ -772,7 +786,10 @@ static int ext4_defrag_alloc_blocks(stru
- 	ar.flags = EXT4_MB_HINT_DATA | EXT4_MB_HINT_RESERVED
- 		| EXT4_MB_HINT_NOPREALLOC;
+ 	ar->inode = dest_inode;
+ 	ar->len = req_blocks;
+@@ -764,7 +779,10 @@ ext4_defrag_fill_ar(struct inode *org_in
+ 	ar->lright = 0;
+ 	ar->pright = 0;
  
--	ar.goal = ext4_ext_find_goal(dest_inode, dest_path, iblock);
+-	ar->goal = ext4_ext_find_goal(dest_inode, dest_path, iblock);
 +	if (goal)
-+		ar.goal = goal;
++		ar->goal = goal;
 +	else
-+		ar.goal = ext4_ext_find_goal(dest_inode, dest_path, iblock);
++		ar->goal = ext4_ext_find_goal(dest_inode, dest_path, iblock);
+ }
  
- 	ar.logical = iblock;
- 	ar.lleft = 0;
-@@ -994,6 +1011,7 @@ out:
+ /**
+@@ -941,6 +959,7 @@ out:
+  *			original extent tree
+  * @tar_end:		the last block number of the allocated blocks
+  * @sum_tmp:		the extents count  in the allocated blocks
++ * @goal:		block offset for allocaton
+  *
+  *
+  * This function returns the values as below.
+@@ -951,7 +970,7 @@ out:
+ static int
+ ext4_defrag_comp_ext_count(struct inode *org_inode,
+ 			struct ext4_ext_path *org_path, ext4_lblk_t tar_end,
+-			int sum_tmp)
++			int sum_tmp, ext4_fsblk_t goal)
+ {
+ 	struct ext4_extent *ext = NULL;
+ 	int depth = ext_depth(org_inode);
+@@ -975,7 +994,7 @@ ext4_defrag_comp_ext_count(struct inode 
+ 			 * Fail if goal is not set and the fragmentation
+ 			 * is not improved.
+ 			 */
+-			if (sum_org == sum_tmp) {
++			if (sum_org == sum_tmp && !goal) {
+ 				/* Not improved */
+ 				ret = 1;
+ 			} else if (sum_org < sum_tmp) {
+@@ -1006,6 +1025,7 @@ ext4_defrag_comp_ext_count(struct inode 
   * @tar_start:		starting offset to allocate in blocks
   * @tar_blocks:		the number of blocks to allocate
   * @iblock:		file related offset
 + * @goal:		block offset for allocaton
   *
+  *
   * This function returns the value as below:
-  *	0(succeeded)
-@@ -1003,7 +1021,8 @@ out:
+@@ -1016,7 +1036,8 @@ ext4_defrag_comp_ext_count(struct inode 
  static int
- ext4_defrag_new_extent_tree(struct inode *inode, struct inode *tmp_inode,
- 			struct ext4_ext_path *path, ext4_lblk_t tar_start,
+ ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
+ 			struct ext4_ext_path *org_path, ext4_lblk_t tar_start,
 -			ext4_lblk_t tar_blocks, ext4_lblk_t iblock)
 +			ext4_lblk_t tar_blocks, ext4_lblk_t iblock,
 +			ext4_fsblk_t goal)
  {
- 	struct ext4_extent *ext = NULL;
+ 	handle_t *handle;
  	struct ext4_extent_header *eh = NULL;
-@@ -1017,7 +1036,7 @@ ext4_defrag_new_extent_tree(struct inode
+@@ -1042,7 +1063,7 @@ ext4_defrag_new_extent_tree(struct inode
  
- 	/* Allocate contiguous blocks */
- 	sum_tmp = ext4_defrag_alloc_blocks(tmp_inode, inode, iblock,
--					tar_blocks);
-+					tar_blocks, goal);
- 	if (sum_tmp < 0) {
- 		ret = sum_tmp;
- 		goto out;
-@@ -1034,7 +1053,7 @@ ext4_defrag_new_extent_tree(struct inode
- 			       le16_to_cpu(ext->ee_len) - 1 ||
- 			       last_extent) {
+ 	/* Fill struct ext4_allocation_request with necessary info */
+ 	ext4_defrag_fill_ar(org_inode, tmp_inode, &ar, org_path,
+-				dest_path, tar_blocks, iblock);
++				dest_path, tar_blocks, iblock, goal);
  
--			if (sum_org == sum_tmp) {
-+			if ((sum_org == sum_tmp) && !goal) {
- 				/* Not improved */
- 				ret = ext4_ext_remove_space(tmp_inode, 0);
- 				if (!ret)
-@@ -1065,15 +1084,17 @@ out:
+ 	handle = ext4_journal_start(tmp_inode, 0);
+ 	if (IS_ERR(handle)) {
+@@ -1074,7 +1095,7 @@ ext4_defrag_new_extent_tree(struct inode
+ 	}
+ 
+ 	ret = ext4_defrag_comp_ext_count(org_inode, org_path, tar_end,
+-					sum_tmp);
++					sum_tmp, goal);
+ 
+ out:
+ 	if (ret < 0 || ret == 1) {
+@@ -1204,13 +1225,14 @@ out:
   * @filp:		pointer to file
   * @block_start:	starting offset to defrag in blocks
   * @defrag_size:	size of defrag in blocks
 + * @goal:		block offset for allocation
   *
-  * This function returns the number of blocks if succeeded, otherwise
+  * This function returns the number of blocks if succeed, otherwise
   * returns error value.
   */
  int
@@ -133,46 +163,29 @@ Index: linux-2.6.26-rc4/fs/ext4/defrag.c
 -		ext4_lblk_t defrag_size)
 +		ext4_lblk_t defrag_size, ext4_fsblk_t goal)
  {
- 	struct inode *inode = filp->f_dentry->d_inode, *tmp_inode = NULL;
-+	struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
- 	struct ext4_ext_path *path = NULL, *holecheck_path = NULL;
- 	struct ext4_extent *ext_prev = NULL, *ext_cur = NULL, *ext_dummy = NULL;
- 	handle_t *handle;
-@@ -1098,6 +1119,14 @@ ext4_defrag(struct file *filp, ext4_lblk
- 		return -EINVAL;
- 	}
- 
-+	/* Check goal offset if goal offset was given from userspace */
-+	if (((0 < goal) && (ext4_blocks_count(es) < goal)) && (goal != -1)) {
-+		printk(KERN_ERR "ext4 defrag: Invalid goal offset %llu, "
-+				"you can set goal offset up to %llu\n", goal,
-+						ext4_blocks_count(es) - 1);
-+		return -EINVAL;
-+	}
-+
- 	if (file_end < block_end)
- 		defrag_size -= block_end - file_end;
- 
-@@ -1215,13 +1244,13 @@ ext4_defrag(struct file *filp, ext4_lblk
+ 	struct inode *org_inode = filp->f_dentry->d_inode, *tmp_inode = NULL;
+ 	struct ext4_ext_path *org_path = NULL, *holecheck_path = NULL;
+@@ -1329,14 +1351,14 @@ ext4_defrag(struct file *filp, ext4_lblk
  		}
  
  		/* Found an isolated block */
 -		if (seq_extents == 1) {
-+		if ((seq_extents == 1) && !goal) {
++		if (seq_extents == 1 && !goal) {
  			seq_start = le32_to_cpu(ext_cur->ee_block);
  			goto CLEANUP;
  		}
  
- 		ret = ext4_defrag_new_extent_tree(inode, tmp_inode, path,
--			seq_start, seq_blocks, block_start);
-+			seq_start, seq_blocks, block_start, goal);
+ 		ret = ext4_defrag_new_extent_tree(org_inode, tmp_inode,
+ 					org_path, seq_start, seq_blocks,
+-					block_start);
++					block_start, goal);
  
  		if (ret < 0) {
  			break;
 Index: linux-2.6.26-rc4/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/ext4.h	2008-05-29 10:52:43.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/ext4.h	2008-05-29 10:52:44.000000000 -0700
+--- linux-2.6.26-rc4.orig/fs/ext4/ext4.h	2008-05-30 11:41:21.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/ext4.h	2008-05-30 11:41:25.000000000 -0700
 @@ -298,6 +298,7 @@ struct ext4_new_group_data {
  #define EXT4_IOC_GETRSVSZ		_IOR('f', 5, long)
  #define EXT4_IOC_SETRSVSZ		_IOW('f', 6, long)
@@ -200,9 +213,9 @@ Index: linux-2.6.26-rc4/fs/ext4/ext4.h
  
 Index: linux-2.6.26-rc4/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/inode.c	2008-05-29 10:52:42.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/inode.c	2008-05-29 10:52:44.000000000 -0700
-@@ -1648,7 +1648,7 @@ out:
+--- linux-2.6.26-rc4.orig/fs/ext4/inode.c	2008-05-30 11:41:21.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/inode.c	2008-05-30 11:41:25.000000000 -0700
+@@ -1702,7 +1702,7 @@ out:
   * So, if we see any bmap calls here on a modified, data-journaled file,
   * take extra steps to flush any blocks which might be in the cache.
   */
@@ -213,8 +226,8 @@ Index: linux-2.6.26-rc4/fs/ext4/inode.c
  	journal_t *journal;
 Index: linux-2.6.26-rc4/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/ioctl.c	2008-05-29 10:52:43.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/ioctl.c	2008-05-29 10:52:44.000000000 -0700
+--- linux-2.6.26-rc4.orig/fs/ext4/ioctl.c	2008-05-30 11:41:10.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/ioctl.c	2008-05-30 11:41:25.000000000 -0700
 @@ -241,6 +241,7 @@ setversion_out:
  
  		return err;
