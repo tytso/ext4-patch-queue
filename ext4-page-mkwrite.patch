@@ -9,22 +9,35 @@ let us handle ENOSPC better. Otherwise we get ENOSPC in the writepage and
 that would result in data loss. The changes are also needed to handle ENOSPC
 when writing to an mmap section of files with holes.
 
+Acked-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
 
  fs/ext4/ext4.h  |    1 +
- fs/ext4/file.c  |   19 ++++++++++++++++++-
- fs/ext4/inode.c |   11 +++++++++++
- 3 files changed, 30 insertions(+), 1 deletion(-)
+ fs/ext4/file.c  |   19 +++++++++++++-
+ fs/ext4/inode.c |   76 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 95 insertions(+), 1 deletions(-)
 
 
-Index: linux-2.6.26-rc4/fs/ext4/file.c
-===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/file.c	2008-05-29 10:52:28.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/file.c	2008-05-29 10:52:37.000000000 -0700
-@@ -123,6 +123,23 @@ force_commit:
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 6605076..77cbb28 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1053,6 +1053,7 @@ extern void ext4_set_aops(struct inode *inode);
+ extern int ext4_writepage_trans_blocks(struct inode *);
+ extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
+ 		struct address_space *mapping, loff_t from);
++extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
+ 
+ /* ioctl.c */
+ extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 4159be6..b9510ba 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -123,6 +123,23 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  	return ret;
  }
  
@@ -48,7 +61,7 @@ Index: linux-2.6.26-rc4/fs/ext4/file.c
  const struct file_operations ext4_file_operations = {
  	.llseek		= generic_file_llseek,
  	.read		= do_sync_read,
-@@ -133,7 +150,7 @@ const struct file_operations ext4_file_o
+@@ -133,7 +150,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  #ifdef CONFIG_COMPAT
  	.compat_ioctl	= ext4_compat_ioctl,
  #endif
@@ -57,34 +70,87 @@ Index: linux-2.6.26-rc4/fs/ext4/file.c
  	.open		= generic_file_open,
  	.release	= ext4_release_file,
  	.fsync		= ext4_sync_file,
-Index: linux-2.6.26-rc4/fs/ext4/inode.c
-===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/inode.c	2008-05-29 10:52:31.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/inode.c	2008-05-29 10:52:37.000000000 -0700
-@@ -3542,3 +3542,14 @@ int ext4_change_inode_journal_flag(struc
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 4a7ed29..bc52ef5 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3555,3 +3555,79 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
  
  	return err;
  }
 +
++static int ext4_bh_prepare_fill(handle_t *handle, struct buffer_head *bh)
++{
++	if (!buffer_mapped(bh)) {
++		/*
++		 * Mark buffer as dirty so that
++		 * block_write_full_page() writes it
++		 */
++		set_buffer_dirty(bh);
++	}
++	return 0;
++}
++
++static int ext4_bh_unmapped(handle_t *handle, struct buffer_head *bh)
++{
++	return !buffer_mapped(bh);
++}
++
 +int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page)
 +{
++	loff_t size;
++	unsigned long len;
++	int ret = -EINVAL;
++	struct file *file = vma->vm_file;
++	struct inode *inode = file->f_path.dentry->d_inode;
++	struct address_space *mapping = inode->i_mapping;
++	struct writeback_control wbc = { .sync_mode = WB_SYNC_NONE,
++					 .nr_to_write = 1 };
++
 +	/*
-+	 * if ext4_get_block resulted in a split of an uninitialized extent,
-+	 * in file system full case, we will have to take the journal write
-+	 * access and zero out the page. The journal handle get initialized
-+	 * in ext4_get_block.
++	 * Get i_alloc_sem to stop truncates messing with the inode. We cannot
++	 * get i_mutex because we are already holding mmap_sem.
 +	 */
-+	return block_page_mkwrite(vma, page, ext4_get_block);
++	down_read(&inode->i_alloc_sem);
++	size = i_size_read(inode);
++	if (page->mapping != mapping || size <= page_offset(page)
++	    || !PageUptodate(page)) {
++		/* page got truncated from under us? */
++		goto out_unlock;
++	}
++	ret = 0;
++	if (PageMappedToDisk(page))
++		goto out_unlock;
++
++	if (page->index == size >> PAGE_CACHE_SHIFT)
++		len = size & ~PAGE_CACHE_MASK;
++	else
++		len = PAGE_CACHE_SIZE;
++
++	if (page_has_buffers(page)) {
++		/* return if we have all the buffers mapped */
++		if (!walk_page_buffers(NULL, page_buffers(page), 0, len, NULL,
++				       ext4_bh_unmapped))
++			goto out_unlock;
++		/*
++		 * Now mark all the  buffer head dirty so
++		 * that writepage can write it
++		 */
++		walk_page_buffers(NULL, page_buffers(page), 0, len,
++					NULL, ext4_bh_prepare_fill);
++	}
++	/*
++	 * OK, we need to fill the hole... Lock the page and do writepage.
++	 * We can't do write_begin and write_end here because we don't
++	 * have inode_mutex and that allow parallel write_begin, write_end call.
++	 * (lock_page prevent this from happening on the same page though)
++	 */
++	lock_page(page);
++	wbc.range_start = page_offset(page);
++	wbc.range_end = page_offset(page) + len;
++	ret = mapping->a_ops->writepage(page, &wbc);
++	/* writepage unlocks the page */
++out_unlock:
++	up_read(&inode->i_alloc_sem);
++	return ret;
 +}
-Index: linux-2.6.26-rc4/fs/ext4/ext4.h
-===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/ext4.h	2008-05-29 10:52:37.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/ext4.h	2008-05-29 10:52:37.000000000 -0700
-@@ -1051,6 +1051,7 @@ extern void ext4_set_aops(struct inode *
- extern int ext4_writepage_trans_blocks(struct inode *);
- extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
- 		struct address_space *mapping, loff_t from);
-+extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
- 
- /* ioctl.c */
- extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
