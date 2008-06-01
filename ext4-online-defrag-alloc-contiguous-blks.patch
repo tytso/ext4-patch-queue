@@ -16,8 +16,8 @@ Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 
 Index: linux-2.6.26-rc4/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/defrag.c	2008-05-30 11:41:10.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/defrag.c	2008-05-30 11:41:19.000000000 -0700
+--- linux-2.6.26-rc4.orig/fs/ext4/defrag.c	2008-06-01 15:10:05.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/defrag.c	2008-06-01 15:10:51.000000000 -0700
 @@ -34,7 +34,60 @@ static int
  ext4_defrag_next_extent(struct inode *inode, struct ext4_ext_path *path,
  			struct ext4_extent **extent)
@@ -329,9 +329,9 @@ Index: linux-2.6.26-rc4/fs/ext4/defrag.c
  /**
 Index: linux-2.6.26-rc4/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/ext4.h	2008-05-30 11:41:10.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/ext4.h	2008-05-30 11:41:19.000000000 -0700
-@@ -328,6 +328,7 @@ struct ext4_ext_defrag_data {
+--- linux-2.6.26-rc4.orig/fs/ext4/ext4.h	2008-06-01 15:10:05.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/ext4.h	2008-06-01 15:11:30.000000000 -0700
+@@ -331,6 +331,7 @@ struct ext4_ext_defrag_data {
  	ext4_fsblk_t goal;		/* block offset for allocation */
  };
  
@@ -339,7 +339,7 @@ Index: linux-2.6.26-rc4/fs/ext4/ext4.h
  
  /*
   *  Mount options
-@@ -1126,6 +1127,8 @@ extern void ext4_inode_bitmap_set(struct
+@@ -1132,6 +1133,8 @@ extern void ext4_inode_bitmap_set(struct
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
@@ -348,19 +348,19 @@ Index: linux-2.6.26-rc4/fs/ext4/ext4.h
  /* defrag.c */
  extern int ext4_defrag(struct file *filp, ext4_lblk_t block_start,
  			ext4_lblk_t defrag_size);
-@@ -1248,6 +1251,7 @@ extern int ext4_get_blocks_wrap(handle_t
+@@ -1254,6 +1257,7 @@ extern int ext4_get_blocks_wrap(handle_t
  			sector_t block, unsigned long max_blocks,
  			struct buffer_head *bh, int create,
- 			int extend_disksize);
+ 			int extend_disksize, int flag);
 +extern int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start);
  #endif	/* __KERNEL__ */
  
  #endif	/* _EXT4_H */
 Index: linux-2.6.26-rc4/fs/ext4/ext4_extents.h
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/ext4_extents.h	2008-05-30 11:41:10.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/ext4_extents.h	2008-05-30 11:41:19.000000000 -0700
-@@ -230,5 +230,8 @@ extern int ext4_ext_search_right(struct 
+--- linux-2.6.26-rc4.orig/fs/ext4/ext4_extents.h	2008-06-01 15:10:05.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/ext4_extents.h	2008-06-01 15:10:51.000000000 -0700
+@@ -231,5 +231,8 @@ extern int ext4_ext_search_right(struct 
  extern void ext4_ext_drop_refs(struct ext4_ext_path *);
  extern ext4_fsblk_t ext_pblock(struct ext4_extent *ex);
  extern void ext4_ext_drop_refs(struct ext4_ext_path *path);
@@ -371,8 +371,8 @@ Index: linux-2.6.26-rc4/fs/ext4/ext4_extents.h
  
 Index: linux-2.6.26-rc4/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/extents.c	2008-05-30 11:41:10.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/extents.c	2008-05-30 11:41:19.000000000 -0700
+--- linux-2.6.26-rc4.orig/fs/ext4/extents.c	2008-06-01 15:10:05.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/extents.c	2008-06-01 15:10:51.000000000 -0700
 @@ -92,7 +92,7 @@ static void ext4_idx_store_pblock(struct
  	ix->ei_leaf_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1) & 0xffff);
  }
@@ -391,7 +391,7 @@ Index: linux-2.6.26-rc4/fs/ext4/extents.c
  			      struct ext4_ext_path *path,
  			      ext4_lblk_t block)
  {
-@@ -1956,7 +1956,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
+@@ -1986,7 +1986,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
  	return 1;
  }
  

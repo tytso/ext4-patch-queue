@@ -1,0 +1,77 @@
+ext4: delalloc block reservation unlink/truncate handling
+
+From: Mingming cao <cmm@us.ibm.com>
+
+Release reserved blocks for unlink/truncate/invalidate page
+
+Signed-off-by: Mingming cao <cmm@us.ibm.com>
+
+---
+ fs/ext4/inode.c |   40 ++++++++++++++++++++++------------------
+ 1 file changed, 22 insertions(+), 18 deletions(-)
+
+Index: linux-2.6.26-rc4/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.26-rc4.orig/fs/ext4/inode.c	2008-06-01 15:04:14.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/inode.c	2008-06-01 15:04:21.000000000 -0700
+@@ -1477,6 +1477,27 @@ void ext4_da_release_space(struct inode 
+ 	EXT4_I(inode)->i_reserved_meta_blocks -= mdb;
+ }
+ 
++static void ext4_da_page_release_reservation(struct page *page,
++						unsigned long offset)
++{
++	int to_release = 0;
++	struct buffer_head *head, *bh;
++	unsigned int curr_off = 0;
++
++	head = page_buffers(page);
++	bh = head;
++	do {
++		unsigned int next_off = curr_off + bh->b_size;
++
++		if ((offset <= curr_off) && (buffer_delay(bh))) {
++			to_release++;
++			clear_buffer_delay(bh);
++		}
++		curr_off = next_off;
++	} while ((bh = bh->b_this_page) != head);
++	ext4_da_release_space(page->mapping->host, 0, to_release);
++}
++
+ /*
+  * this is a special callback for ->write_begin() only
+  * it's intention is to return mapped block or reserve space
+@@ -1737,9 +1758,6 @@ static int ext4_da_write_begin(struct fi
+ 
+ static void ext4_da_invalidatepage(struct page *page, unsigned long offset)
+ {
+-	struct buffer_head *head, *bh;
+-	unsigned int curr_off = 0;
+-
+ 	/*
+ 	 * Drop reserved blocks
+ 	 */
+@@ -1747,21 +1765,7 @@ static void ext4_da_invalidatepage(struc
+ 	if (!page_has_buffers(page))
+ 		goto out;
+ 
+-	head = page_buffers(page);
+-	bh = head;
+-	do {
+-		unsigned int next_off = curr_off + bh->b_size;
+-
+-		/*
+-		 * is this block fully invalidated?
+-		 */
+-		if (offset <= curr_off && buffer_delay(bh)) {
+-			clear_buffer_delay(bh);
+-			/* XXX: add real stuff here */
+-		}
+-		curr_off = next_off;
+-		bh = bh->b_this_page;
+-	} while (bh != head);
++	ext4_da_page_release_reservation(page, offset);
+ 
+ out:
+ 	ext4_invalidatepage(page, offset);

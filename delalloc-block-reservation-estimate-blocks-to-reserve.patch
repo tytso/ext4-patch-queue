@@ -1,0 +1,67 @@
+ext4: delalloc --estimate need metadata blocks to reserve
+
+From: Mingming cao <cmm@us.ibm.com>
+
+Calculate the number of metadata blocks needed to allocate blocks
+Worse case is one block per extent
+
+Signed-off-by: Mingming cao <cmm@us.ibm.com>
+
+---
+ fs/ext4/ext4_extents.h |    1 +
+ fs/ext4/extents.c      |   30 ++++++++++++++++++++++++++++++
+ 2 files changed, 31 insertions(+)
+
+Index: linux-2.6.26-rc4/fs/ext4/ext4_extents.h
+===================================================================
+--- linux-2.6.26-rc4.orig/fs/ext4/ext4_extents.h	2008-06-01 14:22:03.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/ext4_extents.h	2008-06-01 14:57:57.000000000 -0700
+@@ -212,6 +212,7 @@ static inline int ext4_ext_get_actual_le
+ 		(le16_to_cpu(ext->ee_len) - EXT_INIT_MAX_LEN));
+ }
+ 
++extern int ext4_ext_calc_metadata_amount(struct inode *inode, int blocks);
+ extern ext4_fsblk_t idx_pblock(struct ext4_extent_idx *);
+ extern void ext4_ext_store_pblock(struct ext4_extent *, ext4_fsblk_t);
+ extern int ext4_extent_tree_init(handle_t *, struct inode *);
+Index: linux-2.6.26-rc4/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.26-rc4.orig/fs/ext4/extents.c	2008-06-01 14:22:03.000000000 -0700
++++ linux-2.6.26-rc4/fs/ext4/extents.c	2008-06-01 14:57:57.000000000 -0700
+@@ -246,6 +246,36 @@ static int ext4_ext_space_root_idx(struc
+ 	return size;
+ }
+ 
++/*
++ * Calculate the number of metadata blocks needed
++ * to allocate @blocks
++ * Worse case is one block per extent
++ */
++int ext4_ext_calc_metadata_amount(struct inode *inode, int blocks)
++{
++	int lcap, icap, rcap, leafs, idxs, num;
++	int newextents = blocks;
++
++	rcap = ext4_ext_space_root_idx(inode);
++	lcap = ext4_ext_space_block(inode);
++	icap = ext4_ext_space_block_idx(inode);
++
++	/* number of new leaf blocks needed */
++	num = leafs = (newextents + lcap - 1) / lcap;
++
++	/*
++	 * Worse case, we need separate index block(s)
++	 * to link all new leaf blocks
++	 */
++	idxs = (leafs + icap - 1) / icap;
++	do {
++	        num += idxs;
++	        idxs = (idxs + icap - 1) / icap;
++	} while (idxs > rcap);
++
++	return num;
++}
++
+ static int
+ ext4_ext_max_entries(struct inode *inode, int depth)
+ {
