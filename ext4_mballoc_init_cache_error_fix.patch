@@ -14,13 +14,12 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Index: linux-2.6.26-rc4/fs/ext4/mballoc.c
 ===================================================================
 --- linux-2.6.26-rc4.orig/fs/ext4/mballoc.c	2008-06-01 12:55:19.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/mballoc.c	2008-06-01 12:55:23.000000000 -0700
-@@ -798,7 +798,7 @@ static int ext4_mb_init_cache(struct pag
- 	for (i = 0; i < groups_per_page && bh[i]; i++)
- 		wait_on_buffer(bh[i]);
- 
--	err = -EIO;
-+	err = 0;
- 	for (i = 0; i < groups_per_page && bh[i]; i++)
++++ linux-2.6.26-rc4/fs/ext4/mballoc.c	2008-06-01 19:26:24.000000000 -0700
+@@ -803,6 +803,7 @@ static int ext4_mb_init_cache(struct pag
  		if (!buffer_uptodate(bh[i]))
  			goto out;
+ 
++	err = 0;
+ 	first_block = page->index * blocks_per_page;
+ 	for (i = 0; i < blocks_per_page; i++) {
+ 		int group;
