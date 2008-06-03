@@ -1,0 +1,22 @@
+ext4: Display the journal_async_commit mount option in /proc/mounts
+
+From: Theodore Ts'o <tytso@mit.edu>
+
+Cc: Andreas Dilger <adilger@clusterfs.com>
+Cc: Girish Shilamkar <girish@clusterfs.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 8964be2..c64f694 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -732,6 +732,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+ 	}
+ 	if (test_opt(sb, BARRIER) && !(def_mount_opts & EXT4_DEFM_BARRIER))
+ 		seq_puts(seq, ",barrier=1");
++	if (test_opt(sb, JOURNAL_ASYNC_COMMIT))
++		seq_puts(seq, ",journal_async_commit");
+ 	if (test_opt(sb, NOBH))
+ 		seq_puts(seq, ",nobh");
+ 	if (!test_opt(sb, EXTENTS))

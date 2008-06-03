@@ -1,0 +1,22 @@
+jbd2: Fix memory leak when verifying checksums in the journal
+
+From: Theodore Ts'o <tytso@mit.edu>
+    
+Cc: Andreas Dilger <adilger@clusterfs.com>
+Cc: Girish Shilamkar <girish@clusterfs.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+---
+
+diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
+index 5d0405a..7199db5 100644
+--- a/fs/jbd2/recovery.c
++++ b/fs/jbd2/recovery.c
+@@ -344,6 +344,7 @@ static int calc_chksums(journal_t *journal, struct buffer_head *bh,
+ 			*crc32_sum = crc32_be(*crc32_sum, (void *)obh->b_data,
+ 				     obh->b_size);
+ 		}
++		put_bh(obh);
+ 	}
+ 	return 0;
+ }
