@@ -1,0 +1,43 @@
+ext4: Need clear buffer_delay in block_write_full_page() after allocation
+
+From: Mingming Cao <cmm@us.ibm.com>
+
+Normally delayed buffer could be cleared in mpage_da_map_blocks(), after
+blocks are successfully allocated. But if allocation failed, it will
+keep buffer_delay marked and deferring to later 
+ext4_da_writepage()(via block_write_full_page()) to do block allocation.
+This patch handles clear bh delay bit in this case. Clear buffer_delay
+in block_write_full_page() after the block is allocated.
+
+This patch also fixed a bug in block_write_full_page() error case, we need
+to check the delayed flag before flush bh to disk when trying to recover from
+error.
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+---
+ fs/buffer.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+Index: linux-2.6.26-rc4/fs/buffer.c
+===================================================================
+--- linux-2.6.26-rc4.orig/fs/buffer.c	2008-06-02 21:34:30.000000000 -0700
++++ linux-2.6.26-rc4/fs/buffer.c	2008-06-02 21:35:17.000000000 -0700
+@@ -1697,6 +1697,7 @@ static int __block_write_full_page(struc
+ 			err = get_block(inode, block, bh, 1);
+ 			if (err)
+ 				goto recover;
++			clear_buffer_delay(bh);
+ 			if (buffer_new(bh)) {
+ 				/* blockdev mappings never come here */
+ 				clear_buffer_new(bh);
+@@ -1775,7 +1776,8 @@ recover:
+ 	bh = head;
+ 	/* Recovery: lock and submit the mapped buffers */
+ 	do {
+-		if (buffer_mapped(bh) && buffer_dirty(bh)) {
++		if (buffer_mapped(bh) && buffer_dirty(bh)
++			&& !buffer_delay(bh)) {
+ 			lock_buffer(bh);
+ 			mark_buffer_async_write(bh);
+ 		} else {
