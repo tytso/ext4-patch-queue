@@ -1,0 +1,28 @@
+jbd2: Fix barrier fallback code to re-lock the buffer head
+
+From: Theodore Ts'o <tytso@mit.edu>
+
+If the device doesn't support write barriers, the write is retried
+without ordered mode.  But the buffer head needs to be re-locked or
+submit_bh will fail with on BUG(!buffer_locked(bh)).
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/commit.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index 3041d75..92b6ac3 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -171,6 +171,7 @@ static int journal_submit_commit_record(journal_t *journal,
+ 		spin_unlock(&journal->j_state_lock);
+ 
+ 		/* And try again, without the barrier */
++		lock_buffer(bh);
+ 		set_buffer_uptodate(bh);
+ 		set_buffer_dirty(bh);
+ 		ret = submit_bh(WRITE, bh);
+-- 
+1.5.4.1.144.gdfee-dirty
+
