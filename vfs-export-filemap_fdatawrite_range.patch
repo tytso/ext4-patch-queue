@@ -1,0 +1,44 @@
+vfs: export filemap_fdatawrite_range()
+
+From: Jan Kara <jack@suse.cz>
+
+Make filemap_fdatawrite_range() function public, so that it can later
+be used in ordered mode rewrite by JBD/JBD2.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+---
+ include/linux/fs.h |    2 ++
+ mm/filemap.c       |    3 ++-
+ 2 files changed, 4 insertions(+), 1 deletions(-)
+
+Index: linux-2.6-linus/include/linux/fs.h
+===================================================================
+--- linux-2.6-linus.orig/include/linux/fs.h
++++ linux-2.6-linus/include/linux/fs.h
+@@ -1741,6 +1741,8 @@ extern int wait_on_page_writeback_range(
+ 				pgoff_t start, pgoff_t end);
+ extern int __filemap_fdatawrite_range(struct address_space *mapping,
+ 				loff_t start, loff_t end, int sync_mode);
++extern int filemap_fdatawrite_range(struct address_space *mapping,
++				loff_t start, loff_t end);
+
+ extern long do_fsync(struct file *file, int datasync);
+ extern void sync_supers(void);
+Index: linux-2.6-linus/mm/filemap.c
+===================================================================
+--- linux-2.6-linus.orig/mm/filemap.c
++++ linux-2.6-linus/mm/filemap.c
+@@ -236,11 +236,12 @@ int filemap_fdatawrite(struct address_sp
+ }
+ EXPORT_SYMBOL(filemap_fdatawrite);
+
+-static int filemap_fdatawrite_range(struct address_space *mapping, loff_t start,
++int filemap_fdatawrite_range(struct address_space *mapping, loff_t start,
+ 				loff_t end)
+ {
+ 	return __filemap_fdatawrite_range(mapping, start, end, WB_SYNC_ALL);
+ }
++EXPORT_SYMBOL(filemap_fdatawrite_range);
+
+ /**
+  * filemap_flush - mostly a non-blocking flush
