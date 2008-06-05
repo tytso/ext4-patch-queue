@@ -3,6 +3,7 @@ ext4: Fix delalloc sync hang with journal lock inversion
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Jan Kara <jack@suse.cz>
 ---
 
  fs/ext4/inode.c     |   99 +++++++++++++++++++++++++++++++++++----------------
@@ -11,13 +12,13 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
  3 files changed, 80 insertions(+), 40 deletions(-)
 
 
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 65e02a3..2194aa7 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -1480,50 +1480,73 @@ static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
+Index: linux-2.6-linus/fs/ext4/inode.c
+===================================================================
+--- linux-2.6-linus.orig/fs/ext4/inode.c
++++ linux-2.6-linus/fs/ext4/inode.c
+@@ -1480,50 +1480,74 @@ static int ext4_da_get_block_write(struc
  			up_write(&EXT4_I(inode)->i_data_sem);
- 
+
  			if (EXT4_I(inode)->i_disksize == disksize) {
 -				if (handle == NULL)
 -					handle = ext4_journal_start(inode, 1);
@@ -36,7 +37,7 @@ index 65e02a3..2194aa7 100644
 +
 +static int ext4_bh_unmapped_or_delay(handle_t *handle, struct buffer_head *bh)
 +{
-+	return (!buffer_mapped(bh) || buffer_delay(bh));
++	return !buffer_mapped(bh) || buffer_delay(bh);
 +}
 +
  /* FIXME!! only support data=writeback mode */
@@ -57,30 +58,23 @@ index 65e02a3..2194aa7 100644
 +	handle_t *handle = NULL;
 +	struct buffer_head *page_bufs;
 +	struct inode *inode = page->mapping->host;
- 
+
  	handle = ext4_journal_current_handle();
 +	if (!handle) {
 +		/*
 +		 * This can happen when we aren't called via
-+		 * ext4_da_writepages() but directly (shrink_page_lis).
++		 * ext4_da_writepages() but directly (shrink_page_list).
 +		 * We cannot easily start a transaction here so we just skip
 +		 * writing the page in case we would have to do so.
 +		 */
 +		size = i_size_read(inode);
- 
--	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
--		ret = nobh_writepage(page, ext4_get_block, wbc);
--	else
--		ret = block_write_full_page(page, ext4_get_block, wbc);
++
 +		page_bufs = page_buffers(page);
 +		if (page->index == size >> PAGE_CACHE_SHIFT)
 +			len = size & ~PAGE_CACHE_MASK;
 +		else
 +			len = PAGE_CACHE_SIZE;
- 
--	if (!ret && inode->i_size > EXT4_I(inode)->i_disksize) {
--		EXT4_I(inode)->i_disksize = inode->i_size;
--		ext4_mark_inode_dirty(handle, inode);
++
 +		if (walk_page_buffers(NULL, page_bufs, 0,
 +				len, NULL, ext4_bh_unmapped_or_delay)) {
 +			/*
@@ -88,17 +82,25 @@ index 65e02a3..2194aa7 100644
 +			 * page lock without a handle . So redirty
 +			 * the page and return
 +			 */
++			BUG_ON(wbc->sync_mode != WB_SYNC_NONE);
 +			redirty_page_for_writepage(wbc, page);
 +			unlock_page(page);
 +			return 0;
 +		}
- 	}
- 
-+	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
++	}
+
+ 	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
+-		ret = nobh_writepage(page, ext4_get_block, wbc);
 +		ret = nobh_writepage(page, ext4_da_get_block_write, wbc);
-+	else
+ 	else
+-		ret = block_write_full_page(page, ext4_get_block, wbc);
+-
+-	if (!ret && inode->i_size > EXT4_I(inode)->i_disksize) {
+-		EXT4_I(inode)->i_disksize = inode->i_size;
+-		ext4_mark_inode_dirty(handle, inode);
+-	}
 +		ret = block_write_full_page(page, ext4_da_get_block_write, wbc);
-+
+
  	return ret;
  }
 -static int ext4_da_writepage(struct page *page,
@@ -106,23 +108,23 @@ index 65e02a3..2194aa7 100644
 -{
 -	if (!ext4_journal_current_handle())
 -		return __ext4_da_writepage(page, wbc);
- 
+
 -	redirty_page_for_writepage(wbc, page);
 -	unlock_page(page);
 -	return 0;
 -}
- 
+
  /*
   * For now just follow the DIO way to estimate the max credits
-@@ -1547,6 +1570,7 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -1547,6 +1571,7 @@ static int ext4_da_writepages(struct add
  	int ret = 0;
  	unsigned range_cyclic;
  	long to_write;
 +	pgoff_t index;
- 
+
  	/*
  	 *  Estimate the worse case needed credits to write out
-@@ -1557,6 +1581,15 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -1557,6 +1582,15 @@ static int ext4_da_writepages(struct add
  	to_write = wbc->nr_to_write;
  	range_cyclic = wbc->range_cyclic;
  	wbc->range_cyclic = 1;
@@ -135,15 +137,15 @@ index 65e02a3..2194aa7 100644
 +		 */
 +		mapping->writeback_index = wbc->range_start >> PAGE_CACHE_SHIFT;
 +	}
- 
+
  	while (!ret && to_write) {
  		/* start a new transaction*/
-@@ -1571,17 +1604,24 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -1571,17 +1605,24 @@ static int ext4_da_writepages(struct add
  		 */
  		if (wbc->nr_to_write > EXT4_MAX_WRITEBACK_PAGES)
  			wbc->nr_to_write = EXT4_MAX_WRITEBACK_PAGES;
 -		to_write -= wbc->nr_to_write;
- 
+
 +		to_write -= wbc->nr_to_write;
  		ret = mpage_da_writepages(mapping, wbc,
  						ext4_da_get_block_write);
@@ -156,7 +158,7 @@ index 65e02a3..2194aa7 100644
 +		}
 +		wbc->nr_to_write = to_write;
  	}
- 
+
  out_writepages:
  	wbc->nr_to_write = to_write;
  	wbc->range_cyclic = range_cyclic;
@@ -164,24 +166,24 @@ index 65e02a3..2194aa7 100644
 +		mapping->writeback_index = index;
  	return ret;
  }
- 
-@@ -1719,11 +1759,6 @@ static int jbd2_journal_dirty_data_fn(handle_t *handle, struct buffer_head *bh)
+
+@@ -1712,11 +1753,6 @@ static int bput_one(handle_t *handle, st
  	return 0;
  }
- 
+
 -static int ext4_bh_unmapped_or_delay(handle_t *handle, struct buffer_head *bh)
 -{
--	return (!buffer_mapped(bh) || buffer_delay(bh));
+-	return !buffer_mapped(bh) || buffer_delay(bh);
 -}
 -
  /*
-  * Note that we don't need to start a transaction unless we're journaling
-  * data because we should have holes filled from ext4_page_mkwrite(). If
-diff --git a/fs/mpage.c b/fs/mpage.c
-index cde7f11..c107728 100644
---- a/fs/mpage.c
-+++ b/fs/mpage.c
-@@ -849,13 +849,12 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
+  * Note that we don't need to start a transaction unless we're journaling data
+  * because we should have holes filled from ext4_page_mkwrite(). We even don't
+Index: linux-2.6-linus/fs/mpage.c
+===================================================================
+--- linux-2.6-linus.orig/fs/mpage.c
++++ linux-2.6-linus/fs/mpage.c
+@@ -849,13 +849,12 @@ static void mpage_put_bnr_to_bhs(struct
  			do {
  				if (cur_logical >= logical + blocks)
  					break;
@@ -194,13 +196,13 @@ index cde7f11..c107728 100644
 +				} else if (buffer_mapped(bh))
  					BUG_ON(bh->b_blocknr != pblock);
 -				}
- 
+
  				cur_logical++;
  				pblock++;
-@@ -930,10 +929,10 @@ static void mpage_da_map_blocks(struct mpage_da_data *mpd)
+@@ -930,10 +929,10 @@ static void mpage_da_map_blocks(struct m
  		if (buffer_delay(lbh))
  			mpage_put_bnr_to_bhs(mpd, next, &new);
- 
+
 -			/* go for the remaining blocks */
 -			next += new.b_size >> mpd->inode->i_blkbits;
 -			remain -= new.b_size;
@@ -210,9 +212,9 @@ index cde7f11..c107728 100644
 +		remain -= new.b_size;
 +	}
  }
- 
+
  #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | (1 << BH_Delay))
-@@ -1052,6 +1051,7 @@ static int __mpage_da_writepage(struct page *page,
+@@ -1052,6 +1051,7 @@ static int __mpage_da_writepage(struct p
  		head = page_buffers(page);
  		bh = head;
  		do {
@@ -220,11 +222,11 @@ index cde7f11..c107728 100644
  			BUG_ON(buffer_locked(bh));
  			if (buffer_dirty(bh))
  				mpage_add_bh_to_extent(mpd, logical, bh);
-diff --git a/mm/page-writeback.c b/mm/page-writeback.c
-index 789b6ad..655b8bf 100644
---- a/mm/page-writeback.c
-+++ b/mm/page-writeback.c
-@@ -881,7 +881,12 @@ int write_cache_pages(struct address_space *mapping,
+Index: linux-2.6-linus/mm/page-writeback.c
+===================================================================
+--- linux-2.6-linus.orig/mm/page-writeback.c
++++ linux-2.6-linus/mm/page-writeback.c
+@@ -881,7 +881,12 @@ int write_cache_pages(struct address_spa
  	pagevec_init(&pvec, 0);
  	if (wbc->range_cyclic) {
  		index = mapping->writeback_index; /* Start from prev offset */

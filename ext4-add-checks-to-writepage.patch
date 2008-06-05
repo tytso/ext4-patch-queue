@@ -1,0 +1,90 @@
+ext4: Add checks to writepage()
+
+From: Jan Kara <jack@suse.cz>
+
+Add checks to writepage() calls to check that all pages are properly
+mapped and not delayed.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+
+Index: linux-2.6-linus/fs/ext4/inode.c
+===================================================================
+--- linux-2.6-linus.orig/fs/ext4/inode.c
++++ linux-2.6-linus/fs/ext4/inode.c
+@@ -1479,6 +1479,11 @@ static int jbd2_journal_dirty_data_fn(ha
+ 	return 0;
+ }
+
++static int ext4_bh_unmapped_or_delay(handle_t *handle, struct buffer_head *bh)
++{
++	return !buffer_mapped(bh) || buffer_delay(bh);
++}
++
+ /*
+  * Note that we don't need to start a transaction unless we're journaling
+  * data because we should have holes filled from ext4_page_mkwrite(). If
+@@ -1582,7 +1587,18 @@ out_put:
+ static int ext4_ordered_writepage(struct page *page,
+ 				struct writeback_control *wbc)
+ {
++	struct inode *inode = page->mapping->host;
++	loff_t size = i_size_read(inode);
++	loff_t len;
++
+ 	J_ASSERT(PageLocked(page));
++	J_ASSERT(page_has_buffers(page));
++	if (page->index == size >> PAGE_CACHE_SHIFT)
++		len = size & ~PAGE_CACHE_MASK;
++	else
++		len = PAGE_CACHE_SIZE;
++	BUG_ON(walk_page_buffers(NULL, page_buffers(page), 0, len, NULL,
++				 ext4_bh_unmapped_or_delay));
+
+ 	/*
+ 	 * We give up here if we're reentered, because it might be for a
+@@ -1611,6 +1627,19 @@ static int __ext4_writeback_writepage(st
+ static int ext4_writeback_writepage(struct page *page,
+ 				struct writeback_control *wbc)
+ {
++	struct inode *inode = page->mapping->host;
++	loff_t size = i_size_read(inode);
++	loff_t len;
++
++	J_ASSERT(PageLocked(page));
++	J_ASSERT(page_has_buffers(page));
++	if (page->index == size >> PAGE_CACHE_SHIFT)
++		len = size & ~PAGE_CACHE_MASK;
++	else
++		len = PAGE_CACHE_SIZE;
++	BUG_ON(walk_page_buffers(NULL, page_buffers(page), 0, len, NULL,
++				 ext4_bh_unmapped_or_delay));
++
+ 	if (!ext4_journal_current_handle())
+ 		return __ext4_writeback_writepage(page, wbc);
+
+@@ -1671,10 +1700,23 @@ out:
+ static int ext4_journalled_writepage(struct page *page,
+ 				struct writeback_control *wbc)
+ {
++	struct inode *inode = page->mapping->host;
++	loff_t size = i_size_read(inode);
++	loff_t len;
++
++	J_ASSERT(PageLocked(page));
++	J_ASSERT(page_has_buffers(page));
++	if (page->index == size >> PAGE_CACHE_SHIFT)
++		len = size & ~PAGE_CACHE_MASK;
++	else
++		len = PAGE_CACHE_SIZE;
++	BUG_ON(walk_page_buffers(NULL, page_buffers(page), 0, len, NULL,
++				 ext4_bh_unmapped_or_delay));
++
+ 	if (ext4_journal_current_handle())
+ 		goto no_write;
+
+-	if (!page_has_buffers(page) || PageChecked(page)) {
++	if (PageChecked(page)) {
+ 		/*
+ 		 * It's mmapped pagecache.  Add buffers and journal it.  There
+ 		 * doesn't seem much point in redirtying the page here.
