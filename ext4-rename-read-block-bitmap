@@ -1,0 +1,140 @@
+ext4: Rename read_block_bitmap() to ext4_read_block_bitmap()
+
+Since this a non-static function, make it be ext4 specific to avoid
+conflicts with potentially other filesystems.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index c29d774..ba41123 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -295,7 +295,7 @@ err_out:
+ 	return 0;
+ }
+ /**
+- * read_block_bitmap()
++ * ext4_read_block_bitmap()
+  * @sb:			super block
+  * @block_group:	given block group
+  *
+@@ -305,7 +305,7 @@ err_out:
+  * Return buffer_head on success or NULL in case of failure.
+  */
+ struct buffer_head *
+-read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
++ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
+ {
+ 	struct ext4_group_desc * desc;
+ 	struct buffer_head * bh = NULL;
+@@ -693,7 +693,7 @@ do_more:
+ 		count -= overflow;
+ 	}
+ 	brelse(bitmap_bh);
+-	bitmap_bh = read_block_bitmap(sb, block_group);
++	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
+ 	if (!bitmap_bh)
+ 		goto error_return;
+ 	desc = ext4_get_group_desc (sb, block_group, &gd_bh);
+@@ -1733,7 +1733,7 @@ retry_alloc:
+ 		my_rsv = NULL;
+ 
+ 	if (free_blocks > 0) {
+-		bitmap_bh = read_block_bitmap(sb, group_no);
++		bitmap_bh = ext4_read_block_bitmap(sb, group_no);
+ 		if (!bitmap_bh)
+ 			goto io_error;
+ 		grp_alloc_blk = ext4_try_to_allocate_with_rsv(sb, handle,
+@@ -1769,7 +1769,7 @@ retry_alloc:
+ 			continue;
+ 
+ 		brelse(bitmap_bh);
+-		bitmap_bh = read_block_bitmap(sb, group_no);
++		bitmap_bh = ext4_read_block_bitmap(sb, group_no);
+ 		if (!bitmap_bh)
+ 			goto io_error;
+ 		/*
+@@ -1985,7 +1985,7 @@ ext4_fsblk_t ext4_count_free_blocks(struct super_block *sb)
+ 			continue;
+ 		desc_count += le16_to_cpu(gdp->bg_free_blocks_count);
+ 		brelse(bitmap_bh);
+-		bitmap_bh = read_block_bitmap(sb, i);
++		bitmap_bh = ext4_read_block_bitmap(sb, i);
+ 		if (bitmap_bh == NULL)
+ 			continue;
+ 
+diff --git a/fs/ext4/group.h b/fs/ext4/group.h
+index 7eb0604..c2c0a8d 100644
+--- a/fs/ext4/group.h
++++ b/fs/ext4/group.h
+@@ -13,7 +13,7 @@ extern __le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 group,
+ 				   struct ext4_group_desc *gdp);
+ extern int ext4_group_desc_csum_verify(struct ext4_sb_info *sbi, __u32 group,
+ 				       struct ext4_group_desc *gdp);
+-struct buffer_head *read_block_bitmap(struct super_block *sb,
++struct buffer_head *ext4_read_block_bitmap(struct super_block *sb,
+ 				      ext4_group_t block_group);
+ extern unsigned ext4_init_block_bitmap(struct super_block *sb,
+ 				       struct buffer_head *bh,
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index c6efbab..d1fc8c3 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -600,7 +600,7 @@ got:
+ 	/* We may have to initialize the block bitmap if it isn't already */
+ 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_GDT_CSUM) &&
+ 	    gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
+-		struct buffer_head *block_bh = read_block_bitmap(sb, group);
++		struct buffer_head *block_bh = ext4_read_block_bitmap(sb, group);
+ 
+ 		BUFFER_TRACE(block_bh, "get block bitmap access");
+ 		err = ext4_journal_get_write_access(handle, block_bh);
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 37ac13d..676fd6c 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2320,7 +2320,7 @@ static int ext4_mb_init_backend(struct super_block *sb)
+ 			meta_group_info[j]->bb_bitmap =
+ 				kmalloc(sb->s_blocksize, GFP_KERNEL);
+ 			BUG_ON(meta_group_info[j]->bb_bitmap == NULL);
+-			bh = read_block_bitmap(sb, i);
++			bh = ext4_read_block_bitmap(sb, i);
+ 			BUG_ON(bh == NULL);
+ 			memcpy(meta_group_info[j]->bb_bitmap, bh->b_data,
+ 					sb->s_blocksize);
+@@ -2763,7 +2763,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+ 
+ 
+ 	err = -EIO;
+-	bitmap_bh = read_block_bitmap(sb, ac->ac_b_ex.fe_group);
++	bitmap_bh = ext4_read_block_bitmap(sb, ac->ac_b_ex.fe_group);
+ 	if (!bitmap_bh)
+ 		goto out_err;
+ 
+@@ -3585,7 +3585,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+ 	if (list_empty(&grp->bb_prealloc_list))
+ 		return 0;
+ 
+-	bitmap_bh = read_block_bitmap(sb, group);
++	bitmap_bh = ext4_read_block_bitmap(sb, group);
+ 	if (bitmap_bh == NULL) {
+ 		/* error handling here */
+ 		ext4_mb_release_desc(&e4b);
+@@ -3759,7 +3759,7 @@ repeat:
+ 		err = ext4_mb_load_buddy(sb, group, &e4b);
+ 		BUG_ON(err != 0); /* error handling here */
+ 
+-		bitmap_bh = read_block_bitmap(sb, group);
++		bitmap_bh = ext4_read_block_bitmap(sb, group);
+ 		if (bitmap_bh == NULL) {
+ 			/* error handling here */
+ 			ext4_mb_release_desc(&e4b);
+@@ -4258,7 +4258,7 @@ do_more:
+ 		overflow = bit + count - EXT4_BLOCKS_PER_GROUP(sb);
+ 		count -= overflow;
+ 	}
+-	bitmap_bh = read_block_bitmap(sb, block_group);
++	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
+ 	if (!bitmap_bh)
+ 		goto error_return;
+ 	gdp = ext4_get_group_desc(sb, block_group, &gd_bh);
