@@ -9,11 +9,17 @@ indicating the user's preference of what to do in case of filesystem
 corruption being detected.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 09d9359..d01a32e 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -2189,6 +2189,29 @@ static int ext4_fill_super (struct super_block *sb, void *data, int silent)
+---
+ fs/ext4/super.c      |   23 +++++++++++++++++++++++
+ fs/jbd2/recovery.c   |   11 ++++-------
+ include/linux/jbd2.h |    3 +++
+ 3 files changed, 30 insertions(+), 7 deletions(-)
+
+Index: linux-2.6.26-rc5/fs/ext4/super.c
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/ext4/super.c	2008-06-06 17:03:39.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/super.c	2008-06-06 17:03:41.000000000 -0700
+@@ -2189,6 +2189,29 @@ static int ext4_fill_super (struct super
  	    EXT4_HAS_COMPAT_FEATURE(sb, EXT4_FEATURE_COMPAT_HAS_JOURNAL)) {
  		if (ext4_load_journal(sb, es, journal_devnum))
  			goto failed_mount3;
@@ -43,11 +49,11 @@ index 09d9359..d01a32e 100644
  	} else if (journal_inum) {
  		if (ext4_create_journal(sb, es, journal_inum))
  			goto failed_mount3;
-diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
-index 7199db5..058f50f 100644
---- a/fs/jbd2/recovery.c
-+++ b/fs/jbd2/recovery.c
-@@ -611,9 +611,8 @@ static int do_one_pass(journal_t *journal,
+Index: linux-2.6.26-rc5/fs/jbd2/recovery.c
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/jbd2/recovery.c	2008-06-06 17:03:41.000000000 -0700
++++ linux-2.6.26-rc5/fs/jbd2/recovery.c	2008-06-06 17:03:41.000000000 -0700
+@@ -611,9 +611,8 @@ static int do_one_pass(journal_t *journa
  				chksum_err = chksum_seen = 0;
  
  				if (info->end_transaction) {
@@ -59,7 +65,7 @@ index 7199db5..058f50f 100644
  					brelse(bh);
  					break;
  				}
-@@ -644,10 +643,8 @@ static int do_one_pass(journal_t *journal,
+@@ -644,10 +643,8 @@ static int do_one_pass(journal_t *journa
  
  					if (!JBD2_HAS_INCOMPAT_FEATURE(journal,
  					   JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)){
@@ -72,10 +78,10 @@ index 7199db5..058f50f 100644
  						brelse(bh);
  						break;
  					}
-diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 05e2b30..d147f0f 100644
---- a/include/linux/jbd2.h
-+++ b/include/linux/jbd2.h
+Index: linux-2.6.26-rc5/include/linux/jbd2.h
+===================================================================
+--- linux-2.6.26-rc5.orig/include/linux/jbd2.h	2008-06-06 17:03:39.000000000 -0700
++++ linux-2.6.26-rc5/include/linux/jbd2.h	2008-06-06 17:03:41.000000000 -0700
 @@ -919,6 +919,9 @@ struct journal_s
  	struct proc_dir_entry	*j_proc_entry;
  	struct transaction_stats_s j_stats;

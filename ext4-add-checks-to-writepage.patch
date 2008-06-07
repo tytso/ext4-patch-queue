@@ -8,14 +8,18 @@ mapped and not delayed.
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
-Index: linux-2.6-linus/fs/ext4/inode.c
+---
+ fs/ext4/inode.c |   44 +++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 43 insertions(+), 1 deletion(-)
+
+Index: linux-2.6.26-rc5/fs/ext4/inode.c
 ===================================================================
---- linux-2.6-linus.orig/fs/ext4/inode.c
-+++ linux-2.6-linus/fs/ext4/inode.c
+--- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:03:51.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:03:52.000000000 -0700
 @@ -1479,6 +1479,11 @@ static int jbd2_journal_dirty_data_fn(ha
  	return 0;
  }
-
+ 
 +static int ext4_bh_unmapped_or_delay(handle_t *handle, struct buffer_head *bh)
 +{
 +	return !buffer_mapped(bh) || buffer_delay(bh);
@@ -40,7 +44,7 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +		len = PAGE_CACHE_SIZE;
 +	BUG_ON(walk_page_buffers(NULL, page_buffers(page), 0, len, NULL,
 +				 ext4_bh_unmapped_or_delay));
-
+ 
  	/*
  	 * We give up here if we're reentered, because it might be for a
 @@ -1611,6 +1627,19 @@ static int __ext4_writeback_writepage(st
@@ -62,7 +66,7 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +
  	if (!ext4_journal_current_handle())
  		return __ext4_writeback_writepage(page, wbc);
-
+ 
 @@ -1671,10 +1700,23 @@ out:
  static int ext4_journalled_writepage(struct page *page,
  				struct writeback_control *wbc)
@@ -82,7 +86,7 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +
  	if (ext4_journal_current_handle())
  		goto no_write;
-
+ 
 -	if (!page_has_buffers(page) || PageChecked(page)) {
 +	if (PageChecked(page)) {
  		/*

@@ -9,29 +9,29 @@ Signed-off-by: Jan Kara <jack@suse.cz>
 ---
  include/linux/fs.h |    2 ++
  mm/filemap.c       |    3 ++-
- 2 files changed, 4 insertions(+), 1 deletions(-)
+ 2 files changed, 4 insertions(+), 1 deletion(-)
 
-Index: linux-2.6-linus/include/linux/fs.h
+Index: linux-2.6.26-rc5/include/linux/fs.h
 ===================================================================
---- linux-2.6-linus.orig/include/linux/fs.h
-+++ linux-2.6-linus/include/linux/fs.h
+--- linux-2.6.26-rc5.orig/include/linux/fs.h	2008-06-06 17:03:36.000000000 -0700
++++ linux-2.6.26-rc5/include/linux/fs.h	2008-06-06 17:03:52.000000000 -0700
 @@ -1741,6 +1741,8 @@ extern int wait_on_page_writeback_range(
  				pgoff_t start, pgoff_t end);
  extern int __filemap_fdatawrite_range(struct address_space *mapping,
  				loff_t start, loff_t end, int sync_mode);
 +extern int filemap_fdatawrite_range(struct address_space *mapping,
 +				loff_t start, loff_t end);
-
+ 
  extern long do_fsync(struct file *file, int datasync);
  extern void sync_supers(void);
-Index: linux-2.6-linus/mm/filemap.c
+Index: linux-2.6.26-rc5/mm/filemap.c
 ===================================================================
---- linux-2.6-linus.orig/mm/filemap.c
-+++ linux-2.6-linus/mm/filemap.c
+--- linux-2.6.26-rc5.orig/mm/filemap.c	2008-06-06 17:03:36.000000000 -0700
++++ linux-2.6.26-rc5/mm/filemap.c	2008-06-06 17:03:52.000000000 -0700
 @@ -236,11 +236,12 @@ int filemap_fdatawrite(struct address_sp
  }
  EXPORT_SYMBOL(filemap_fdatawrite);
-
+ 
 -static int filemap_fdatawrite_range(struct address_space *mapping, loff_t start,
 +int filemap_fdatawrite_range(struct address_space *mapping, loff_t start,
  				loff_t end)
@@ -39,6 +39,6 @@ Index: linux-2.6-linus/mm/filemap.c
  	return __filemap_fdatawrite_range(mapping, start, end, WB_SYNC_ALL);
  }
 +EXPORT_SYMBOL(filemap_fdatawrite_range);
-
+ 
  /**
   * filemap_flush - mostly a non-blocking flush

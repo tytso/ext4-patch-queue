@@ -4,32 +4,32 @@ From: Jan Kara <jack@suse.cz>
 
 Signed-off-by: Jan Kara <jack@suse.cz>
 ---
- fs/jbd2/checkpoint.c  |    1 -
- fs/jbd2/commit.c      |  230 ++-----------------------------------------------
- fs/jbd2/journal.c     |    1 -
- fs/jbd2/transaction.c |  217 ++---------------------------------------------
- include/linux/jbd2.h  |   29 ++-----
- 5 files changed, 21 insertions(+), 457 deletions(-)
+ fs/jbd2/checkpoint.c  |    1 
+ fs/jbd2/commit.c      |  221 +-------------------------------------------------
+ fs/jbd2/journal.c     |    1 
+ fs/jbd2/transaction.c |  217 +------------------------------------------------
+ include/linux/jbd2.h  |   29 +-----
+ 5 files changed, 21 insertions(+), 448 deletions(-)
 
-Index: linux-2.6-linus/fs/jbd2/checkpoint.c
+Index: linux-2.6.26-rc5/fs/jbd2/checkpoint.c
 ===================================================================
---- linux-2.6-linus.orig/fs/jbd2/checkpoint.c
-+++ linux-2.6-linus/fs/jbd2/checkpoint.c
+--- linux-2.6.26-rc5.orig/fs/jbd2/checkpoint.c	2008-06-06 17:03:36.000000000 -0700
++++ linux-2.6.26-rc5/fs/jbd2/checkpoint.c	2008-06-06 17:03:54.000000000 -0700
 @@ -688,7 +688,6 @@ void __jbd2_journal_drop_transaction(jou
-
+ 
  	J_ASSERT(transaction->t_state == T_FINISHED);
  	J_ASSERT(transaction->t_buffers == NULL);
 -	J_ASSERT(transaction->t_sync_datalist == NULL);
  	J_ASSERT(transaction->t_forget == NULL);
  	J_ASSERT(transaction->t_iobuf_list == NULL);
  	J_ASSERT(transaction->t_shadow_list == NULL);
-Index: linux-2.6-linus/fs/jbd2/commit.c
+Index: linux-2.6.26-rc5/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6-linus.orig/fs/jbd2/commit.c
-+++ linux-2.6-linus/fs/jbd2/commit.c
+--- linux-2.6.26-rc5.orig/fs/jbd2/commit.c	2008-06-06 17:03:53.000000000 -0700
++++ linux-2.6.26-rc5/fs/jbd2/commit.c	2008-06-06 17:03:54.000000000 -0700
 @@ -37,8 +37,8 @@ static void journal_end_buffer_io_sync(s
  }
-
+ 
  /*
 - * When an ext3-ordered file is truncated, it is possible that many pages are
 - * not sucessfully freed, because they are attached to a committing transaction.
@@ -40,7 +40,7 @@ Index: linux-2.6-linus/fs/jbd2/commit.c
   * by the VM, but their apparent absence upsets the VM accounting, and it makes
 @@ -80,21 +80,6 @@ nope:
  }
-
+ 
  /*
 - * Try to acquire jbd_lock_bh_state() against the buffer, when j_list_lock is
 - * held.  For ranking reasons we must trylock.  If we lose, schedule away and
@@ -60,9 +60,9 @@ Index: linux-2.6-linus/fs/jbd2/commit.c
   * Done it all: now submit the commit record.  We should have
   * cleaned up our previous buffers by now, so if we are in abort
   * mode we can now just skip the rest of the journal write
-@@ -199,162 +184,6 @@ static int journal_wait_on_commit_record
+@@ -200,162 +185,6 @@ static int journal_wait_on_commit_record
  }
-
+ 
  /*
 - * Wait for all submitted IO to complete.
 - */
@@ -223,7 +223,7 @@ Index: linux-2.6-linus/fs/jbd2/commit.c
   * Submit all the data buffers of inode associated with the transaction to
   * disk.
   *
-@@ -601,42 +430,15 @@ void jbd2_journal_commit_transaction(jou
+@@ -602,42 +431,15 @@ void jbd2_journal_commit_transaction(jou
  	 * Now start flushing things to disk, in the order they appear
  	 * on the transaction lists.  Data blocks go first.
  	 */
@@ -232,7 +232,7 @@ Index: linux-2.6-linus/fs/jbd2/commit.c
  	err = journal_submit_inode_data_buffers(journal, commit_transaction);
  	if (err)
  		jbd2_journal_abort(journal, err);
-
+ 
 -	/*
 -	 * Wait for all previously submitted IO to complete if commit
 -	 * record is to be written synchronously.
@@ -249,9 +249,9 @@ Index: linux-2.6-linus/fs/jbd2/commit.c
 -		jbd2_journal_abort(journal, err);
 -
  	jbd2_journal_write_revoke_records(journal, commit_transaction);
-
+ 
  	jbd_debug(3, "JBD: commit phase 2\n");
-
+ 
  	/*
 -	 * If we found any dirty or locked buffers, then we should have
 -	 * looped back up to the write_out_data label.  If there weren't
@@ -266,15 +266,15 @@ Index: linux-2.6-linus/fs/jbd2/commit.c
  	 * Way to go: we have now written out all of the data for a
  	 * transaction!  Now comes the tricky part: we need to write out
  	 * metadata.  Loop over the transaction's entire buffer list:
-@@ -654,6 +456,7 @@ void jbd2_journal_commit_transaction(jou
+@@ -655,6 +457,7 @@ void jbd2_journal_commit_transaction(jou
  	J_ASSERT(commit_transaction->t_nr_buffers <=
  		 commit_transaction->t_outstanding_credits);
-
+ 
 +	err = 0;
  	descriptor = NULL;
  	bufs = 0;
  	while (commit_transaction->t_buffers) {
-@@ -828,13 +631,6 @@ start_journal_io:
+@@ -829,13 +632,6 @@ start_journal_io:
  						 &cbh, crc32_sum);
  		if (err)
  			__jbd2_journal_abort_hard(journal);
@@ -286,59 +286,59 @@ Index: linux-2.6-linus/fs/jbd2/commit.c
 -		if (err)
 -			__jbd2_journal_abort_hard(journal);
  	}
-
+ 
  	/*
-@@ -859,7 +655,7 @@ start_journal_io:
+@@ -860,7 +656,7 @@ start_journal_io:
  	   so we incur less scheduling load.
  	*/
-
+ 
 -	jbd_debug(3, "JBD: commit phase 4\n");
 +	jbd_debug(3, "JBD: commit phase 3\n");
-
+ 
  	/*
  	 * akpm: these are BJ_IO, and j_list_lock is not needed.
-@@ -918,7 +714,7 @@ wait_for_iobuf:
-
+@@ -919,7 +715,7 @@ wait_for_iobuf:
+ 
  	J_ASSERT (commit_transaction->t_shadow_list == NULL);
-
+ 
 -	jbd_debug(3, "JBD: commit phase 5\n");
 +	jbd_debug(3, "JBD: commit phase 4\n");
-
+ 
  	/* Here we wait for the revoke record and descriptor record buffers */
   wait_for_ctlbuf:
-@@ -945,7 +741,7 @@ wait_for_iobuf:
+@@ -946,7 +742,7 @@ wait_for_iobuf:
  		/* AKPM: bforget here */
  	}
-
+ 
 -	jbd_debug(3, "JBD: commit phase 6\n");
 +	jbd_debug(3, "JBD: commit phase 5\n");
-
+ 
  	if (!JBD2_HAS_INCOMPAT_FEATURE(journal,
  		JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)) {
-@@ -965,9 +761,8 @@ wait_for_iobuf:
+@@ -966,9 +762,8 @@ wait_for_iobuf:
             transaction can be removed from any checkpoint list it was on
             before. */
-
+ 
 -	jbd_debug(3, "JBD: commit phase 7\n");
 +	jbd_debug(3, "JBD: commit phase 6\n");
-
+ 
 -	J_ASSERT(commit_transaction->t_sync_datalist == NULL);
  	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
  	J_ASSERT(commit_transaction->t_buffers == NULL);
  	J_ASSERT(commit_transaction->t_checkpoint_list == NULL);
-@@ -1089,7 +884,7 @@ restart_loop:
-
+@@ -1090,7 +885,7 @@ restart_loop:
+ 
  	/* Done with this transaction! */
-
+ 
 -	jbd_debug(3, "JBD: commit phase 8\n");
 +	jbd_debug(3, "JBD: commit phase 7\n");
-
+ 
  	J_ASSERT(commit_transaction->t_state == T_COMMIT);
-
-Index: linux-2.6-linus/fs/jbd2/journal.c
+ 
+Index: linux-2.6.26-rc5/fs/jbd2/journal.c
 ===================================================================
---- linux-2.6-linus.orig/fs/jbd2/journal.c
-+++ linux-2.6-linus/fs/jbd2/journal.c
+--- linux-2.6.26-rc5.orig/fs/jbd2/journal.c	2008-06-06 17:03:53.000000000 -0700
++++ linux-2.6.26-rc5/fs/jbd2/journal.c	2008-06-06 17:03:54.000000000 -0700
 @@ -50,7 +50,6 @@ EXPORT_SYMBOL(jbd2_journal_unlock_update
  EXPORT_SYMBOL(jbd2_journal_get_write_access);
  EXPORT_SYMBOL(jbd2_journal_get_create_access);
@@ -347,13 +347,13 @@ Index: linux-2.6-linus/fs/jbd2/journal.c
  EXPORT_SYMBOL(jbd2_journal_dirty_metadata);
  EXPORT_SYMBOL(jbd2_journal_release_buffer);
  EXPORT_SYMBOL(jbd2_journal_forget);
-Index: linux-2.6-linus/fs/jbd2/transaction.c
+Index: linux-2.6.26-rc5/fs/jbd2/transaction.c
 ===================================================================
---- linux-2.6-linus.orig/fs/jbd2/transaction.c
-+++ linux-2.6-linus/fs/jbd2/transaction.c
+--- linux-2.6.26-rc5.orig/fs/jbd2/transaction.c	2008-06-06 17:03:53.000000000 -0700
++++ linux-2.6.26-rc5/fs/jbd2/transaction.c	2008-06-06 17:03:54.000000000 -0700
 @@ -943,183 +943,6 @@ out:
  }
-
+ 
  /**
 - * int jbd2_journal_dirty_data() -  mark a buffer as containing dirty data which
 - *                             needs to be flushed before we can commit the
@@ -568,11 +568,11 @@ Index: linux-2.6-linus/fs/jbd2/transaction.c
 -		list = &transaction->t_locked_list;
 -		break;
  	}
-
+ 
  	__blist_del_buffer(list, jh);
 @@ -1634,15 +1451,7 @@ __journal_try_to_free_buffer(journal_t *
  		goto out;
-
+ 
  	spin_lock(&journal->j_list_lock);
 -	if (jh->b_transaction != NULL && jh->b_cp_transaction == NULL) {
 -		if (jh->b_jlist == BJ_SyncData || jh->b_jlist == BJ_Locked) {
@@ -590,7 +590,7 @@ Index: linux-2.6-linus/fs/jbd2/transaction.c
 @@ -1878,6 +1687,7 @@ static int journal_unmap_buffer(journal_
  	if (!buffer_jbd(bh))
  		goto zap_buffer_unlocked;
-
+ 
 +	/* OK, we have data buffer in journaled mode */
  	spin_lock(&journal->j_state_lock);
  	jbd_lock_bh_state(bh);
@@ -629,15 +629,15 @@ Index: linux-2.6-linus/fs/jbd2/transaction.c
 -		list =  &transaction->t_locked_list;
 -		break;
  	}
-
+ 
  	__blist_add_buffer(list, jh);
-Index: linux-2.6-linus/include/linux/jbd2.h
+Index: linux-2.6.26-rc5/include/linux/jbd2.h
 ===================================================================
---- linux-2.6-linus.orig/include/linux/jbd2.h
-+++ linux-2.6-linus/include/linux/jbd2.h
+--- linux-2.6.26-rc5.orig/include/linux/jbd2.h	2008-06-06 17:03:53.000000000 -0700
++++ linux-2.6.26-rc5/include/linux/jbd2.h	2008-06-06 17:03:54.000000000 -0700
 @@ -543,24 +543,12 @@ struct transaction_s
  	struct journal_head	*t_reserved_list;
-
+ 
  	/*
 -	 * Doubly-linked circular list of all buffers under writeout during
 -	 * commit [j_list_lock]
@@ -649,7 +649,7 @@ Index: linux-2.6-linus/include/linux/jbd2.h
  	 * transaction [j_list_lock]
  	 */
  	struct journal_head	*t_buffers;
-
+ 
  	/*
 -	 * Doubly-linked circular list of all data buffers still to be
 -	 * flushed before this transaction can be committed [j_list_lock]
@@ -660,7 +660,7 @@ Index: linux-2.6-linus/include/linux/jbd2.h
  	 * Doubly-linked circular list of all forget buffers (superseded
  	 * buffers which we can un-checkpoint once this transaction commits)
  	 * [j_list_lock]
-@@ -1041,7 +1029,6 @@ extern int	 jbd2_journal_extend (handle_
+@@ -1044,7 +1032,6 @@ extern int	 jbd2_journal_extend (handle_
  extern int	 jbd2_journal_get_write_access(handle_t *, struct buffer_head *);
  extern int	 jbd2_journal_get_create_access (handle_t *, struct buffer_head *);
  extern int	 jbd2_journal_get_undo_access(handle_t *, struct buffer_head *);
@@ -668,8 +668,8 @@ Index: linux-2.6-linus/include/linux/jbd2.h
  extern int	 jbd2_journal_dirty_metadata (handle_t *, struct buffer_head *);
  extern void	 jbd2_journal_release_buffer (handle_t *, struct buffer_head *);
  extern int	 jbd2_journal_forget (handle_t *, struct buffer_head *);
-@@ -1220,15 +1207,13 @@ static inline int jbd_space_needed(journ
-
+@@ -1223,15 +1210,13 @@ static inline int jbd_space_needed(journ
+ 
  /* journaling buffer types */
  #define BJ_None		0	/* Not journaled */
 -#define BJ_SyncData	1	/* Normal data: flush before commit */
@@ -688,6 +688,6 @@ Index: linux-2.6-linus/include/linux/jbd2.h
 +#define BJ_LogCtl	5	/* Buffer contains log descriptors */
 +#define BJ_Reserved	6	/* Buffer is reserved for access by journal */
 +#define BJ_Types	7
-
+ 
  extern int jbd_blocks_per_page(struct inode *inode);
-
+ 

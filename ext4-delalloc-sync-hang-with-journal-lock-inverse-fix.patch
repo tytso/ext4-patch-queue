@@ -6,19 +6,19 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Jan Kara <jack@suse.cz>
 ---
 
- fs/ext4/inode.c     |   99 +++++++++++++++++++++++++++++++++++----------------
- fs/mpage.c          |   14 ++++---
- mm/page-writeback.c |    7 +++-
- 3 files changed, 80 insertions(+), 40 deletions(-)
+ fs/ext4/inode.c     |  100 +++++++++++++++++++++++++++++++++++-----------------
+ fs/mpage.c          |   14 +++----
+ mm/page-writeback.c |    7 +++
+ 3 files changed, 81 insertions(+), 40 deletions(-)
 
 
-Index: linux-2.6-linus/fs/ext4/inode.c
+Index: linux-2.6.26-rc5/fs/ext4/inode.c
 ===================================================================
---- linux-2.6-linus.orig/fs/ext4/inode.c
-+++ linux-2.6-linus/fs/ext4/inode.c
+--- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:03:57.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:03:57.000000000 -0700
 @@ -1480,50 +1480,74 @@ static int ext4_da_get_block_write(struc
  			up_write(&EXT4_I(inode)->i_data_sem);
-
+ 
  			if (EXT4_I(inode)->i_disksize == disksize) {
 -				if (handle == NULL)
 -					handle = ext4_journal_start(inode, 1);
@@ -58,7 +58,7 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +	handle_t *handle = NULL;
 +	struct buffer_head *page_bufs;
 +	struct inode *inode = page->mapping->host;
-
+ 
  	handle = ext4_journal_current_handle();
 +	if (!handle) {
 +		/*
@@ -68,13 +68,20 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +		 * writing the page in case we would have to do so.
 +		 */
 +		size = i_size_read(inode);
-+
+ 
+-	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
+-		ret = nobh_writepage(page, ext4_get_block, wbc);
+-	else
+-		ret = block_write_full_page(page, ext4_get_block, wbc);
 +		page_bufs = page_buffers(page);
 +		if (page->index == size >> PAGE_CACHE_SHIFT)
 +			len = size & ~PAGE_CACHE_MASK;
 +		else
 +			len = PAGE_CACHE_SIZE;
-+
+ 
+-	if (!ret && inode->i_size > EXT4_I(inode)->i_disksize) {
+-		EXT4_I(inode)->i_disksize = inode->i_size;
+-		ext4_mark_inode_dirty(handle, inode);
 +		if (walk_page_buffers(NULL, page_bufs, 0,
 +				len, NULL, ext4_bh_unmapped_or_delay)) {
 +			/*
@@ -87,20 +94,13 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +			unlock_page(page);
 +			return 0;
 +		}
-+	}
-
- 	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
--		ret = nobh_writepage(page, ext4_get_block, wbc);
+ 	}
+ 
++	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
 +		ret = nobh_writepage(page, ext4_da_get_block_write, wbc);
- 	else
--		ret = block_write_full_page(page, ext4_get_block, wbc);
--
--	if (!ret && inode->i_size > EXT4_I(inode)->i_disksize) {
--		EXT4_I(inode)->i_disksize = inode->i_size;
--		ext4_mark_inode_dirty(handle, inode);
--	}
++	else
 +		ret = block_write_full_page(page, ext4_da_get_block_write, wbc);
-
++
  	return ret;
  }
 -static int ext4_da_writepage(struct page *page,
@@ -108,12 +108,12 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 -{
 -	if (!ext4_journal_current_handle())
 -		return __ext4_da_writepage(page, wbc);
-
+ 
 -	redirty_page_for_writepage(wbc, page);
 -	unlock_page(page);
 -	return 0;
 -}
-
+ 
  /*
   * For now just follow the DIO way to estimate the max credits
 @@ -1547,6 +1571,7 @@ static int ext4_da_writepages(struct add
@@ -121,10 +121,10 @@ Index: linux-2.6-linus/fs/ext4/inode.c
  	unsigned range_cyclic;
  	long to_write;
 +	pgoff_t index;
-
+ 
  	/*
- 	 *  Estimate the worse case needed credits to write out
-@@ -1557,6 +1582,15 @@ static int ext4_da_writepages(struct add
+ 	 * No pages to write? This is mainly a kludge to avoid starting
+@@ -1565,6 +1590,15 @@ static int ext4_da_writepages(struct add
  	to_write = wbc->nr_to_write;
  	range_cyclic = wbc->range_cyclic;
  	wbc->range_cyclic = 1;
@@ -137,15 +137,15 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +		 */
 +		mapping->writeback_index = wbc->range_start >> PAGE_CACHE_SHIFT;
 +	}
-
+ 
  	while (!ret && to_write) {
  		/* start a new transaction*/
-@@ -1571,17 +1605,24 @@ static int ext4_da_writepages(struct add
+@@ -1579,17 +1613,24 @@ static int ext4_da_writepages(struct add
  		 */
  		if (wbc->nr_to_write > EXT4_MAX_WRITEBACK_PAGES)
  			wbc->nr_to_write = EXT4_MAX_WRITEBACK_PAGES;
 -		to_write -= wbc->nr_to_write;
-
+ 
 +		to_write -= wbc->nr_to_write;
  		ret = mpage_da_writepages(mapping, wbc,
  						ext4_da_get_block_write);
@@ -158,7 +158,7 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +		}
 +		wbc->nr_to_write = to_write;
  	}
-
+ 
  out_writepages:
  	wbc->nr_to_write = to_write;
  	wbc->range_cyclic = range_cyclic;
@@ -166,11 +166,11 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +		mapping->writeback_index = index;
  	return ret;
  }
-
-@@ -1712,11 +1753,6 @@ static int bput_one(handle_t *handle, st
+ 
+@@ -1720,11 +1761,6 @@ static int bput_one(handle_t *handle, st
  	return 0;
  }
-
+ 
 -static int ext4_bh_unmapped_or_delay(handle_t *handle, struct buffer_head *bh)
 -{
 -	return !buffer_mapped(bh) || buffer_delay(bh);
@@ -179,11 +179,11 @@ Index: linux-2.6-linus/fs/ext4/inode.c
  /*
   * Note that we don't need to start a transaction unless we're journaling data
   * because we should have holes filled from ext4_page_mkwrite(). We even don't
-Index: linux-2.6-linus/fs/mpage.c
+Index: linux-2.6.26-rc5/fs/mpage.c
 ===================================================================
---- linux-2.6-linus.orig/fs/mpage.c
-+++ linux-2.6-linus/fs/mpage.c
-@@ -849,13 +849,12 @@ static void mpage_put_bnr_to_bhs(struct
+--- linux-2.6.26-rc5.orig/fs/mpage.c	2008-06-06 17:03:55.000000000 -0700
++++ linux-2.6.26-rc5/fs/mpage.c	2008-06-06 17:03:57.000000000 -0700
+@@ -849,13 +849,12 @@ static void mpage_put_bnr_to_bhs(struct 
  			do {
  				if (cur_logical >= logical + blocks)
  					break;
@@ -196,13 +196,13 @@ Index: linux-2.6-linus/fs/mpage.c
 +				} else if (buffer_mapped(bh))
  					BUG_ON(bh->b_blocknr != pblock);
 -				}
-
+ 
  				cur_logical++;
  				pblock++;
 @@ -930,10 +929,10 @@ static void mpage_da_map_blocks(struct m
  		if (buffer_delay(lbh))
  			mpage_put_bnr_to_bhs(mpd, next, &new);
-
+ 
 -			/* go for the remaining blocks */
 -			next += new.b_size >> mpd->inode->i_blkbits;
 -			remain -= new.b_size;
@@ -212,7 +212,7 @@ Index: linux-2.6-linus/fs/mpage.c
 +		remain -= new.b_size;
 +	}
  }
-
+ 
  #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | (1 << BH_Delay))
 @@ -1052,6 +1051,7 @@ static int __mpage_da_writepage(struct p
  		head = page_buffers(page);
@@ -222,10 +222,10 @@ Index: linux-2.6-linus/fs/mpage.c
  			BUG_ON(buffer_locked(bh));
  			if (buffer_dirty(bh))
  				mpage_add_bh_to_extent(mpd, logical, bh);
-Index: linux-2.6-linus/mm/page-writeback.c
+Index: linux-2.6.26-rc5/mm/page-writeback.c
 ===================================================================
---- linux-2.6-linus.orig/mm/page-writeback.c
-+++ linux-2.6-linus/mm/page-writeback.c
+--- linux-2.6.26-rc5.orig/mm/page-writeback.c	2008-06-06 17:03:35.000000000 -0700
++++ linux-2.6.26-rc5/mm/page-writeback.c	2008-06-06 17:03:57.000000000 -0700
 @@ -881,7 +881,12 @@ int write_cache_pages(struct address_spa
  	pagevec_init(&pvec, 0);
  	if (wbc->range_cyclic) {

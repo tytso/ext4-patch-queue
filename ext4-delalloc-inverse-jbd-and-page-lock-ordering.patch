@@ -7,14 +7,14 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Jan Kara <jack@suse.cz>
 ---
 
- fs/ext4/inode.c |   96 +++++++++++++++++++++++++++++++++++++++----------------
- 1 files changed, 68 insertions(+), 28 deletions(-)
+ fs/ext4/inode.c |  104 ++++++++++++++++++++++++++++++++++++++++----------------
+ 1 file changed, 76 insertions(+), 28 deletions(-)
 
 
-Index: linux-2.6-linus/fs/ext4/inode.c
+Index: linux-2.6.26-rc5/fs/ext4/inode.c
 ===================================================================
---- linux-2.6-linus.orig/fs/ext4/inode.c
-+++ linux-2.6-linus/fs/ext4/inode.c
+--- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:03:56.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:03:57.000000000 -0700
 @@ -1448,18 +1448,14 @@ static int ext4_da_get_block_prep(struct
  static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
  				   struct buffer_head *bh_result, int create)
@@ -24,7 +24,7 @@ Index: linux-2.6-linus/fs/ext4/inode.c
  	unsigned max_blocks = bh_result->b_size >> inode->i_blkbits;
  	loff_t disksize = EXT4_I(inode)->i_disksize;
  	handle_t *handle = NULL;
-
+ 
 -	if (create) {
 -		handle = ext4_journal_start(inode, needed_blocks);
 -		if (IS_ERR(handle)) {
@@ -35,13 +35,13 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +	handle = ext4_journal_current_handle();
 +	BUG_ON(handle == 0);
 +	BUG_ON(create == 0);
-
+ 
  	ret = ext4_get_blocks_wrap(handle, inode, iblock, max_blocks,
  				   bh_result, create, 0);
 @@ -1494,29 +1490,17 @@ static int ext4_da_get_block_write(struc
  		ret = 0;
  	}
-
+ 
 -out:
 -	if (handle && !IS_ERR(handle))
 -		ext4_journal_stop(handle);
@@ -57,23 +57,23 @@ Index: linux-2.6-linus/fs/ext4/inode.c
  	handle_t *handle = NULL;
  	int ret = 0;
 -	int err;
-
+-
 -	if (ext4_journal_current_handle())
 -		goto out_fail;
--
+ 
 -	handle = ext4_journal_start(inode, ext4_writepage_trans_blocks(inode));
 -	if (IS_ERR(handle)) {
 -		ret = PTR_ERR(handle);
 -		goto out_fail;
 -	}
 +	handle = ext4_journal_current_handle();
-
+ 
  	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
  		ret = nobh_writepage(page, ext4_get_block, wbc);
 @@ -1528,21 +1512,85 @@ static int ext4_da_writepage(struct page
  		ext4_mark_inode_dirty(handle, inode);
  	}
-
+ 
 -	err = ext4_journal_stop(handle);
 -	if (!ret)
 -		ret = err;
@@ -84,14 +84,14 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +{
 +	if (!ext4_journal_current_handle())
 +		return __ext4_da_writepage(page, wbc);
-
+ 
 -out_fail:
  	redirty_page_for_writepage(wbc, page);
  	unlock_page(page);
 -	return ret;
 +	return 0;
  }
-
+ 
 +/*
 + * For now just follow the DIO way to estimate the max credits
 + * needed to write out EXT4_MAX_WRITEBACK_PAGES.
@@ -160,5 +160,5 @@ Index: linux-2.6-linus/fs/ext4/inode.c
 +	wbc->range_cyclic = range_cyclic;
 +	return ret;
  }
-
+ 
  static int ext4_da_write_begin(struct file *file, struct address_space *mapping,

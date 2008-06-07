@@ -12,19 +12,19 @@ Signed-off-by: Mingming cao <cmm@us.ibm.com>
  fs/ext4/inode.c |   69 +++++++++++++++++++++++++++++++++++++++++++++++++++++---
  1 file changed, 66 insertions(+), 3 deletions(-)
 
-Index: linux-2.6.26-rc4/fs/ext4/inode.c
+Index: linux-2.6.26-rc5/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc4.orig/fs/ext4/inode.c	2008-06-01 14:26:13.000000000 -0700
-+++ linux-2.6.26-rc4/fs/ext4/inode.c	2008-06-01 15:04:06.000000000 -0700
+--- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:03:57.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:03:58.000000000 -0700
 @@ -38,6 +38,7 @@
  #include "ext4_jbd2.h"
  #include "xattr.h"
  #include "acl.h"
 +#include "ext4_extents.h"
  
- static void ext4_invalidatepage(struct page *page, unsigned long offset);
- 
-@@ -1410,6 +1411,61 @@ static int ext4_journalled_write_end(str
+ static inline int ext4_begin_ordered_truncate(struct inode *inode,
+ 					      loff_t new_size)
+@@ -1409,6 +1410,61 @@ static int ext4_journalled_write_end(str
  	return ret ? ret : copied;
  }
  
@@ -86,7 +86,7 @@ Index: linux-2.6.26-rc4/fs/ext4/inode.c
  /*
   * this is a special callback for ->write_begin() only
   * it's intention is to return mapped block or reserve space
-@@ -1428,13 +1484,17 @@ static int ext4_da_get_block_prep(struct
+@@ -1427,13 +1483,17 @@ static int ext4_da_get_block_prep(struct
  	 * the same as allocated blocks.
  	 */
  	ret = ext4_get_blocks_wrap(NULL, inode, iblock, 1,  bh_result, 0, 0);
@@ -107,7 +107,7 @@ Index: linux-2.6.26-rc4/fs/ext4/inode.c
  		map_bh(bh_result, inode->i_sb, 0);
  		set_buffer_new(bh_result);
  		set_buffer_delay(bh_result);
-@@ -1463,6 +1523,9 @@ static int ext4_da_get_block_write(struc
+@@ -1462,6 +1522,9 @@ static int ext4_da_get_block_write(struc
  	if (ret > 0) {
  		bh_result->b_size = (ret << inode->i_blkbits);
  
