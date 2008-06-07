@@ -2,8 +2,18 @@ ext4: Use inode preallocation with -o noextents
 
 From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-When mouting ext4 with -o noextents, request for
-file data blocks from inode prealloc space.
+When mballoc is enabled, block allocation for old block-based
+files are allocated using mballoc allocator instead of old
+block-based allocator. The old ext3 block reservation is turned
+off when mballoc is turned on.
+
+However, the in-core preallocation is not enabled for block-based/
+non-extent based file block allocation. This result in performance
+regression, as now we don't have "reservation" ore in-core preallocation
+to prevent interleaved fragmentation in multiple writes workload.
+
+This patch fix this by enable per inode in-core preallocation
+for non extent files when mballoc is used.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
