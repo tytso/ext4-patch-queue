@@ -13,22 +13,22 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  fs/ext4/inode.c   |   10 ++++++++--
  2 files changed, 16 insertions(+), 4 deletions(-)
 
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index dae3b60..27cfd30 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -2698,6 +2698,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+Index: linux-2.6.26-rc5/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/ext4/extents.c	2008-06-09 16:38:33.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-09 16:38:37.000000000 -0700
+@@ -2533,6 +2533,7 @@ int ext4_ext_get_blocks(handle_t *handle
  	int err = 0, depth, ret;
  	unsigned long allocated = 0;
  	struct ext4_allocation_request ar;
 +	loff_t disksize;
-
+ 
  	__clear_bit(BH_New, &bh_result->b_state);
  	ext_debug("blocks %u/%lu requested for inode %u\n",
-@@ -2885,8 +2886,13 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
- 		goto out2;
- 	}
-
+@@ -2724,8 +2725,13 @@ int ext4_ext_get_blocks(handle_t *handle
+ 	newblock = ext_pblock(&newex);
+ 	allocated = ext4_ext_get_actual_len(&newex);
+ outnew:
 -	if (extend_disksize && inode->i_size > EXT4_I(inode)->i_disksize)
 -		EXT4_I(inode)->i_disksize = inode->i_size;
 +	if (extend_disksize) {
@@ -38,22 +38,22 @@ index dae3b60..27cfd30 100644
 +		if (disksize > EXT4_I(inode)->i_disksize)
 +			EXT4_I(inode)->i_disksize = disksize;
 +	}
-
- 	/* previous routine could use block we allocated */
- 	newblock = ext_pblock(&newex);
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index a51d5f4..5265933 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -846,6 +846,7 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+ 
+ 	__set_bit(BH_New, &bh_result->b_state);
+ 
+Index: linux-2.6.26-rc5/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-09 16:38:33.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-09 16:38:37.000000000 -0700
+@@ -845,6 +845,7 @@ int ext4_get_blocks_handle(handle_t *han
  	struct ext4_inode_info *ei = EXT4_I(inode);
  	int count = 0;
  	ext4_fsblk_t first_block = 0;
 +	loff_t disksize;
-
-
+ 
+ 
  	J_ASSERT(!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL));
-@@ -921,8 +922,13 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+@@ -920,8 +921,13 @@ int ext4_get_blocks_handle(handle_t *han
  	 * protect it if you're about to implement concurrent
  	 * ext4_get_block() -bzzz
  	*/
@@ -68,7 +68,4 @@ index a51d5f4..5265933 100644
 +	}
  	if (err)
  		goto cleanup;
-
--- 
-1.5.6.rc2.15.g457bb.dirty
-
+ 

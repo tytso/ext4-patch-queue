@@ -1,0 +1,37 @@
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+ext4: Update i_disksize properly when allocating from fallocate area.
+
+When fallocated space at the end of file which is requested with
+FALLOC_FL_KEEP_SIZE, the file size is not updated at that time. Currently
+we forget to update the file size when writing to that fallocated space.
+
+These changes are for code correctness. This patch allows us to
+ update the i_disksize at the write_end() callback of filesystem properly.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/extents.c |   10 ++++------
+ 1 files changed, 4 insertions(+), 6 deletions(-)
+
+Index: linux-2.6.26-rc5/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/ext4/extents.c	2008-06-09 16:35:03.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-09 16:36:13.000000000 -0700
+@@ -2716,13 +2716,13 @@ int ext4_ext_get_blocks(handle_t *handle
+ 		goto out2;
+ 	}
+ 
+-	if (extend_disksize && inode->i_size > EXT4_I(inode)->i_disksize)
+-		EXT4_I(inode)->i_disksize = inode->i_size;
+-
+ 	/* previous routine could use block we allocated */
+ 	newblock = ext_pblock(&newex);
+ 	allocated = ext4_ext_get_actual_len(&newex);
+ outnew:
++	if (extend_disksize && inode->i_size > EXT4_I(inode)->i_disksize)
++		EXT4_I(inode)->i_disksize = inode->i_size;
++
+ 	__set_bit(BH_New, &bh_result->b_state);
+ 
+ 	/* Cache only when it is _not_ an uninitialized extent */
