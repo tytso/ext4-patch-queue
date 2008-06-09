@@ -6,17 +6,16 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Jan Kara <jack@suse.cz>
 ---
 
- fs/ext4/inode.c     |  100 +++++++++++++++++++++++++++++++++++-----------------
- fs/mpage.c          |   14 +++----
- mm/page-writeback.c |    7 +++
- 3 files changed, 81 insertions(+), 40 deletions(-)
+ fs/ext4/inode.c |  107 ++++++++++++++++++++++++++++++++++++-------------------
+ fs/mpage.c      |   12 +++---
+ 2 files changed, 76 insertions(+), 43 deletions(-)
 
 
-Index: linux-2.6.26-rc5/fs/ext4/inode.c
-===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:03:57.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:03:57.000000000 -0700
-@@ -1480,50 +1480,74 @@ static int ext4_da_get_block_write(struc
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 0f8d071..b5bc627 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1480,50 +1480,74 @@ static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
  			up_write(&EXT4_I(inode)->i_data_sem);
  
  			if (EXT4_I(inode)->i_disksize == disksize) {
@@ -116,31 +115,34 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  
  /*
   * For now just follow the DIO way to estimate the max credits
-@@ -1547,6 +1571,7 @@ static int ext4_da_writepages(struct add
+@@ -1545,8 +1569,8 @@ static int ext4_da_writepages(struct address_space *mapping,
+ 	handle_t *handle = NULL;
+ 	int needed_blocks;
  	int ret = 0;
- 	unsigned range_cyclic;
+-	unsigned range_cyclic;
  	long to_write;
-+	pgoff_t index;
++	loff_t range_start = 0;
  
  	/*
  	 * No pages to write? This is mainly a kludge to avoid starting
-@@ -1565,6 +1590,15 @@ static int ext4_da_writepages(struct add
+@@ -1563,8 +1587,14 @@ static int ext4_da_writepages(struct address_space *mapping,
+ 	needed_blocks = EXT4_MAX_WRITEBACK_CREDITS;
+ 
  	to_write = wbc->nr_to_write;
- 	range_cyclic = wbc->range_cyclic;
- 	wbc->range_cyclic = 1;
-+	index =  mapping->writeback_index;
-+	if (!range_cyclic) {
+-	range_cyclic = wbc->range_cyclic;
+-	wbc->range_cyclic = 1;
++	if (!wbc->range_cyclic) {
 +		/*
-+		 * We force cyclic write out of pages. If the
-+		 * caller didn't request for range_cyclic update
-+		 * set the writeback_index to what the caller requested.
++		 * If range_cyclic is not set force range_cont
++		 * and save the old writeback_index
 +		 */
-+		mapping->writeback_index = wbc->range_start >> PAGE_CACHE_SHIFT;
++		wbc->range_cont = 1;
++		range_start =  wbc->range_start;
 +	}
  
  	while (!ret && to_write) {
  		/* start a new transaction*/
-@@ -1579,17 +1613,24 @@ static int ext4_da_writepages(struct add
+@@ -1579,17 +1609,27 @@ static int ext4_da_writepages(struct address_space *mapping,
  		 */
  		if (wbc->nr_to_write > EXT4_MAX_WRITEBACK_PAGES)
  			wbc->nr_to_write = EXT4_MAX_WRITEBACK_PAGES;
@@ -152,7 +154,11 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  		ext4_journal_stop(handle);
 -		to_write += wbc->nr_to_write;
 +		if (wbc->nr_to_write) {
-+			/* There is no more writeout needed */
++			/*
++			 * There is no more writeout needed
++			 * or we requested for a noblocking writeout
++			 * and we found the device congested
++			 */
 +			to_write += wbc->nr_to_write;
 +			break;
 +		}
@@ -161,13 +167,13 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  
  out_writepages:
  	wbc->nr_to_write = to_write;
- 	wbc->range_cyclic = range_cyclic;
-+	if (!range_cyclic)
-+		mapping->writeback_index = index;
+-	wbc->range_cyclic = range_cyclic;
++	if (range_start)
++		wbc->range_start = range_start;
  	return ret;
  }
  
-@@ -1720,11 +1761,6 @@ static int bput_one(handle_t *handle, st
+@@ -1720,11 +1760,6 @@ static int bput_one(handle_t *handle, struct buffer_head *bh)
  	return 0;
  }
  
@@ -179,11 +185,11 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  /*
   * Note that we don't need to start a transaction unless we're journaling data
   * because we should have holes filled from ext4_page_mkwrite(). We even don't
-Index: linux-2.6.26-rc5/fs/mpage.c
-===================================================================
---- linux-2.6.26-rc5.orig/fs/mpage.c	2008-06-06 17:03:55.000000000 -0700
-+++ linux-2.6.26-rc5/fs/mpage.c	2008-06-06 17:03:57.000000000 -0700
-@@ -849,13 +849,12 @@ static void mpage_put_bnr_to_bhs(struct 
+diff --git a/fs/mpage.c b/fs/mpage.c
+index cde7f11..c4376ec 100644
+--- a/fs/mpage.c
++++ b/fs/mpage.c
+@@ -849,13 +849,11 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
  			do {
  				if (cur_logical >= logical + blocks)
  					break;
@@ -192,14 +198,13 @@ Index: linux-2.6.26-rc5/fs/mpage.c
  					bh->b_blocknr = pblock;
  					clear_buffer_delay(bh);
 -				} else if (buffer_mapped(bh)) {
-+					set_buffer_mapped(bh);
 +				} else if (buffer_mapped(bh))
  					BUG_ON(bh->b_blocknr != pblock);
 -				}
  
  				cur_logical++;
  				pblock++;
-@@ -930,10 +929,10 @@ static void mpage_da_map_blocks(struct m
+@@ -930,10 +928,10 @@ static void mpage_da_map_blocks(struct mpage_da_data *mpd)
  		if (buffer_delay(lbh))
  			mpage_put_bnr_to_bhs(mpd, next, &new);
  
@@ -214,29 +219,3 @@ Index: linux-2.6.26-rc5/fs/mpage.c
  }
  
  #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | (1 << BH_Delay))
-@@ -1052,6 +1051,7 @@ static int __mpage_da_writepage(struct p
- 		head = page_buffers(page);
- 		bh = head;
- 		do {
-+
- 			BUG_ON(buffer_locked(bh));
- 			if (buffer_dirty(bh))
- 				mpage_add_bh_to_extent(mpd, logical, bh);
-Index: linux-2.6.26-rc5/mm/page-writeback.c
-===================================================================
---- linux-2.6.26-rc5.orig/mm/page-writeback.c	2008-06-06 17:03:35.000000000 -0700
-+++ linux-2.6.26-rc5/mm/page-writeback.c	2008-06-06 17:03:57.000000000 -0700
-@@ -881,7 +881,12 @@ int write_cache_pages(struct address_spa
- 	pagevec_init(&pvec, 0);
- 	if (wbc->range_cyclic) {
- 		index = mapping->writeback_index; /* Start from prev offset */
--		end = -1;
-+		/*
-+		 * write only till the specified range_end even in cyclic mode
-+		 */
-+		end = wbc->range_end >> PAGE_CACHE_SHIFT;
-+		if (!end)
-+			end = -1;
- 	} else {
- 		index = wbc->range_start >> PAGE_CACHE_SHIFT;
- 		end = wbc->range_end >> PAGE_CACHE_SHIFT;

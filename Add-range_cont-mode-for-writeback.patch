@@ -1,0 +1,70 @@
+mm: Add range_cont mode for writeback.
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+Filesystems like ext4 needs to start a new transaction in
+the writepages for block allocation. This happens with delayed
+allocation and there is limit to how many credits we can request
+from the journal layer. So we call write_cache_pages multiple
+times with wbc->nr_to_write set to the maximum possible value
+limitted by the max journal credits available.
+
+Add a new mode to writeback that enables us to handle this
+behaviour. In the new mode we update the wbc->range_start
+to point to the new offset to be written. Next call to
+call to write_cache_pages will start writeout from  specified
+range_start offset. In the new mode we also limit writing
+to the specified wbc->range_end.
+
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+
+ include/linux/writeback.h |    1 +
+ mm/page-writeback.c       |   13 +++++++++++++
+ 2 files changed, 14 insertions(+), 0 deletions(-)
+
+
+diff --git a/include/linux/writeback.h b/include/linux/writeback.h
+index f462439..0d8573e 100644
+--- a/include/linux/writeback.h
++++ b/include/linux/writeback.h
+@@ -63,6 +63,7 @@ struct writeback_control {
+ 	unsigned for_writepages:1;	/* This is a writepages() call */
+ 	unsigned range_cyclic:1;	/* range_start is cyclic */
+ 	unsigned more_io:1;		/* more io to be dispatched */
++	unsigned range_cont:1;
+ };
+ 
+ /*
+diff --git a/mm/page-writeback.c b/mm/page-writeback.c
+index 789b6ad..7306902 100644
+--- a/mm/page-writeback.c
++++ b/mm/page-writeback.c
+@@ -882,6 +882,16 @@ int write_cache_pages(struct address_space *mapping,
+ 	if (wbc->range_cyclic) {
+ 		index = mapping->writeback_index; /* Start from prev offset */
+ 		end = -1;
++	} else if (wbc->range_cont) {
++		index = wbc->range_start >> PAGE_CACHE_SHIFT;
++		end = wbc->range_end >> PAGE_CACHE_SHIFT;
++		/*
++		 * we want to set the writeback_index when congested
++		 * and we are requesting for nonblocking mode,
++		 * because we won't force the range_cont mode then
++		 */
++		if (wbc->range_start == 0 && wbc->range_end == LLONG_MAX)
++			range_whole = 1;
+ 	} else {
+ 		index = wbc->range_start >> PAGE_CACHE_SHIFT;
+ 		end = wbc->range_end >> PAGE_CACHE_SHIFT;
+@@ -956,6 +966,9 @@ int write_cache_pages(struct address_space *mapping,
+ 	}
+ 	if (wbc->range_cyclic || (range_whole && wbc->nr_to_write > 0))
+ 		mapping->writeback_index = index;
++
++	if (wbc->range_cont)
++		wbc->range_start = index << PAGE_CACHE_SHIFT;
+ 	return ret;
+ }
+ EXPORT_SYMBOL(write_cache_pages);
