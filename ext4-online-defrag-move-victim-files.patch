@@ -20,8 +20,8 @@ Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 
 Index: linux-2.6.26-rc5/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/balloc.c	2008-06-06 17:04:03.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/balloc.c	2008-06-06 17:04:04.000000000 -0700
+--- linux-2.6.26-rc5.orig/fs/ext4/balloc.c	2008-06-06 18:02:53.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/balloc.c	2008-06-06 18:03:14.000000000 -0700
 @@ -433,7 +433,7 @@ restart:
   * If the goal block is within the reservation window, return 1;
   * otherwise, return 0;
@@ -69,8 +69,8 @@ Index: linux-2.6.26-rc5/fs/ext4/balloc.c
  	struct ext4_reserve_window_node *next_rsv;
 Index: linux-2.6.26-rc5/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/defrag.c	2008-06-06 17:04:03.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/defrag.c	2008-06-06 17:04:04.000000000 -0700
+--- linux-2.6.26-rc5.orig/fs/ext4/defrag.c	2008-06-06 18:02:53.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/defrag.c	2008-06-06 18:03:14.000000000 -0700
 @@ -218,6 +218,267 @@ out:
  }
  
@@ -840,8 +840,8 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  
 Index: linux-2.6.26-rc5/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 17:04:03.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-06 17:04:04.000000000 -0700
+--- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 18:02:53.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-06 18:03:14.000000000 -0700
 @@ -97,6 +97,11 @@ struct ext4_allocation_request {
  	unsigned long len;
  	/* flags. see above EXT4_MB_HINT_* */
@@ -919,8 +919,8 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
  
 Index: linux-2.6.26-rc5/fs/ext4/ext4_extents.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4_extents.h	2008-06-06 17:04:02.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4_extents.h	2008-06-06 17:04:04.000000000 -0700
+--- linux-2.6.26-rc5.orig/fs/ext4/ext4_extents.h	2008-06-06 18:02:53.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/ext4_extents.h	2008-06-06 18:03:14.000000000 -0700
 @@ -234,5 +234,10 @@ extern void ext4_ext_drop_refs(struct ex
  extern ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
  					struct ext4_ext_path *path,
@@ -934,11 +934,11 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4_extents.h
  
 Index: linux-2.6.26-rc5/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/extents.c	2008-06-06 17:04:02.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-06 17:04:04.000000000 -0700
-@@ -183,11 +183,17 @@ ext4_fsblk_t ext4_ext_find_goal(struct i
+--- linux-2.6.26-rc5.orig/fs/ext4/extents.c	2008-06-06 18:02:53.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-06 18:05:30.000000000 -0700
+@@ -186,11 +186,17 @@ ext4_fsblk_t ext4_ext_find_goal(struct i
  static ext4_fsblk_t
- ext4_ext_new_block(handle_t *handle, struct inode *inode,
+ ext4_ext_new_meta_block(handle_t *handle, struct inode *inode,
  			struct ext4_ext_path *path,
 -			struct ext4_extent *ex, int *err)
 +			struct ext4_extent *ex, int *err,
@@ -956,7 +956,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  	newblock = ext4_new_meta_block(handle, inode, goal, err);
  	return newblock;
  }
-@@ -668,7 +674,8 @@ static int ext4_ext_insert_index(handle_
+@@ -671,7 +677,8 @@ static int ext4_ext_insert_index(handle_
   */
  static int ext4_ext_split(handle_t *handle, struct inode *inode,
  				struct ext4_ext_path *path,
@@ -966,17 +966,16 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  {
  	struct buffer_head *bh = NULL;
  	int depth = ext_depth(inode);
-@@ -718,7 +725,8 @@ static int ext4_ext_split(handle_t *hand
- 	/* allocate all needed blocks */
+@@ -722,7 +729,7 @@ static int ext4_ext_split(handle_t *hand
  	ext_debug("allocate %d blocks for indexes/leaf\n", depth - at);
  	for (a = 0; a < depth - at; a++) {
--		newblock = ext4_ext_new_block(handle, inode, path, newext, &err);
-+		newblock = ext4_ext_new_block(handle, inode, path,
-+						newext, &err, defrag_goal);
+ 		newblock = ext4_ext_new_meta_block(handle, inode, path,
+-						   newext, &err);
++						   newext, &err, defrag_goal);
  		if (newblock == 0)
  			goto cleanup;
  		ablocks[a] = newblock;
-@@ -905,7 +913,8 @@ cleanup:
+@@ -909,7 +916,8 @@ cleanup:
   */
  static int ext4_ext_grow_indepth(handle_t *handle, struct inode *inode,
  					struct ext4_ext_path *path,
@@ -986,17 +985,17 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  {
  	struct ext4_ext_path *curp = path;
  	struct ext4_extent_header *neh;
-@@ -914,7 +923,8 @@ static int ext4_ext_grow_indepth(handle_
+@@ -918,7 +926,8 @@ static int ext4_ext_grow_indepth(handle_
  	ext4_fsblk_t newblock;
  	int err = 0;
  
--	newblock = ext4_ext_new_block(handle, inode, path, newext, &err);
-+	newblock = ext4_ext_new_block(handle, inode, path,
-+					newext, &err, defrag_goal);
+-	newblock = ext4_ext_new_meta_block(handle, inode, path, newext, &err);
++	newblock = ext4_ext_new_meta_block(handle, inode, path,
++					   newext, &err, defrag_goal);
  	if (newblock == 0)
  		return err;
  
-@@ -990,7 +1000,8 @@ out:
+@@ -994,7 +1003,8 @@ out:
   */
  static int ext4_ext_create_new_leaf(handle_t *handle, struct inode *inode,
  					struct ext4_ext_path *path,
@@ -1006,7 +1005,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  {
  	struct ext4_ext_path *curp;
  	int depth, i, err = 0;
-@@ -1010,7 +1021,8 @@ repeat:
+@@ -1014,7 +1024,8 @@ repeat:
  	if (EXT_HAS_FREE_INDEX(curp)) {
  		/* if we found index with free entry, then use that
  		 * entry: create all needed subtree and add new leaf */
@@ -1016,7 +1015,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  
  		/* refill path */
  		ext4_ext_drop_refs(path);
-@@ -1021,7 +1033,8 @@ repeat:
+@@ -1025,7 +1036,8 @@ repeat:
  			err = PTR_ERR(path);
  	} else {
  		/* tree is full, time to grow in depth */
@@ -1026,7 +1025,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  		if (err)
  			goto out;
  
-@@ -1201,7 +1214,7 @@ ext4_ext_search_right(struct inode *inod
+@@ -1205,7 +1217,7 @@ ext4_ext_search_right(struct inode *inod
   * allocated block. Thus, index entries have to be consistent
   * with leaves.
   */
@@ -1035,7 +1034,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  ext4_ext_next_allocated_block(struct ext4_ext_path *path)
  {
  	int depth;
-@@ -1467,6 +1480,19 @@ int ext4_ext_insert_extent(handle_t *han
+@@ -1471,6 +1483,19 @@ int ext4_ext_insert_extent(handle_t *han
  				struct ext4_ext_path *path,
  				struct ext4_extent *newext)
  {
@@ -1055,7 +1054,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  	struct ext4_extent_header * eh;
  	struct ext4_extent *ex, *fex;
  	struct ext4_extent *nearex; /* nearest extent */
-@@ -1474,6 +1500,7 @@ int ext4_ext_insert_extent(handle_t *han
+@@ -1478,6 +1503,7 @@ int ext4_ext_insert_extent(handle_t *han
  	int depth, len, err;
  	ext4_lblk_t next;
  	unsigned uninitialized = 0;
@@ -1063,7 +1062,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  
  	BUG_ON(ext4_ext_get_actual_len(newext) == 0);
  	depth = ext_depth(inode);
-@@ -1534,11 +1561,16 @@ repeat:
+@@ -1538,11 +1564,16 @@ repeat:
  			  le16_to_cpu(eh->eh_entries), le16_to_cpu(eh->eh_max));
  	}
  
@@ -1083,8 +1082,8 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  	depth = ext_depth(inode);
 Index: linux-2.6.26-rc5/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ioctl.c	2008-06-06 17:04:03.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ioctl.c	2008-06-06 17:04:04.000000000 -0700
+--- linux-2.6.26-rc5.orig/fs/ext4/ioctl.c	2008-06-06 18:02:53.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/ioctl.c	2008-06-06 18:03:14.000000000 -0700
 @@ -245,7 +245,10 @@ setversion_out:
  	case EXT4_IOC_DEFRAG:
  	case EXT4_IOC_GROUP_INFO:
@@ -1099,8 +1098,8 @@ Index: linux-2.6.26-rc5/fs/ext4/ioctl.c
  	case EXT4_IOC_GROUP_ADD: {
 Index: linux-2.6.26-rc5/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/mballoc.c	2008-06-06 17:03:58.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/mballoc.c	2008-06-06 17:04:04.000000000 -0700
+--- linux-2.6.26-rc5.orig/fs/ext4/mballoc.c	2008-06-06 18:02:53.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/mballoc.c	2008-06-06 18:03:14.000000000 -0700
 @@ -1766,6 +1766,10 @@ repeat:
  			if (group == EXT4_SB(sb)->s_groups_count)
  				group = 0;
@@ -1122,8 +1121,8 @@ Index: linux-2.6.26-rc5/fs/ext4/mballoc.c
  	 * locality group. this is a policy, actually */
 Index: linux-2.6.26-rc5/fs/ext4/mballoc.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/mballoc.h	2008-06-06 17:03:33.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/mballoc.h	2008-06-06 17:04:04.000000000 -0700
+--- linux-2.6.26-rc5.orig/fs/ext4/mballoc.h	2008-06-06 17:05:59.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/mballoc.h	2008-06-06 18:03:14.000000000 -0700
 @@ -205,6 +205,7 @@ struct ext4_allocation_context {
  	struct page *ac_buddy_page;
  	struct ext4_prealloc_space *ac_pa;
