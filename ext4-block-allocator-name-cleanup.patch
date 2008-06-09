@@ -9,16 +9,18 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
 
- fs/ext4/balloc.c  |   74 +++++++++++++++++++++--------------------------------
- fs/ext4/ext4.h    |    2 +
- fs/ext4/mballoc.c |    2 +
- 3 files changed, 31 insertions(+), 47 deletions(-)
+ fs/ext4/balloc.c  |  127 +++++++++++++++++++++++++++++++-----------------------
+ fs/ext4/ext4.h    |    2 
+ fs/ext4/extents.c |   10 ++--
+ fs/ext4/inode.c   |    2 
+ fs/ext4/mballoc.c |    2 
+ 5 files changed, 84 insertions(+), 59 deletions(-)
 
 
 Index: linux-2.6.26-rc5/fs/ext4/balloc.c
 ===================================================================
 --- linux-2.6.26-rc5.orig/fs/ext4/balloc.c	2008-06-06 17:06:03.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/balloc.c	2008-06-06 17:59:05.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/balloc.c	2008-06-09 16:22:03.000000000 -0700
 @@ -1645,20 +1645,24 @@ int ext4_should_retry_alloc(struct super
  }
  
@@ -196,7 +198,7 @@ Index: linux-2.6.26-rc5/fs/ext4/balloc.c
 Index: linux-2.6.26-rc5/fs/ext4/ext4.h
 ===================================================================
 --- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 17:06:03.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-06 17:49:58.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-09 16:22:03.000000000 -0700
 @@ -977,7 +977,7 @@ extern ext4_fsblk_t ext4_new_meta_blocks
  extern ext4_fsblk_t ext4_new_blocks(handle_t *handle, struct inode *inode,
  					ext4_lblk_t iblock, ext4_fsblk_t goal,
@@ -209,7 +211,7 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
 Index: linux-2.6.26-rc5/fs/ext4/extents.c
 ===================================================================
 --- linux-2.6.26-rc5.orig/fs/ext4/extents.c	2008-06-06 17:39:45.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-06 17:54:03.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-09 16:22:03.000000000 -0700
 @@ -180,8 +180,11 @@ static ext4_fsblk_t ext4_ext_find_goal(s
  	return bg_start + colour + block;
  }
@@ -245,7 +247,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
 Index: linux-2.6.26-rc5/fs/ext4/inode.c
 ===================================================================
 --- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:56:09.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:56:41.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-09 16:22:03.000000000 -0700
 @@ -561,7 +561,7 @@ static int ext4_alloc_blocks(handle_t *h
  		goto allocated;
  	/* Now allocate data blocks */
@@ -255,3 +257,16 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  	current_block = ext4_new_blocks(handle, inode, iblock,
  						goal, &count, err);
  	if (*err && (target == blks)) {
+Index: linux-2.6.26-rc5/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/ext4/mballoc.c	2008-06-06 17:06:03.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/mballoc.c	2008-06-09 16:22:03.000000000 -0700
+@@ -4035,7 +4035,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t
+ 	sbi = EXT4_SB(sb);
+ 
+ 	if (!test_opt(sb, MBALLOC)) {
+-		block = ext4_new_blocks_old(handle, ar->inode, ar->goal,
++		block = ext4_old_new_blocks(handle, ar->inode, ar->goal,
+ 					    &(ar->len), errp);
+ 		return block;
+ 	}

@@ -1,0 +1,74 @@
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+ext4: Update i_disksize correctly in ext4_get_block
+
+With delayed allocation we delay the allocation of blocks
+and request for blocks in multiple chunks. We should not
+update i_disksize to inode.i_size unless we are allocating
+blocks corresponding to the end of file.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/extents.c |   10 ++++++++--
+ fs/ext4/inode.c   |   10 ++++++++--
+ 2 files changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index dae3b60..27cfd30 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2698,6 +2698,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 	int err = 0, depth, ret;
+ 	unsigned long allocated = 0;
+ 	struct ext4_allocation_request ar;
++	loff_t disksize;
+
+ 	__clear_bit(BH_New, &bh_result->b_state);
+ 	ext_debug("blocks %u/%lu requested for inode %u\n",
+@@ -2885,8 +2886,13 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 		goto out2;
+ 	}
+
+-	if (extend_disksize && inode->i_size > EXT4_I(inode)->i_disksize)
+-		EXT4_I(inode)->i_disksize = inode->i_size;
++	if (extend_disksize) {
++		disksize = ((loff_t) iblock + ar.len) << inode->i_blkbits;
++		if (disksize > i_size_read(inode))
++			disksize = i_size_read(inode);
++		if (disksize > EXT4_I(inode)->i_disksize)
++			EXT4_I(inode)->i_disksize = disksize;
++	}
+
+ 	/* previous routine could use block we allocated */
+ 	newblock = ext_pblock(&newex);
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index a51d5f4..5265933 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -846,6 +846,7 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+ 	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	int count = 0;
+ 	ext4_fsblk_t first_block = 0;
++	loff_t disksize;
+
+
+ 	J_ASSERT(!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL));
+@@ -921,8 +922,13 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+ 	 * protect it if you're about to implement concurrent
+ 	 * ext4_get_block() -bzzz
+ 	*/
+-	if (!err && extend_disksize && inode->i_size > ei->i_disksize)
+-		ei->i_disksize = inode->i_size;
++	if (!err && extend_disksize) {
++		disksize = ((loff_t) iblock + count) << inode->i_blkbits;
++		if (disksize > i_size_read(inode))
++			disksize = i_size_read(inode);
++		if (disksize > ei->i_disksize)
++			ei->i_disksize = disksize;
++	}
+ 	if (err)
+ 		goto cleanup;
+
+-- 
+1.5.6.rc2.15.g457bb.dirty
+
