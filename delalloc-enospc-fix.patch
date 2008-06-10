@@ -1,0 +1,187 @@
+ext4: delalloc  block reservation fix
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+a) We need to decrement the meta data blocks that got allocated
+from percpu s_freeblocks_counter
+
+b) We need to protect the reservation block counter so that
+reserve and release space doesn't race each other.
+
+c) don't check for free space in ext4_mb_new_blocks with delalloc
+We already reserved the space.
+
+e) Don't release space for block allocation from fallocate space.
+We don't  reserve space for them
+
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+
+ fs/ext4/balloc.c  |    8 ++++++++
+ fs/ext4/ext4_i.h  |    2 ++
+ fs/ext4/inode.c   |   40 ++++++++++++++++++++++++++--------------
+ fs/ext4/mballoc.c |    7 ++++++-
+ fs/ext4/super.c   |    2 ++
+ 5 files changed, 44 insertions(+), 15 deletions(-)
+
+
+Index: linux-2.6.26-rc5/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/ext4/balloc.c	2008-06-10 10:29:18.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/balloc.c	2008-06-10 10:30:00.000000000 -0700
+@@ -1977,6 +1977,14 @@ static ext4_fsblk_t do_blk_alloc(handle_
+ 
+ 	ret = ext4_mb_new_blocks(handle, &ar, errp);
+ 	*count = ar.len;
++	/*
++	 * Account for the allocated meta blocks
++	 */
++	if (!(*errp) && (flags & EXT4_META_BLOCK)) {
++		spin_lock(&EXT4_I(inode)->i_block_reservation_lock);
++		EXT4_I(inode)->i_allocated_meta_blocks += ar.len;
++		spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
++	}
+ 	return ret;
+ }
+ 
+Index: linux-2.6.26-rc5/fs/ext4/ext4_i.h
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/ext4/ext4_i.h	2008-06-09 16:38:44.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/ext4_i.h	2008-06-10 10:30:00.000000000 -0700
+@@ -167,7 +167,9 @@ struct ext4_inode_info {
+ 	/* allocation reservation info for delalloc */
+ 	unsigned long i_reserved_data_blocks;
+ 	unsigned long i_reserved_meta_blocks;
++	unsigned long i_allocated_meta_blocks;
+ 	unsigned short i_delalloc_reserved_flag;
++	spinlock_t i_block_reservation_lock;
+ };
+ 
+ #endif	/* _EXT4_I */
+Index: linux-2.6.26-rc5/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-10 10:29:18.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-10 10:30:00.000000000 -0700
+@@ -1432,11 +1432,12 @@ static int ext4_da_reserve_space(struct 
+        struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+        unsigned long md_needed, mdblocks, total = 0;
+ 
+-       /*
+-        * calculate the amount of metadata blocks to reserve
+-	* in order to allocate nrblocks
+-	* worse case is one extent per block
+-	*/
++	/*
++	 * recalculate the amount of metadata blocks to reserve
++	 * in order to allocate nrblocks
++	 * worse case is one extent per block
++	 */
++	spin_lock(&EXT4_I(inode)->i_block_reservation_lock);
+ 	total = EXT4_I(inode)->i_reserved_data_blocks + nrblocks;
+ 	mdblocks = ext4_ext_calc_metadata_amount(inode, total);
+ 	BUG_ON(mdblocks < EXT4_I(inode)->i_reserved_meta_blocks);
+@@ -1444,42 +1445,51 @@ static int ext4_da_reserve_space(struct 
+ 	md_needed = mdblocks - EXT4_I(inode)->i_reserved_meta_blocks;
+ 	total = md_needed + nrblocks;
+ 
+-	if (ext4_has_free_blocks(sbi, total) < total)
++	if (ext4_has_free_blocks(sbi, total) < total) {
++		spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
+ 		return -ENOSPC;
++	}
+ 
+ 	/* reduce fs free blocks counter */
+ 	percpu_counter_sub(&sbi->s_freeblocks_counter, total);
+ 
+ 	EXT4_I(inode)->i_reserved_data_blocks += nrblocks;
+-	EXT4_I(inode)->i_reserved_meta_blocks += md_needed;
++	EXT4_I(inode)->i_reserved_meta_blocks = mdblocks;
+ 
++	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
+ 	return 0;       /* success */
+ }
+ 
+ void ext4_da_release_space(struct inode *inode, int used, int to_free)
+ {
+ 	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+-	int total, mdb, release;
++	int total, mdb, mdb_free, release;
+ 
+-	/* calculate the number of metablocks still need to be reserved */
++	spin_lock(&EXT4_I(inode)->i_block_reservation_lock);
++	/* recalculate the number of metablocks still need to be reserved */
+ 	total = EXT4_I(inode)->i_reserved_data_blocks - used - to_free;
+ 	mdb = ext4_ext_calc_metadata_amount(inode, total);
+ 
+ 	/* figure out how many metablocks to release */
+ 	BUG_ON(mdb > EXT4_I(inode)->i_reserved_meta_blocks);
+-	mdb = EXT4_I(inode)->i_reserved_meta_blocks - mdb;
++	mdb_free = EXT4_I(inode)->i_reserved_meta_blocks - mdb;
+ 
+-	release = to_free + mdb;
++	/* Account for allocated meta_blocks */
++	mdb_free -= EXT4_I(inode)->i_allocated_meta_blocks;
++
++	release = to_free + mdb_free;
+ 
+ 	/* update fs free blocks counter for truncate case */
+ 	percpu_counter_add(&sbi->s_freeblocks_counter, release);
+ 
+ 	/* update per-inode reservations */
+ 	BUG_ON(used + to_free > EXT4_I(inode)->i_reserved_data_blocks);
+-	EXT4_I(inode)->i_reserved_data_blocks -= used + to_free;
++	EXT4_I(inode)->i_reserved_data_blocks -= (used + to_free);
+ 
+ 	BUG_ON(mdb > EXT4_I(inode)->i_reserved_meta_blocks);
+-	EXT4_I(inode)->i_reserved_meta_blocks -= mdb;
++	EXT4_I(inode)->i_reserved_meta_blocks = mdb;
++	EXT4_I(inode)->i_allocated_meta_blocks = 0;
++	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
+ }
+ 
+ static void ext4_da_page_release_reservation(struct page *page,
+@@ -1561,7 +1571,9 @@ static int ext4_da_get_block_write(struc
+ 		bh_result->b_size = (ret << inode->i_blkbits);
+ 
+ 		/* release reserved-but-unused meta blocks */
+-		ext4_da_release_space(inode, ret, 0);
++		if (buffer_delay(bh_result)) {
++			ext4_da_release_space(inode, ret, 0);
++		}
+ 
+ 		/*
+ 		 * Update on-disk size along with block allocation
+Index: linux-2.6.26-rc5/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/ext4/mballoc.c	2008-06-10 10:29:18.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/mballoc.c	2008-06-10 10:30:00.000000000 -0700
+@@ -4049,7 +4049,12 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t
+ 					    &(ar->len), errp);
+ 		return block;
+ 	}
+-	ar->len = ext4_has_free_blocks(sbi, ar->len);
++	if (!EXT4_I(ar->inode)->i_delalloc_reserved_flag) {
++		/*
++		 * With delalloc we already reserved the blocks
++		 */
++		ar->len = ext4_has_free_blocks(sbi, ar->len);
++	}
+ 
+ 	if (ar->len == 0) {
+ 		*errp = -ENOSPC;
+Index: linux-2.6.26-rc5/fs/ext4/super.c
+===================================================================
+--- linux-2.6.26-rc5.orig/fs/ext4/super.c	2008-06-10 10:29:19.000000000 -0700
++++ linux-2.6.26-rc5/fs/ext4/super.c	2008-06-10 10:30:00.000000000 -0700
+@@ -575,7 +575,9 @@ static struct inode *ext4_alloc_inode(st
+ 	spin_lock_init(&ei->i_prealloc_lock);
+ 	ei->i_reserved_data_blocks = 0;
+ 	ei->i_reserved_meta_blocks = 0;
++	ei->i_allocated_meta_blocks = 0;
+ 	ei->i_delalloc_reserved_flag = 0;
++	spin_lock_init(&(ei->i_block_reservation_lock));
+ 	return &ei->vfs_inode;
+ }
+ 
