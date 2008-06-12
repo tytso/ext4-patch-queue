@@ -18,17 +18,20 @@ to the specified wbc->range_end.
 
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Acked-by: Jan Kara <jack@suse.cz>
+
 ---
 
  include/linux/writeback.h |    1 +
- mm/page-writeback.c       |   13 +++++++++++++
- 2 files changed, 14 insertions(+), 0 deletions(-)
+ mm/page-writeback.c       |    3 +++
+ 2 files changed, 4 insertions(+)
 
 
-diff --git a/include/linux/writeback.h b/include/linux/writeback.h
-index f462439..0d8573e 100644
---- a/include/linux/writeback.h
-+++ b/include/linux/writeback.h
+Index: linux-2.6.26-rc5-git6/include/linux/writeback.h
+===================================================================
+--- linux-2.6.26-rc5-git6.orig/include/linux/writeback.h	2008-06-12 15:54:45.000000000 -0700
++++ linux-2.6.26-rc5-git6/include/linux/writeback.h	2008-06-12 15:55:03.000000000 -0700
 @@ -63,6 +63,7 @@ struct writeback_control {
  	unsigned for_writepages:1;	/* This is a writepages() call */
  	unsigned range_cyclic:1;	/* range_start is cyclic */
@@ -37,28 +40,11 @@ index f462439..0d8573e 100644
  };
  
  /*
-diff --git a/mm/page-writeback.c b/mm/page-writeback.c
-index 789b6ad..7306902 100644
---- a/mm/page-writeback.c
-+++ b/mm/page-writeback.c
-@@ -882,6 +882,16 @@ int write_cache_pages(struct address_space *mapping,
- 	if (wbc->range_cyclic) {
- 		index = mapping->writeback_index; /* Start from prev offset */
- 		end = -1;
-+	} else if (wbc->range_cont) {
-+		index = wbc->range_start >> PAGE_CACHE_SHIFT;
-+		end = wbc->range_end >> PAGE_CACHE_SHIFT;
-+		/*
-+		 * we want to set the writeback_index when congested
-+		 * and we are requesting for nonblocking mode,
-+		 * because we won't force the range_cont mode then
-+		 */
-+		if (wbc->range_start == 0 && wbc->range_end == LLONG_MAX)
-+			range_whole = 1;
- 	} else {
- 		index = wbc->range_start >> PAGE_CACHE_SHIFT;
- 		end = wbc->range_end >> PAGE_CACHE_SHIFT;
-@@ -956,6 +966,9 @@ int write_cache_pages(struct address_space *mapping,
+Index: linux-2.6.26-rc5-git6/mm/page-writeback.c
+===================================================================
+--- linux-2.6.26-rc5-git6.orig/mm/page-writeback.c	2008-06-12 15:54:45.000000000 -0700
++++ linux-2.6.26-rc5-git6/mm/page-writeback.c	2008-06-12 15:55:03.000000000 -0700
+@@ -956,6 +956,9 @@ retry:
  	}
  	if (wbc->range_cyclic || (range_whole && wbc->nr_to_write > 0))
  		mapping->writeback_index = index;
