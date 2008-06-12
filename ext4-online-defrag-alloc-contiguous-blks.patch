@@ -14,10 +14,10 @@ Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
  fs/ext4/extents.c      |    6 -
  4 files changed, 289 insertions(+), 5 deletions(-)
 
-Index: linux-2.6.26-rc5/fs/ext4/defrag.c
+Index: linux-2.6.26-rc5-git6/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/defrag.c	2008-06-06 17:04:01.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/defrag.c	2008-06-06 17:04:02.000000000 -0700
+--- linux-2.6.26-rc5-git6.orig/fs/ext4/defrag.c	2008-06-12 15:42:34.000000000 -0700
++++ linux-2.6.26-rc5-git6/fs/ext4/defrag.c	2008-06-12 15:42:58.000000000 -0700
 @@ -34,7 +34,60 @@ static int
  ext4_defrag_next_extent(struct inode *inode, struct ext4_ext_path *path,
  			struct ext4_extent **extent)
@@ -80,7 +80,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  }
  
  int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
-@@ -81,6 +134,86 @@ int ext4_defrag_ioctl(struct inode *inod
+@@ -81,6 +134,84 @@ int ext4_defrag_ioctl(struct inode *inod
  }
  
  /**
@@ -137,12 +137,10 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
 +	int err, i, credits = 0;
 +
 +	credits = ext4_ext_calc_credits_for_insert(dest_inode, dest_path);
-+	handle = ext4_ext_journal_restart(handle,
++	err = ext4_ext_journal_restart(handle,
 +				credits + EXT4_TRANS_META_BLOCKS);
-+	if (IS_ERR(handle)) {
-+		err = PTR_ERR(handle);
++	if (err)
 +		return err;
-+	}
 +
 +	*newblock = ext4_mb_new_blocks(handle, ar, &err);
 +	if (err)
@@ -167,7 +165,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
   * ext4_defrag_partial - Defrag a file per page
   *
   * @tmp_inode:		temporary inode
-@@ -99,6 +232,70 @@ ext4_defrag_partial(struct inode *tmp_in
+@@ -99,6 +230,70 @@ ext4_defrag_partial(struct inode *tmp_in
  }
  
  /**
@@ -238,7 +236,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
   * ext4_defrag_new_extent_tree - Get contiguous blocks and build an extent tree
   *
   * @org_inode:		original inode
-@@ -119,7 +316,87 @@ ext4_defrag_new_extent_tree(struct inode
+@@ -119,7 +314,87 @@ ext4_defrag_new_extent_tree(struct inode
  			struct ext4_ext_path *org_path, ext4_lblk_t tar_start,
  			ext4_lblk_t tar_blocks, ext4_lblk_t iblock)
  {
@@ -327,10 +325,10 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  }
  
  /**
-Index: linux-2.6.26-rc5/fs/ext4/ext4.h
+Index: linux-2.6.26-rc5-git6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 17:04:01.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-06 17:04:02.000000000 -0700
+--- linux-2.6.26-rc5-git6.orig/fs/ext4/ext4.h	2008-06-12 15:42:34.000000000 -0700
++++ linux-2.6.26-rc5-git6/fs/ext4/ext4.h	2008-06-12 15:42:58.000000000 -0700
 @@ -331,6 +331,7 @@ struct ext4_ext_defrag_data {
  	ext4_fsblk_t goal;		/* block offset for allocation */
  };
@@ -344,7 +342,7 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
 +/* extents.c */
-+extern handle_t *ext4_ext_journal_restart(handle_t *handle, int needed);
++extern int ext4_ext_journal_restart(handle_t *handle, int needed);
  /* defrag.c */
  extern int ext4_defrag(struct file *filp, ext4_lblk_t block_start,
  			ext4_lblk_t defrag_size);
@@ -356,10 +354,10 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
  #endif	/* __KERNEL__ */
  
  #endif	/* _EXT4_H */
-Index: linux-2.6.26-rc5/fs/ext4/ext4_extents.h
+Index: linux-2.6.26-rc5-git6/fs/ext4/ext4_extents.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4_extents.h	2008-06-06 17:04:01.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4_extents.h	2008-06-06 17:04:02.000000000 -0700
+--- linux-2.6.26-rc5-git6.orig/fs/ext4/ext4_extents.h	2008-06-12 15:42:34.000000000 -0700
++++ linux-2.6.26-rc5-git6/fs/ext4/ext4_extents.h	2008-06-12 15:42:58.000000000 -0700
 @@ -231,5 +231,8 @@ extern int ext4_ext_search_right(struct 
  extern void ext4_ext_drop_refs(struct ext4_ext_path *);
  extern ext4_fsblk_t ext_pblock(struct ext4_extent *ex);
@@ -369,20 +367,20 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4_extents.h
 +					ext4_lblk_t block);
  #endif /* _EXT4_EXTENTS */
  
-Index: linux-2.6.26-rc5/fs/ext4/extents.c
+Index: linux-2.6.26-rc5-git6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/extents.c	2008-06-06 17:04:01.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-06 17:04:02.000000000 -0700
+--- linux-2.6.26-rc5-git6.orig/fs/ext4/extents.c	2008-06-12 15:42:34.000000000 -0700
++++ linux-2.6.26-rc5-git6/fs/ext4/extents.c	2008-06-12 15:43:56.000000000 -0700
 @@ -92,7 +92,7 @@ static void ext4_idx_store_pblock(struct
  	ix->ei_leaf_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1) & 0xffff);
  }
  
--static handle_t *ext4_ext_journal_restart(handle_t *handle, int needed)
-+handle_t *ext4_ext_journal_restart(handle_t *handle, int needed)
+-static int ext4_ext_journal_restart(handle_t *handle, int needed)
++int ext4_ext_journal_restart(handle_t *handle, int needed)
  {
  	int err;
  
-@@ -142,7 +142,7 @@ static int ext4_ext_dirty(handle_t *hand
+@@ -141,7 +141,7 @@ static int ext4_ext_dirty(handle_t *hand
  	return err;
  }
  
@@ -391,7 +389,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  			      struct ext4_ext_path *path,
  			      ext4_lblk_t block)
  {
-@@ -1986,7 +1986,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
+@@ -1989,7 +1989,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
  	return 1;
  }
  
