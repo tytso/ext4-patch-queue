@@ -1,0 +1,39 @@
+From: Li Zefan <lizf@cn.fujitsu.com>
+ext4: kill 2 useless magic numbers
+
+dx_root_limit() will never return 20, and I can't figure out
+what 20 stands for. This function has never changed since htree
+directory indexing was merged.
+
+Similar for dx_node_limit() and the magic 22.
+
+This was for testing htree split code more aggressively, but can be
+removed.
+
+Acked-by: Andreas Dilger <adilger@sun.com>
+Signed-off-by: Li Zefan <lizf@cn.fujitsu.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/namei.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+Index: linux-2.6.26-rc5-git6/fs/ext4/namei.c
+===================================================================
+--- linux-2.6.26-rc5-git6.orig/fs/ext4/namei.c	2008-06-04 20:10:44.000000000 -0700
++++ linux-2.6.26-rc5-git6/fs/ext4/namei.c	2008-06-12 16:00:42.000000000 -0700
+@@ -231,13 +231,13 @@ static inline unsigned dx_root_limit (st
+ {
+ 	unsigned entry_space = dir->i_sb->s_blocksize - EXT4_DIR_REC_LEN(1) -
+ 		EXT4_DIR_REC_LEN(2) - infosize;
+-	return 0? 20: entry_space / sizeof(struct dx_entry);
++	return entry_space / sizeof(struct dx_entry);
+ }
+ 
+ static inline unsigned dx_node_limit (struct inode *dir)
+ {
+ 	unsigned entry_space = dir->i_sb->s_blocksize - EXT4_DIR_REC_LEN(0);
+-	return 0? 22: entry_space / sizeof(struct dx_entry);
++	return entry_space / sizeof(struct dx_entry);
+ }
+ 
+ /*
