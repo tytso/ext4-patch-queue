@@ -15,16 +15,16 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
 
- fs/ext4/ext4.h  |    1 
- fs/ext4/file.c  |   19 +++++++++++++-
- fs/ext4/inode.c |   76 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 95 insertions(+), 1 deletion(-)
+ fs/ext4/ext4.h  |    1 +
+ fs/ext4/file.c  |   19 ++++++++++++++++-
+ fs/ext4/inode.c |   61 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 80 insertions(+), 1 deletions(-)
 
 
-Index: linux-2.6.26-rc5/fs/ext4/ext4.h
+Index: linux-2.6.26-rc6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 17:03:50.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-06 17:03:50.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-16 14:08:59.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-16 14:09:00.000000000 -0700
 @@ -1063,6 +1063,7 @@ extern void ext4_set_aops(struct inode *
  extern int ext4_writepage_trans_blocks(struct inode *);
  extern int ext4_block_truncate_page(handle_t *handle, struct page *page,
@@ -33,10 +33,10 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
  
  /* ioctl.c */
  extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
-Index: linux-2.6.26-rc5/fs/ext4/file.c
+Index: linux-2.6.26-rc6/fs/ext4/file.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/file.c	2008-06-06 17:03:37.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/file.c	2008-06-06 17:03:50.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/file.c	2008-06-16 14:03:43.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/file.c	2008-06-16 14:09:00.000000000 -0700
 @@ -123,6 +123,23 @@ force_commit:
  	return ret;
  }
@@ -70,26 +70,14 @@ Index: linux-2.6.26-rc5/fs/ext4/file.c
  	.open		= generic_file_open,
  	.release	= ext4_release_file,
  	.fsync		= ext4_sync_file,
-Index: linux-2.6.26-rc5/fs/ext4/inode.c
+Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:03:49.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:03:50.000000000 -0700
-@@ -3542,3 +3542,79 @@ int ext4_change_inode_journal_flag(struc
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 14:08:56.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 14:09:00.000000000 -0700
+@@ -3542,3 +3542,64 @@ int ext4_change_inode_journal_flag(struc
  
  	return err;
  }
-+
-+static int ext4_bh_prepare_fill(handle_t *handle, struct buffer_head *bh)
-+{
-+	if (!buffer_mapped(bh)) {
-+		/*
-+		 * Mark buffer as dirty so that
-+		 * block_write_full_page() writes it
-+		 */
-+		set_buffer_dirty(bh);
-+	}
-+	return 0;
-+}
 +
 +static int ext4_bh_unmapped(handle_t *handle, struct buffer_head *bh)
 +{
@@ -104,8 +92,6 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
 +	struct file *file = vma->vm_file;
 +	struct inode *inode = file->f_path.dentry->d_inode;
 +	struct address_space *mapping = inode->i_mapping;
-+	struct writeback_control wbc = { .sync_mode = WB_SYNC_NONE,
-+					 .nr_to_write = 1 };
 +
 +	/*
 +	 * Get i_alloc_sem to stop truncates messing with the inode. We cannot
@@ -132,24 +118,23 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
 +		if (!walk_page_buffers(NULL, page_buffers(page), 0, len, NULL,
 +				       ext4_bh_unmapped))
 +			goto out_unlock;
-+		/*
-+		 * Now mark all the  buffer head dirty so
-+		 * that writepage can write it
-+		 */
-+		walk_page_buffers(NULL, page_buffers(page), 0, len,
-+					NULL, ext4_bh_prepare_fill);
 +	}
 +	/*
-+	 * OK, we need to fill the hole... Lock the page and do writepage.
-+	 * We can't do write_begin and write_end here because we don't
-+	 * have inode_mutex and that allow parallel write_begin, write_end call.
-+	 * (lock_page prevent this from happening on the same page though)
++	 * OK, we need to fill the hole... Do write_begin write_end
++	 * to do block allocation/reservation.We are not holding
++	 * inode.i__mutex here. That allow * parallel write_begin,
++	 * write_end call. lock_page prevent this from happening
++	 * on the same page though
 +	 */
-+	lock_page(page);
-+	wbc.range_start = page_offset(page);
-+	wbc.range_end = page_offset(page) + len;
-+	ret = mapping->a_ops->writepage(page, &wbc);
-+	/* writepage unlocks the page */
++	ret = mapping->a_ops->write_begin(file, mapping, page_offset(page),
++			len, AOP_FLAG_UNINTERRUPTIBLE, &page, NULL);
++	if (ret < 0)
++		goto out_unlock;
++	ret = mapping->a_ops->write_end(file, mapping, page_offset(page),
++			len, len, page, NULL);
++	if (ret < 0)
++		goto out_unlock;
++	ret = 0;
 +out_unlock:
 +	up_read(&inode->i_alloc_sem);
 +	return ret;
