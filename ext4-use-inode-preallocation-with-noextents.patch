@@ -1,6 +1,6 @@
 ext4: Use inode preallocation with -o noextents
 
-From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 When mballoc is enabled, block allocation for old block-based
 files are allocated using mballoc allocator instead of old
@@ -18,17 +18,19 @@ for non extent files when mballoc is used.
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
+
  fs/ext4/balloc.c  |   36 +++++++++++++++++++++++++--
- fs/ext4/ext4.h    |    7 +++--
- fs/ext4/extents.c |    2 -
- fs/ext4/inode.c   |   72 ++++++++++++++++++++++++++++++++++++++++--------------
- fs/ext4/xattr.c   |    2 -
+ fs/ext4/ext4.h    |    7 ++++-
+ fs/ext4/extents.c |    2 +
+ fs/ext4/inode.c   |   72 ++++++++++++++++++++++++++++++++++++++++-------------
+ fs/ext4/xattr.c   |    2 +
  5 files changed, 95 insertions(+), 24 deletions(-)
 
-Index: linux-2.6.26-rc5/fs/ext4/balloc.c
+
+Index: linux-2.6.26-rc6/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/balloc.c	2008-06-06 17:03:47.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/balloc.c	2008-06-06 17:03:49.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/balloc.c	2008-06-16 14:06:42.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/balloc.c	2008-06-16 14:07:20.000000000 -0700
 @@ -1928,7 +1928,7 @@ out:
  	return 0;
  }
@@ -91,10 +93,10 @@ Index: linux-2.6.26-rc5/fs/ext4/balloc.c
  	ret = ext4_mb_new_blocks(handle, &ar, errp);
  	*count = ar.len;
  	return ret;
-Index: linux-2.6.26-rc5/fs/ext4/ext4.h
+Index: linux-2.6.26-rc6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 17:03:47.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-06 17:03:49.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-16 14:06:42.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-16 14:07:20.000000000 -0700
 @@ -970,10 +970,13 @@ extern ext4_grpblk_t ext4_block_group_of
  extern int ext4_bg_has_super(struct super_block *sb, ext4_group_t group);
  extern unsigned long ext4_bg_num_gdb(struct super_block *sb,
@@ -111,11 +113,11 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
  extern ext4_fsblk_t ext4_new_blocks_old(handle_t *handle, struct inode *inode,
  			ext4_fsblk_t goal, unsigned long *count, int *errp);
  extern void ext4_free_blocks (handle_t *handle, struct inode *inode,
-Index: linux-2.6.26-rc5/fs/ext4/extents.c
+Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/extents.c	2008-06-06 17:03:49.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-06 17:03:49.000000000 -0700
-@@ -188,7 +188,7 @@ ext4_ext_new_block(handle_t *handle, str
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-16 14:06:42.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-16 14:07:20.000000000 -0700
+@@ -187,7 +187,7 @@ ext4_ext_new_block(handle_t *handle, str
  	ext4_fsblk_t goal, newblock;
  
  	goal = ext4_ext_find_goal(inode, path, le32_to_cpu(ex->ee_block));
@@ -124,10 +126,10 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  	return newblock;
  }
  
-Index: linux-2.6.26-rc5/fs/ext4/inode.c
+Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:03:37.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:03:49.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 14:06:42.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 14:07:20.000000000 -0700
 @@ -508,11 +508,12 @@ static int ext4_blks_to_allocate(Indirec
   *		direct blocks
   */
@@ -140,7 +142,7 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  {
  	int target, i;
 -	unsigned long count = 0;
-+	long count = 0, blk_allocated = 0;
++	unsigned long count = 0, blk_allocated = 0;
  	int index = 0;
  	ext4_fsblk_t current_block = 0;
  	int ret = 0;
@@ -250,10 +252,10 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  
  	/*
  	 * The ext4_splice_branch call will free and forget any buffers
-Index: linux-2.6.26-rc5/fs/ext4/xattr.c
+Index: linux-2.6.26-rc6/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/xattr.c	2008-06-06 17:03:37.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/xattr.c	2008-06-06 17:03:49.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/xattr.c	2008-06-16 14:06:42.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/xattr.c	2008-06-16 14:07:20.000000000 -0700
 @@ -810,7 +810,7 @@ inserted:
  			/* We need to allocate a new block */
  			ext4_fsblk_t goal = ext4_group_first_block_no(sb,
