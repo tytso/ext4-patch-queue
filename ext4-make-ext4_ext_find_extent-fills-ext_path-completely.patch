@@ -1,4 +1,4 @@
-ext4: Make ext4_ext_find_extent fills ext_path	completely
+ext4: Make ext4_ext_find_extent fills ext_path  completely
 
 From: Shen Feng <shen@cn.fujitsu.com>
 
@@ -9,13 +9,13 @@ This patch also removes some unnecessary code.
 Signed-off-by: Shen Feng <shen@cn.fujitsu.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
- fs/ext4/extents.c |    4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
+ fs/ext4/extents.c |    5 ++++-
+ 1 files changed, 4 insertions(+), 1 deletions(-)
 
-Index: linux-2.6.26-rc5-git6/fs/ext4/extents.c
+Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc5-git6.orig/fs/ext4/extents.c	2008-06-12 15:15:59.000000000 -0700
-+++ linux-2.6.26-rc5-git6/fs/ext4/extents.c	2008-06-12 15:22:15.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-16 13:46:06.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-16 13:46:14.000000000 -0700
 @@ -524,6 +524,7 @@ ext4_ext_find_extent(struct inode *inode
  		alloc = 1;
  	}
@@ -24,17 +24,19 @@ Index: linux-2.6.26-rc5-git6/fs/ext4/extents.c
  
  	i = depth;
  	/* walk through the tree */
-@@ -552,12 +553,11 @@ ext4_ext_find_extent(struct inode *inode
+@@ -552,12 +553,14 @@ ext4_ext_find_extent(struct inode *inode
  	}
  
  	path[ppos].p_depth = i;
 -	path[ppos].p_hdr = eh;
--	path[ppos].p_ext = NULL;
+ 	path[ppos].p_ext = NULL;
  	path[ppos].p_idx = NULL;
  
  	/* find extent */
  	ext4_ext_binsearch(inode, path + ppos, block);
-+	path[ppos].p_block = ext_pblock(path[ppos].p_ext);
++	/* if not an empty leaf */
++	if (path[ppos].p_ext)
++		path[ppos].p_block = ext_pblock(path[ppos].p_ext);
  
  	ext4_ext_show_path(inode, path);
  
