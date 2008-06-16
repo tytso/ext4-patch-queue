@@ -8,15 +8,15 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
  fs/ext4/ext4.h    |    4 
- fs/ext4/extents.c |   15 --
- fs/ext4/inode.c   |  274 ++++++++++++++++++++++++------------------------------
- 3 files changed, 132 insertions(+), 161 deletions(-)
+ fs/ext4/extents.c |   15 ---
+ fs/ext4/inode.c   |  254 +++++++++++++++++++++++-------------------------------
+ 3 files changed, 115 insertions(+), 158 deletions(-)
 
 
-Index: linux-2.6.26-rc5/fs/ext4/ext4.h
+Index: linux-2.6.26-rc6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 17:03:50.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-06 17:03:51.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-16 14:15:13.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-16 14:15:24.000000000 -0700
 @@ -1061,7 +1061,7 @@ extern void ext4_set_inode_flags(struct 
  extern void ext4_get_inode_flags(struct ext4_inode_info *);
  extern void ext4_set_aops(struct inode *inode);
@@ -35,11 +35,11 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
  extern void ext4_ext_init(struct super_block *);
  extern void ext4_ext_release(struct super_block *);
  extern long ext4_fallocate(struct inode *inode, int mode, loff_t offset,
-Index: linux-2.6.26-rc5/fs/ext4/extents.c
+Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/extents.c	2008-06-06 17:03:49.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-06 17:03:51.000000000 -0700
-@@ -2744,7 +2744,7 @@ out2:
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-16 14:15:13.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-16 14:15:24.000000000 -0700
+@@ -2750,7 +2750,7 @@ out2:
  	return err ? err : allocated;
  }
  
@@ -48,7 +48,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  {
  	struct address_space *mapping = inode->i_mapping;
  	struct super_block *sb = inode->i_sb;
-@@ -2757,18 +2757,11 @@ void ext4_ext_truncate(struct inode * in
+@@ -2763,18 +2763,11 @@ void ext4_ext_truncate(struct inode * in
  	 */
  	err = ext4_writepage_trans_blocks(inode) + 3;
  	handle = ext4_journal_start(inode, err);
@@ -70,10 +70,10 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  
  	down_write(&EXT4_I(inode)->i_data_sem);
  	ext4_ext_invalidate_cache(inode);
-Index: linux-2.6.26-rc5/fs/ext4/inode.c
+Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:03:50.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:03:51.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 14:15:13.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 14:15:24.000000000 -0700
 @@ -1239,19 +1239,20 @@ static int ext4_write_begin(struct file 
   	to = from + len;
  
@@ -531,40 +531,3 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  
  	n = ext4_block_to_path(inode, last_block, offsets, NULL);
  	if (n == 0)
-@@ -3564,7 +3528,8 @@ int ext4_page_mkwrite(struct vm_area_str
- {
- 	loff_t size;
- 	unsigned long len;
--	int ret = -EINVAL;
-+	int err, ret = -EINVAL;
-+	handle_t *handle;
- 	struct file *file = vma->vm_file;
- 	struct inode *inode = file->f_path.dentry->d_inode;
- 	struct address_space *mapping = inode->i_mapping;
-@@ -3609,11 +3574,24 @@ int ext4_page_mkwrite(struct vm_area_str
- 	 * have inode_mutex and that allow parallel write_begin, write_end call.
- 	 * (lock_page prevent this from happening on the same page though)
- 	 */
-+	handle = ext4_journal_start(inode, ext4_writepage_trans_blocks(inode));
-+	if (IS_ERR(handle)) {
-+		ret = PTR_ERR(handle);
-+		goto out_unlock;
-+	}
- 	lock_page(page);
- 	wbc.range_start = page_offset(page);
- 	wbc.range_end = page_offset(page) + len;
--	ret = mapping->a_ops->writepage(page, &wbc);
--	/* writepage unlocks the page */
-+	if (ext4_should_writeback_data(inode))
-+		ret = __ext4_writeback_writepage(page, &wbc);
-+	else if (ext4_should_order_data(inode))
-+		ret = __ext4_ordered_writepage(page, &wbc);
-+	else
-+		ret = __ext4_journalled_writepage(page, &wbc);
-+	/* Page got unlocked in writepage */
-+	err = ext4_journal_stop(handle);
-+	if (!ret)
-+		ret = err;
- out_unlock:
- 	up_read(&inode->i_alloc_sem);
- 	return ret;
