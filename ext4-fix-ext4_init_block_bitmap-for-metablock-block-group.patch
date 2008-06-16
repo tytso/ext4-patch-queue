@@ -1,0 +1,37 @@
+From: Akinobu Mita <akinobu.mita@gmail.com>
+ext4: fix ext4_init_block_bitmap() for metablock block group
+
+When meta_bg feature is enabled and s_first_meta_bg != 0, 
+ext4_init_block_bitmap() miscalculates the number of block used by
+the group descriptor table (0 or 1 for metablock block group)
+
+This patch fix it by using ext4_bg_num_gdb()
+
+Signed-off-by: Akinobu Mita <akinobu.mita@gmail.com>
+Cc: Andrew Morton <akpm@linux-foundation.org>
+Cc: Stephen Tweedie <sct@redhat.com>
+Cc: Theodore Tso <tytso@MIT.EDU>
+Siged-off-by: Mingming Cao <cmm@us.ibm.com>
+Acked-by: Andreas Dilger <adilger@sun.com>
+---
+ fs/ext4/balloc.c |    7 +------
+ 1 file changed, 1 insertion(+), 6 deletions(-)
+
+Index: linux-2.6.26-rc6/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.26-rc6.orig/fs/ext4/balloc.c	2008-06-16 15:11:40.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/balloc.c	2008-06-16 15:11:40.000000000 -0700
+@@ -121,12 +121,7 @@ unsigned ext4_init_block_bitmap(struct s
+ 				le16_to_cpu(sbi->s_es->s_reserved_gdt_blocks);
+ 		}
+ 	} else { /* For META_BG_BLOCK_GROUPS */
+-		int group_rel = (block_group -
+-				 le32_to_cpu(sbi->s_es->s_first_meta_bg)) %
+-				EXT4_DESC_PER_BLOCK(sb);
+-		if (group_rel == 0 || group_rel == 1 ||
+-		    (group_rel == EXT4_DESC_PER_BLOCK(sb) - 1))
+-			bit_max += 1;
++		bit_max += ext4_bg_num_gdb(sb, block_group);
+ 	}
+ 
+ 	if (block_group == sbi->s_groups_count - 1) {
