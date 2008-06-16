@@ -1,0 +1,188 @@
+ext4: Add ordered mode support for delalloc
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+
+ fs/ext4/inode.c  |   30 +++++++++++++++++++++++++-----
+ fs/jbd2/commit.c |   41 ++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 61 insertions(+), 10 deletions(-)
+
+
+Index: linux-2.6.26-rc6/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 14:55:08.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 14:55:14.000000000 -0700
+@@ -1607,11 +1607,12 @@ static int ext4_bh_unmapped_or_delay(han
+ 	return !buffer_mapped(bh) || buffer_delay(bh);
+ }
+ 
+-/* FIXME!! only support data=writeback mode */
+ /*
+  * get called vi ext4_da_writepages after taking page lock
+  * We may end up doing block allocation here in case
+  * mpage_da_map_blocks failed to allocate blocks.
++ *
++ * We also get called via journal_submit_inode_data_buffers
+  */
+ static int ext4_da_writepage(struct page *page,
+ 				struct writeback_control *wbc)
+@@ -1630,6 +1631,7 @@ static int ext4_da_writepage(struct page
+ 		 * ext4_da_writepages() but directly (shrink_page_list).
+ 		 * We cannot easily start a transaction here so we just skip
+ 		 * writing the page in case we would have to do so.
++		 * We reach here also via journal_submit_inode_data_buffers
+ 		 */
+ 		size = i_size_read(inode);
+ 
+@@ -1645,8 +1647,11 @@ static int ext4_da_writepage(struct page
+ 			 * We can't do block allocation under
+ 			 * page lock without a handle . So redirty
+ 			 * the page and return
++			 * We may reach here when we do a journal commit
++			 * via journal_submit_inode_data_buffers.
++			 * If we don't have mapping block we just ignore
++			 * them
+ 			 */
+-			BUG_ON(wbc->sync_mode != WB_SYNC_NONE);
+ 			redirty_page_for_writepage(wbc, page);
+ 			unlock_page(page);
+ 			return 0;
+@@ -1661,7 +1666,6 @@ static int ext4_da_writepage(struct page
+ 	return ret;
+ }
+ 
+-
+ /*
+  * For now just follow the DIO way to estimate the max credits
+  * needed to write out EXT4_MAX_WRITEBACK_PAGES.
+@@ -1694,7 +1698,7 @@ static int ext4_da_writepages(struct add
+ 		return 0;
+ 
+ 	/*
+-	 *  Estimate the worse case needed credits to write out
++	 * Estimate the worse case needed credits to write out
+ 	 * EXT4_MAX_BUF_BLOCKS pages
+ 	 */
+ 	needed_blocks = EXT4_MAX_WRITEBACK_CREDITS;
+@@ -1716,6 +1720,19 @@ static int ext4_da_writepages(struct add
+ 			ret = PTR_ERR(handle);
+ 			goto out_writepages;
+ 		}
++		if (ext4_should_order_data(inode)) {
++			/*
++			 * With ordered mode we need to add
++			 * the inode to the journal handle
++			 * when we do block allocation.
++			 */
++			ret = ext4_jbd2_file_inode(handle, inode);
++			if (ret) {
++				ext4_journal_stop(handle);
++				goto out_writepages;
++			}
++
++		}
+ 		/*
+ 		 * set the max dirty pages could be write at a time
+ 		 * to fit into the reserved transaction credits
+@@ -2234,7 +2251,10 @@ static const struct address_space_operat
+ 
+ void ext4_set_aops(struct inode *inode)
+ {
+-	if (ext4_should_order_data(inode))
++	if (ext4_should_order_data(inode) &&
++		test_opt(inode->i_sb, DELALLOC))
++		inode->i_mapping->a_ops = &ext4_da_aops;
++	else if (ext4_should_order_data(inode))
+ 		inode->i_mapping->a_ops = &ext4_ordered_aops;
+ 	else if (ext4_should_writeback_data(inode) &&
+ 		 test_opt(inode->i_sb, DELALLOC))
+Index: linux-2.6.26-rc6/fs/jbd2/commit.c
+===================================================================
+--- linux-2.6.26-rc6.orig/fs/jbd2/commit.c	2008-06-16 14:53:15.000000000 -0700
++++ linux-2.6.26-rc6/fs/jbd2/commit.c	2008-06-16 14:55:14.000000000 -0700
+@@ -22,6 +22,8 @@
+ #include <linux/pagemap.h>
+ #include <linux/jiffies.h>
+ #include <linux/crc32.h>
++#include <linux/writeback.h>
++#include <linux/backing-dev.h>
+ 
+ /*
+  * Default IO end handler for temporary BJ_IO buffer_heads.
+@@ -185,6 +187,30 @@ static int journal_wait_on_commit_record
+ }
+ 
+ /*
++ * write the filemap data using writepage() address_space_operations.
++ * We don't do block allocation here even for delalloc. We don't
++ * use writepages() because with dealyed allocation we may be doing
++ * block allocation in writepages().
++ */
++static int journal_submit_inode_data_buffers(struct address_space *mapping)
++{
++	int ret;
++	struct writeback_control wbc = {
++		.sync_mode =  WB_SYNC_ALL,
++		.nr_to_write = mapping->nrpages * 2,
++		.range_start = 0,
++		.range_end = i_size_read(mapping->host),
++		.for_writepages = 1,
++	};
++
++	if (!mapping_cap_writeback_dirty(mapping))
++		return 0;
++
++	ret = generic_writepages(mapping, &wbc);
++	return ret;
++}
++
++/*
+  * Submit all the data buffers of inode associated with the transaction to
+  * disk.
+  *
+@@ -192,7 +218,7 @@ static int journal_wait_on_commit_record
+  * our inode list. We use JI_COMMIT_RUNNING flag to protect inode we currently
+  * operate on from being released while we write out pages.
+  */
+-static int journal_submit_inode_data_buffers(journal_t *journal,
++static int journal_submit_data_buffers(journal_t *journal,
+ 		transaction_t *commit_transaction)
+ {
+ 	struct jbd2_inode *jinode;
+@@ -204,8 +230,13 @@ static int journal_submit_inode_data_buf
+ 		mapping = jinode->i_vfs_inode->i_mapping;
+ 		jinode->i_flags |= JI_COMMIT_RUNNING;
+ 		spin_unlock(&journal->j_list_lock);
+-		err = filemap_fdatawrite_range(mapping, 0,
+-					i_size_read(jinode->i_vfs_inode));
++		/*
++		 * submit the inode data buffers. We use writepage
++		 * instead of writepages. Because writepages can do
++		 * block allocation  with delalloc. We need to write
++		 * only allocated blocks here.
++		 */
++		err = journal_submit_inode_data_buffers(mapping);
+ 		if (!ret)
+ 			ret = err;
+ 		spin_lock(&journal->j_list_lock);
+@@ -228,7 +259,7 @@ static int journal_finish_inode_data_buf
+ 	struct jbd2_inode *jinode, *next_i;
+ 	int err, ret = 0;
+ 
+-	/* For locking, see the comment in journal_submit_inode_data_buffers() */
++	/* For locking, see the comment in journal_submit_data_buffers() */
+ 	spin_lock(&journal->j_list_lock);
+ 	list_for_each_entry(jinode, &commit_transaction->t_inode_list, i_list) {
+ 		jinode->i_flags |= JI_COMMIT_RUNNING;
+@@ -431,7 +462,7 @@ void jbd2_journal_commit_transaction(jou
+ 	 * Now start flushing things to disk, in the order they appear
+ 	 * on the transaction lists.  Data blocks go first.
+ 	 */
+-	err = journal_submit_inode_data_buffers(journal, commit_transaction);
++	err = journal_submit_data_buffers(journal, commit_transaction);
+ 	if (err)
+ 		jbd2_journal_abort(journal, err);
+ 
