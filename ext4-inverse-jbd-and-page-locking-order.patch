@@ -15,8 +15,8 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 Index: linux-2.6.26-rc6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-16 15:41:46.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-16 15:42:02.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-16 15:53:37.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-16 15:53:38.000000000 -0700
 @@ -1061,7 +1061,7 @@ extern void ext4_set_inode_flags(struct 
  extern void ext4_get_inode_flags(struct ext4_inode_info *);
  extern void ext4_set_aops(struct inode *inode);
@@ -37,8 +37,8 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4.h
  extern long ext4_fallocate(struct inode *inode, int mode, loff_t offset,
 Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-16 15:41:43.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-16 15:42:02.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-16 15:53:36.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-16 15:53:38.000000000 -0700
 @@ -2750,7 +2750,7 @@ out2:
  	return err ? err : allocated;
  }
@@ -72,8 +72,8 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
  	ext4_ext_invalidate_cache(inode);
 Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 15:41:46.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 15:42:02.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 15:53:37.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 16:01:05.000000000 -0700
 @@ -1239,19 +1239,20 @@ static int ext4_write_begin(struct file 
   	to = from + len;
  
@@ -208,9 +208,15 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	page_cache_release(page);
  
  	return ret ? ret : copied;
-@@ -1506,11 +1480,10 @@ static int jbd2_journal_dirty_data_fn(ha
+@@ -1505,12 +1479,16 @@ static int jbd2_journal_dirty_data_fn(ha
+ 	return 0;
  }
  
++static int ext4_bh_unmapped_or_delay(handle_t *handle, struct buffer_head *bh)
++{
++	return !buffer_mapped(bh) || buffer_delay(bh);
++}
++
  /*
 - * Note that we always start a transaction even if we're not journalling
 - * data.  This is to preserve ordering: any hole instantiation within
@@ -224,7 +230,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
   *
   * In all journalling modes block_write_full_page() will start the I/O.
   *
-@@ -1554,10 +1527,8 @@ static int jbd2_journal_dirty_data_fn(ha
+@@ -1554,10 +1532,8 @@ static int jbd2_journal_dirty_data_fn(ha
   * disastrous.  Any write() or metadata operation will sync the fs for
   * us.
   *
@@ -236,7 +242,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  				struct writeback_control *wbc)
  {
  	struct inode *inode = page->mapping->host;
-@@ -1566,22 +1537,6 @@ static int ext4_ordered_writepage(struct
+@@ -1566,22 +1542,6 @@ static int ext4_ordered_writepage(struct
  	int ret = 0;
  	int err;
  
@@ -259,7 +265,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	if (!page_has_buffers(page)) {
  		create_empty_buffers(page, inode->i_sb->s_blocksize,
  				(1 << BH_Dirty)|(1 << BH_Uptodate));
-@@ -1605,114 +1560,139 @@ static int ext4_ordered_writepage(struct
+@@ -1605,54 +1565,135 @@ static int ext4_ordered_writepage(struct
  	 * and generally junk.
  	 */
  	if (ret == 0) {
@@ -291,7 +297,18 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
 +static int ext4_ordered_writepage(struct page *page,
 +				struct writeback_control *wbc)
 +{
++	struct inode *inode = page->mapping->host;
++	loff_t size = i_size_read(inode);
++	loff_t len;
++
 +	J_ASSERT(PageLocked(page));
++	J_ASSERT(page_has_buffers(page));
++	if (page->index == size >> PAGE_CACHE_SHIFT)
++		len = size & ~PAGE_CACHE_MASK;
++	else
++		len = PAGE_CACHE_SIZE;
++	BUG_ON(walk_page_buffers(NULL, page_buffers(page), 0, len, NULL,
++				 ext4_bh_unmapped_or_delay));
 +
 +	/*
 +	 * We give up here if we're reentered, because it might be for a
@@ -307,11 +324,10 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
 +	return 0;
  }
  
--static int ext4_writeback_writepage(struct page *page,
 +static int __ext4_writeback_writepage(struct page *page,
- 				struct writeback_control *wbc)
- {
- 	struct inode *inode = page->mapping->host;
++				struct writeback_control *wbc)
++{
++	struct inode *inode = page->mapping->host;
 +
 +	if (test_opt(inode->i_sb, NOBH))
 +		return nobh_writepage(page, ext4_get_block, wbc);
@@ -320,9 +336,22 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
 +}
 +
 +
-+static int ext4_writeback_writepage(struct page *page,
-+				struct writeback_control *wbc)
-+{
+ static int ext4_writeback_writepage(struct page *page,
+ 				struct writeback_control *wbc)
+ {
+ 	struct inode *inode = page->mapping->host;
++	loff_t size = i_size_read(inode);
++	loff_t len;
++
++	J_ASSERT(PageLocked(page));
++	J_ASSERT(page_has_buffers(page));
++	if (page->index == size >> PAGE_CACHE_SHIFT)
++		len = size & ~PAGE_CACHE_MASK;
++	else
++		len = PAGE_CACHE_SIZE;
++	BUG_ON(walk_page_buffers(NULL, page_buffers(page), 0, len, NULL,
++				 ext4_bh_unmapped_or_delay));
++
 +	if (!ext4_journal_current_handle())
 +		return __ext4_writeback_writepage(page, wbc);
 +
@@ -390,24 +419,36 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	return ret;
  }
  
- static int ext4_journalled_writepage(struct page *page,
+@@ -1660,59 +1701,40 @@ static int ext4_journalled_writepage(str
  				struct writeback_control *wbc)
  {
--	struct inode *inode = page->mapping->host;
+ 	struct inode *inode = page->mapping->host;
 -	handle_t *handle = NULL;
 -	int ret = 0;
 -	int err;
--
- 	if (ext4_journal_current_handle())
- 		goto no_write;
++	loff_t size = i_size_read(inode);
++	loff_t len;
+ 
+-	if (ext4_journal_current_handle())
+-		goto no_write;
++	J_ASSERT(PageLocked(page));
++	J_ASSERT(page_has_buffers(page));
++	if (page->index == size >> PAGE_CACHE_SHIFT)
++		len = size & ~PAGE_CACHE_MASK;
++	else
++		len = PAGE_CACHE_SIZE;
++	BUG_ON(walk_page_buffers(NULL, page_buffers(page), 0, len, NULL,
++				 ext4_bh_unmapped_or_delay));
  
 -	handle = ext4_journal_start(inode, ext4_writepage_trans_blocks(inode));
 -	if (IS_ERR(handle)) {
 -		ret = PTR_ERR(handle);
--		goto no_write;
++	if (ext4_journal_current_handle())
+ 		goto no_write;
 -	}
--
- 	if (!page_has_buffers(page) || PageChecked(page)) {
+ 
+-	if (!page_has_buffers(page) || PageChecked(page)) {
++	if (PageChecked(page)) {
  		/*
  		 * It's mmapped pagecache.  Add buffers and journal it.  There
  		 * doesn't seem much point in redirtying the page here.
@@ -453,7 +494,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  }
  
  static int ext4_readpage(struct file *file, struct page *page)
-@@ -1909,7 +1889,7 @@ void ext4_set_aops(struct inode *inode)
+@@ -1909,7 +1931,7 @@ void ext4_set_aops(struct inode *inode)
   * This required during truncate. We need to physically zero the tail end
   * of that block so it doesn't yield old data if the file is later grown.
   */
@@ -462,7 +503,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  		struct address_space *mapping, loff_t from)
  {
  	ext4_fsblk_t index = from >> PAGE_CACHE_SHIFT;
-@@ -1918,8 +1898,13 @@ int ext4_block_truncate_page(handle_t *h
+@@ -1918,8 +1940,13 @@ int ext4_block_truncate_page(handle_t *h
  	ext4_lblk_t iblock;
  	struct inode *inode = mapping->host;
  	struct buffer_head *bh;
@@ -476,7 +517,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	blocksize = inode->i_sb->s_blocksize;
  	length = blocksize - (offset & (blocksize - 1));
  	iblock = index << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
-@@ -2383,7 +2368,6 @@ void ext4_truncate(struct inode *inode)
+@@ -2383,7 +2410,6 @@ void ext4_truncate(struct inode *inode)
  	int n;
  	ext4_lblk_t last_block;
  	unsigned blocksize = inode->i_sb->s_blocksize;
@@ -484,7 +525,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  
  	if (!(S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
  	    S_ISLNK(inode->i_mode)))
-@@ -2393,41 +2377,21 @@ void ext4_truncate(struct inode *inode)
+@@ -2393,41 +2419,21 @@ void ext4_truncate(struct inode *inode)
  	if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
  		return;
  
