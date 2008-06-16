@@ -8,18 +8,17 @@ Add nodelalloc option.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-
 ---
 
- fs/ext4/super.c |   14 +++++++++++++-
- 1 file changed, 13 insertions(+), 1 deletion(-)
+ fs/ext4/super.c |   13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
 
 
-Index: linux-2.6.26-rc5/fs/ext4/super.c
+Index: linux-2.6.26-rc6/fs/ext4/super.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/super.c	2008-06-06 17:03:58.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/super.c	2008-06-06 17:04:00.000000000 -0700
-@@ -900,7 +900,7 @@ enum {
+--- linux-2.6.26-rc6.orig/fs/ext4/super.c	2008-06-16 14:59:01.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/super.c	2008-06-16 15:00:20.000000000 -0700
+@@ -903,7 +903,7 @@ enum {
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
  	Opt_grpquota, Opt_extents, Opt_noextents, Opt_i_version,
@@ -28,7 +27,7 @@ Index: linux-2.6.26-rc5/fs/ext4/super.c
  };
  
  static match_table_t tokens = {
-@@ -960,6 +960,7 @@ static match_table_t tokens = {
+@@ -963,6 +963,7 @@ static match_table_t tokens = {
  	{Opt_stripe, "stripe=%u"},
  	{Opt_resize, "resize"},
  	{Opt_delalloc, "delalloc"},
@@ -36,7 +35,7 @@ Index: linux-2.6.26-rc5/fs/ext4/super.c
  	{Opt_err, NULL},
  };
  
-@@ -1325,6 +1326,9 @@ set_qf_format:
+@@ -1328,6 +1329,9 @@ set_qf_format:
  			set_opt(sbi->s_mount_opt, I_VERSION);
  			sb->s_flags |= MS_I_VERSION;
  			break;
@@ -46,7 +45,7 @@ Index: linux-2.6.26-rc5/fs/ext4/super.c
  		case Opt_mballoc:
  			set_opt(sbi->s_mount_opt, MBALLOC);
  			break;
-@@ -1982,6 +1986,14 @@ static int ext4_fill_super (struct super
+@@ -1985,6 +1989,13 @@ static int ext4_fill_super (struct super
  	 */
  	set_opt(sbi->s_mount_opt, MBALLOC);
  
@@ -55,7 +54,6 @@ Index: linux-2.6.26-rc5/fs/ext4/super.c
 +	 * Use -o nodelalloc to turn it off
 +	 */
 +	set_opt(sbi->s_mount_opt, DELALLOC);
-+	set_opt(sbi->s_mount_opt, WRITEBACK_DATA);
 +
 +
  	if (!parse_options ((char *) data, sb, &journal_inum, &journal_devnum,
