@@ -31,10 +31,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  3 files changed, 182 insertions(+), 1 deletion(-)
 
 
-Index: linux-2.6.26-rc5/fs/ext4/inode.c
+Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:03:53.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:03:55.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 16:02:26.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 16:10:23.000000000 -0700
 @@ -46,6 +46,8 @@ static inline int ext4_begin_ordered_tru
  						   new_size);
  }
@@ -44,11 +44,11 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  /*
   * Test whether an inode is a fast symlink.
   */
-@@ -1408,6 +1410,162 @@ static int ext4_journalled_write_end(str
+@@ -1408,6 +1410,205 @@ static int ext4_journalled_write_end(str
  }
  
  /*
-+ * this is a special callback for ->prepare_write() only
++ * this is a special callback for ->write_begin() only
 + * it's intention is to return mapped block or reserve space
 + */
 +static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
@@ -59,24 +59,24 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
 +	BUG_ON(create == 0);
 +	BUG_ON(bh_result->b_size != inode->i_sb->s_blocksize);
 +
-+	/* first, we need to know whether the block is allocated already
-+	 * XXX: when the filesystem has a lot of free blocks, we could
-+	 * reserve even allocated blocks to save this lookup */
++	/*
++	 * first, we need to know whether the block is allocated already
++	 * preallocated blocks are unmapped but should treated
++	 * the same as allocated blocks.
++	 */
 +	ret = ext4_get_blocks_wrap(NULL, inode, iblock, 1,  bh_result, 0, 0);
-+	if (ret >= 0) {
-+		if (buffer_mapped(bh_result)) {
-+			bh_result->b_size = (ret << inode->i_blkbits);
-+		} else {
-+			/* the block isn't allocated yet, let's reserve space */
-+			/* XXX: call reservation here */
-+			/*
-+			 * XXX: __block_prepare_write() unmaps passed block,
-+			 * is it OK?
-+			 */
-+			map_bh(bh_result, inode->i_sb, 0);
-+			set_buffer_new(bh_result);
-+			set_buffer_delay(bh_result);
-+		}
++	if (ret == 0) {
++		/* the block isn't allocated yet, let's reserve space */
++		/* XXX: call reservation here */
++		/*
++		 * XXX: __block_prepare_write() unmaps passed block,
++		 * is it OK?
++		 */
++		map_bh(bh_result, inode->i_sb, 0);
++		set_buffer_new(bh_result);
++		set_buffer_delay(bh_result);
++	} else if (ret > 0) {
++		bh_result->b_size = (ret << inode->i_blkbits);
 +		ret = 0;
 +	}
 +
@@ -138,6 +138,44 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
 +
 +	return ret;
 +}
++/* FIXME!! only support data=writeback mode */
++static int ext4_da_writepage(struct page *page,
++				struct writeback_control *wbc)
++{
++	struct inode *inode = page->mapping->host;
++	handle_t *handle = NULL;
++	int ret = 0;
++	int err;
++
++	if (ext4_journal_current_handle())
++		goto out_fail;
++
++	handle = ext4_journal_start(inode, ext4_writepage_trans_blocks(inode));
++	if (IS_ERR(handle)) {
++		ret = PTR_ERR(handle);
++		goto out_fail;
++	}
++
++	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
++		ret = nobh_writepage(page, ext4_get_block, wbc);
++	else
++		ret = block_write_full_page(page, ext4_get_block, wbc);
++
++	if (!ret && inode->i_size > EXT4_I(inode)->i_disksize) {
++		EXT4_I(inode)->i_disksize = inode->i_size;
++		ext4_mark_inode_dirty(handle, inode);
++	}
++
++	err = ext4_journal_stop(handle);
++	if (!ret)
++		ret = err;
++	return ret;
++
++out_fail:
++	redirty_page_for_writepage(wbc, page);
++	unlock_page(page);
++	return ret;
++}
 +
 +static int ext4_da_writepages(struct address_space *mapping,
 +				struct writeback_control *wbc)
@@ -165,6 +203,11 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
 +
 +	ret = block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
 +							ext4_da_get_block_prep);
++	if (ret < 0) {
++		unlock_page(page);
++		page_cache_release(page);
++	}
++
 +	return ret;
 +}
 +
@@ -207,14 +250,14 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
   * bmap() is special.  It gets used by applications such as lilo and by
   * the swapper to find the on-disk block of a specific piece of data.
   *
-@@ -1832,10 +1990,28 @@ static const struct address_space_operat
+@@ -1832,10 +2033,28 @@ static const struct address_space_operat
  	.releasepage	= ext4_releasepage,
  };
  
 +static const struct address_space_operations ext4_da_aops = {
 +	.readpage	= ext4_readpage,
 +	.readpages	= ext4_readpages,
-+	.writepage	= ext4_writeback_writepage,
++	.writepage	= ext4_da_writepage,
 +	.writepages	= ext4_da_writepages,
 +	.sync_page	= block_sync_page,
 +	.write_begin	= ext4_da_write_begin,
@@ -236,11 +279,11 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  	else if (ext4_should_writeback_data(inode))
  		inode->i_mapping->a_ops = &ext4_writeback_aops;
  	else
-Index: linux-2.6.26-rc5/fs/ext4/super.c
+Index: linux-2.6.26-rc6/fs/ext4/super.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/super.c	2008-06-06 17:03:53.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/super.c	2008-06-06 17:03:55.000000000 -0700
-@@ -897,7 +897,7 @@ enum {
+--- linux-2.6.26-rc6.orig/fs/ext4/super.c	2008-06-16 16:02:26.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/super.c	2008-06-16 16:07:38.000000000 -0700
+@@ -898,7 +898,7 @@ enum {
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
  	Opt_grpquota, Opt_extents, Opt_noextents, Opt_i_version,
@@ -249,7 +292,7 @@ Index: linux-2.6.26-rc5/fs/ext4/super.c
  };
  
  static match_table_t tokens = {
-@@ -956,6 +956,7 @@ static match_table_t tokens = {
+@@ -957,6 +957,7 @@ static match_table_t tokens = {
  	{Opt_nomballoc, "nomballoc"},
  	{Opt_stripe, "stripe=%u"},
  	{Opt_resize, "resize"},
@@ -257,7 +300,7 @@ Index: linux-2.6.26-rc5/fs/ext4/super.c
  	{Opt_err, NULL},
  };
  
-@@ -1334,6 +1335,9 @@ set_qf_format:
+@@ -1335,6 +1336,9 @@ set_qf_format:
  				return 0;
  			sbi->s_stripe = option;
  			break;
@@ -267,10 +310,10 @@ Index: linux-2.6.26-rc5/fs/ext4/super.c
  		default:
  			printk (KERN_ERR
  				"EXT4-fs: Unrecognized mount option \"%s\" "
-Index: linux-2.6.26-rc5/fs/ext4/ext4.h
+Index: linux-2.6.26-rc6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 17:03:51.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-06 17:03:55.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-16 16:02:27.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-16 16:07:38.000000000 -0700
 @@ -536,6 +536,7 @@ do {									       \
  #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
  #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
