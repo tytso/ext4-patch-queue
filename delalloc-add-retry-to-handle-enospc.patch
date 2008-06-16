@@ -1,0 +1,48 @@
+ext4: Retry block reservation if we fails with ENOSPC.
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+With nodelalloc we retry block allocation for 3 times
+we we get ENOSPC. We need to do the same for block
+reservation with delalloc.
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by:  Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+
+ fs/ext4/inode.c |    6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+
+Index: linux-2.6.26-rc6/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 14:36:33.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 14:38:00.000000000 -0700
+@@ -1738,6 +1738,8 @@ static int ext4_da_writepages(struct add
+ 		}
+ 		wbc->nr_to_write = to_write;
+ 	}
++	if (ret == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
++		goto retry;
+ 
+ out_writepages:
+ 	wbc->nr_to_write = to_write;
+@@ -1750,15 +1752,17 @@ static int ext4_da_write_begin(struct fi
+ 				loff_t pos, unsigned len, unsigned flags,
+ 				struct page **pagep, void **fsdata)
+ {
+-	int ret;
++	int ret, retries = 0;
+  	struct page *page;
+  	pgoff_t index;
+  	unsigned from, to;
++	struct inode *inode = mapping->host;
+ 
+  	index = pos >> PAGE_CACHE_SHIFT;
+  	from = pos & (PAGE_CACHE_SIZE - 1);
+  	to = from + len;
+ 
++retry:
+  	page = __grab_cache_page(mapping, index);
+  	if (!page)
+  		return -ENOMEM;
