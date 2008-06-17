@@ -9,6 +9,13 @@ From: Alex Tomas <alex@clusterfs.com>
    non-allocated blocks and try to allocate them with minimal calls
    to ->get_block(), then submit IO using __mpage_writepage()
 
+Updated fix from  Valerie Clement <valerie.clement@bull.net>
+fixes a filesystem corruption issue when the filesystem is
+mounted with the delalloc option and blocksize < pagesize.
+
+Updated fix from Mingming Cao <cmm@us.ibm.com> to clear 
+buffer_delay in block_write_full_page() after allocation to those
+delayed buffer.
 
 Signed-off-by: Alex Tomas <alex@clusterfs.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
@@ -25,8 +32,8 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 Index: linux-2.6.26-rc6/fs/buffer.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/buffer.c	2008-06-16 16:02:27.000000000 -0700
-+++ linux-2.6.26-rc6/fs/buffer.c	2008-06-16 16:04:09.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/buffer.c	2008-06-16 16:47:59.000000000 -0700
++++ linux-2.6.26-rc6/fs/buffer.c	2008-06-16 16:47:59.000000000 -0700
 @@ -1691,11 +1691,13 @@ static int __block_write_full_page(struc
  			 */
  			clear_buffer_dirty(bh);
@@ -54,8 +61,8 @@ Index: linux-2.6.26-rc6/fs/buffer.c
  		} else {
 Index: linux-2.6.26-rc6/fs/mpage.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/mpage.c	2008-06-16 16:02:27.000000000 -0700
-+++ linux-2.6.26-rc6/fs/mpage.c	2008-06-16 16:02:51.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/mpage.c	2008-06-16 16:47:37.000000000 -0700
++++ linux-2.6.26-rc6/fs/mpage.c	2008-06-17 10:14:56.000000000 -0700
 @@ -10,6 +10,8 @@
   *		Initial version
   * 27Jun2002	axboe@suse.de
@@ -65,7 +72,7 @@ Index: linux-2.6.26-rc6/fs/mpage.c
   */
  
  #include <linux/kernel.h>
-@@ -710,3 +712,407 @@ int mpage_writepage(struct page *page, g
+@@ -710,3 +712,406 @@ int mpage_writepage(struct page *page, g
  	return ret;
  }
  EXPORT_SYMBOL(mpage_writepage);
@@ -201,7 +208,6 @@ Index: linux-2.6.26-rc6/fs/mpage.c
 +				if (cur_logical >= logical)
 +					break;
 +				cur_logical++;
-+				pblock++;
 +			} while ((bh = bh->b_this_page) != head);
 +
 +			do {
@@ -475,8 +481,8 @@ Index: linux-2.6.26-rc6/fs/mpage.c
 +EXPORT_SYMBOL(mpage_da_writepages);
 Index: linux-2.6.26-rc6/include/linux/mpage.h
 ===================================================================
---- linux-2.6.26-rc6.orig/include/linux/mpage.h	2008-06-16 16:02:27.000000000 -0700
-+++ linux-2.6.26-rc6/include/linux/mpage.h	2008-06-16 16:02:51.000000000 -0700
+--- linux-2.6.26-rc6.orig/include/linux/mpage.h	2008-06-16 16:47:37.000000000 -0700
++++ linux-2.6.26-rc6/include/linux/mpage.h	2008-06-16 16:47:59.000000000 -0700
 @@ -18,6 +18,8 @@ int mpage_readpages(struct address_space
  int mpage_readpage(struct page *page, get_block_t get_block);
  int mpage_writepages(struct address_space *mapping,
