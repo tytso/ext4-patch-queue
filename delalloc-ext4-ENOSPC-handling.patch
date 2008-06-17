@@ -1,10 +1,22 @@
-ext4: delalloc -- Adding per inode counters to store reserved blocks
+ext4: delayed allocation ENOSPC handling
 
 From: Mingming cao <cmm@us.ibm.com>
 
-Add per-inode counters to store number of resreved data blocks
-and metadata blocks, due to delayed allocation.
+This patch does block reservation for delayed
+allocation, to avoid ENOSPC later at page flush time.
 
+Blocks(data and metadata) are reserved at da_write_begin()
+time, the freeblocks counter is updated by then, and the number of
+reserved blocks is store in per inode counter.
+        
+At the writepage time, the unused reserved meta blocks are returned
+back. At unlink/truncate time, reserved blocks are properly released.
+
+Updated fix from  Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+to fix the oldallocator block reservation accounting with delalloc, added
+lock to guard the counters and also fix the reservation for meta blocks.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming cao <cmm@us.ibm.com>
 ---
  fs/ext4/balloc.c       |   49 ++++++++++-----
@@ -20,8 +32,8 @@ Signed-off-by: Mingming cao <cmm@us.ibm.com>
 
 Index: linux-2.6.26-rc6/fs/ext4/ext4_i.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4_i.h	2008-06-16 16:02:22.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4_i.h	2008-06-16 16:23:53.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4_i.h	2008-06-17 10:21:24.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4_i.h	2008-06-17 10:32:30.000000000 -0700
 @@ -163,6 +163,13 @@ struct ext4_inode_info {
  	/* mballoc */
  	struct list_head i_prealloc_list;
@@ -38,8 +50,8 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4_i.h
  #endif	/* _EXT4_I */
 Index: linux-2.6.26-rc6/fs/ext4/super.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/super.c	2008-06-16 16:07:38.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/super.c	2008-06-16 16:23:53.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/super.c	2008-06-17 10:21:27.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/super.c	2008-06-17 10:32:30.000000000 -0700
 @@ -574,6 +574,11 @@ static struct inode *ext4_alloc_inode(st
  	INIT_LIST_HEAD(&ei->i_prealloc_list);
  	spin_lock_init(&ei->i_prealloc_lock);
@@ -62,8 +74,8 @@ Index: linux-2.6.26-rc6/fs/ext4/super.c
  		default:
 Index: linux-2.6.26-rc6/fs/ext4/ext4_extents.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4_extents.h	2008-06-16 16:02:22.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4_extents.h	2008-06-16 16:20:54.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4_extents.h	2008-06-17 10:21:24.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4_extents.h	2008-06-17 10:32:30.000000000 -0700
 @@ -212,6 +212,7 @@ static inline int ext4_ext_get_actual_le
  		(le16_to_cpu(ext->ee_len) - EXT_INIT_MAX_LEN));
  }
@@ -74,8 +86,8 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4_extents.h
  extern int ext4_extent_tree_init(handle_t *, struct inode *);
 Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-16 16:15:26.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-16 16:22:35.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-17 10:28:39.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-17 10:32:30.000000000 -0700
 @@ -248,6 +248,36 @@ static int ext4_ext_space_root_idx(struc
  	return size;
  }
@@ -124,8 +136,8 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
  			WARN_ON(ret <= 0);
 Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 16:15:26.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 16:33:40.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-17 10:28:39.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-17 10:32:30.000000000 -0700
 @@ -38,6 +38,7 @@
  #include "ext4_jbd2.h"
  #include "xattr.h"
@@ -390,8 +402,8 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	ext4_invalidatepage(page, offset);
 Index: linux-2.6.26-rc6/fs/ext4/dir.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/dir.c	2008-06-16 16:02:22.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/dir.c	2008-06-16 16:22:35.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/dir.c	2008-06-17 10:21:24.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/dir.c	2008-06-17 10:32:30.000000000 -0700
 @@ -129,7 +129,8 @@ static int ext4_readdir(struct file * fi
  		struct buffer_head *bh = NULL;
  
@@ -404,8 +416,8 @@ Index: linux-2.6.26-rc6/fs/ext4/dir.c
  					(PAGE_CACHE_SHIFT - inode->i_blkbits);
 Index: linux-2.6.26-rc6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-16 16:07:38.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-16 16:22:35.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-17 10:21:27.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-17 10:32:30.000000000 -0700
 @@ -74,6 +74,9 @@
  #define EXT4_MB_HINT_GOAL_ONLY		256
  /* goal is meaningful */
@@ -435,8 +447,8 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4.h
  #endif	/* _EXT4_H */
 Index: linux-2.6.26-rc6/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/mballoc.c	2008-06-16 16:02:22.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/mballoc.c	2008-06-16 16:23:53.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/mballoc.c	2008-06-17 10:21:24.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/mballoc.c	2008-06-17 10:32:30.000000000 -0700
 @@ -2832,7 +2832,15 @@ ext4_mb_mark_diskspace_used(struct ext4_
  	le16_add_cpu(&gdp->bg_free_blocks_count, -ac->ac_b_ex.fe_len);
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, ac->ac_b_ex.fe_group, gdp);
@@ -480,8 +492,8 @@ Index: linux-2.6.26-rc6/fs/ext4/mballoc.c
  		ar->len = 0;
 Index: linux-2.6.26-rc6/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/balloc.c	2008-06-16 16:20:32.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/balloc.c	2008-06-16 16:24:24.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/balloc.c	2008-06-17 10:32:27.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/balloc.c	2008-06-17 10:32:30.000000000 -0700
 @@ -1701,7 +1701,12 @@ ext4_fsblk_t ext4_old_new_blocks(handle_
  	}
  
