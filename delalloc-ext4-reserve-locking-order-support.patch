@@ -2,6 +2,14 @@ ext4: Invert lock ordering of page_lock and transaction start in delalloc
 
 From: Mingming Cao <cmm@us.ibm.com>
 
+With the reverse locking, we need to start a transation before taking the page
+lock, so in ext4_da_writepages() we need to break the write-out into chunks,
+and restart the journal for each chunck to ensure the write-out fits in
+a single transaction.
+
+Updated patch from  Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com> which
+fixes delalloc sync hang with journal lock inversion, and address the performance regression issue.
+
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Jan Kara <jack@suse.cz>
