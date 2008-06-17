@@ -17,11 +17,11 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  5 files changed, 84 insertions(+), 59 deletions(-)
 
 
-Index: linux-2.6.26-rc5/fs/ext4/balloc.c
+Index: linux-2.6.26-rc6/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/balloc.c	2008-06-06 17:06:03.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/balloc.c	2008-06-09 16:22:03.000000000 -0700
-@@ -1645,20 +1645,24 @@ int ext4_should_retry_alloc(struct super
+--- linux-2.6.26-rc6.orig/fs/ext4/balloc.c	2008-06-17 10:43:31.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/balloc.c	2008-06-17 10:43:31.000000000 -0700
+@@ -1640,20 +1640,24 @@ int ext4_should_retry_alloc(struct super
  }
  
  /**
@@ -52,7 +52,7 @@ Index: linux-2.6.26-rc5/fs/ext4/balloc.c
  			ext4_fsblk_t goal, unsigned long *count, int *errp)
  {
  	struct buffer_head *bitmap_bh = NULL;
-@@ -1928,78 +1932,95 @@ out:
+@@ -1923,78 +1927,95 @@ out:
  	return 0;
  }
  
@@ -195,10 +195,10 @@ Index: linux-2.6.26-rc5/fs/ext4/balloc.c
  
  /**
   * ext4_count_free_blocks() -- count filesystem free blocks
-Index: linux-2.6.26-rc5/fs/ext4/ext4.h
+Index: linux-2.6.26-rc6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 17:06:03.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-09 16:22:03.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-17 10:43:31.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-17 10:43:31.000000000 -0700
 @@ -977,7 +977,7 @@ extern ext4_fsblk_t ext4_new_meta_blocks
  extern ext4_fsblk_t ext4_new_blocks(handle_t *handle, struct inode *inode,
  					ext4_lblk_t iblock, ext4_fsblk_t goal,
@@ -208,11 +208,11 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
  			ext4_fsblk_t goal, unsigned long *count, int *errp);
  extern void ext4_free_blocks (handle_t *handle, struct inode *inode,
  			ext4_fsblk_t block, unsigned long count, int metadata);
-Index: linux-2.6.26-rc5/fs/ext4/extents.c
+Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/extents.c	2008-06-06 17:39:45.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-09 16:22:03.000000000 -0700
-@@ -180,8 +180,11 @@ static ext4_fsblk_t ext4_ext_find_goal(s
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-17 10:43:31.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-17 10:43:31.000000000 -0700
+@@ -179,8 +179,11 @@ static ext4_fsblk_t ext4_ext_find_goal(s
  	return bg_start + colour + block;
  }
  
@@ -225,7 +225,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  			struct ext4_ext_path *path,
  			struct ext4_extent *ex, int *err)
  {
-@@ -688,7 +691,8 @@ static int ext4_ext_split(handle_t *hand
+@@ -690,7 +693,8 @@ static int ext4_ext_split(handle_t *hand
  	/* allocate all needed blocks */
  	ext_debug("allocate %d blocks for indexes/leaf\n", depth - at);
  	for (a = 0; a < depth - at; a++) {
@@ -235,7 +235,7 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  		if (newblock == 0)
  			goto cleanup;
  		ablocks[a] = newblock;
-@@ -884,7 +888,7 @@ static int ext4_ext_grow_indepth(handle_
+@@ -886,7 +890,7 @@ static int ext4_ext_grow_indepth(handle_
  	ext4_fsblk_t newblock;
  	int err = 0;
  
@@ -244,10 +244,10 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  	if (newblock == 0)
  		return err;
  
-Index: linux-2.6.26-rc5/fs/ext4/inode.c
+Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:56:09.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-09 16:22:03.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-17 10:43:31.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-17 10:43:31.000000000 -0700
 @@ -561,7 +561,7 @@ static int ext4_alloc_blocks(handle_t *h
  		goto allocated;
  	/* Now allocate data blocks */
@@ -257,10 +257,10 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  	current_block = ext4_new_blocks(handle, inode, iblock,
  						goal, &count, err);
  	if (*err && (target == blks)) {
-Index: linux-2.6.26-rc5/fs/ext4/mballoc.c
+Index: linux-2.6.26-rc6/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/mballoc.c	2008-06-06 17:06:03.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/mballoc.c	2008-06-09 16:22:03.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/mballoc.c	2008-06-17 10:43:28.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/mballoc.c	2008-06-17 10:43:31.000000000 -0700
 @@ -4035,7 +4035,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t
  	sbi = EXT4_SB(sb);
  

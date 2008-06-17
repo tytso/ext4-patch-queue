@@ -15,10 +15,10 @@ Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
  fs/ext4/ioctl.c  |    1 +
  4 files changed, 40 insertions(+), 15 deletions(-)
 
-Index: linux-2.6.26-rc5/fs/ext4/defrag.c
+Index: linux-2.6.26-rc6/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/defrag.c	2008-06-06 17:04:02.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/defrag.c	2008-06-06 17:04:03.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/defrag.c	2008-06-17 10:43:43.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/defrag.c	2008-06-17 10:43:43.000000000 -0700
 @@ -95,13 +95,26 @@ int ext4_defrag_ioctl(struct inode *inod
  {
  	int err = 0;
@@ -87,7 +87,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  }
  
  /**
-@@ -941,6 +959,7 @@ out:
+@@ -939,6 +957,7 @@ out:
   *			original extent tree
   * @tar_end:		the last block number of the allocated blocks
   * @sum_tmp:		the extents count  in the allocated blocks
@@ -95,7 +95,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
   *
   *
   * This function returns the values as below.
-@@ -951,7 +970,7 @@ out:
+@@ -949,7 +968,7 @@ out:
  static int
  ext4_defrag_comp_ext_count(struct inode *org_inode,
  			struct ext4_ext_path *org_path, ext4_lblk_t tar_end,
@@ -104,7 +104,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  {
  	struct ext4_extent *ext = NULL;
  	int depth = ext_depth(org_inode);
-@@ -975,7 +994,7 @@ ext4_defrag_comp_ext_count(struct inode 
+@@ -973,7 +992,7 @@ ext4_defrag_comp_ext_count(struct inode 
  			 * Fail if goal is not set and the fragmentation
  			 * is not improved.
  			 */
@@ -113,7 +113,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  				/* Not improved */
  				ret = 1;
  			} else if (sum_org < sum_tmp) {
-@@ -1006,6 +1025,7 @@ ext4_defrag_comp_ext_count(struct inode 
+@@ -1004,6 +1023,7 @@ ext4_defrag_comp_ext_count(struct inode 
   * @tar_start:		starting offset to allocate in blocks
   * @tar_blocks:		the number of blocks to allocate
   * @iblock:		file related offset
@@ -121,7 +121,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
   *
   *
   * This function returns the value as below:
-@@ -1016,7 +1036,8 @@ ext4_defrag_comp_ext_count(struct inode 
+@@ -1014,7 +1034,8 @@ ext4_defrag_comp_ext_count(struct inode 
  static int
  ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
  			struct ext4_ext_path *org_path, ext4_lblk_t tar_start,
@@ -131,7 +131,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  {
  	handle_t *handle;
  	struct ext4_extent_header *eh = NULL;
-@@ -1042,7 +1063,7 @@ ext4_defrag_new_extent_tree(struct inode
+@@ -1040,7 +1061,7 @@ ext4_defrag_new_extent_tree(struct inode
  
  	/* Fill struct ext4_allocation_request with necessary info */
  	ext4_defrag_fill_ar(org_inode, tmp_inode, &ar, org_path,
@@ -140,7 +140,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  
  	handle = ext4_journal_start(tmp_inode, 0);
  	if (IS_ERR(handle)) {
-@@ -1074,7 +1095,7 @@ ext4_defrag_new_extent_tree(struct inode
+@@ -1072,7 +1093,7 @@ ext4_defrag_new_extent_tree(struct inode
  	}
  
  	ret = ext4_defrag_comp_ext_count(org_inode, org_path, tar_end,
@@ -149,7 +149,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  
  out:
  	if (ret < 0 || ret == 1) {
-@@ -1204,13 +1225,14 @@ out:
+@@ -1202,13 +1223,14 @@ out:
   * @filp:		pointer to file
   * @block_start:	starting offset to defrag in blocks
   * @defrag_size:	size of defrag in blocks
@@ -165,7 +165,7 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  {
  	struct inode *org_inode = filp->f_dentry->d_inode, *tmp_inode = NULL;
  	struct ext4_ext_path *org_path = NULL, *holecheck_path = NULL;
-@@ -1329,14 +1351,14 @@ ext4_defrag(struct file *filp, ext4_lblk
+@@ -1327,14 +1349,14 @@ ext4_defrag(struct file *filp, ext4_lblk
  		}
  
  		/* Found an isolated block */
@@ -182,10 +182,10 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
  
  		if (ret < 0) {
  			break;
-Index: linux-2.6.26-rc5/fs/ext4/ext4.h
+Index: linux-2.6.26-rc6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 17:04:02.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-06 17:04:03.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-17 10:43:42.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-17 10:43:43.000000000 -0700
 @@ -301,6 +301,7 @@ struct ext4_new_group_data {
  #define EXT4_IOC_GETRSVSZ		_IOR('f', 5, long)
  #define EXT4_IOC_SETRSVSZ		_IOW('f', 6, long)
@@ -203,7 +203,7 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
  /* fsync.c */
  extern int ext4_sync_file (struct file *, struct dentry *, int);
 @@ -1137,7 +1139,7 @@ extern void ext4_inode_table_set(struct 
- extern handle_t *ext4_ext_journal_restart(handle_t *handle, int needed);
+ extern int ext4_ext_journal_restart(handle_t *handle, int needed);
  /* defrag.c */
  extern int ext4_defrag(struct file *filp, ext4_lblk_t block_start,
 -			ext4_lblk_t defrag_size);
@@ -211,11 +211,11 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
  extern int ext4_defrag_ioctl(struct inode *, struct file *, unsigned int,
  				unsigned long);
  
-Index: linux-2.6.26-rc5/fs/ext4/inode.c
+Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/inode.c	2008-06-06 17:04:02.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/inode.c	2008-06-06 17:04:03.000000000 -0700
-@@ -1788,7 +1788,7 @@ out:
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-17 10:43:42.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-17 10:43:43.000000000 -0700
+@@ -1827,7 +1827,7 @@ out:
   * So, if we see any bmap calls here on a modified, data-journaled file,
   * take extra steps to flush any blocks which might be in the cache.
   */
@@ -224,10 +224,10 @@ Index: linux-2.6.26-rc5/fs/ext4/inode.c
  {
  	struct inode *inode = mapping->host;
  	journal_t *journal;
-Index: linux-2.6.26-rc5/fs/ext4/ioctl.c
+Index: linux-2.6.26-rc6/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ioctl.c	2008-06-06 17:04:01.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ioctl.c	2008-06-06 17:04:03.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ioctl.c	2008-06-17 10:43:41.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ioctl.c	2008-06-17 10:43:43.000000000 -0700
 @@ -241,6 +241,7 @@ setversion_out:
  
  		return err;

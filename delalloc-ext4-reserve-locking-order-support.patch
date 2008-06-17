@@ -15,14 +15,16 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Jan Kara <jack@suse.cz>
 ---
 
- fs/ext4/inode.c |  104 ++++++++++++++++++++++++++++++++++++++++---------------
- 1 files changed, 76 insertions(+), 28 deletions(-)
+ fs/ext4/extents.c |   10 ++
+ fs/ext4/inode.c   |  189 +++++++++++++++++++++++++++++++++++++++---------------
+ fs/mpage.c        |   12 +--
+ 3 files changed, 152 insertions(+), 59 deletions(-)
 
 
 Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 16:10:23.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 16:15:26.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-17 10:43:37.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-17 10:43:38.000000000 -0700
 @@ -845,6 +845,7 @@ int ext4_get_blocks_handle(handle_t *han
  	struct ext4_inode_info *ei = EXT4_I(inode);
  	int count = 0;
@@ -277,8 +279,8 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
   * because we should have holes filled from ext4_page_mkwrite(). We even don't
 Index: linux-2.6.26-rc6/fs/mpage.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/mpage.c	2008-06-16 16:05:18.000000000 -0700
-+++ linux-2.6.26-rc6/fs/mpage.c	2008-06-16 16:14:40.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/mpage.c	2008-06-17 10:43:37.000000000 -0700
++++ linux-2.6.26-rc6/fs/mpage.c	2008-06-17 10:43:38.000000000 -0700
 @@ -849,13 +849,11 @@ static void mpage_put_bnr_to_bhs(struct 
  			do {
  				if (cur_logical >= logical + blocks)
@@ -311,8 +313,8 @@ Index: linux-2.6.26-rc6/fs/mpage.c
  #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | (1 << BH_Delay))
 Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-16 16:02:22.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-16 16:15:26.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-17 10:43:34.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-17 10:43:38.000000000 -0700
 @@ -2535,6 +2535,7 @@ int ext4_ext_get_blocks(handle_t *handle
  	int err = 0, depth, ret;
  	unsigned long allocated = 0;

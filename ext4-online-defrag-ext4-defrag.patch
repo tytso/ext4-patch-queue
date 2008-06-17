@@ -16,10 +16,10 @@ Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
  fs/ext4/ioctl.c        |    3 
  6 files changed, 473 insertions(+), 2 deletions(-)
 
-Index: linux-2.6.26-rc5/fs/ext4/Makefile
+Index: linux-2.6.26-rc6/fs/ext4/Makefile
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/Makefile	2008-06-06 17:03:33.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/Makefile	2008-06-06 17:04:01.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/Makefile	2008-06-17 10:43:15.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/Makefile	2008-06-17 10:43:41.000000000 -0700
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
  
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
@@ -29,10 +29,10 @@ Index: linux-2.6.26-rc5/fs/ext4/Makefile
  
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-Index: linux-2.6.26-rc5/fs/ext4/defrag.c
+Index: linux-2.6.26-rc6/fs/ext4/defrag.c
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.26-rc5/fs/ext4/defrag.c	2008-06-06 17:04:01.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/defrag.c	2008-06-17 10:43:41.000000000 -0700
 @@ -0,0 +1,448 @@
 +/*
 + * Copyright (c) 2008, NEC Software Tohoku, Ltd.
@@ -482,10 +482,10 @@ Index: linux-2.6.26-rc5/fs/ext4/defrag.c
 +
 +	return (ret ? ret : defrag_size);
 +}
-Index: linux-2.6.26-rc5/fs/ext4/ext4.h
+Index: linux-2.6.26-rc6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4.h	2008-06-06 17:03:58.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4.h	2008-06-06 17:04:01.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-17 10:43:39.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-17 10:43:41.000000000 -0700
 @@ -301,6 +301,7 @@ struct ext4_new_group_data {
  #define EXT4_IOC_GETRSVSZ		_IOR('f', 5, long)
  #define EXT4_IOC_SETRSVSZ		_IOW('f', 6, long)
@@ -525,10 +525,10 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4.h
  
  static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
  {
-Index: linux-2.6.26-rc5/fs/ext4/ext4_extents.h
+Index: linux-2.6.26-rc6/fs/ext4/ext4_extents.h
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ext4_extents.h	2008-06-06 17:03:58.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ext4_extents.h	2008-06-06 17:04:01.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4_extents.h	2008-06-17 10:43:39.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4_extents.h	2008-06-17 10:43:41.000000000 -0700
 @@ -229,5 +229,7 @@ extern int ext4_ext_search_left(struct i
  extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
  						ext4_lblk_t *, ext4_fsblk_t *);
@@ -537,10 +537,10 @@ Index: linux-2.6.26-rc5/fs/ext4/ext4_extents.h
 +extern void ext4_ext_drop_refs(struct ext4_ext_path *path);
  #endif /* _EXT4_EXTENTS */
  
-Index: linux-2.6.26-rc5/fs/ext4/extents.c
+Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/extents.c	2008-06-06 17:03:58.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/extents.c	2008-06-06 17:04:01.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-17 10:43:39.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-17 10:43:41.000000000 -0700
 @@ -48,7 +48,7 @@
   * ext_pblock:
   * combine low and high parts of physical block number into ext4_fsblk_t
@@ -550,10 +550,10 @@ Index: linux-2.6.26-rc5/fs/ext4/extents.c
  {
  	ext4_fsblk_t block;
  
-Index: linux-2.6.26-rc5/fs/ext4/ioctl.c
+Index: linux-2.6.26-rc6/fs/ext4/ioctl.c
 ===================================================================
---- linux-2.6.26-rc5.orig/fs/ext4/ioctl.c	2008-06-06 17:03:33.000000000 -0700
-+++ linux-2.6.26-rc5/fs/ext4/ioctl.c	2008-06-06 17:04:01.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ioctl.c	2008-06-17 10:43:15.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ioctl.c	2008-06-17 10:43:41.000000000 -0700
 @@ -241,6 +241,9 @@ setversion_out:
  
  		return err;

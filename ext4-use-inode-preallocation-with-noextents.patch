@@ -20,18 +20,18 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
 
  fs/ext4/balloc.c  |   36 +++++++++++++++++++++++++--
- fs/ext4/ext4.h    |    7 ++++-
- fs/ext4/extents.c |    2 +
- fs/ext4/inode.c   |   72 ++++++++++++++++++++++++++++++++++++++++-------------
- fs/ext4/xattr.c   |    2 +
+ fs/ext4/ext4.h    |    7 +++--
+ fs/ext4/extents.c |    2 -
+ fs/ext4/inode.c   |   72 ++++++++++++++++++++++++++++++++++++++++--------------
+ fs/ext4/xattr.c   |    2 -
  5 files changed, 95 insertions(+), 24 deletions(-)
 
 
 Index: linux-2.6.26-rc6/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/balloc.c	2008-06-16 14:06:42.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/balloc.c	2008-06-16 14:07:20.000000000 -0700
-@@ -1928,7 +1928,7 @@ out:
+--- linux-2.6.26-rc6.orig/fs/ext4/balloc.c	2008-06-17 10:43:31.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/balloc.c	2008-06-17 10:43:31.000000000 -0700
+@@ -1923,7 +1923,7 @@ out:
  	return 0;
  }
  
@@ -40,7 +40,7 @@ Index: linux-2.6.26-rc6/fs/ext4/balloc.c
  		ext4_fsblk_t goal, int *errp)
  {
  	struct ext4_allocation_request ar;
-@@ -1947,9 +1947,29 @@ ext4_fsblk_t ext4_new_block(handle_t *ha
+@@ -1942,9 +1942,29 @@ ext4_fsblk_t ext4_new_block(handle_t *ha
  	ret = ext4_mb_new_blocks(handle, &ar, errp);
  	return ret;
  }
@@ -71,7 +71,7 @@ Index: linux-2.6.26-rc6/fs/ext4/balloc.c
  {
  	struct ext4_allocation_request ar;
  	ext4_fsblk_t ret;
-@@ -1960,9 +1980,21 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
+@@ -1955,9 +1975,21 @@ ext4_fsblk_t ext4_new_blocks(handle_t *h
  	}
  
  	memset(&ar, 0, sizeof(ar));
@@ -95,8 +95,8 @@ Index: linux-2.6.26-rc6/fs/ext4/balloc.c
  	return ret;
 Index: linux-2.6.26-rc6/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-16 14:06:42.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-16 14:07:20.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-17 10:43:27.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-17 10:43:31.000000000 -0700
 @@ -970,10 +970,13 @@ extern ext4_grpblk_t ext4_block_group_of
  extern int ext4_bg_has_super(struct super_block *sb, ext4_group_t group);
  extern unsigned long ext4_bg_num_gdb(struct super_block *sb,
@@ -115,8 +115,8 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4.h
  extern void ext4_free_blocks (handle_t *handle, struct inode *inode,
 Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-16 14:06:42.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-16 14:07:20.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-17 10:43:29.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-17 10:43:31.000000000 -0700
 @@ -187,7 +187,7 @@ ext4_ext_new_block(handle_t *handle, str
  	ext4_fsblk_t goal, newblock;
  
@@ -128,8 +128,8 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
  
 Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-16 14:06:42.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-16 14:07:20.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-17 10:43:19.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-17 10:43:31.000000000 -0700
 @@ -508,11 +508,12 @@ static int ext4_blks_to_allocate(Indirec
   *		direct blocks
   */
@@ -254,8 +254,8 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	 * The ext4_splice_branch call will free and forget any buffers
 Index: linux-2.6.26-rc6/fs/ext4/xattr.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/xattr.c	2008-06-16 14:06:42.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/xattr.c	2008-06-16 14:07:20.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/xattr.c	2008-06-17 10:43:19.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/xattr.c	2008-06-17 10:43:31.000000000 -0700
 @@ -810,7 +810,7 @@ inserted:
  			/* We need to allocate a new block */
  			ext4_fsblk_t goal = ext4_group_first_block_no(sb,
