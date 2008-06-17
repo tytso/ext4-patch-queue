@@ -10,12 +10,18 @@ Two special ->get_block() methods are introduced:
    to be used with mpage_da_writepages(), allocate blocks and correct
    on-disk size
 
-Current implementation works with data=writeback only, you should
+This patch supports data=writeback mode, to enable delalloc, need to 
 mount filesystem with delalloc,data=writeback options.
 
-TODO:
- * reservation
- * data=ordered
+Updated fixes from Mingming cao <cmm@us.ibm.com> to unlock and release
+the page from page cache if the delalloc write_begin failed, and properly
+handle preallocated blocks.
+
+Updated fix from  Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+to update i_disksize after allocating block in writepage()/ext4_da_writepage.
+
+
+Todo:
  * quota
  * bmap
 
