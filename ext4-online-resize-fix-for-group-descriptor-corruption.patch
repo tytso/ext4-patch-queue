@@ -3,33 +3,13 @@ Ext4: Fix online resize block group descriptor corruption
 From: Frederic Bohe <frederic.bohe@bull.net>
 
 This is the patch for the group descriptor table corruption during
-online resize pointed out by Theodore Tso.
-The issue was due to the ext4 group descriptor which can be either
-32 or 64 bytes long.
-Only the 64 bytes structure was taken into account.t. 
-
-We have tried both physical hard disk drive and loop back devices.
-We have tested several filesystem resize with few (adding 1 group) to
-many (adding 250 groups) more groups. All give correct group descriptors
-using dump2fs and no problem when writing files and unmounting
-filesystems.
-
-This is a typical test case:
-
-mkfs.ext4 -E test_fs -O ^flex_bg /dev/sdc1 10M
-mount -t ext4dev -o nomballoc /dev/sdc1 /mnt/test
-dumpe2fs /dev/sdc1
-resize2fs /dev/sdc1 100M
-dumpe2fs /dev/sdc1
-dd if=/dev/urandom of=/mnt/test/data bs=95M count=1
-umount /mnt/test
-fsck.ext4 -f /dev/sdc1
-
-This test being run for several sizes of filesystem (from 10M with 1K
-blocks to 1G with 4K blocks).
+online resize pointed out by Theodore Tso.  The problem was caused by
+the fact that the ext4 group descriptor can be either 32 or 64 bytes
+long.  Only the 64 bytes structure was taken into account.
 
 Signed-off-by: Frederic Bohe <frederic.bohe@bull.net>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/resize.c |    3 ++-
  1 file changed, 2 insertions(+), 1 deletion(-)

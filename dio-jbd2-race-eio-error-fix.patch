@@ -2,21 +2,24 @@ JBD2: fix race between jbd2_journal_try_to_free_buffers() and jbd2 commit transa
 
 From: Mingming Cao <cmm@us.ibm.com>
 
-journal_try_to_free_buffers() could race with jbd commit transaction when
-the later is holding the buffer reference while waiting for the data buffer
-to flush to disk. If the caller of journal_try_to_free_buffers() request
-tries hard to release the buffers, it will treat the failure as error and return
-back to the caller. We have seen the directo IO failed due to this race. 
-Some of the caller of releasepage() also expecting the buffer to be dropped
-when passed with GFP_KERNEL mask to the releasepage()->journal_try_to_free_buffers().
+journal_try_to_free_buffers() could race with jbd commit transaction
+when the later is holding the buffer reference while waiting for the
+data buffer to flush to disk. If the caller of
+journal_try_to_free_buffers() request tries hard to release the buffers,
+it will treat the failure as error and return back to the caller. We
+have seen the directo IO failed due to this race.  Some of the caller of
+releasepage() also expecting the buffer to be dropped when passed with
+GFP_KERNEL mask to the releasepage()->journal_try_to_free_buffers().
 
-With this patch, if the caller is passing the GFP_KERNEL to indicating this
-call could wait, in case of try_to_free_buffers() failed, let's waiting for
-journal_commit_transaction() to finish commit the current committing transaction
-, then try to free those buffers again with journal locked.
+With this patch, if the caller is passing the GFP_KERNEL to indicating
+this call could wait, in case of try_to_free_buffers() failed, let's
+waiting for journal_commit_transaction() to finish commit the current
+committing transaction , then try to free those buffers again with
+journal locked.
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Reviewed-by: Badari Pulavarty <pbadari@us.ibm.com> 
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/jbd2/transaction.c |   62 ++++++++++++++++++++++++++++++++++++++++++++++----
  1 file changed, 58 insertions(+), 4 deletions(-)

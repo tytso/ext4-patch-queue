@@ -1,15 +1,18 @@
-From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 ext4: Update i_disksize properly when allocating from fallocate area.
 
-When fallocated space at the end of file which is requested with
-FALLOC_FL_KEEP_SIZE, the file size is not updated at that time. Currently
-we forget to update the file size when writing to that fallocated space.
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-These changes are for code correctness. This patch allows us to
- update the i_disksize at the write_end() callback of filesystem properly.
+When allocating unitialized space at the end of file which had been
+preallocated with the FALLOC_FL_KEEP_SIZE option, the file size is not
+updated at that time.  But the later we are not updating the file size
+when writing to that preallocated space.
+
+These changes are for code correctness.  This patch allows us to update
+the i_disksize at the write_end() callback of filesystem properly.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/extents.c |    6 +++---
  1 file changed, 3 insertions(+), 3 deletions(-)
