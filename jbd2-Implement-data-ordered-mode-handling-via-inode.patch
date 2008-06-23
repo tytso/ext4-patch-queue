@@ -6,6 +6,13 @@ This patch adds necessary framework into JBD2 to be able to track inodes
 with each transaction and write-out their dirty data during transaction
 commit time.
 
+This new ordered mode brings all sorts of advantages such as possibility 
+to get rid of journal heads and buffer heads for data buffers in ordered 
+mode, better ordering of writes on transaction commit, simplification of
+ some JBD code, no more anonymous pages when truncate of data being 
+committed happens.  Also with this new ordered mode, delayed allocation 
+on ordered mode is much simpler.
+
 Signed-off-by: Jan Kara <jack@suse.cz>
 ---
  fs/jbd2/commit.c      |   90 ++++++++++++++++++++++++++++++++++++++++++++++++++
