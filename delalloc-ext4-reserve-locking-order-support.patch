@@ -23,9 +23,9 @@ Signed-off-by: Jan Kara <jack@suse.cz>
 
 Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-17 10:43:37.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-17 10:43:38.000000000 -0700
-@@ -845,6 +845,7 @@ int ext4_get_blocks_handle(handle_t *han
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-23 14:56:16.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-23 14:56:27.000000000 -0700
+@@ -846,6 +846,7 @@ int ext4_get_blocks_handle(handle_t *han
  	struct ext4_inode_info *ei = EXT4_I(inode);
  	int count = 0;
  	ext4_fsblk_t first_block = 0;
@@ -33,7 +33,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  
  
  	J_ASSERT(!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL));
-@@ -920,8 +921,13 @@ int ext4_get_blocks_handle(handle_t *han
+@@ -921,8 +922,13 @@ int ext4_get_blocks_handle(handle_t *han
  	 * protect it if you're about to implement concurrent
  	 * ext4_get_block() -bzzz
  	*/
@@ -49,7 +49,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	if (err)
  		goto cleanup;
  
-@@ -1448,18 +1454,14 @@ static int ext4_da_get_block_prep(struct
+@@ -1580,18 +1586,14 @@ static int ext4_da_get_block_prep(struct
  static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
  				   struct buffer_head *bh_result, int create)
  {
@@ -71,8 +71,8 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
 +	BUG_ON(create == 0);
  
  	ret = ext4_get_blocks_wrap(handle, inode, iblock, max_blocks,
- 				   bh_result, create, 0);
-@@ -1484,65 +1486,157 @@ static int ext4_da_get_block_write(struc
+ 				   bh_result, create, 0, EXT4_DELALLOC_RSVED);
+@@ -1621,65 +1623,157 @@ static int ext4_da_get_block_write(struc
  			up_write(&EXT4_I(inode)->i_data_sem);
  
  			if (EXT4_I(inode)->i_disksize == disksize) {
@@ -265,7 +265,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  }
  
  static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
-@@ -1672,11 +1766,6 @@ static int bput_one(handle_t *handle, st
+@@ -1807,11 +1901,6 @@ static int bput_one(handle_t *handle, st
  	return 0;
  }
  
@@ -279,8 +279,8 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
   * because we should have holes filled from ext4_page_mkwrite(). We even don't
 Index: linux-2.6.26-rc6/fs/mpage.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/mpage.c	2008-06-17 10:43:37.000000000 -0700
-+++ linux-2.6.26-rc6/fs/mpage.c	2008-06-17 10:43:38.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/mpage.c	2008-06-23 14:54:50.000000000 -0700
++++ linux-2.6.26-rc6/fs/mpage.c	2008-06-23 14:56:27.000000000 -0700
 @@ -849,13 +849,11 @@ static void mpage_put_bnr_to_bhs(struct 
  			do {
  				if (cur_logical >= logical + blocks)
@@ -313,9 +313,9 @@ Index: linux-2.6.26-rc6/fs/mpage.c
  #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | (1 << BH_Delay))
 Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-17 10:43:34.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-17 10:43:38.000000000 -0700
-@@ -2535,6 +2535,7 @@ int ext4_ext_get_blocks(handle_t *handle
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-23 14:56:16.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-23 14:56:27.000000000 -0700
+@@ -2565,6 +2565,7 @@ int ext4_ext_get_blocks(handle_t *handle
  	int err = 0, depth, ret;
  	unsigned long allocated = 0;
  	struct ext4_allocation_request ar;
@@ -323,7 +323,7 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
  
  	__clear_bit(BH_New, &bh_result->b_state);
  	ext_debug("blocks %u/%lu requested for inode %u\n",
-@@ -2726,8 +2727,13 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2756,8 +2757,13 @@ int ext4_ext_get_blocks(handle_t *handle
  	newblock = ext_pblock(&newex);
  	allocated = ext4_ext_get_actual_len(&newex);
  outnew:
