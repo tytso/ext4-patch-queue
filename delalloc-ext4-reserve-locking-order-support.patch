@@ -23,8 +23,8 @@ Signed-off-by: Jan Kara <jack@suse.cz>
 
 Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-23 14:56:16.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-23 14:56:27.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-24 15:13:35.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-24 15:14:05.000000000 -0700
 @@ -846,6 +846,7 @@ int ext4_get_blocks_handle(handle_t *han
  	struct ext4_inode_info *ei = EXT4_I(inode);
  	int count = 0;
@@ -265,8 +265,8 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  }
  
  static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
-@@ -1807,11 +1901,6 @@ static int bput_one(handle_t *handle, st
- 	return 0;
+@@ -1728,11 +1822,6 @@ out:
+ 	return ret;
  }
  
 -static int ext4_bh_unmapped_or_delay(handle_t *handle, struct buffer_head *bh)
@@ -274,13 +274,13 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
 -	return !buffer_mapped(bh) || buffer_delay(bh);
 -}
 -
- /*
-  * Note that we don't need to start a transaction unless we're journaling data
-  * because we should have holes filled from ext4_page_mkwrite(). We even don't
+ static int ext4_da_write_end(struct file *file,
+ 				struct address_space *mapping,
+ 				loff_t pos, unsigned len, unsigned copied,
 Index: linux-2.6.26-rc6/fs/mpage.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/mpage.c	2008-06-23 14:54:50.000000000 -0700
-+++ linux-2.6.26-rc6/fs/mpage.c	2008-06-23 14:56:27.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/mpage.c	2008-06-24 15:12:23.000000000 -0700
++++ linux-2.6.26-rc6/fs/mpage.c	2008-06-24 15:13:38.000000000 -0700
 @@ -849,13 +849,11 @@ static void mpage_put_bnr_to_bhs(struct 
  			do {
  				if (cur_logical >= logical + blocks)
@@ -313,8 +313,8 @@ Index: linux-2.6.26-rc6/fs/mpage.c
  #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | (1 << BH_Delay))
 Index: linux-2.6.26-rc6/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-23 14:56:16.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-23 14:56:27.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-24 15:13:35.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-24 15:13:38.000000000 -0700
 @@ -2565,6 +2565,7 @@ int ext4_ext_get_blocks(handle_t *handle
  	int err = 0, depth, ret;
  	unsigned long allocated = 0;
@@ -323,7 +323,7 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
  
  	__clear_bit(BH_New, &bh_result->b_state);
  	ext_debug("blocks %u/%lu requested for inode %u\n",
-@@ -2756,8 +2757,13 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2755,8 +2756,13 @@ int ext4_ext_get_blocks(handle_t *handle
  	newblock = ext_pblock(&newex);
  	allocated = ext4_ext_get_actual_len(&newex);
  outnew:
@@ -337,5 +337,5 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
 +			EXT4_I(inode)->i_disksize = disksize;
 +	}
  
- 	__set_bit(BH_New, &bh_result->b_state);
+ 	set_buffer_new(bh_result);
  
