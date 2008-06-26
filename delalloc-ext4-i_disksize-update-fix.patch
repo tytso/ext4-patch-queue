@@ -15,13 +15,13 @@ Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 ---
- fs/ext4/inode.c |   73 +++++++++++++++++++++++++++++++++++++++++++++++++++-----
- 1 file changed, 67 insertions(+), 6 deletions(-)
+ fs/ext4/inode.c |   69 +++++++++++++++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 63 insertions(+), 6 deletions(-)
 
 Index: linux-2.6.26-rc6/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-23 17:28:01.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-24 14:56:04.000000000 -0700
+--- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-25 17:21:09.000000000 -0700
++++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-25 17:39:55.000000000 -0700
 @@ -1553,11 +1553,25 @@ static int ext4_da_write_begin(struct fi
   	struct page *page;
   	pgoff_t index;
@@ -48,7 +48,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
   	page = __grab_cache_page(mapping, index);
   	if (!page)
   		return -ENOMEM;
-@@ -1567,12 +1581,66 @@ static int ext4_da_write_begin(struct fi
+@@ -1567,12 +1581,60 @@ static int ext4_da_write_begin(struct fi
  							ext4_da_get_block_prep);
  	if (ret < 0) {
  		unlock_page(page);
@@ -71,40 +71,34 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
 +				struct page *page, void *fsdata)
 +{
 +	struct inode *inode = mapping->host;
-+	unsigned from, to;
 +	int ret = 0, ret2;
 +	handle_t *handle = ext4_journal_current_handle();
++	loff_t new_i_size;
 +
-+	from = pos & (PAGE_CACHE_SIZE - 1);
-+	to = from + len;
++	/*
++	 * generic_write_end() will run mark_inode_dirty() if i_size
++	 * changes.  So let's piggyback the i_disksize mark_inode_dirty
++	 * into that.
++	 */
 +
-+	if (ret == 0) {
-+		/*
-+		 * generic_write_end() will run mark_inode_dirty() if i_size
-+		 * changes.  So let's piggyback the i_disksize mark_inode_dirty
-+		 * into that.
-+		 */
-+		loff_t new_i_size;
++	new_i_size = pos + copied;
++	if (new_i_size > EXT4_I(inode)->i_disksize)
++		if (!walk_page_buffers(NULL, page_buffers(page),
++				       0, len, NULL, ext4_bh_unmapped_or_delay)){
++			/*
++			 * Updating i_disksize when extending file without
++			 * need block allocation
++			 */
++			if (ext4_should_order_data(inode))
++				ret = ext4_jbd2_file_inode(handle, inode);
 +
-+		new_i_size = pos + copied;
-+		if (new_i_size > EXT4_I(inode)->i_disksize)
-+			if (!walk_page_buffers(NULL, page_buffers(page),
-+					       0, len, NULL, ext4_bh_unmapped_or_delay)){
-+				/*
-+				 * Updating i_disksize when extending file without
-+				 * need block allocation
-+				 */
-+				if (ext4_should_order_data(inode))
-+					ret = ext4_jbd2_file_inode(handle, inode);
-+
-+				EXT4_I(inode)->i_disksize = new_i_size;
-+			}
-+		ret2 = generic_write_end(file, mapping, pos, len, copied,
++			EXT4_I(inode)->i_disksize = new_i_size;
++		}
++	ret2 = generic_write_end(file, mapping, pos, len, copied,
 +							page, fsdata);
-+		copied = ret2;
-+		if (ret2 < 0)
-+			ret = ret2;
-+	}
++	copied = ret2;
++	if (ret2 < 0)
++		ret = ret2;
 +	ret2 = ext4_journal_stop(handle);
 +	if (!ret)
 +		ret = ret2;
@@ -115,7 +109,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  static void ext4_da_invalidatepage(struct page *page, unsigned long offset)
  {
  	struct buffer_head *head, *bh;
-@@ -1682,11 +1750,6 @@ static int bput_one(handle_t *handle, st
+@@ -1682,11 +1744,6 @@ static int bput_one(handle_t *handle, st
  	return 0;
  }
  
@@ -127,7 +121,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  /*
   * Note that we don't need to start a transaction unless we're journaling data
   * because we should have holes filled from ext4_page_mkwrite(). We even don't
-@@ -2050,7 +2113,7 @@ static const struct address_space_operat
+@@ -2050,7 +2107,7 @@ static const struct address_space_operat
  	.writepages	= ext4_da_writepages,
  	.sync_page	= block_sync_page,
  	.write_begin	= ext4_da_write_begin,
