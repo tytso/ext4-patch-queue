@@ -2,17 +2,17 @@ ext4: delalloc i_disksize update fix
 
 From: Mingming Cao <cmm@us.ibm.com>
 
-Currently with delayed allocation, it does not update
-i_disksize until real block allocation at page writeout time.
-i_disksize is updated after block allocation is done.
+If delayed allocation is enabled, ext4 does not update i_disksize until
+the actual block allocation is done at page writeout time.  
 
-But the current code missed to update the i_disksize if 
-write to the eof but not requiring block allocation 
-(buffer has already mapped), when writepage() is called
-via shrink_page_list.
+Unfortunately, the current code was buggy in that it didn't update
+i_disksize when writing to the end of the file but the buffer had
+already been mapped.  This could happen if writepage() was called via
+shrink_page_list or if the file was explicitly fsync'ed.
 
 Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
  fs/ext4/inode.c |   69 +++++++++++++++++++++++++++++++++++++++++++++++++++-----

@@ -1,19 +1,21 @@
-ext4: Inverse locking order of page_lock and transaction start.
+ext4: Invert the locking order of page_lock and transaction start
 
 From: Jan Kara <jack@suse.cz>
 
-This changes are needed to support data=ordered mode handling via inodes.
-This enables us to get rid of the journal heads and buffer heads for data
-buffers in the ordered mode. With the changes, during tranasaction commit
-we writeout the inode pages using the writepages()/writepage(). That implies
-we take page lock during transaction commit. This can cause a deadlock
-with the locking order  page_lock ->  jbd2_journal_start, since the jbd2_journal_start
-can wait for the journal_commit to happen and the journal_commit now needs
-to take the page lock. To avoid this dead lock reverse the locking order.
+This changes are needed to support data=ordered mode handling via
+inodes.  This enables us to get rid of the journal heads and buffer
+heads for data buffers in the ordered mode.  With the changes, during
+tranasaction commit we writeout the inode pages using the
+writepages()/writepage(). That implies we take page lock during
+transaction commit. This can cause a deadlock with the locking order
+page_lock -> jbd2_journal_start, since the jbd2_journal_start can wait
+for the journal_commit to happen and the journal_commit now needs to
+take the page lock. To avoid this dead lock reverse the locking order.
 
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
 
  fs/ext4/ext4.h    |    4 
