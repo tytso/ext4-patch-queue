@@ -17,8 +17,8 @@ Updated fixes from Mingming cao <cmm@us.ibm.com> to unlock and release
 the page from page cache if the delalloc write_begin failed, and properly
 handle preallocated blocks.
 
-Updated fix from  Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
-to update i_disksize after allocating block in writepage()/ext4_da_writepage,
+Updated fixes from  Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+to update i_disksize properly with delayed allocation,
 and add bmap support for delalloc.
 
 
@@ -29,17 +29,18 @@ Signed-off-by: Alex Tomas <alex@clusterfs.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Signed-off-by:  Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 ---
  fs/ext4/ext4.h  |    1 
- fs/ext4/inode.c |  293 +++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/inode.c |  296 +++++++++++++++++++++++++++++++++++++++++++++++++++++++-
  fs/ext4/super.c |    6 -
- 3 files changed, 294 insertions(+), 6 deletions(-)
+ 3 files changed, 297 insertions(+), 6 deletions(-)
 
-Index: linux-2.6.26-rc6/fs/ext4/ext4.h
+Index: linux-2.6.26-rc8/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-23 16:01:09.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-23 16:57:38.000000000 -0700
+--- linux-2.6.26-rc8.orig/fs/ext4/ext4.h	2008-06-30 11:18:20.000000000 -0700
++++ linux-2.6.26-rc8/fs/ext4/ext4.h	2008-06-30 11:55:35.000000000 -0700
 @@ -536,6 +536,7 @@ do {									       \
  #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
  #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
@@ -48,10 +49,10 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4.h
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-Index: linux-2.6.26-rc6/fs/ext4/inode.c
+Index: linux-2.6.26-rc8/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-23 16:01:32.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-23 17:27:34.000000000 -0700
+--- linux-2.6.26-rc8.orig/fs/ext4/inode.c	2008-06-30 11:18:20.000000000 -0700
++++ linux-2.6.26-rc8/fs/ext4/inode.c	2008-06-30 11:59:27.000000000 -0700
 @@ -46,6 +46,8 @@ static inline int ext4_begin_ordered_tru
  						   new_size);
  }
@@ -61,7 +62,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  /*
   * Test whether an inode is a fast symlink.
   */
-@@ -1408,6 +1410,205 @@ static int ext4_journalled_write_end(str
+@@ -1408,6 +1410,267 @@ static int ext4_journalled_write_end(str
  }
  
  /*
@@ -208,10 +209,24 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
 + 	struct page *page;
 + 	pgoff_t index;
 + 	unsigned from, to;
++	struct inode *inode = mapping->host;
++	handle_t *handle;
 +
 + 	index = pos >> PAGE_CACHE_SHIFT;
 + 	from = pos & (PAGE_CACHE_SIZE - 1);
 + 	to = from + len;
++
++	/*
++	 * With delayed allocation, we don't log the i_disksize update
++	 * if there is delayed block allocation. But we still need
++	 * to journalling the i_disksize update if writes to the end
++	 * of file which has an already mapped buffer.
++	 */
++	handle = ext4_journal_start(inode, 1);
++	if (IS_ERR(handle)) {
++		ret = PTR_ERR(handle);
++		goto out;
++	}
 +
 + 	page = __grab_cache_page(mapping, index);
 + 	if (!page)
@@ -222,10 +237,58 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
 +							ext4_da_get_block_prep);
 +	if (ret < 0) {
 +		unlock_page(page);
++		ext4_journal_stop(handle);
 +		page_cache_release(page);
 +	}
 +
++out:
 +	return ret;
++}
++
++static int ext4_bh_unmapped_or_delay(handle_t *handle, struct buffer_head *bh)
++{
++	return !buffer_mapped(bh) || buffer_delay(bh);
++}
++
++static int ext4_da_write_end(struct file *file,
++				struct address_space *mapping,
++				loff_t pos, unsigned len, unsigned copied,
++				struct page *page, void *fsdata)
++{
++	struct inode *inode = mapping->host;
++	int ret = 0, ret2;
++	handle_t *handle = ext4_journal_current_handle();
++	loff_t new_i_size;
++
++	/*
++	 * generic_write_end() will run mark_inode_dirty() if i_size
++	 * changes.  So let's piggyback the i_disksize mark_inode_dirty
++	 * into that.
++	 */
++
++	new_i_size = pos + copied;
++	if (new_i_size > EXT4_I(inode)->i_disksize)
++		if (!walk_page_buffers(NULL, page_buffers(page),
++				       0, len, NULL, ext4_bh_unmapped_or_delay)){
++			/*
++			 * Updating i_disksize when extending file without
++			 * need block allocation
++			 */
++			if (ext4_should_order_data(inode))
++				ret = ext4_jbd2_file_inode(handle, inode);
++
++			EXT4_I(inode)->i_disksize = new_i_size;
++		}
++	ret2 = generic_write_end(file, mapping, pos, len, copied,
++							page, fsdata);
++	copied = ret2;
++	if (ret2 < 0)
++		ret = ret2;
++	ret2 = ext4_journal_stop(handle);
++	if (!ret)
++		ret = ret2;
++
++	return ret ? ret : copied;
 +}
 +
 +static void ext4_da_invalidatepage(struct page *page, unsigned long offset)
@@ -267,7 +330,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
   * bmap() is special.  It gets used by applications such as lilo and by
   * the swapper to find the on-disk block of a specific piece of data.
   *
-@@ -1427,6 +1628,16 @@ static sector_t ext4_bmap(struct address
+@@ -1427,6 +1690,16 @@ static sector_t ext4_bmap(struct address
  	journal_t *journal;
  	int err;
  
@@ -284,7 +347,19 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	if (EXT4_I(inode)->i_state & EXT4_STATE_JDATA) {
  		/*
  		 * This is a REALLY heavyweight approach, but the use of
-@@ -1832,10 +2043,28 @@ static const struct address_space_operat
+@@ -1471,11 +1744,6 @@ static int bput_one(handle_t *handle, st
+ 	return 0;
+ }
+ 
+-static int ext4_bh_unmapped_or_delay(handle_t *handle, struct buffer_head *bh)
+-{
+-	return !buffer_mapped(bh) || buffer_delay(bh);
+-}
+-
+ /*
+  * Note that we don't need to start a transaction unless we're journaling data
+  * because we should have holes filled from ext4_page_mkwrite(). We even don't
+@@ -1832,10 +2100,28 @@ static const struct address_space_operat
  	.releasepage	= ext4_releasepage,
  };
  
@@ -295,7 +370,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
 +	.writepages	= ext4_da_writepages,
 +	.sync_page	= block_sync_page,
 +	.write_begin	= ext4_da_write_begin,
-+	.write_end	= generic_write_end,
++	.write_end	= ext4_da_write_end,
 +	.bmap		= ext4_bmap,
 +	.invalidatepage	= ext4_da_invalidatepage,
 +	.releasepage	= ext4_releasepage,
@@ -313,10 +388,10 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	else if (ext4_should_writeback_data(inode))
  		inode->i_mapping->a_ops = &ext4_writeback_aops;
  	else
-Index: linux-2.6.26-rc6/fs/ext4/super.c
+Index: linux-2.6.26-rc8/fs/ext4/super.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/super.c	2008-06-23 16:01:32.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/super.c	2008-06-23 16:57:38.000000000 -0700
+--- linux-2.6.26-rc8.orig/fs/ext4/super.c	2008-06-30 11:18:20.000000000 -0700
++++ linux-2.6.26-rc8/fs/ext4/super.c	2008-06-30 11:55:35.000000000 -0700
 @@ -898,7 +898,7 @@ enum {
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
