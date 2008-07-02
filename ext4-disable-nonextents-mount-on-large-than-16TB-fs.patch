@@ -1,24 +1,17 @@
-From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 ext4: Don't allow nonextenst mount option for large filesystem
 
-The block mapped inode format can address only blocks within
-2**32. So with file system larger than 2**32 don't allow
-noextents mount option.  There are multiple issues that need
-to addressed in the long run.
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-a) When e2fsprogs support resizing an already existing  ext3
-file system to greater than 2**32 we need to add support to block
-allocator to handle growing already existing block  mapped inode
-so that blocks allocated for them fall within 2**32
-
-b) When we do that we should enable mounting  larger file system
-with -o noextents mount option.
-
-Till them we fail mount of large file systems with -o noextents.
-
+The block mapped inode format can address only blocks within 2**32. This
+causes a number of issues, the biggest of which is that the block
+allocator needs to be taught that certain inodes can not utilize block
+numbers > 2**32.  So until this is fixed, it is simplest to fail
+mounting of file systems with more than 2**32 blocks if the -o noextents
+option is given.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/super.c |   15 +++++++++++++++
  1 file changed, 15 insertions(+)

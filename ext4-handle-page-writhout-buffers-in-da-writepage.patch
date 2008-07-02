@@ -3,27 +3,28 @@ ext4: Handle page without buffers in ext4_*_writepage()
 From: Aneesh Kumar <aneesh.kumar@linux.vnet.ibm.com>
 
 It can happen that buffers are removed from the page before it gets
-marked dirty and then is passed to writepage(). In writepage()
-we just initialize the buffers and check whether they are mapped and non
+marked dirty and then is passed to writepage().  In writepage() we just
+initialize the buffers and check whether they are mapped and non
 delay. If they are mapped and non delay we write the page. Otherwise we
-mark then dirty. With this change we don't do block allocation at all in
-ext4_*_write_page.
+mark them dirty.  With this change we don't do block allocation at all
+in ext4_*_write_page.
 
-writepage() get called under many condition and with a locking order
-of journal_start -> lock_page we shouldnot try to allocate blocks in
-writepage() which get called after taking page lock. writepage can get
-called via shrink_page_list even with a journal handle which was created
-for doing inode update. For example when doing ext4_da_write_begin we
-create a journal handle with credit 1 expecting a i_disksize update for
-the inode. But ext4_da_write_begin can cause shrink_page_list via
-_grab_page_cache. So having a valid handle via ext4_journal_current_handle
-is not a guarantee that we can use the handle for block allocation in
-writepage. We should not be using credits which are taken for other updates.
-That would result in we running out of credits when we update inodes.
-
+writepage() can get called under many condition and with a locking order
+of journal_start -> lock_page, we should not try to allocate blocks in
+writepage() which get called after taking page lock.  writepage() can
+get called via shrink_page_list even with a journal handle which was
+created for doing inode update.  For example when doing
+ext4_da_write_begin we create a journal handle with credit 1 expecting a
+i_disksize update for the inode. But ext4_da_write_begin can cause
+shrink_page_list via _grab_page_cache. So having a valid handle via
+ext4_journal_current_handle is not a guarantee that we can use the
+handle for block allocation in writepage, since we shouldn't be using
+credits that had been reserved for other updates.  That it could result
+in we running out of credits when we update inodes.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/inode.c |  169 +++++++++++++++++++++++++++++++++++++++++---------------
  1 file changed, 124 insertions(+), 45 deletions(-)
