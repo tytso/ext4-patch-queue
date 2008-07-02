@@ -1,0 +1,79 @@
+Ext4: fix delalloc i_disksize early update issue
+
+From: Mingming Cao <cmm@us.ibm.com>
+
+Ext4_da_write_end() uses ext4_bh_unmapped_or_delay() function to check
+if it extend the file size without need for allocation. But at that time
+the buffer has not being dirtied yet (done in code later in
+block_commit_write()), so it always return true and update i_disksize
+(before block allocation). we could fix that ext4_da_write_end() to not
+use this helper function.
+
+This also fixed another issue:
+The i_disksize is updated at ext4_da_write_end() time if
+writes to the end of file, and the buffers are all have
+blocks allocated. But if the page had one buffer marked
+as buffer_delay, and the write is at EOF and on a buffer has block
+already allocated, we certainly need to extend the i_disksize.
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/inode.c |   32 ++++++++++++++++++++++++++++++--
+ 1 file changed, 30 insertions(+), 2 deletions(-)
+
+Index: linux-2.6.26-rc8/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.26-rc8.orig/fs/ext4/inode.c	2008-07-02 09:53:42.000000000 -0700
++++ linux-2.6.26-rc8/fs/ext4/inode.c	2008-07-02 10:01:09.000000000 -0700
+@@ -1891,6 +1891,30 @@ out:
+ 	return ret;
+ }
+ 
++/*
++ * Check if we should update i_disksize
++ * when write to the end of file but not require block allocation
++ */
++static int ext4_da_should_update_i_disksize(struct page *page,
++					 unsigned long offset)
++{
++	struct buffer_head *head, *bh;
++	unsigned int curr_off = 0;
++
++	head = page_buffers(page);
++	bh = head;
++	do {
++		unsigned int next_off = curr_off + bh->b_size;
++
++		if (curr_off >= offset &&
++		   (!buffer_mapped(bh) || (buffer_delay(bh))))
++			return 0;
++		curr_off = next_off;
++	} while ((bh = bh->b_this_page) != head);
++
++	return 1;
++}
++
+ static int ext4_da_write_end(struct file *file,
+ 				struct address_space *mapping,
+ 				loff_t pos, unsigned len, unsigned copied,
+@@ -1900,6 +1924,10 @@ static int ext4_da_write_end(struct file
+ 	int ret = 0, ret2;
+ 	handle_t *handle = ext4_journal_current_handle();
+ 	loff_t new_i_size;
++	unsigned long start, end;
++
++	start = pos & (PAGE_CACHE_SIZE - 1);
++	end = start + copied;
+ 
+ 	/*
+ 	 * generic_write_end() will run mark_inode_dirty() if i_size
+@@ -1909,8 +1937,7 @@ static int ext4_da_write_end(struct file
+ 
+ 	new_i_size = pos + copied;
+ 	if (new_i_size > EXT4_I(inode)->i_disksize)
+-		if (!walk_page_buffers(NULL, page_buffers(page),
+-				       0, len, NULL, ext4_bh_unmapped_or_delay)){
++		if (ext4_da_should_update_i_disksize(page, end)) {
+ 			/*
+ 			 * Updating i_disksize when extending file without
+ 			 * need block allocation
