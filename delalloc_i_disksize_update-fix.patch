@@ -18,14 +18,14 @@ already allocated, we certainly need to extend the i_disksize.
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
- fs/ext4/inode.c |   32 ++++++++++++++++++++++++++++++--
- 1 file changed, 30 insertions(+), 2 deletions(-)
+ fs/ext4/inode.c |   31 +++++++++++++++++++++++++++++--
+ 1 file changed, 29 insertions(+), 2 deletions(-)
 
 Index: linux-2.6.26-rc8/fs/ext4/inode.c
 ===================================================================
 --- linux-2.6.26-rc8.orig/fs/ext4/inode.c	2008-07-02 09:53:42.000000000 -0700
-+++ linux-2.6.26-rc8/fs/ext4/inode.c	2008-07-02 10:01:09.000000000 -0700
-@@ -1891,6 +1891,30 @@ out:
++++ linux-2.6.26-rc8/fs/ext4/inode.c	2008-07-02 13:22:52.000000000 -0700
+@@ -1891,6 +1891,32 @@ out:
  	return ret;
  }
  
@@ -44,9 +44,11 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
 +	do {
 +		unsigned int next_off = curr_off + bh->b_size;
 +
-+		if (curr_off >= offset &&
-+		   (!buffer_mapped(bh) || (buffer_delay(bh))))
++		if (curr_off <= offset && offset < next_off)
++		   if (!buffer_mapped(bh) || (buffer_delay(bh)))
 +			return 0;
++		   else
++			return 1;
 +		curr_off = next_off;
 +	} while ((bh = bh->b_this_page) != head);
 +
@@ -56,7 +58,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  static int ext4_da_write_end(struct file *file,
  				struct address_space *mapping,
  				loff_t pos, unsigned len, unsigned copied,
-@@ -1900,6 +1924,10 @@ static int ext4_da_write_end(struct file
+@@ -1900,6 +1926,10 @@ static int ext4_da_write_end(struct file
  	int ret = 0, ret2;
  	handle_t *handle = ext4_journal_current_handle();
  	loff_t new_i_size;
@@ -67,7 +69,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  
  	/*
  	 * generic_write_end() will run mark_inode_dirty() if i_size
-@@ -1909,8 +1937,7 @@ static int ext4_da_write_end(struct file
+@@ -1909,8 +1939,7 @@ static int ext4_da_write_end(struct file
  
  	new_i_size = pos + copied;
  	if (new_i_size > EXT4_I(inode)->i_disksize)
