@@ -10,22 +10,24 @@ block_commit_write()), so it always return true and update i_disksize
 use this helper function.
 
 This also fixed another issue:
-The i_disksize is updated at ext4_da_write_end() time if
-writes to the end of file, and the buffers are all have
-blocks allocated. But if the page had one buffer marked
-as buffer_delay, and the write is at EOF and on a buffer has block
-already allocated, we certainly need to extend the i_disksize.
+Ext4_da_write_end() uses ext4_bh_unmapped_or_delay() to check
+page's all buffer heads, and will not update i_disksize if any of them is
+unmapped or delay. This will cause i_disksize not updated in the case
+page's first part are unmapped, but the second part of page is mapped,
+and the write end is extending the second part of the page.
+We need to extend the i_disksize by checking only the buffer head that
+the write is related.
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
- fs/ext4/inode.c |   31 +++++++++++++++++++++++++++++--
- 1 file changed, 29 insertions(+), 2 deletions(-)
+ fs/ext4/inode.c |   29 +++++++++++++++++++++++++++--
+ 1 file changed, 27 insertions(+), 2 deletions(-)
 
 Index: linux-2.6.26-rc8/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc8.orig/fs/ext4/inode.c	2008-07-02 09:53:42.000000000 -0700
-+++ linux-2.6.26-rc8/fs/ext4/inode.c	2008-07-02 13:22:52.000000000 -0700
-@@ -1891,6 +1891,32 @@ out:
+--- linux-2.6.26-rc8.orig/fs/ext4/inode.c	2008-07-02 16:44:48.000000000 -0700
++++ linux-2.6.26-rc8/fs/ext4/inode.c	2008-07-02 17:27:28.000000000 -0700
+@@ -1891,6 +1891,28 @@ out:
  	return ret;
  }
  
@@ -36,29 +38,25 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
 +static int ext4_da_should_update_i_disksize(struct page *page,
 +					 unsigned long offset)
 +{
-+	struct buffer_head *head, *bh;
-+	unsigned int curr_off = 0;
++	struct buffer_head *bh;
++	unsigned int idx;
++	int i;
 +
-+	head = page_buffers(page);
-+	bh = head;
-+	do {
-+		unsigned int next_off = curr_off + bh->b_size;
++	bh = page_buffers(page);
++	idx = offset >> bh->b_size;
 +
-+		if (curr_off <= offset && offset < next_off)
-+		   if (!buffer_mapped(bh) || (buffer_delay(bh)))
-+			return 0;
-+		   else
-+			return 1;
-+		curr_off = next_off;
-+	} while ((bh = bh->b_this_page) != head);
++	for (i=0; i < idx; i++)
++		bh = bh->b_this_page;
 +
++	if (!buffer_mapped(bh) || (buffer_delay(bh)))
++		return 0;
 +	return 1;
 +}
 +
  static int ext4_da_write_end(struct file *file,
  				struct address_space *mapping,
  				loff_t pos, unsigned len, unsigned copied,
-@@ -1900,6 +1926,10 @@ static int ext4_da_write_end(struct file
+@@ -1900,6 +1922,10 @@ static int ext4_da_write_end(struct file
  	int ret = 0, ret2;
  	handle_t *handle = ext4_journal_current_handle();
  	loff_t new_i_size;
@@ -69,7 +67,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  
  	/*
  	 * generic_write_end() will run mark_inode_dirty() if i_size
-@@ -1909,8 +1939,7 @@ static int ext4_da_write_end(struct file
+@@ -1909,8 +1935,7 @@ static int ext4_da_write_end(struct file
  
  	new_i_size = pos + copied;
  	if (new_i_size > EXT4_I(inode)->i_disksize)
