@@ -25,17 +25,20 @@ which termined the walk of the buffer heads covering the page.  It was
 not intended to be used with a boolean function, such as
 ext4_bh_unmapped_or_delay().
 
+Add addtional fix from Aneesh to protect i_disksize update rave with truncate.
+
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: Aneesh Kumar <aneesh.kumar@gmail.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |   29 +++++++++++++++++++++++++++--
- 1 file changed, 27 insertions(+), 2 deletions(-)
+ fs/ext4/inode.c |   63 +++++++++++++++++++++++++++++++++++++++++---------------
+ 1 file changed, 47 insertions(+), 16 deletions(-)
 
 Index: linux-2.6.26-rc8/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc8.orig/fs/ext4/inode.c	2008-07-02 16:44:48.000000000 -0700
-+++ linux-2.6.26-rc8/fs/ext4/inode.c	2008-07-02 23:05:01.000000000 -0700
-@@ -1891,6 +1891,28 @@ out:
+--- linux-2.6.26-rc8.orig/fs/ext4/inode.c	2008-07-03 15:57:22.000000000 -0700
++++ linux-2.6.26-rc8/fs/ext4/inode.c	2008-07-03 16:23:10.000000000 -0700
+@@ -1891,6 +1891,29 @@ out:
  	return ret;
  }
  
@@ -47,11 +50,12 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
 +					 unsigned long offset)
 +{
 +	struct buffer_head *bh;
++	struct inode *inode = page->mapping->host;
 +	unsigned int idx;
 +	int i;
 +
 +	bh = page_buffers(page);
-+	idx = offset/bh->b_size;
++	idx = offset >> inode->i_blkbits;
 +
 +	for (i=0; i < idx; i++)
 +		bh = bh->b_this_page;
@@ -64,24 +68,73 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  static int ext4_da_write_end(struct file *file,
  				struct address_space *mapping,
  				loff_t pos, unsigned len, unsigned copied,
-@@ -1900,6 +1922,10 @@ static int ext4_da_write_end(struct file
+@@ -1900,6 +1923,10 @@ static int ext4_da_write_end(struct file
  	int ret = 0, ret2;
  	handle_t *handle = ext4_journal_current_handle();
  	loff_t new_i_size;
 +	unsigned long start, end;
 +
 +	start = pos & (PAGE_CACHE_SIZE - 1);
-+	end = start + copied;
++	end = start + copied -1;
  
  	/*
  	 * generic_write_end() will run mark_inode_dirty() if i_size
-@@ -1909,8 +1935,7 @@ static int ext4_da_write_end(struct file
+@@ -1908,18 +1935,23 @@ static int ext4_da_write_end(struct file
+ 	 */
  
  	new_i_size = pos + copied;
- 	if (new_i_size > EXT4_I(inode)->i_disksize)
+-	if (new_i_size > EXT4_I(inode)->i_disksize)
 -		if (!walk_page_buffers(NULL, page_buffers(page),
 -				       0, len, NULL, ext4_bh_unmapped_or_delay)){
+-			/*
+-			 * Updating i_disksize when extending file without
+-			 * need block allocation
+-			 */
+-			if (ext4_should_order_data(inode))
+-				ret = ext4_jbd2_file_inode(handle, inode);
++	if (new_i_size > EXT4_I(inode)->i_disksize) {
 +		if (ext4_da_should_update_i_disksize(page, end)) {
- 			/*
- 			 * Updating i_disksize when extending file without
- 			 * needing block allocation
++			down_write(&EXT4_I(inode)->i_data_sem);
++			if (new_i_size > EXT4_I(inode)->i_disksize) {
++				/*
++				 * Updating i_disksize when extending file
++				 * without need block allocation
++				 */
++				if (ext4_should_order_data(inode))
++					ret = ext4_jbd2_file_inode(handle,
++								   inode);
+ 
+-			EXT4_I(inode)->i_disksize = new_i_size;
++				EXT4_I(inode)->i_disksize = new_i_size;
++			}
++			up_write(&EXT4_I(inode)->i_data_sem);
+ 		}
++	}
+ 	ret2 = generic_write_end(file, mapping, pos, len, copied,
+ 							page, fsdata);
+ 	copied = ret2;
+@@ -2965,6 +2997,11 @@ void ext4_truncate(struct inode *inode)
+ 		goto out_stop;
+ 
+ 	/*
++	 * From here we block out all ext4_get_block() callers who want to
++	 * modify the block allocation tree.
++	 */
++	down_write(&ei->i_data_sem);
++	/*
+ 	 * The orphan list entry will now protect us from any crash which
+ 	 * occurs before the truncate completes, so it is now safe to propagate
+ 	 * the new, shorter inode size (held for now in i_size) into the
+@@ -2973,12 +3010,6 @@ void ext4_truncate(struct inode *inode)
+ 	 */
+ 	ei->i_disksize = inode->i_size;
+ 
+-	/*
+-	 * From here we block out all ext4_get_block() callers who want to
+-	 * modify the block allocation tree.
+-	 */
+-	down_write(&ei->i_data_sem);
+-
+ 	if (n == 1) {		/* direct blocks */
+ 		ext4_free_data(handle, inode, NULL, i_data+offsets[0],
+ 			       i_data + EXT4_NDIR_BLOCKS);
