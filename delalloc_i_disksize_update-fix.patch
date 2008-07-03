@@ -2,23 +2,31 @@ Ext4: fix delalloc i_disksize early update issue
 
 From: Mingming Cao <cmm@us.ibm.com>
 
-Ext4_da_write_end() uses ext4_bh_unmapped_or_delay() function to check
-if it extend the file size without need for allocation. But at that time
-the buffer has not being dirtied yet (done in code later in
-block_commit_write()), so it always return true and update i_disksize
-(before block allocation). we could fix that ext4_da_write_end() to not
-use this helper function.
+Ext4_da_write_end() used walk_page_buffers() with a callback function of
+ext4_bh_unmapped_or_delay() to check if it extended the file size
+without allocating any blocks (since in this case i_disksize needs to be
+updated).  However, this is didn't work proprely because the buffer head
+has not been marked dirty yet --- this is done later in
+block_commit_write() --- which caused ext4_bh_unmapped_or_delay() to
+always return false.
 
-This also fixed another issue:
-Ext4_da_write_end() uses ext4_bh_unmapped_or_delay() to check
-page's all buffer heads, and will not update i_disksize if any of them is
-unmapped or delay. This will cause i_disksize not updated in the case
-page's first part are unmapped, but the second part of page is mapped,
-and the write end is extending the second part of the page.
-We need to extend the i_disksize by checking only the buffer head that
-the write is related.
+In addition, walk_page_buffers() checks all of the buffer heads covering
+the page, and the only buffer_head that should be checked is the one
+covering the end of the write.  Otherwise, given a 1k blocksize
+filesystem and a 4k page size, the buffer head covering the first 1k
+stripe of the file could be unmapped (because it was a sparse file), and
+the second or third buffer_head covering that page could be mapped, and
+using walk_page_buffers() would fail in this case since it would stop at
+the first unmapped buffer_head and return true.
+
+The core problem is that walk_page_buffers() was intended to do work in
+a callback function, and a non-zero return value indicated a failure,
+which termined the walk of the buffer heads covering the page.  It was
+not intended to be used with a boolean function, such as
+ext4_bh_unmapped_or_delay().
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/inode.c |   29 +++++++++++++++++++++++++++--
  1 file changed, 27 insertions(+), 2 deletions(-)
@@ -76,4 +84,4 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
 +		if (ext4_da_should_update_i_disksize(page, end)) {
  			/*
  			 * Updating i_disksize when extending file without
- 			 * need block allocation
+ 			 * needing block allocation
