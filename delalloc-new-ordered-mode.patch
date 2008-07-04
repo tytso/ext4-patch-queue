@@ -2,8 +2,18 @@ ext4: Add ordered mode support for delalloc
 
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
+This provides a new ordered mode implementation which gets rid of using
+buffer heads to enforce the ordering between metadata change with the
+related data chage.  Instead, in the new ordering mode, it keeps track
+of all of the inodes touched by each transaction on a list, and when
+that transaction is committed, it flushes all of the dirty pages for
+those inodes.  In addition, the new ordered mode reverses the lock
+ordering of the page lock and transaction lock, which provides easier
+support for delayed allocation.
+
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
 
  fs/ext4/inode.c  |   30 +++++++++++++++++++++++++-----

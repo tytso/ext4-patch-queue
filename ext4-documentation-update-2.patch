@@ -4,15 +4,13 @@ From: Mingming Cao <cmm@us.ibm.com>
 
 Adding some documentations for delayed allocation and new ordered mode.
 
----
- Documentation/filesystems/ext4.txt |   37 +++++++++++++++++++++++++++----------
- 1 file changed, 27 insertions(+), 10 deletions(-)
-
-Index: linux-2.6.26-rc8/Documentation/filesystems/ext4.txt
-===================================================================
---- linux-2.6.26-rc8.orig/Documentation/filesystems/ext4.txt	2008-07-02 13:49:28.000000000 -0700
-+++ linux-2.6.26-rc8/Documentation/filesystems/ext4.txt	2008-07-02 14:06:34.000000000 -0700
-@@ -57,7 +57,7 @@ Mailing list: linux-ext4@vger.kernel.org
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
+index 77ed8fe..e2afb6e 100644
+--- a/Documentation/filesystems/ext4.txt
++++ b/Documentation/filesystems/ext4.txt
+@@ -62,7 +62,7 @@ Mailing list: linux-ext4@vger.kernel.org
  * extent format reduces metadata overhead (RAM, IO for access, transactions)
  * extent format more robust in face of on-disk corruption due to magics,
  * internal redunancy in tree
@@ -21,33 +19,18 @@ Index: linux-2.6.26-rc8/Documentation/filesystems/ext4.txt
  * fix 32000 subdirectory limit
  * nsec timestamps for mtime, atime, ctime, create time
  * inode version field on disk (NFSv4, Lustre)
-@@ -67,8 +67,15 @@ Mailing list: linux-ext4@vger.kernel.org
- * ability to pack bitmaps and inode tables into larger virtual groups via the
+@@ -73,6 +73,10 @@ Mailing list: linux-ext4@vger.kernel.org
    flex_bg feature
  * large file support
+ * Inode allocation using large virtual block groups via flex_bg
 +* delayed allocation
 +* large block (up to pagesize) support
 +* efficent new ordered mode in JBD2 and ext4(avoid using buffer head to force
 +  the ordering)
-+* Inode allocation using large virtual block groups via flex_bg (patch
-+  available; fragmentation issues due to prolong fs use still unknown)
-+
  
--2.2 Previously available, soon to be enabled by default by "mkefs.ext4":
-+2.2 Previously available, now is enabled by default by "mkefs.ext4":
+ 2.2 Candidate features for future inclusion
  
- * dir_index and resize inode will be on by default
- * large inodes will be used by default for fast EAs, nsec timestamps, etc
-@@ -76,8 +83,6 @@ Mailing list: linux-ext4@vger.kernel.org
- 2.3 Candidate features for future inclusion
- 
- * Online defrag (patches available but not well tested)
--* Inode allocation using large virtual block groups via flex_bg (patch
--  available; fragmentation issues due to prolong fs use still unknown)
- * reduced mke2fs time via uninit_bg feature (capability to do this is
-   available in e2fsprogs but a kernel thread to do lazy zeroing of unused
-   inode table blocks after filesystem is first mounted is required for
-@@ -236,7 +241,9 @@ stripe=n		Number of filesystem blocks th
+@@ -235,7 +239,9 @@ stripe=n		Number of filesystem blocks that mballoc will try
  			to use for allocation size and alignment. For RAID5/6
  			systems this should be the number of data
  			disks *  RAID chunk size in file system blocks.
@@ -58,7 +41,7 @@ Index: linux-2.6.26-rc8/Documentation/filesystems/ext4.txt
  Data Mode
  =========
  There are 3 different data modes:
-@@ -250,10 +257,19 @@ typically provide the best ext4 performa
+@@ -249,10 +255,10 @@ typically provide the best ext4 performance.
  
  * ordered mode
  In data=ordered mode, ext4 only officially journals metadata, but it logically
@@ -70,25 +53,16 @@ Index: linux-2.6.26-rc8/Documentation/filesystems/ext4.txt
 +single unit called a transaction.  When it's time to write the new metadata
 +out to disk, the associated data blocks are written first.  In general,
 +this mode performs slightly slower than writeback but significantly faster than journal mode.
-+
-+In ext4/JBD2 this ordered mode implementation is different than ext3/JBD
-+ordered mode. First it get rid of using buffer heads to enforce the ordering
-+between metadata change with the related data chage. Instead, in the new
-+ordering mode, it keeps track of per transaction journalled inode list, and
-+flush all the dirty pages for those inodes, when committing that transaction.
-+Second, the new ordered mode reverse the lock ordering of the page lock and
-+transaction lock, to fixing the locking issue in the new mode, and also provide
-+easy support for delayed allocation over the new ordered mode
  
  * journal mode
  data=journal mode provides full data and metadata journaling.  All new data is
-@@ -261,7 +277,8 @@ written to the journal first, and then t
+@@ -260,7 +266,8 @@ written to the journal first, and then to its final location.
  In the event of a crash, the journal can be replayed, bringing both data and
  metadata into a consistent state.  This mode is the slowest except when data
  needs to be read from and written to disk at the same time where it
 -outperforms all others modes.
-+outperforms all others modes. Right now this mode does not have
-+delayed allocation support.
++outperforms all others modes.  Curently ext4 does not have delayed
++allocation support if this data journalling mode is selected.
  
  References
  ==========
