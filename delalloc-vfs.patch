@@ -2,12 +2,13 @@ vfs: add basic delayed allocation support
 
 From: Alex Tomas <alex@clusterfs.com>
 
-* block_prepare_write() can be passed special ->get_block() which
+* block_prepare_write() can be passed a special ->get_block() which
    doesn't allocate blocks, but reserve them and mark bh delayed
- * a filesystem can use mpage_da_writepages() with other ->get_block()
-   which doesn't defer allocation. mpage_da_writepages() finds all
-   non-allocated blocks and try to allocate them with minimal calls
-   to ->get_block(), then submit IO using __mpage_writepage()
+
+* a filesystem can use mpage_da_writepages() with other ->get_block()
+  which doesn't defer allocation. mpage_da_writepages() finds all
+  non-allocated blocks and try to allocate them with minimal calls
+  to ->get_block(), then submit IO using __mpage_writepage()
 
 Updated fix from  Valerie Clement <valerie.clement@bull.net>
 fixes a filesystem corruption issue when the filesystem is
