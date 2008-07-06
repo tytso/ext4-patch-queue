@@ -16,18 +16,11 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
-
- fs/ext4/extents.c |   10 ++
- fs/ext4/inode.c   |  189 +++++++++++++++++++++++++++++++++++++++---------------
- fs/mpage.c        |   12 +--
- 3 files changed, 152 insertions(+), 59 deletions(-)
-
-
-Index: linux-2.6.26-rc6/fs/ext4/inode.c
-===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-24 15:13:35.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-24 15:14:05.000000000 -0700
-@@ -846,6 +846,7 @@ int ext4_get_blocks_handle(handle_t *han
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index c5dd4a5..9e84525 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -846,6 +846,7 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
  	struct ext4_inode_info *ei = EXT4_I(inode);
  	int count = 0;
  	ext4_fsblk_t first_block = 0;
@@ -35,7 +28,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  
  
  	J_ASSERT(!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL));
-@@ -921,8 +922,13 @@ int ext4_get_blocks_handle(handle_t *han
+@@ -921,8 +922,13 @@ int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
  	 * protect it if you're about to implement concurrent
  	 * ext4_get_block() -bzzz
  	*/
@@ -51,7 +44,37 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	if (err)
  		goto cleanup;
  
-@@ -1580,18 +1586,14 @@ static int ext4_da_get_block_prep(struct
+@@ -1672,13 +1678,11 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
+ 			do {
+ 				if (cur_logical >= logical + blocks)
+ 					break;
+-
+ 				if (buffer_delay(bh)) {
+ 					bh->b_blocknr = pblock;
+ 					clear_buffer_delay(bh);
+-				} else if (buffer_mapped(bh)) {
++				} else if (buffer_mapped(bh))
+ 					BUG_ON(bh->b_blocknr != pblock);
+-				}
+ 
+ 				cur_logical++;
+ 				pblock++;
+@@ -1753,10 +1757,10 @@ static void mpage_da_map_blocks(struct mpage_da_data *mpd)
+ 		if (buffer_delay(lbh))
+ 			mpage_put_bnr_to_bhs(mpd, next, &new);
+ 
+-			/* go for the remaining blocks */
+-			next += new.b_size >> mpd->inode->i_blkbits;
+-			remain -= new.b_size;
+-		}
++		/* go for the remaining blocks */
++		next += new.b_size >> mpd->inode->i_blkbits;
++		remain -= new.b_size;
++	}
+ }
+ 
+ #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | (1 << BH_Delay))
+@@ -1982,18 +1986,14 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
  				   struct buffer_head *bh_result, int create)
  {
@@ -74,7 +97,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  
  	ret = ext4_get_blocks_wrap(handle, inode, iblock, max_blocks,
  				   bh_result, create, 0, EXT4_DELALLOC_RSVED);
-@@ -1621,65 +1623,157 @@ static int ext4_da_get_block_write(struc
+@@ -2022,65 +2022,157 @@ static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
  			up_write(&EXT4_I(inode)->i_data_sem);
  
  			if (EXT4_I(inode)->i_disksize == disksize) {
@@ -162,13 +185,13 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
 +		ret = nobh_writepage(page, ext4_da_get_block_write, wbc);
  	else
 -		ret = block_write_full_page(page, ext4_get_block, wbc);
-+		ret = block_write_full_page(page, ext4_da_get_block_write, wbc);
- 
+-
 -	if (!ret && inode->i_size > EXT4_I(inode)->i_disksize) {
 -		EXT4_I(inode)->i_disksize = inode->i_size;
 -		ext4_mark_inode_dirty(handle, inode);
 -	}
--
++		ret = block_write_full_page(page, ext4_da_get_block_write, wbc);
+ 
 -	err = ext4_journal_stop(handle);
 -	if (!ret)
 -		ret = err;
@@ -267,7 +290,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  }
  
  static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
-@@ -1728,11 +1822,6 @@ out:
+@@ -2130,11 +2222,6 @@ out:
  	return ret;
  }
  
@@ -279,45 +302,11 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  static int ext4_da_write_end(struct file *file,
  				struct address_space *mapping,
  				loff_t pos, unsigned len, unsigned copied,
-Index: linux-2.6.26-rc6/fs/mpage.c
-===================================================================
---- linux-2.6.26-rc6.orig/fs/mpage.c	2008-06-24 15:12:23.000000000 -0700
-+++ linux-2.6.26-rc6/fs/mpage.c	2008-06-24 15:13:38.000000000 -0700
-@@ -849,13 +849,11 @@ static void mpage_put_bnr_to_bhs(struct 
- 			do {
- 				if (cur_logical >= logical + blocks)
- 					break;
--
- 				if (buffer_delay(bh)) {
- 					bh->b_blocknr = pblock;
- 					clear_buffer_delay(bh);
--				} else if (buffer_mapped(bh)) {
-+				} else if (buffer_mapped(bh))
- 					BUG_ON(bh->b_blocknr != pblock);
--				}
- 
- 				cur_logical++;
- 				pblock++;
-@@ -930,10 +928,10 @@ static void mpage_da_map_blocks(struct m
- 		if (buffer_delay(lbh))
- 			mpage_put_bnr_to_bhs(mpd, next, &new);
- 
--			/* go for the remaining blocks */
--			next += new.b_size >> mpd->inode->i_blkbits;
--			remain -= new.b_size;
--		}
-+		/* go for the remaining blocks */
-+		next += new.b_size >> mpd->inode->i_blkbits;
-+		remain -= new.b_size;
-+	}
- }
- 
- #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | (1 << BH_Delay))
-Index: linux-2.6.26-rc6/fs/ext4/extents.c
-===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-24 15:13:35.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-24 15:13:38.000000000 -0700
-@@ -2565,6 +2565,7 @@ int ext4_ext_get_blocks(handle_t *handle
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 88e08a3..f413be9 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2565,6 +2565,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  	int err = 0, depth, ret;
  	unsigned long allocated = 0;
  	struct ext4_allocation_request ar;
@@ -325,7 +314,7 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
  
  	__clear_bit(BH_New, &bh_result->b_state);
  	ext_debug("blocks %u/%lu requested for inode %u\n",
-@@ -2755,8 +2756,13 @@ int ext4_ext_get_blocks(handle_t *handle
+@@ -2755,8 +2756,13 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  	newblock = ext_pblock(&newex);
  	allocated = ext4_ext_get_actual_len(&newex);
  outnew:
