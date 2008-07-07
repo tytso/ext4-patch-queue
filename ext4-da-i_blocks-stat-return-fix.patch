@@ -5,16 +5,18 @@ From: Mingming Cao <cmm@us.ibm.com>
 Right now i_blocks is not getting updated until the disks are actually
 allocaed on disk.  This means with delayed allocation, right after files
 are copied, "ls -sF" shoes the file as taking 0 blocks on disk.  "du"
-also shows the files taking zero space, which is highly confusing to the user.
+also shows the files taking zero space, which is highly confusing to the
+user.
 
-Since current delayed allocation already keep track of per-inode total number
-of blocks that are subject to delayed allocation, this patch fix this by using
-that to adjust the value returned by stat(2). When real block allocation
-is done, the i_blocks will get updated. Since the reserved blocks for delayed
-allocation will be decreased, this will be keep value returned by stat(2)
-consistent.
+Since current delayed allocation already keep track of per-inode total
+number of blocks that are subject to delayed allocation, this patch fix
+this by using that to adjust the value returned by stat(2). When real
+block allocation is done, the i_blocks will get updated. Since the
+reserved blocks for delayed allocation will be decreased, this will be
+keep value returned by stat(2) consistent.
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
  fs/ext4/ext4.h  |    2 ++
