@@ -6,19 +6,22 @@ We cannot call ext4_orphan_add() from under i_data_sem because that
 causes a lock ordering violation between i_data_sem and and the
 superblock lock.
 
+Updated with Aneesh's locking order fix
+
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com> 
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com> 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
- fs/ext4/extents.c |    5 +++--
- 1 file changed, 3 insertions(+), 2 deletions(-)
+ fs/ext4/extents.c |    7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
 
-Index: linux-2.6.26-rc6/fs/ext4/extents.c
+Index: linux-2.6.26-rc9/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-18 15:11:07.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-18 15:11:12.000000000 -0700
-@@ -2769,6 +2769,9 @@ void ext4_ext_truncate(struct inode *ino
+--- linux-2.6.26-rc9.orig/fs/ext4/extents.c	2008-07-11 15:56:20.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/extents.c	2008-07-11 15:57:21.000000000 -0700
+@@ -2768,6 +2768,9 @@ void ext4_ext_truncate(struct inode *ino
  	if (inode->i_size & (sb->s_blocksize - 1))
  		ext4_block_truncate_page(handle, mapping, inode->i_size);
  
@@ -28,7 +31,7 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
  	down_write(&EXT4_I(inode)->i_data_sem);
  	ext4_ext_invalidate_cache(inode);
  
-@@ -2779,8 +2782,6 @@ void ext4_ext_truncate(struct inode *ino
+@@ -2778,8 +2781,6 @@ void ext4_ext_truncate(struct inode *ino
  	 * Probably we need not scan at all,
  	 * because page truncation is enough.
  	 */
@@ -37,3 +40,19 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
  
  	/* we have to know where to truncate from in crash case */
  	EXT4_I(inode)->i_disksize = inode->i_size;
+@@ -2796,6 +2797,7 @@ void ext4_ext_truncate(struct inode *ino
+ 		handle->h_sync = 1;
+ 
+ out_stop:
++	up_write(&EXT4_I(inode)->i_data_sem);
+ 	/*
+ 	 * If this was a simple ftruncate() and the file will remain alive,
+ 	 * then we need to clear up the orphan record which we created above.
+@@ -2806,7 +2808,6 @@ out_stop:
+ 	if (inode->i_nlink)
+ 		ext4_orphan_del(handle, inode);
+ 
+-	up_write(&EXT4_I(inode)->i_data_sem);
+ 	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
+ 	ext4_mark_inode_dirty(handle, inode);
+ 	ext4_journal_stop(handle);
