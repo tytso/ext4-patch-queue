@@ -23,10 +23,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  4 files changed, 59 insertions(+), 112 deletions(-)
 
 
-Index: linux-2.6.26-rc6/fs/ext4/ext4_i.h
+Index: linux-2.6.26-rc9/fs/ext4/ext4_i.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4_i.h	2008-06-23 15:46:52.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4_i.h	2008-06-23 16:01:09.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4_i.h	2008-07-11 16:04:56.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4_i.h	2008-07-11 16:05:10.000000000 -0700
 @@ -150,6 +150,7 @@ struct ext4_inode_info {
  	 */
  	struct rw_semaphore i_data_sem;
@@ -35,10 +35,10 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4_i.h
  
  	unsigned long i_ext_generation;
  	struct ext4_ext_cache i_cached_extent;
-Index: linux-2.6.26-rc6/fs/ext4/ext4_jbd2.h
+Index: linux-2.6.26-rc9/fs/ext4/ext4_jbd2.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4_jbd2.h	2008-06-23 15:46:52.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4_jbd2.h	2008-06-23 15:55:40.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4_jbd2.h	2008-07-11 16:04:27.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4_jbd2.h	2008-07-11 16:05:10.000000000 -0700
 @@ -154,8 +154,6 @@ int __ext4_journal_dirty_metadata(const 
  #define ext4_journal_forget(handle, bh) \
  	__ext4_journal_forget(__FUNCTION__, (handle), (bh))
@@ -60,10 +60,10 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4_jbd2.h
  /* super.c */
  int ext4_force_commit(struct super_block *sb);
  
-Index: linux-2.6.26-rc6/fs/ext4/inode.c
+Index: linux-2.6.26-rc9/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-23 15:55:40.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-23 16:01:32.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/inode.c	2008-07-11 16:05:09.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/inode.c	2008-07-11 16:05:10.000000000 -0700
 @@ -39,6 +39,13 @@
  #include "xattr.h"
  #include "acl.h"
@@ -281,7 +281,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  		mark_buffer_dirty(bh);
  	}
  
-@@ -3149,7 +3066,14 @@ int ext4_write_inode(struct inode *inode
+@@ -3171,7 +3088,14 @@ int ext4_write_inode(struct inode *inode
   * be freed, so we have a strong guarantee that no future commit will
   * leave these blocks visible to the user.)
   *
@@ -297,7 +297,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
   */
  int ext4_setattr(struct dentry *dentry, struct iattr *attr)
  {
-@@ -3215,6 +3139,22 @@ int ext4_setattr(struct dentry *dentry, 
+@@ -3237,6 +3161,22 @@ int ext4_setattr(struct dentry *dentry, 
  		if (!error)
  			error = rc;
  		ext4_journal_stop(handle);
@@ -320,10 +320,10 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	}
  
  	rc = inode_setattr(inode, attr);
-Index: linux-2.6.26-rc6/fs/ext4/super.c
+Index: linux-2.6.26-rc9/fs/ext4/super.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/super.c	2008-06-23 15:46:52.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/super.c	2008-06-23 16:01:32.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/super.c	2008-07-11 16:05:06.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/super.c	2008-07-11 16:05:10.000000000 -0700
 @@ -573,6 +573,7 @@ static struct inode *ext4_alloc_inode(st
  	memset(&ei->i_cached_extent, 0, sizeof(struct ext4_ext_cache));
  	INIT_LIST_HEAD(&ei->i_prealloc_list);

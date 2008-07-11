@@ -24,11 +24,11 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  3 files changed, 155 insertions(+), 156 deletions(-)
 
 
-Index: linux-2.6.26-rc6/fs/ext4/ext4.h
+Index: linux-2.6.26-rc9/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-17 10:43:34.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-17 10:43:34.000000000 -0700
-@@ -1061,7 +1061,7 @@ extern void ext4_set_inode_flags(struct 
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4.h	2008-07-11 16:05:08.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4.h	2008-07-11 16:05:09.000000000 -0700
+@@ -1066,7 +1066,7 @@ extern void ext4_set_inode_flags(struct 
  extern void ext4_get_inode_flags(struct ext4_inode_info *);
  extern void ext4_set_aops(struct inode *inode);
  extern int ext4_writepage_trans_blocks(struct inode *);
@@ -37,7 +37,7 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4.h
  		struct address_space *mapping, loff_t from);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
  
-@@ -1220,7 +1220,7 @@ extern int ext4_ext_get_blocks(handle_t 
+@@ -1225,7 +1225,7 @@ extern int ext4_ext_get_blocks(handle_t 
  			ext4_lblk_t iblock,
  			unsigned long max_blocks, struct buffer_head *bh_result,
  			int create, int extend_disksize);
@@ -46,11 +46,11 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4.h
  extern void ext4_ext_init(struct super_block *);
  extern void ext4_ext_release(struct super_block *);
  extern long ext4_fallocate(struct inode *inode, int mode, loff_t offset,
-Index: linux-2.6.26-rc6/fs/ext4/extents.c
+Index: linux-2.6.26-rc9/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-17 10:43:33.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-17 10:43:34.000000000 -0700
-@@ -2750,7 +2750,7 @@ out2:
+--- linux-2.6.26-rc9.orig/fs/ext4/extents.c	2008-07-11 16:05:07.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/extents.c	2008-07-11 16:05:09.000000000 -0700
+@@ -2749,7 +2749,7 @@ out2:
  	return err ? err : allocated;
  }
  
@@ -59,7 +59,7 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
  {
  	struct address_space *mapping = inode->i_mapping;
  	struct super_block *sb = inode->i_sb;
-@@ -2763,18 +2763,11 @@ void ext4_ext_truncate(struct inode * in
+@@ -2762,18 +2762,11 @@ void ext4_ext_truncate(struct inode * in
  	 */
  	err = ext4_writepage_trans_blocks(inode) + 3;
  	handle = ext4_journal_start(inode, err);
@@ -81,10 +81,10 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
  
  	down_write(&EXT4_I(inode)->i_data_sem);
  	ext4_ext_invalidate_cache(inode);
-Index: linux-2.6.26-rc6/fs/ext4/inode.c
+Index: linux-2.6.26-rc9/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-17 10:43:34.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-17 10:43:34.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/inode.c	2008-07-11 16:05:08.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/inode.c	2008-07-11 16:05:09.000000000 -0700
 @@ -1239,19 +1239,20 @@ static int ext4_write_begin(struct file 
   	to = from + len;
  
@@ -528,16 +528,13 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	blocksize = inode->i_sb->s_blocksize;
  	length = blocksize - (offset & (blocksize - 1));
  	iblock = index << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
-@@ -2383,7 +2410,6 @@ void ext4_truncate(struct inode *inode)
+@@ -2410,46 +2437,25 @@ void ext4_truncate(struct inode *inode)
  	int n;
  	ext4_lblk_t last_block;
  	unsigned blocksize = inode->i_sb->s_blocksize;
 -	struct page *page;
  
- 	if (!(S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
- 	    S_ISLNK(inode->i_mode)))
-@@ -2393,41 +2419,21 @@ void ext4_truncate(struct inode *inode)
- 	if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
+ 	if (!ext4_can_truncate(inode))
  		return;
  
 -	/*

@@ -34,11 +34,11 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/inode.c |   63 +++++++++++++++++++++++++++++++++++++++++---------------
  1 file changed, 47 insertions(+), 16 deletions(-)
 
-Index: linux-2.6.26-rc8/fs/ext4/inode.c
+Index: linux-2.6.26-rc9/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc8.orig/fs/ext4/inode.c	2008-07-03 15:57:22.000000000 -0700
-+++ linux-2.6.26-rc8/fs/ext4/inode.c	2008-07-03 16:23:10.000000000 -0700
-@@ -1891,6 +1891,29 @@ out:
+--- linux-2.6.26-rc9.orig/fs/ext4/inode.c	2008-07-11 16:05:14.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/inode.c	2008-07-11 16:05:15.000000000 -0700
+@@ -2292,6 +2292,29 @@ out:
  	return ret;
  }
  
@@ -68,7 +68,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  static int ext4_da_write_end(struct file *file,
  				struct address_space *mapping,
  				loff_t pos, unsigned len, unsigned copied,
-@@ -1900,6 +1923,10 @@ static int ext4_da_write_end(struct file
+@@ -2301,6 +2324,10 @@ static int ext4_da_write_end(struct file
  	int ret = 0, ret2;
  	handle_t *handle = ext4_journal_current_handle();
  	loff_t new_i_size;
@@ -79,7 +79,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  
  	/*
  	 * generic_write_end() will run mark_inode_dirty() if i_size
-@@ -1908,18 +1935,23 @@ static int ext4_da_write_end(struct file
+@@ -2309,18 +2336,23 @@ static int ext4_da_write_end(struct file
  	 */
  
  	new_i_size = pos + copied;
@@ -113,7 +113,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  	ret2 = generic_write_end(file, mapping, pos, len, copied,
  							page, fsdata);
  	copied = ret2;
-@@ -2965,6 +2997,11 @@ void ext4_truncate(struct inode *inode)
+@@ -3388,6 +3420,11 @@ void ext4_truncate(struct inode *inode)
  		goto out_stop;
  
  	/*
@@ -125,7 +125,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  	 * The orphan list entry will now protect us from any crash which
  	 * occurs before the truncate completes, so it is now safe to propagate
  	 * the new, shorter inode size (held for now in i_size) into the
-@@ -2973,12 +3010,6 @@ void ext4_truncate(struct inode *inode)
+@@ -3396,12 +3433,6 @@ void ext4_truncate(struct inode *inode)
  	 */
  	ei->i_disksize = inode->i_size;
  

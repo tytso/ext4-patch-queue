@@ -29,11 +29,11 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/inode.c |  169 +++++++++++++++++++++++++++++++++++++++++---------------
  1 file changed, 124 insertions(+), 45 deletions(-)
 
-Index: linux-2.6.26-rc8/fs/ext4/inode.c
+Index: linux-2.6.26-rc9/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc8.orig/fs/ext4/inode.c	2008-06-30 11:49:49.000000000 -0700
-+++ linux-2.6.26-rc8/fs/ext4/inode.c	2008-06-30 11:49:56.000000000 -0700
-@@ -1592,11 +1592,15 @@ static int ext4_da_get_block_write(struc
+--- linux-2.6.26-rc9.orig/fs/ext4/inode.c	2008-07-11 16:05:14.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/inode.c	2008-07-11 16:05:14.000000000 -0700
+@@ -1993,11 +1993,15 @@ static int ext4_da_get_block_write(struc
  	handle_t *handle = NULL;
  
  	handle = ext4_journal_current_handle();
@@ -53,7 +53,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  	if (ret > 0) {
  		bh_result->b_size = (ret << inode->i_blkbits);
  
-@@ -1634,15 +1638,37 @@ static int ext4_da_get_block_write(struc
+@@ -2034,15 +2038,37 @@ static int ext4_da_get_block_write(struc
  
  static int ext4_bh_unmapped_or_delay(handle_t *handle, struct buffer_head *bh)
  {
@@ -97,7 +97,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
   */
  static int ext4_da_writepage(struct page *page,
  				struct writeback_control *wbc)
-@@ -1650,37 +1676,61 @@ static int ext4_da_writepage(struct page
+@@ -2050,37 +2076,61 @@ static int ext4_da_writepage(struct page
  	int ret = 0;
  	loff_t size;
  	unsigned long len;
@@ -181,7 +181,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  			 */
  			redirty_page_for_writepage(wbc, page);
  			unlock_page(page);
-@@ -1689,9 +1739,11 @@ static int ext4_da_writepage(struct page
+@@ -2089,9 +2139,11 @@ static int ext4_da_writepage(struct page
  	}
  
  	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
@@ -195,7 +195,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  
  	return ret;
  }
-@@ -2032,12 +2084,14 @@ static int __ext4_normal_writepage(struc
+@@ -2432,12 +2484,14 @@ static int __ext4_normal_writepage(struc
  	struct inode *inode = page->mapping->host;
  
  	if (test_opt(inode->i_sb, NOBH))
@@ -213,7 +213,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  static int ext4_normal_writepage(struct page *page,
  				struct writeback_control *wbc)
  {
-@@ -2046,13 +2100,24 @@ static int ext4_normal_writepage(struct 
+@@ -2446,13 +2500,24 @@ static int ext4_normal_writepage(struct 
  	loff_t len;
  
  	J_ASSERT(PageLocked(page));
@@ -241,7 +241,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  
  	if (!ext4_journal_current_handle())
  		return __ext4_normal_writepage(page, wbc);
-@@ -2072,7 +2137,8 @@ static int __ext4_journalled_writepage(s
+@@ -2472,7 +2537,8 @@ static int __ext4_journalled_writepage(s
  	int ret = 0;
  	int err;
  
@@ -251,7 +251,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  	if (ret != 0)
  		goto out_unlock;
  
-@@ -2119,13 +2185,24 @@ static int ext4_journalled_writepage(str
+@@ -2519,13 +2585,24 @@ static int ext4_journalled_writepage(str
  	loff_t len;
  
  	J_ASSERT(PageLocked(page));
@@ -279,7 +279,7 @@ Index: linux-2.6.26-rc8/fs/ext4/inode.c
  
  	if (ext4_journal_current_handle())
  		goto no_write;
-@@ -2143,7 +2220,9 @@ static int ext4_journalled_writepage(str
+@@ -2543,7 +2620,9 @@ static int ext4_journalled_writepage(str
  		 * really know unless we go poke around in the buffer_heads.
  		 * But block_write_full_page will do the right thing.
  		 */

@@ -32,10 +32,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/super.c   |   57 ++++++++++++++++++++++++++++++++
  6 files changed, 209 insertions(+), 1 deletion(-)
 
-Index: linux-2.6.26-rc6/fs/ext4/balloc.c
+Index: linux-2.6.26-rc9/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/balloc.c	2008-06-17 10:43:26.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/balloc.c	2008-06-17 10:43:27.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/balloc.c	2008-07-11 16:04:59.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/balloc.c	2008-07-11 16:05:01.000000000 -0700
 @@ -809,6 +809,13 @@ do_more:
  	spin_unlock(sb_bgl_lock(sbi, block_group));
  	percpu_counter_add(&sbi->s_freeblocks_counter, count);
@@ -64,10 +64,10 @@ Index: linux-2.6.26-rc6/fs/ext4/balloc.c
  	BUFFER_TRACE(gdp_bh, "journal_dirty_metadata for group descriptor");
  	err = ext4_journal_dirty_metadata(handle, gdp_bh);
  	if (!fatal)
-Index: linux-2.6.26-rc6/fs/ext4/ext4.h
+Index: linux-2.6.26-rc9/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-17 10:43:22.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-17 10:43:27.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4.h	2008-07-11 16:04:56.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4.h	2008-07-11 16:05:01.000000000 -0700
 @@ -170,6 +170,15 @@ struct ext4_group_desc
  	__u32	bg_reserved2[3];
  };
@@ -96,7 +96,7 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4.h
  };
  
  #ifdef __KERNEL__
-@@ -1159,6 +1171,17 @@ struct ext4_group_info *ext4_get_group_i
+@@ -1160,6 +1172,17 @@ struct ext4_group_info *ext4_get_group_i
  }
  
  
@@ -114,10 +114,10 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4.h
  #define ext4_std_error(sb, errno)				\
  do {								\
  	if ((errno))						\
-Index: linux-2.6.26-rc6/fs/ext4/ext4_sb.h
+Index: linux-2.6.26-rc9/fs/ext4/ext4_sb.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4_sb.h	2008-06-17 10:43:22.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4_sb.h	2008-06-17 10:43:27.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4_sb.h	2008-07-11 16:04:56.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4_sb.h	2008-07-11 16:05:01.000000000 -0700
 @@ -143,6 +143,9 @@ struct ext4_sb_info {
  
  	/* locality groups */
@@ -128,10 +128,10 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4_sb.h
  };
  
  #endif	/* _EXT4_SB */
-Index: linux-2.6.26-rc6/fs/ext4/ialloc.c
+Index: linux-2.6.26-rc9/fs/ext4/ialloc.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ialloc.c	2008-06-17 10:43:26.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ialloc.c	2008-06-17 10:43:27.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ialloc.c	2008-07-11 16:04:59.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ialloc.c	2008-07-11 16:05:01.000000000 -0700
 @@ -157,6 +157,7 @@ void ext4_free_inode (handle_t *handle, 
  	struct ext4_super_block * es;
  	struct ext4_sb_info *sbi;
@@ -277,11 +277,11 @@ Index: linux-2.6.26-rc6/fs/ext4/ialloc.c
  	inode->i_uid = current->fsuid;
  	if (test_opt (sb, GRPID))
  		inode->i_gid = dir->i_gid;
-Index: linux-2.6.26-rc6/fs/ext4/mballoc.c
+Index: linux-2.6.26-rc9/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/mballoc.c	2008-06-17 10:43:26.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/mballoc.c	2008-06-17 10:43:27.000000000 -0700
-@@ -2834,6 +2834,14 @@ ext4_mb_mark_diskspace_used(struct ext4_
+--- linux-2.6.26-rc9.orig/fs/ext4/mballoc.c	2008-07-11 16:04:59.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/mballoc.c	2008-07-11 16:05:01.000000000 -0700
+@@ -2840,6 +2840,14 @@ ext4_mb_mark_diskspace_used(struct ext4_
  	spin_unlock(sb_bgl_lock(sbi, ac->ac_b_ex.fe_group));
  	percpu_counter_sub(&sbi->s_freeblocks_counter, ac->ac_b_ex.fe_len);
  
@@ -296,7 +296,7 @@ Index: linux-2.6.26-rc6/fs/ext4/mballoc.c
  	err = ext4_journal_dirty_metadata(handle, bitmap_bh);
  	if (err)
  		goto out_err;
-@@ -4337,6 +4345,13 @@ do_more:
+@@ -4341,6 +4349,13 @@ do_more:
  	spin_unlock(sb_bgl_lock(sbi, block_group));
  	percpu_counter_add(&sbi->s_freeblocks_counter, count);
  
@@ -310,10 +310,10 @@ Index: linux-2.6.26-rc6/fs/ext4/mballoc.c
  	ext4_mb_release_desc(&e4b);
  
  	*freed += count;
-Index: linux-2.6.26-rc6/fs/ext4/super.c
+Index: linux-2.6.26-rc9/fs/ext4/super.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/super.c	2008-06-17 10:43:26.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/super.c	2008-06-17 10:43:27.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/super.c	2008-07-11 16:05:00.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/super.c	2008-07-11 16:05:01.000000000 -0700
 @@ -517,6 +517,7 @@ static void ext4_put_super (struct super
  	for (i = 0; i < sbi->s_gdb_count; i++)
  		brelse(sbi->s_group_desc[i]);

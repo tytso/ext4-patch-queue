@@ -7,10 +7,14 @@ of date and in need of an update.
 
 Signed-off-by: Jose R. Santos <jrs@us.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
-index 0c5086d..7e940c6 100644
---- a/Documentation/filesystems/ext4.txt
-+++ b/Documentation/filesystems/ext4.txt
+---
+ Documentation/filesystems/ext4.txt |  108 +++++++++++++++++++++----------------
+ 1 file changed, 63 insertions(+), 45 deletions(-)
+
+Index: linux-2.6.26-rc9/Documentation/filesystems/ext4.txt
+===================================================================
+--- linux-2.6.26-rc9.orig/Documentation/filesystems/ext4.txt	2008-07-11 16:04:28.000000000 -0700
++++ linux-2.6.26-rc9/Documentation/filesystems/ext4.txt	2008-07-11 16:05:08.000000000 -0700
 @@ -13,72 +13,89 @@ Mailing list: linux-ext4@vger.kernel.org
  1. Quick usage instructions:
  ===========================
@@ -111,6 +115,11 @@ index 0c5086d..7e940c6 100644
 +  the uninit_bg feature (capability to do this is available in e2fsprogs
 +  but a kernel thread to do lazy zeroing of unused inode table blocks
 +  after filesystem is first mounted is required for safety)
++
++There are several others under discussion, whether they all make it in is
++partly a function of how much time everyone has to work on them. Features like
++metadata checksumming have been discussed and planned for a bit but no patches
++exist yet so I'm not sure they're in the near-term roadmap.
  
 -* improved file allocation (multi-block alloc, delayed alloc; basically done)
 -* fix 32000 subdirectory limit (patch exists, needs some e2fsck work)
@@ -120,17 +129,13 @@ index 0c5086d..7e940c6 100644
 -* reduced mke2fs/e2fsck time via uninitialized groups (prototype exists)
 -* journal checksumming for robustness, performance (prototype exists)
 -* persistent file preallocation (e.g for streaming media, databases)
-+There are several others under discussion, whether they all make it in is
-+partly a function of how much time everyone has to work on them. Features like
-+metadata checksumming have been discussed and planned for a bit but no patches
-+exist yet so I'm not sure they're in the near-term roadmap.
++The big performance win will come with mballoc, delalloc and flex_bg
++grouping of bitmaps and inode tables.  Some test results available here:
  
 -Features like metadata checksumming have been discussed and planned for
 -a bit but no patches exist yet so I'm not sure they're in the near-term
 -roadmap.
-+The big performance win will come with mballoc, delalloc and flex_bg
-+grouping of bitmaps and inode tables.  Some test results available here:
- 
+-
 -The big performance win will come with mballoc and delalloc.  CFS has
 -been using mballoc for a few years already with Lustre, and IBM + Bull
 -did a lot of benchmarking on it.  The reason it isn't in the first set of
@@ -143,7 +148,7 @@ index 0c5086d..7e940c6 100644
  
  3. Options
  ==========
-@@ -224,7 +241,7 @@ stripe=n		Number of filesystem blocks that mballoc will try
+@@ -224,7 +241,7 @@ stripe=n		Number of filesystem blocks th
  			disks *  RAID chunk size in file system blocks.
  
  Data Mode

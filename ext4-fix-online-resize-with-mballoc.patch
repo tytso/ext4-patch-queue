@@ -36,10 +36,10 @@ Non regression tests :
  fs/ext4/resize.c  |   52 +++++++++++-
  3 files changed, 234 insertions(+), 56 deletions(-)
 
-Index: linux-2.6.26-rc8/fs/ext4/ext4.h
+Index: linux-2.6.26-rc9/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc8.orig/fs/ext4/ext4.h	2008-07-01 11:32:13.000000000 -0700
-+++ linux-2.6.26-rc8/fs/ext4/ext4.h	2008-07-01 11:32:15.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4.h	2008-07-11 16:05:06.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4.h	2008-07-11 16:05:07.000000000 -0700
 @@ -1033,6 +1033,10 @@ extern int __init init_ext4_mballoc(void
  extern void exit_ext4_mballoc(void);
  extern void ext4_mb_free_blocks(handle_t *, struct inode *,
@@ -51,11 +51,11 @@ Index: linux-2.6.26-rc8/fs/ext4/ext4.h
  
  
  /* inode.c */
-Index: linux-2.6.26-rc8/fs/ext4/mballoc.c
+Index: linux-2.6.26-rc9/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.26-rc8.orig/fs/ext4/mballoc.c	2008-07-01 11:32:09.000000000 -0700
-+++ linux-2.6.26-rc8/fs/ext4/mballoc.c	2008-07-01 11:32:15.000000000 -0700
-@@ -2231,21 +2231,192 @@ ext4_mb_store_history(struct ext4_alloca
+--- linux-2.6.26-rc9.orig/fs/ext4/mballoc.c	2008-07-11 16:05:06.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/mballoc.c	2008-07-11 16:05:07.000000000 -0700
+@@ -2237,21 +2237,192 @@ ext4_mb_store_history(struct ext4_alloca
  #define ext4_mb_history_init(sb)
  #endif
  
@@ -254,7 +254,7 @@ Index: linux-2.6.26-rc8/fs/ext4/mballoc.c
  	if (sbi->s_group_info == NULL) {
  		printk(KERN_ERR "EXT4-fs: can't allocate buddy meta group\n");
  		return -ENOMEM;
-@@ -2272,62 +2443,15 @@ static int ext4_mb_init_backend(struct s
+@@ -2278,62 +2449,15 @@ static int ext4_mb_init_backend(struct s
  		sbi->s_group_info[i] = meta_group_info;
  	}
  
@@ -319,10 +319,10 @@ Index: linux-2.6.26-rc8/fs/ext4/mballoc.c
  	}
  
  	return 0;
-Index: linux-2.6.26-rc8/fs/ext4/resize.c
+Index: linux-2.6.26-rc9/fs/ext4/resize.c
 ===================================================================
---- linux-2.6.26-rc8.orig/fs/ext4/resize.c	2008-06-24 18:58:20.000000000 -0700
-+++ linux-2.6.26-rc8/fs/ext4/resize.c	2008-07-01 11:32:15.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/resize.c	2008-07-11 16:04:28.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/resize.c	2008-07-11 16:05:07.000000000 -0700
 @@ -866,6 +866,15 @@ int ext4_group_add(struct super_block *s
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, input->group, gdp);
  

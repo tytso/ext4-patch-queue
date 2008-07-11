@@ -21,11 +21,11 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 58 insertions(+), 10 deletions(-)
 
 
-Index: linux-2.6.26-rc6/fs/ext4/inode.c
+Index: linux-2.6.26-rc9/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/inode.c	2008-06-27 16:50:05.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/inode.c	2008-06-27 16:50:05.000000000 -0700
-@@ -1637,11 +1637,12 @@ static int ext4_bh_unmapped_or_delay(han
+--- linux-2.6.26-rc9.orig/fs/ext4/inode.c	2008-07-11 16:05:13.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/inode.c	2008-07-11 16:05:14.000000000 -0700
+@@ -2037,11 +2037,12 @@ static int ext4_bh_unmapped_or_delay(han
  	return !buffer_mapped(bh) || buffer_delay(bh);
  }
  
@@ -39,7 +39,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
   */
  static int ext4_da_writepage(struct page *page,
  				struct writeback_control *wbc)
-@@ -1660,6 +1661,7 @@ static int ext4_da_writepage(struct page
+@@ -2060,6 +2061,7 @@ static int ext4_da_writepage(struct page
  		 * ext4_da_writepages() but directly (shrink_page_list).
  		 * We cannot easily start a transaction here so we just skip
  		 * writing the page in case we would have to do so.
@@ -47,7 +47,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  		 */
  		size = i_size_read(inode);
  
-@@ -1675,8 +1677,11 @@ static int ext4_da_writepage(struct page
+@@ -2075,8 +2077,11 @@ static int ext4_da_writepage(struct page
  			 * We can't do block allocation under
  			 * page lock without a handle . So redirty
  			 * the page and return
@@ -60,7 +60,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  			redirty_page_for_writepage(wbc, page);
  			unlock_page(page);
  			return 0;
-@@ -1691,7 +1696,6 @@ static int ext4_da_writepage(struct page
+@@ -2091,7 +2096,6 @@ static int ext4_da_writepage(struct page
  	return ret;
  }
  
@@ -68,7 +68,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  /*
   * For now just follow the DIO way to estimate the max credits
   * needed to write out EXT4_MAX_WRITEBACK_PAGES.
-@@ -1724,7 +1728,7 @@ static int ext4_da_writepages(struct add
+@@ -2124,7 +2128,7 @@ static int ext4_da_writepages(struct add
  		return 0;
  
  	/*
@@ -77,7 +77,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  	 * EXT4_MAX_BUF_BLOCKS pages
  	 */
  	needed_blocks = EXT4_MAX_WRITEBACK_CREDITS;
-@@ -1746,6 +1750,19 @@ static int ext4_da_writepages(struct add
+@@ -2146,6 +2150,19 @@ static int ext4_da_writepages(struct add
  			ret = PTR_ERR(handle);
  			goto out_writepages;
  		}
@@ -97,7 +97,7 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  		/*
  		 * set the max dirty pages could be write at a time
  		 * to fit into the reserved transaction credits
-@@ -2329,7 +2346,10 @@ static const struct address_space_operat
+@@ -2729,7 +2746,10 @@ static const struct address_space_operat
  
  void ext4_set_aops(struct inode *inode)
  {
@@ -109,10 +109,10 @@ Index: linux-2.6.26-rc6/fs/ext4/inode.c
  		inode->i_mapping->a_ops = &ext4_ordered_aops;
  	else if (ext4_should_writeback_data(inode) &&
  		 test_opt(inode->i_sb, DELALLOC))
-Index: linux-2.6.26-rc6/fs/jbd2/commit.c
+Index: linux-2.6.26-rc9/fs/jbd2/commit.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/jbd2/commit.c	2008-06-27 16:50:05.000000000 -0700
-+++ linux-2.6.26-rc6/fs/jbd2/commit.c	2008-06-27 16:50:27.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/jbd2/commit.c	2008-07-11 16:05:11.000000000 -0700
++++ linux-2.6.26-rc9/fs/jbd2/commit.c	2008-07-11 16:05:14.000000000 -0700
 @@ -22,6 +22,8 @@
  #include <linux/pagemap.h>
  #include <linux/jiffies.h>

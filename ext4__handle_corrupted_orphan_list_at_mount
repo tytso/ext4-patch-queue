@@ -13,11 +13,17 @@ reported in http://bugzilla.kernel.org/show_bug.cgi?id=10882.
 Signed-off-by: Duane Griffin <duaneg@dghda.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 
-diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 8158083..f7a0758 100644
---- a/fs/ext4/ext4.h
-+++ b/fs/ext4/ext4.h
-@@ -1039,6 +1039,7 @@ extern void ext4_discard_reservation (struct inode *);
+---
+ fs/ext4/ext4.h   |    1 +
+ fs/ext4/ialloc.c |    9 +++++++++
+ fs/ext4/inode.c  |   20 ++++++++++++++------
+ 3 files changed, 24 insertions(+), 6 deletions(-)
+
+Index: linux-2.6.26-rc9/fs/ext4/ext4.h
+===================================================================
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4.h	2008-07-11 16:04:32.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4.h	2008-07-11 16:04:55.000000000 -0700
+@@ -1039,6 +1039,7 @@ extern void ext4_discard_reservation (st
  extern void ext4_dirty_inode(struct inode *);
  extern int ext4_change_inode_journal_flag(struct inode *, int);
  extern int ext4_get_inode_loc(struct inode *, struct ext4_iloc *);
@@ -25,11 +31,11 @@ index 8158083..f7a0758 100644
  extern void ext4_truncate (struct inode *);
  extern void ext4_set_inode_flags(struct inode *);
  extern void ext4_get_inode_flags(struct ext4_inode_info *);
-diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index c6efbab..11cafe1 100644
---- a/fs/ext4/ialloc.c
-+++ b/fs/ext4/ialloc.c
-@@ -817,6 +817,14 @@ struct inode *ext4_orphan_get(struct super_block *sb, unsigned long ino)
+Index: linux-2.6.26-rc9/fs/ext4/ialloc.c
+===================================================================
+--- linux-2.6.26-rc9.orig/fs/ext4/ialloc.c	2008-07-11 16:04:32.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ialloc.c	2008-07-11 16:04:55.000000000 -0700
+@@ -817,6 +817,14 @@ struct inode *ext4_orphan_get(struct sup
  	if (IS_ERR(inode))
  		goto iget_failed;
  
@@ -52,11 +58,11 @@ index c6efbab..11cafe1 100644
  		/* Avoid freeing blocks if we got a bad deleted inode */
  		if (inode->i_nlink == 0)
  			inode->i_blocks = 0;
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 8d97077..269763b 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -2305,6 +2305,19 @@ static void ext4_free_branches(handle_t *handle, struct inode *inode,
+Index: linux-2.6.26-rc9/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.26-rc9.orig/fs/ext4/inode.c	2008-07-11 16:04:32.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/inode.c	2008-07-11 16:04:55.000000000 -0700
+@@ -2305,6 +2305,19 @@ static void ext4_free_branches(handle_t 
  	}
  }
  

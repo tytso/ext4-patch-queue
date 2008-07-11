@@ -11,11 +11,17 @@ get_block() to get the physical block allocated, just as in the
 Signed-off-by: Alex Tomas <alex@clusterfs.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
-diff --git a/fs/buffer.c b/fs/buffer.c
-index a413008..d2541a0 100644
---- a/fs/buffer.c
-+++ b/fs/buffer.c
-@@ -1691,11 +1691,13 @@ static int __block_write_full_page(struct inode *inode, struct page *page,
+---
+ fs/buffer.c           |    7 +++++--
+ fs/mpage.c            |   14 +++++---------
+ include/linux/mpage.h |   10 ++++++++++
+ 3 files changed, 20 insertions(+), 11 deletions(-)
+
+Index: linux-2.6.26-rc9/fs/buffer.c
+===================================================================
+--- linux-2.6.26-rc9.orig/fs/buffer.c	2008-07-11 16:05:08.000000000 -0700
++++ linux-2.6.26-rc9/fs/buffer.c	2008-07-11 16:05:11.000000000 -0700
+@@ -1691,11 +1691,13 @@ static int __block_write_full_page(struc
  			 */
  			clear_buffer_dirty(bh);
  			set_buffer_uptodate(bh);
@@ -40,11 +46,11 @@ index a413008..d2541a0 100644
  			lock_buffer(bh);
  			mark_buffer_async_write(bh);
  		} else {
-diff --git a/fs/mpage.c b/fs/mpage.c
-index 235e4d3..dbcc7af 100644
---- a/fs/mpage.c
-+++ b/fs/mpage.c
-@@ -82,7 +82,7 @@ static void mpage_end_io_write(struct bio *bio, int err)
+Index: linux-2.6.26-rc9/fs/mpage.c
+===================================================================
+--- linux-2.6.26-rc9.orig/fs/mpage.c	2008-07-11 16:04:27.000000000 -0700
++++ linux-2.6.26-rc9/fs/mpage.c	2008-07-11 16:05:11.000000000 -0700
+@@ -82,7 +82,7 @@ static void mpage_end_io_write(struct bi
  	bio_put(bio);
  }
  
@@ -53,7 +59,7 @@ index 235e4d3..dbcc7af 100644
  {
  	bio->bi_end_io = mpage_end_io_read;
  	if (rw == WRITE)
-@@ -90,6 +90,7 @@ static struct bio *mpage_bio_submit(int rw, struct bio *bio)
+@@ -90,6 +90,7 @@ static struct bio *mpage_bio_submit(int 
  	submit_bio(rw, bio);
  	return NULL;
  }
@@ -87,10 +93,10 @@ index 235e4d3..dbcc7af 100644
  
  /**
   * mpage_writepages - walk the list of dirty pages of the given address space & writepage() all of them
-diff --git a/include/linux/mpage.h b/include/linux/mpage.h
-index 068a0c9..5c42821 100644
---- a/include/linux/mpage.h
-+++ b/include/linux/mpage.h
+Index: linux-2.6.26-rc9/include/linux/mpage.h
+===================================================================
+--- linux-2.6.26-rc9.orig/include/linux/mpage.h	2008-07-11 16:04:27.000000000 -0700
++++ linux-2.6.26-rc9/include/linux/mpage.h	2008-07-11 16:05:11.000000000 -0700
 @@ -11,11 +11,21 @@
   */
  #ifdef CONFIG_BLOCK

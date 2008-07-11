@@ -15,10 +15,10 @@ Signed-off-by: Eric Sandeen <sandeen@redhat.com>
  fs/ext4/file.c         |    4 +
  4 files changed, 189 insertions(+), 2 deletions(-)
 
-Index: linux-2.6.26-rc6/fs/ext4/extents.c
+Index: linux-2.6.26-rc9/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/extents.c	2008-06-23 15:42:02.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/extents.c	2008-06-23 15:46:40.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/extents.c	2008-07-11 16:05:21.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/extents.c	2008-07-11 16:05:21.000000000 -0700
 @@ -40,6 +40,7 @@
  #include <linux/slab.h>
  #include <linux/falloc.h>
@@ -220,10 +220,10 @@ Index: linux-2.6.26-rc6/fs/ext4/extents.c
 +	return err;
 +}
 +
-Index: linux-2.6.26-rc6/fs/ext4/file.c
+Index: linux-2.6.26-rc9/fs/ext4/file.c
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/file.c	2008-06-23 15:42:01.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/file.c	2008-06-23 15:42:02.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/file.c	2008-07-11 16:05:15.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/file.c	2008-07-11 16:05:21.000000000 -0700
 @@ -140,6 +140,9 @@ static int ext4_file_mmap(struct file *f
  	return 0;
  }
@@ -234,17 +234,17 @@ Index: linux-2.6.26-rc6/fs/ext4/file.c
  const struct file_operations ext4_file_operations = {
  	.llseek		= generic_file_llseek,
  	.read		= do_sync_read,
-@@ -169,5 +172,6 @@ const struct inode_operations ext4_file_
+@@ -170,5 +173,6 @@ const struct inode_operations ext4_file_
  #endif
  	.permission	= ext4_permission,
  	.fallocate	= ext4_fallocate,
 +	.fiemap		= ext4_fiemap,
  };
  
-Index: linux-2.6.26-rc6/fs/ext4/ext4.h
+Index: linux-2.6.26-rc9/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4.h	2008-06-23 15:42:02.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4.h	2008-06-23 15:42:02.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4.h	2008-07-11 16:05:20.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4.h	2008-07-11 16:05:21.000000000 -0700
 @@ -459,6 +459,8 @@ struct ext4_inode {
  	__le32  i_version_hi;	/* high 32 bits for 64-bit version */
  };
@@ -254,10 +254,10 @@ Index: linux-2.6.26-rc6/fs/ext4/ext4.h
  
  #define EXT4_EPOCH_BITS 2
  #define EXT4_EPOCH_MASK ((1 << EXT4_EPOCH_BITS) - 1)
-Index: linux-2.6.26-rc6/fs/ext4/ext4_extents.h
+Index: linux-2.6.26-rc9/fs/ext4/ext4_extents.h
 ===================================================================
---- linux-2.6.26-rc6.orig/fs/ext4/ext4_extents.h	2008-06-23 15:42:02.000000000 -0700
-+++ linux-2.6.26-rc6/fs/ext4/ext4_extents.h	2008-06-23 15:42:02.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4_extents.h	2008-07-11 16:05:21.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4_extents.h	2008-07-11 16:05:21.000000000 -0700
 @@ -132,7 +132,7 @@ struct ext4_ext_path {
   */
  typedef int (*ext_prepare_callback)(struct inode *, struct ext4_ext_path *,

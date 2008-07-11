@@ -21,10 +21,16 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: Dave Kleikamp <shaggy@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Signed-off-by:  Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
-diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 2c0519a..0307d53 100644
---- a/fs/ext4/ext4.h
-+++ b/fs/ext4/ext4.h
+---
+ fs/ext4/ext4.h  |    1 
+ fs/ext4/inode.c |  699 +++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/super.c |    6 
+ 3 files changed, 700 insertions(+), 6 deletions(-)
+
+Index: linux-2.6.26-rc9/fs/ext4/ext4.h
+===================================================================
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4.h	2008-07-11 16:05:09.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4.h	2008-07-11 16:05:12.000000000 -0700
 @@ -536,6 +536,7 @@ do {									       \
  #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
  #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
@@ -33,10 +39,10 @@ index 2c0519a..0307d53 100644
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 3af9cd7..6017885 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
+Index: linux-2.6.26-rc9/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.26-rc9.orig/fs/ext4/inode.c	2008-07-11 16:05:10.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/inode.c	2008-07-11 16:05:12.000000000 -0700
 @@ -32,6 +32,7 @@
  #include <linux/string.h>
  #include <linux/buffer_head.h>
@@ -45,7 +51,7 @@ index 3af9cd7..6017885 100644
  #include <linux/mpage.h>
  #include <linux/uio.h>
  #include <linux/bio.h>
-@@ -46,6 +47,8 @@ static inline int ext4_begin_ordered_truncate(struct inode *inode,
+@@ -46,6 +47,8 @@ static inline int ext4_begin_ordered_tru
  						   new_size);
  }
  
@@ -54,7 +60,7 @@ index 3af9cd7..6017885 100644
  /*
   * Test whether an inode is a fast symlink.
   */
-@@ -1408,6 +1411,669 @@ static int ext4_journalled_write_end(struct file *file,
+@@ -1408,6 +1411,669 @@ static int ext4_journalled_write_end(str
  }
  
  /*
@@ -724,7 +730,7 @@ index 3af9cd7..6017885 100644
   * bmap() is special.  It gets used by applications such as lilo and by
   * the swapper to find the on-disk block of a specific piece of data.
   *
-@@ -1427,6 +2093,16 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
+@@ -1427,6 +2093,16 @@ static sector_t ext4_bmap(struct address
  	journal_t *journal;
  	int err;
  
@@ -741,7 +747,7 @@ index 3af9cd7..6017885 100644
  	if (EXT4_I(inode)->i_state & EXT4_STATE_JDATA) {
  		/*
  		 * This is a REALLY heavyweight approach, but the use of
-@@ -1471,11 +2147,6 @@ static int bput_one(handle_t *handle, struct buffer_head *bh)
+@@ -1471,11 +2147,6 @@ static int bput_one(handle_t *handle, st
  	return 0;
  }
  
@@ -753,7 +759,7 @@ index 3af9cd7..6017885 100644
  /*
   * Note that we don't need to start a transaction unless we're journaling data
   * because we should have holes filled from ext4_page_mkwrite(). We even don't
-@@ -1832,10 +2503,28 @@ static const struct address_space_operations ext4_journalled_aops = {
+@@ -1832,10 +2503,28 @@ static const struct address_space_operat
  	.releasepage	= ext4_releasepage,
  };
  
@@ -782,10 +788,10 @@ index 3af9cd7..6017885 100644
  	else if (ext4_should_writeback_data(inode))
  		inode->i_mapping->a_ops = &ext4_writeback_aops;
  	else
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 629d0fa..de9d3d0 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
+Index: linux-2.6.26-rc9/fs/ext4/super.c
+===================================================================
+--- linux-2.6.26-rc9.orig/fs/ext4/super.c	2008-07-11 16:05:10.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/super.c	2008-07-11 16:05:12.000000000 -0700
 @@ -898,7 +898,7 @@ enum {
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
