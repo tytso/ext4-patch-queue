@@ -18,7 +18,7 @@ lock to guard the counters and also fix the reservation for meta blocks.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
----
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/balloc.c       |   49 ++++++++-----
  fs/ext4/dir.c          |    3 
@@ -26,15 +26,15 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
  fs/ext4/ext4_extents.h |    1 
  fs/ext4/ext4_i.h       |    7 +
  fs/ext4/extents.c      |   32 ++++++++
- fs/ext4/inode.c        |  178 +++++++++++++++++++++++++++++++++++++++++--------
+ fs/ext4/inode.c        |  184 +++++++++++++++++++++++++++++++++++++++++--------
  fs/ext4/mballoc.c      |   20 ++++-
  fs/ext4/super.c        |    5 +
- 9 files changed, 251 insertions(+), 50 deletions(-)
+ 9 files changed, 257 insertions(+), 50 deletions(-)
 
 Index: linux-2.6.26-rc9/fs/ext4/ext4_i.h
 ===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/ext4_i.h	2008-07-11 16:05:10.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/ext4_i.h	2008-07-11 16:05:13.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4_i.h	2008-07-14 08:51:50.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4_i.h	2008-07-14 08:51:50.000000000 -0700
 @@ -163,6 +163,13 @@ struct ext4_inode_info {
  	/* mballoc */
  	struct list_head i_prealloc_list;
@@ -51,8 +51,8 @@ Index: linux-2.6.26-rc9/fs/ext4/ext4_i.h
  #endif	/* _EXT4_I */
 Index: linux-2.6.26-rc9/fs/ext4/super.c
 ===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/super.c	2008-07-11 16:05:12.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/super.c	2008-07-11 16:05:13.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/super.c	2008-07-14 08:51:50.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/super.c	2008-07-14 10:53:21.000000000 -0700
 @@ -574,6 +574,11 @@ static struct inode *ext4_alloc_inode(st
  	INIT_LIST_HEAD(&ei->i_prealloc_list);
  	spin_lock_init(&ei->i_prealloc_lock);
@@ -67,8 +67,8 @@ Index: linux-2.6.26-rc9/fs/ext4/super.c
  
 Index: linux-2.6.26-rc9/fs/ext4/ext4_extents.h
 ===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/ext4_extents.h	2008-07-11 16:04:27.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/ext4_extents.h	2008-07-11 16:05:13.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4_extents.h	2008-07-14 08:51:15.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4_extents.h	2008-07-14 10:53:21.000000000 -0700
 @@ -212,6 +212,7 @@ static inline int ext4_ext_get_actual_le
  		(le16_to_cpu(ext->ee_len) - EXT_INIT_MAX_LEN));
  }
@@ -79,8 +79,8 @@ Index: linux-2.6.26-rc9/fs/ext4/ext4_extents.h
  extern int ext4_extent_tree_init(handle_t *, struct inode *);
 Index: linux-2.6.26-rc9/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/extents.c	2008-07-11 16:05:09.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/extents.c	2008-07-11 16:05:13.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/extents.c	2008-07-14 08:51:50.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/extents.c	2008-07-14 10:53:22.000000000 -0700
 @@ -248,6 +248,36 @@ static int ext4_ext_space_root_idx(struc
  	return size;
  }
@@ -129,8 +129,8 @@ Index: linux-2.6.26-rc9/fs/ext4/extents.c
  			WARN_ON(ret <= 0);
 Index: linux-2.6.26-rc9/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/inode.c	2008-07-11 16:05:12.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/inode.c	2008-07-11 16:05:13.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/inode.c	2008-07-14 08:51:50.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/inode.c	2008-07-14 11:28:52.000000000 -0700
 @@ -39,6 +39,7 @@
  #include "ext4_jbd2.h"
  #include "xattr.h"
@@ -164,16 +164,26 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  	/*
  	 * We need to check for EXT4 here because migrate
  	 * could have changed the inode type in between
-@@ -1044,6 +1054,8 @@ int ext4_get_blocks_wrap(handle_t *handl
+@@ -1044,6 +1054,18 @@ int ext4_get_blocks_wrap(handle_t *handl
  							~EXT4_EXT_MIGRATE;
  		}
  	}
-+	if (flag)
++
++	if (flag) {
 +		EXT4_I(inode)->i_delalloc_reserved_flag = 0;
++		/*
++		 * Update reserved blocks/metadata blocks
++		 * after successful block allocation
++		 * which were deferred till now
++		 */
++		if ((retval > 0) && buffer_delay(bh))
++			ext4_da_release_space(inode, retval, 0);
++	}
++
  	up_write((&EXT4_I(inode)->i_data_sem));
  	return retval;
  }
-@@ -1069,7 +1081,7 @@ static int ext4_get_block(struct inode *
+@@ -1069,7 +1091,7 @@ static int ext4_get_block(struct inode *
  	}
  
  	ret = ext4_get_blocks_wrap(handle, inode, iblock,
@@ -182,7 +192,7 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  	if (ret > 0) {
  		bh_result->b_size = (ret << inode->i_blkbits);
  		ret = 0;
-@@ -1095,7 +1107,7 @@ struct buffer_head *ext4_getblk(handle_t
+@@ -1095,7 +1117,7 @@ struct buffer_head *ext4_getblk(handle_t
  	dummy.b_blocknr = -1000;
  	buffer_trace_init(&dummy.b_history);
  	err = ext4_get_blocks_wrap(handle, inode, block, 1,
@@ -191,7 +201,7 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  	/*
  	 * ext4_get_blocks_handle() returns number of blocks
  	 * mapped. 0 in case of a HOLE.
-@@ -1409,6 +1421,122 @@ static int ext4_journalled_write_end(str
+@@ -1409,6 +1431,122 @@ static int ext4_journalled_write_end(str
  
  	return ret ? ret : copied;
  }
@@ -314,7 +324,7 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  
  /*
   * Delayed allocation stuff
-@@ -1829,14 +1957,18 @@ static int ext4_da_get_block_prep(struct
+@@ -1829,14 +1967,18 @@ static int ext4_da_get_block_prep(struct
  	 * preallocated blocks are unmapped but should treated
  	 * the same as allocated blocks.
  	 */
@@ -337,7 +347,7 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  		map_bh(bh_result, inode->i_sb, 0);
  		set_buffer_new(bh_result);
  		set_buffer_delay(bh_result);
-@@ -1847,7 +1979,7 @@ static int ext4_da_get_block_prep(struct
+@@ -1847,7 +1989,7 @@ static int ext4_da_get_block_prep(struct
  
  	return ret;
  }
@@ -346,7 +356,7 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
  				   struct buffer_head *bh_result, int create)
  {
-@@ -1865,10 +1997,14 @@ static int ext4_da_get_block_write(struc
+@@ -1865,7 +2007,7 @@ static int ext4_da_get_block_write(struc
  	}
  
  	ret = ext4_get_blocks_wrap(handle, inode, iblock, max_blocks,
@@ -355,14 +365,7 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  	if (ret > 0) {
  		bh_result->b_size = (ret << inode->i_blkbits);
  
-+		/* release reserved-but-unused meta blocks */
-+		if (buffer_delay(bh_result))
-+			ext4_da_release_space(inode, ret, 0);
-+
- 		/*
- 		 * Update on-disk size along with block allocation
- 		 * we don't use 'extend_disksize' as size may change
-@@ -1952,7 +2088,7 @@ static int ext4_da_write_begin(struct fi
+@@ -1952,7 +2094,7 @@ static int ext4_da_write_begin(struct fi
  				loff_t pos, unsigned len, unsigned flags,
  				struct page **pagep, void **fsdata)
  {
@@ -371,7 +374,7 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  	struct page *page;
  	pgoff_t index;
  	unsigned from, to;
-@@ -1963,6 +2099,7 @@ static int ext4_da_write_begin(struct fi
+@@ -1963,6 +2105,7 @@ static int ext4_da_write_begin(struct fi
  	from = pos & (PAGE_CACHE_SIZE - 1);
  	to = from + len;
  
@@ -379,7 +382,7 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  	/*
  	 * With delayed allocation, we don't log the i_disksize update
  	 * if there is delayed block allocation. But we still need
-@@ -1988,6 +2125,8 @@ static int ext4_da_write_begin(struct fi
+@@ -1988,6 +2131,8 @@ static int ext4_da_write_begin(struct fi
  		page_cache_release(page);
  	}
  
@@ -388,7 +391,7 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  out:
  	return ret;
  }
-@@ -2040,9 +2179,6 @@ static int ext4_da_write_end(struct file
+@@ -2040,9 +2185,6 @@ static int ext4_da_write_end(struct file
  
  static void ext4_da_invalidatepage(struct page *page, unsigned long offset)
  {
@@ -398,7 +401,7 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  	/*
  	 * Drop reserved blocks
  	 */
-@@ -2050,21 +2186,7 @@ static void ext4_da_invalidatepage(struc
+@@ -2050,21 +2192,7 @@ static void ext4_da_invalidatepage(struc
  	if (!page_has_buffers(page))
  		goto out;
  
@@ -423,8 +426,8 @@ Index: linux-2.6.26-rc9/fs/ext4/inode.c
  	ext4_invalidatepage(page, offset);
 Index: linux-2.6.26-rc9/fs/ext4/dir.c
 ===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/dir.c	2008-07-11 16:04:58.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/dir.c	2008-07-11 16:05:13.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/dir.c	2008-07-14 08:51:49.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/dir.c	2008-07-14 08:51:50.000000000 -0700
 @@ -129,7 +129,8 @@ static int ext4_readdir(struct file * fi
  		struct buffer_head *bh = NULL;
  
@@ -437,8 +440,8 @@ Index: linux-2.6.26-rc9/fs/ext4/dir.c
  					(PAGE_CACHE_SHIFT - inode->i_blkbits);
 Index: linux-2.6.26-rc9/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/ext4.h	2008-07-11 16:05:12.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/ext4.h	2008-07-11 16:05:13.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/ext4.h	2008-07-14 08:51:50.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/ext4.h	2008-07-14 10:53:21.000000000 -0700
 @@ -74,6 +74,9 @@
  #define EXT4_MB_HINT_GOAL_ONLY		256
  /* goal is meaningful */
@@ -468,9 +471,9 @@ Index: linux-2.6.26-rc9/fs/ext4/ext4.h
  #endif	/* _EXT4_H */
 Index: linux-2.6.26-rc9/fs/ext4/mballoc.c
 ===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/mballoc.c	2008-07-11 16:05:07.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/mballoc.c	2008-07-11 16:05:13.000000000 -0700
-@@ -2962,7 +2962,15 @@ ext4_mb_mark_diskspace_used(struct ext4_
+--- linux-2.6.26-rc9.orig/fs/ext4/mballoc.c	2008-07-14 08:51:50.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/mballoc.c	2008-07-14 10:53:20.000000000 -0700
+@@ -2964,7 +2964,15 @@ ext4_mb_mark_diskspace_used(struct ext4_
  	le16_add_cpu(&gdp->bg_free_blocks_count, -ac->ac_b_ex.fe_len);
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, ac->ac_b_ex.fe_group, gdp);
  	spin_unlock(sb_bgl_lock(sbi, ac->ac_b_ex.fe_group));
@@ -487,7 +490,7 @@ Index: linux-2.6.26-rc9/fs/ext4/mballoc.c
  
  	if (sbi->s_log_groups_per_flex) {
  		ext4_group_t flex_group = ext4_flex_group(sbi,
-@@ -4167,7 +4175,12 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t
+@@ -4169,7 +4177,12 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t
  					    &(ar->len), errp);
  		return block;
  	}
@@ -501,7 +504,7 @@ Index: linux-2.6.26-rc9/fs/ext4/mballoc.c
  
  	if (ar->len == 0) {
  		*errp = -ENOSPC;
-@@ -4184,6 +4197,9 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t
+@@ -4186,6 +4199,9 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t
  	}
  	inquota = ar->len;
  
@@ -513,8 +516,8 @@ Index: linux-2.6.26-rc9/fs/ext4/mballoc.c
  		ar->len = 0;
 Index: linux-2.6.26-rc9/fs/ext4/balloc.c
 ===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/balloc.c	2008-07-11 16:05:12.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/balloc.c	2008-07-11 16:05:13.000000000 -0700
+--- linux-2.6.26-rc9.orig/fs/ext4/balloc.c	2008-07-14 08:51:50.000000000 -0700
++++ linux-2.6.26-rc9/fs/ext4/balloc.c	2008-07-14 10:53:20.000000000 -0700
 @@ -1701,7 +1701,12 @@ ext4_fsblk_t ext4_old_new_blocks(handle_
  	}
  
