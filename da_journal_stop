@@ -1,0 +1,29 @@
+ext4: fix ext4_da_write_begin error path
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+ext4_da_write_begin needs to call journal_stop before returning,
+if the page allocation fails.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Acked-by: Mingming Cao <cmm@us.ibm.com>
+---
+
+Index: linux-2.6/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.orig/fs/ext4/inode.c	2008-07-29 17:18:26.000000000 -0500
++++ linux-2.6/fs/ext4/inode.c	2008-07-31 14:52:21.636228231 -0500
+@@ -2280,8 +2280,11 @@ retry:
+ 	}
+ 
+ 	page = __grab_cache_page(mapping, index);
+-	if (!page)
+-		return -ENOMEM;
++	if (!page) {
++		ext4_journal_stop(handle);
++		ret = -ENOMEM;
++		goto out;
++	}
+ 	*pagep = page;
+ 
+ 	ret = block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
