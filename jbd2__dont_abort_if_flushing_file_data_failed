@@ -1,27 +1,52 @@
 jbd2: don't abort if flushing file data failed
 
-From: Theodore Ts'o <tytso@mit.edu>
+From: Hidehiro Kawai <hidehiro.kawai.ez@hitachi.com>
 
 In ordered mode, the current jbd2 aborts the journal if a file data buffer
 has an error.  But this behavior is unintended, and we found that it has
 been adopted accidentally.
 
 This patch undoes it and just calls printk() instead of aborting the
-journal.  Unlike a similar patch submitted by Hidehiro Kawai for
-ext3/jbd, we don't need to add additional error checks and set AS_EIO,
-as ext4 uses generic_writepages() to flush out data buffers to disk.
+journal.  Unlike a similar patch for ext3/jbd, file data buffers are
+written via generic_writepages().  But we also need to set AS_EIO
+into their mappings because wait_on_page_writeback_range() clears
+AS_EIO before a user process sees it.
 
+Signed-off-by: Hidehiro Kawai <hidehiro.kawai.ez@hitachi.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-Cc: Hidehiro Kawai <hidehiro.kawai.ez@hitachi.com>
+---
+ fs/jbd2/commit.c |   24 ++++++++++++++++++++----
+ 1 file changed, 20 insertions(+), 4 deletions(-)
 
-diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index f8b3be8..04adcc3 100644
---- a/fs/jbd2/commit.c
-+++ b/fs/jbd2/commit.c
-@@ -460,8 +460,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
- 	 * on the transaction lists.  Data blocks go first.
+Index: linux-2.6.27-rc1/fs/jbd2/commit.c
+===================================================================
+--- linux-2.6.27-rc1.orig/fs/jbd2/commit.c
++++ linux-2.6.27-rc1/fs/jbd2/commit.c
+@@ -262,8 +262,18 @@ static int journal_finish_inode_data_buf
+ 		jinode->i_flags |= JI_COMMIT_RUNNING;
+ 		spin_unlock(&journal->j_list_lock);
+ 		err = filemap_fdatawait(jinode->i_vfs_inode->i_mapping);
+-		if (!ret)
+-			ret = err;
++		if (err) {
++			/*
++			 * Because AS_EIO is cleared by
++			 * wait_on_page_writeback_range(), set it again so
++			 * that user process can get -EIO from fsync().
++			 */
++			set_bit(AS_EIO,
++				&jinode->i_vfs_inode->i_mapping->flags);
++
++			if (!ret)
++				ret = err;
++		}
+ 		spin_lock(&journal->j_list_lock);
+ 		jinode->i_flags &= ~JI_COMMIT_RUNNING;
+ 		wake_up_bit(&jinode->i_flags, __JI_COMMIT_RUNNING);
+@@ -670,8 +680,14 @@ start_journal_io:
+ 	 * commit block, which happens below in such setting.
  	 */
- 	err = journal_submit_data_buffers(journal, commit_transaction);
+ 	err = journal_finish_inode_data_buffers(journal, commit_transaction);
 -	if (err)
 -		jbd2_journal_abort(journal, err);
 +	if (err) {
@@ -33,5 +58,7 @@ index f8b3be8..04adcc3 100644
 +		err = 0;
 +	}
  
- 	jbd2_journal_write_revoke_records(journal, commit_transaction);
- 
+ 	/* Lo and behold: we have just managed to send a transaction to
+            the log.  Before we can commit it, wait for the IO so far to
+
+
