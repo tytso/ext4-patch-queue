@@ -1,46 +1,40 @@
-Ext4: journal credits reservation fixes for DIO, fallocate and delalloc writepages
+Ext4: journal credits reservation fixes
 
 From: Mingming Cao <cmm@us.ibm.com>
 
-With delalloc, at writepages() time, we need to reserve enough credits to start
-a new handle, to allow possible multiple segment of block allocations under a
-single call mapge_da_writepages(), to fit metadata updates into the single
-transaction. This patch fixed this by calculating the needed credits for
-write-out given number of dirty pages, with the consideration of discontinues
-block allocations. It fixed both extent files and non extent files.
+With delayed allocation we need to reserve enough credits to start a new
+handle at writepages() time.  There could be multiple segments of block
+allocations under a single call to mpage_da_writepages(), and the
+metadata updates must fix in a single transaction, and the previous
+calculation did not take this into account.  This patch takes into
+account the worst case where the block allocations are discontiguous.
 
-This patch also fixed the journal credit reservation for DIO. Currently the
-estimated credits for DIO is only based on non extent format file. That credit
-is not enough for mballoc a single extent on extent based file. This patch
-fixed that.
+This patch also fixed the journal credit reservation for direct I/O
+(DIO).  Previously the estimated credits for DIO only was calculated for
+non-extent files, which was not enough if the file is extent-based.
 
-The fallocate double booking credits for modifying super block etc, this patch
-fixed that.
-
-This also fix credit reservation in migration and defrag code.
-
+Also fixed was fallocate double-counting credits for modifying the the
+superblock.
 
 Changes since v2:
 
-1) fix  writepages() inefficency issue. sync() will invoke writepages()
-twice( not sure exactly why), the second time all the pages are clean so
+1) fix writepages() inefficency issue. sync() will invoke writepages()
+twice (not sure exactly why), the second time all the pages are clean so
 it waste the cpu time to walk though all pages and find they are not
-dirty . But  it's simple to workaround by skip writepages() if there is
+dirty . But it's simple to workaround by skip writepages() if there is
 no dirty pages pointed by the mapping.
 
-
-2) extent based credit calculate is quit conservetive. It always use the
-max possible depth to estimate the needed credits to support extent
+2) extent based credit calculate is quite conservetive. It always use
+the max possible depth to estimate the needed credits to support extent
 insert/tree split. In fact the depth info for each inode is quite easy
 to get, so we could use more accurate info to calculate
 
-3) Limit the max number of pages that could  flush at once from
+3) Limit the max number of pages that could flush at once from
 ext4_da_writepages(), so that the max possible transaction credits could
-fit under the  allowed credits for starting a  new transaction.  Reduce
-the number of pages to flush  if necesary.   Currently with 4K page size
+fit under the allowed credits for starting a new transaction.  Reduce
+the number of pages to flush if necesary.  Currently with 4K page size
 and 4K block size, with extent file, it's possible to flush about 1K
 pages under a single transaction.
-
 
 Verified with memory pressure case and umount case,
 
