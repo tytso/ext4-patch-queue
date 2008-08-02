@@ -1,0 +1,25 @@
+ext4: Fix ext4_ext_journal_restart()
+
+The ext4_ext_journal_restart() is a convenience function which checks
+to see if the requested number of credits is present, and if so it
+closes the current transaction and attaches the current handle to the
+new transaction.  Unfortunately, it wasn't proprely checking the
+return value from ext4_journal_extend(), so it was starting a new
+transaction when one was not necessary, and returning an error when
+all that was necessary was to restart the handle with a new
+transaction.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index dc6ca5e..b050259 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -99,7 +99,7 @@ static int ext4_ext_journal_restart(handle_t *handle, int needed)
+ 	if (handle->h_buffer_credits > needed)
+ 		return 0;
+ 	err = ext4_journal_extend(handle, needed);
+-	if (err)
++	if (err <= 0)
+ 		return err;
+ 	return ext4_journal_restart(handle, needed);
+ }
