@@ -16,10 +16,18 @@ orphaned inode linked list.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 59f3f54..685ed20 100644
+index 37f834b..2697eaf 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -199,8 +199,9 @@ void ext4_delete_inode (struct inode * inode)
+@@ -191,6 +191,7 @@ static int ext4_journal_test_restart(handle_t *handle, struct inode *inode)
+ void ext4_delete_inode (struct inode * inode)
+ {
+ 	handle_t *handle;
++	int err;
+ 
+ 	if (ext4_should_order_data(inode))
+ 		ext4_begin_ordered_truncate(inode, 0);
+@@ -199,8 +200,9 @@ void ext4_delete_inode (struct inode * inode)
  	if (is_bad_inode(inode))
  		goto no_delete;
  
@@ -30,12 +38,16 @@ index 59f3f54..685ed20 100644
  		/*
  		 * If we're going to skip the normal cleanup, we still need to
  		 * make sure that the in-core orphan linked list is properly
-@@ -213,8 +214,23 @@ void ext4_delete_inode (struct inode * inode)
+@@ -213,8 +215,34 @@ void ext4_delete_inode (struct inode * inode)
  	if (IS_SYNC(inode))
  		handle->h_sync = 1;
  	inode->i_size = 0;
-+	if (ext4_mark_inode_dirty(handle, inode))
++	err = ext4_mark_inode_dirty(handle, inode);
++	if (err) {
++		ext4_warning(inode->i_sb, __func__,
++			     "couldn't mark inode dirty (err %d)", err);
 +		goto stop_handle;
++	}
  	if (inode->i_blocks)
  		ext4_truncate(inode);
 +
@@ -45,10 +57,17 @@ index 59f3f54..685ed20 100644
 +	 * enough credits left in the handle to remove the inode from
 +	 * the orphan list and set the dtime field.
 +	 */
-+	if (ext4_ext_journal_restart(handle, 3)) {
-+	stop_handle:
-+		ext4_journal_stop(handle);
-+		goto no_delete;
++	if (handle->h_buffer_credits < 3) {
++		err = ext4_journal_extend(handle, 3);
++		if (err > 0)
++			err = ext4_journal_restart(handle, 3);
++		if (err != 0) {
++			ext4_warning(inode->i_sb, __func__,
++				     "couldn't extend journal (err %d)", err);
++		stop_handle:
++			ext4_journal_stop(handle);
++			goto no_delete;
++		}
 +	}
 +
  	/*
