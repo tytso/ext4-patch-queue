@@ -1,0 +1,375 @@
+ext4: Rework the ext4_da_writepages
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+    
+With the below changes we reserve credit needed to insert only one extent
+resulting from a call to single get_block. That make sure we don't take
+too much journal credits during writeout. We also don't limit the pages
+to write. That means we loop through the dirty pages building largest
+possible contiguous block request. Then we issue a single get_block request.
+We may get less block that we requested. If so we would end up not mapping
+some of the buffer_heads. That means those buffer_heads are still marked delay.
+Later in the writepage callback via __mpage_writepage we redirty those pages.
+    
+We should also not limit/throttle wbc->nr_to_write in the filesystem writepages
+callback. That cause wrong behaviour in generic_sync_sb_inodes caused by
+wbc->nr_to_write being <= 0
+    
+Also make sure fallocated area is handled properly by delayed allocation.
+   
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+---
+ fs/ext4/inode.c |  185 ++++++++++++++++++++++++++++++++------------------------
+ 1 file changed, 108 insertions(+), 77 deletions(-)
+
+Index: linux-2.6.27-rc1/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-06 16:54:06.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-06 16:54:33.000000000 -0700
+@@ -41,6 +41,8 @@
+ #include "acl.h"
+ #include "ext4_extents.h"
+ 
++#define MPAGE_DA_EXTENT_TAIL 0x01
++
+ static inline int ext4_begin_ordered_truncate(struct inode *inode,
+ 					      loff_t new_size)
+ {
+@@ -1604,6 +1606,8 @@ struct mpage_da_data {
+ 	unsigned long first_page, next_page;	/* extent of pages */
+ 	get_block_t *get_block;
+ 	struct writeback_control *wbc;
++	int io_done;
++	long pages_written;
+ };
+ 
+ /*
+@@ -1623,12 +1627,6 @@ struct mpage_da_data {
+ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+ {
+ 	struct address_space *mapping = mpd->inode->i_mapping;
+-	struct mpage_data mpd_pp = {
+-		.bio = NULL,
+-		.last_block_in_bio = 0,
+-		.get_block = mpd->get_block,
+-		.use_writepage = 1,
+-	};
+ 	int ret = 0, err, nr_pages, i;
+ 	unsigned long index, end;
+ 	struct pagevec pvec;
+@@ -1652,7 +1650,9 @@ static int mpage_da_submit_io(struct mpa
+ 				break;
+ 			index++;
+ 
+-			err = __mpage_writepage(page, mpd->wbc, &mpd_pp);
++			err = mapping->a_ops->writepage(page, mpd->wbc);
++			if (!err)
++				mpd->pages_written++;
+ 
+ 			/*
+ 			 * In error case, we have to continue because
+@@ -1664,8 +1664,6 @@ static int mpage_da_submit_io(struct mpa
+ 		}
+ 		pagevec_release(&pvec);
+ 	}
+-	if (mpd_pp.bio)
+-		mpage_bio_submit(WRITE, mpd_pp.bio);
+ 
+ 	return ret;
+ }
+@@ -1732,6 +1730,13 @@ static void mpage_put_bnr_to_bhs(struct 
+ 				if (buffer_delay(bh)) {
+ 					bh->b_blocknr = pblock;
+ 					clear_buffer_delay(bh);
++					bh->b_bdev = inode->i_sb->s_bdev;
++				} else if (buffer_unwritten(bh)) {
++					bh->b_blocknr = pblock;
++					clear_buffer_unwritten(bh);
++					set_buffer_mapped(bh);
++					set_buffer_new(bh);
++					bh->b_bdev = inode->i_sb->s_bdev;
+ 				} else if (buffer_mapped(bh))
+ 					BUG_ON(bh->b_blocknr != pblock);
+ 
+@@ -1772,8 +1777,8 @@ static inline void __unmap_underlying_bl
+  */
+ static void mpage_da_map_blocks(struct mpage_da_data *mpd)
+ {
++	int err = 0;
+ 	struct buffer_head *lbh = &mpd->lbh;
+-	int err = 0, remain = lbh->b_size;
+ 	sector_t next = lbh->b_blocknr;
+ 	struct buffer_head new;
+ 
+@@ -1783,38 +1788,36 @@ static void mpage_da_map_blocks(struct m
+ 	if (buffer_mapped(lbh) && !buffer_delay(lbh))
+ 		return;
+ 
+-	while (remain) {
+-		new.b_state = lbh->b_state;
+-		new.b_blocknr = 0;
+-		new.b_size = remain;
+-		err = mpd->get_block(mpd->inode, next, &new, 1);
+-		if (err) {
+-			/*
+-			 * Rather than implement own error handling
+-			 * here, we just leave remaining blocks
+-			 * unallocated and try again with ->writepage()
+-			 */
+-			break;
+-		}
+-		BUG_ON(new.b_size == 0);
++	new.b_state = lbh->b_state;
++	new.b_blocknr = 0;
++	new.b_size = lbh->b_size;
+ 
+-		if (buffer_new(&new))
+-			__unmap_underlying_blocks(mpd->inode, &new);
++	/*
++	 * If we didn't accumulate anything
++	 * to write simply return
++	 */
++	if (!new.b_size)
++		return;
++	err = mpd->get_block(mpd->inode, next, &new, 1);
++	if (err)
++		return;
++	BUG_ON(new.b_size == 0);
+ 
+-		/*
+-		 * If blocks are delayed marked, we need to
+-		 * put actual blocknr and drop delayed bit
+-		 */
+-		if (buffer_delay(lbh))
+-			mpage_put_bnr_to_bhs(mpd, next, &new);
++	if (buffer_new(&new))
++		__unmap_underlying_blocks(mpd->inode, &new);
+ 
+-		/* go for the remaining blocks */
+-		next += new.b_size >> mpd->inode->i_blkbits;
+-		remain -= new.b_size;
+-	}
++	/*
++	 * If blocks are delayed marked, we need to
++	 * put actual blocknr and drop delayed bit
++	 */
++	if (buffer_delay(lbh) || buffer_unwritten(lbh))
++		mpage_put_bnr_to_bhs(mpd, next, &new);
++
++	return;
+ }
+ 
+-#define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | (1 << BH_Delay))
++#define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | \
++		(1 << BH_Delay) | (1 << BH_Unwritten))
+ 
+ /*
+  * mpage_add_bh_to_extent - try to add one more block to extent of blocks
+@@ -1856,13 +1859,9 @@ static void mpage_add_bh_to_extent(struc
+ 	 * need to flush current  extent and start new one
+ 	 */
+ 	mpage_da_map_blocks(mpd);
+-
+-	/*
+-	 * Now start a new extent
+-	 */
+-	lbh->b_size = bh->b_size;
+-	lbh->b_state = bh->b_state & BH_FLAGS;
+-	lbh->b_blocknr = logical;
++	mpage_da_submit_io(mpd);
++	mpd->io_done = 1;
++	return;
+ }
+ 
+ /*
+@@ -1882,6 +1881,17 @@ static int __mpage_da_writepage(struct p
+ 	struct buffer_head *bh, *head, fake;
+ 	sector_t logical;
+ 
++	if (mpd->io_done) {
++		/*
++		 * Rest of the page in the page_vec
++		 * redirty then and skip then. We will
++		 * try to to write them again after
++		 * starting a new transaction
++		 */
++		redirty_page_for_writepage(wbc, page);
++		unlock_page(page);
++		return MPAGE_DA_EXTENT_TAIL;
++	}
+ 	/*
+ 	 * Can we merge this page to current extent?
+ 	 */
+@@ -1893,6 +1903,13 @@ static int __mpage_da_writepage(struct p
+ 		if (mpd->next_page != mpd->first_page) {
+ 			mpage_da_map_blocks(mpd);
+ 			mpage_da_submit_io(mpd);
++			/*
++			 * skip rest of the page in the page_vec
++			 */
++			mpd->io_done = 1;
++			redirty_page_for_writepage(wbc, page);
++			unlock_page(page);
++			return MPAGE_DA_EXTENT_TAIL;
+ 		}
+ 
+ 		/*
+@@ -1923,6 +1940,8 @@ static int __mpage_da_writepage(struct p
+ 		set_buffer_dirty(bh);
+ 		set_buffer_uptodate(bh);
+ 		mpage_add_bh_to_extent(mpd, logical, bh);
++		if (mpd->io_done)
++			return MPAGE_DA_EXTENT_TAIL;
+ 	} else {
+ 		/*
+ 		 * Page with regular buffer heads, just add all dirty ones
+@@ -1931,8 +1950,12 @@ static int __mpage_da_writepage(struct p
+ 		bh = head;
+ 		do {
+ 			BUG_ON(buffer_locked(bh));
+-			if (buffer_dirty(bh))
++			if (buffer_dirty(bh) &&
++				(!buffer_mapped(bh) || buffer_delay(bh))) {
+ 				mpage_add_bh_to_extent(mpd, logical, bh);
++				if (mpd->io_done)
++					return MPAGE_DA_EXTENT_TAIL;
++			}
+ 			logical++;
+ 		} while ((bh = bh->b_this_page) != head);
+ 	}
+@@ -1967,6 +1990,7 @@ static int mpage_da_writepages(struct ad
+ 			       get_block_t get_block)
+ {
+ 	struct mpage_da_data mpd;
++	long to_write;
+ 	int ret;
+ 
+ 	if (!get_block)
+@@ -1980,17 +2004,22 @@ static int mpage_da_writepages(struct ad
+ 	mpd.first_page = 0;
+ 	mpd.next_page = 0;
+ 	mpd.get_block = get_block;
++	mpd.io_done = 0;
++	mpd.pages_written = 0;
++
++	to_write = wbc->nr_to_write;
+ 
+ 	ret = write_cache_pages(mapping, wbc, __mpage_da_writepage, &mpd);
+ 
+ 	/*
+ 	 * Handle last extent of pages
+ 	 */
+-	if (mpd.next_page != mpd.first_page) {
++	if (!mpd.io_done && mpd.next_page != mpd.first_page) {
+ 		mpage_da_map_blocks(&mpd);
+ 		mpage_da_submit_io(&mpd);
+ 	}
+ 
++	wbc->nr_to_write = to_write - mpd.pages_written;
+ 	return ret;
+ }
+ 
+@@ -2202,10 +2231,7 @@ static int ext4_da_writepages(struct add
+ 	int ret = 0;
+ 	long to_write;
+ 	loff_t range_start = 0;
+-	int blocks_per_page = PAGE_CACHE_SIZE >> inode->i_blkbits;
+-	int max_credit_blocks = ext4_journal_max_transaction_buffers(inode);
+-	int need_credits_per_page =  ext4_writepages_trans_blocks(inode, 1);
+-	int max_writeback_pages = (max_credit_blocks / blocks_per_page) / need_credits_per_page;
++	long pages_skipped = 0;
+ 
+ 	/*
+ 	 * No pages to write? This is mainly a kludge to avoid starting
+@@ -2215,39 +2241,29 @@ static int ext4_da_writepages(struct add
+ 	if (!mapping->nrpages || !mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
+ 		return 0;
+ 
+-	if (wbc->nr_to_write > mapping->nrpages)
+-		wbc->nr_to_write = mapping->nrpages;
+-
+-	to_write = wbc->nr_to_write;
+-
+-	if (!wbc->range_cyclic) {
++	if (!wbc->range_cyclic)
+ 		/*
+ 		 * If range_cyclic is not set force range_cont
+ 		 * and save the old writeback_index
+ 		 */
+ 		wbc->range_cont = 1;
+-		range_start =  wbc->range_start;
+-	}
+ 
+-	while (!ret && to_write) {
+-		/*
+-		 * set the max dirty pages could be write at a time
+-		 * to fit into the reserved transaction credits
+-		 */
+-		if (wbc->nr_to_write > max_writeback_pages)
+-			wbc->nr_to_write = max_writeback_pages;
++	range_start =  wbc->range_start;
++	pages_skipped = wbc->pages_skipped;
++
++restart_loop:
++	to_write = wbc->nr_to_write;
++	while (!ret && to_write > 0) {
+ 
+ 		/*
+-		 * Estimate the worse case needed credits to write out
+-		 * to_write pages
++		 * we  insert one extent at a time. So we need
++		 * credit needed for single extent allocation.
++		 * journalled mode is currently not supported
++		 * by delalloc
+ 		 */
+-		needed_blocks = ext4_writepages_trans_blocks(inode,
+-							     wbc->nr_to_write);
+-		while (needed_blocks > max_credit_blocks) {
+-			wbc->nr_to_write--;
+-			needed_blocks = ext4_writepages_trans_blocks(inode,
+-							     wbc->nr_to_write);
+-		}
++		BUG_ON(ext4_should_journal_data(inode));
++		needed_blocks = EXT4_DATA_TRANS_BLOCKS(inode->i_sb);
++
+ 		/* start a new transaction*/
+ 		handle = ext4_journal_start(inode, needed_blocks);
+ 		if (IS_ERR(handle)) {
+@@ -2276,7 +2292,14 @@ static int ext4_da_writepages(struct add
+ 		ret = mpage_da_writepages(mapping, wbc,
+ 						ext4_da_get_block_write);
+ 		ext4_journal_stop(handle);
+-		if (wbc->nr_to_write) {
++		if (ret == MPAGE_DA_EXTENT_TAIL) {
++			/*
++			 * got one extent now try with
++			 * rest of the pages
++			 */
++			to_write += wbc->nr_to_write;
++			ret = 0;
++		} else if (wbc->nr_to_write) {
+ 			/*
+ 			 * There is no more writeout needed
+ 			 * or we requested for a noblocking writeout
+@@ -2288,10 +2311,18 @@ static int ext4_da_writepages(struct add
+ 		wbc->nr_to_write = to_write;
+ 	}
+ 
++	if (wbc->range_cont && (pages_skipped != wbc->pages_skipped)) {
++		/* We skipped pages in this loop */
++		wbc->range_start = range_start;
++		wbc->nr_to_write = to_write +
++					wbc->pages_skipped - pages_skipped;
++		wbc->pages_skipped = pages_skipped;
++		goto restart_loop;
++	}
++
+ out_writepages:
+ 	wbc->nr_to_write = to_write;
+-	if (range_start)
+-		wbc->range_start = range_start;
++	wbc->range_start = range_start;
+ 	return ret;
+ }
+ 
