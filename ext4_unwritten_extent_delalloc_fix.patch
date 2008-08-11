@@ -1,0 +1,52 @@
+Ext4: Handle unwritten extent properly with delayed allocation
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+When using fallocate the buffer_heads are marked unwritten
+and unmapped. We need to map them in the writepages after
+a get_block. Otherwise we split the uninit extents,
+but never write the content to disk.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/inode.c |   12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+Index: linux-2.6.27-rc1/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-11 14:27:43.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-11 14:27:48.000000000 -0700
+@@ -1720,6 +1720,13 @@ static void mpage_put_bnr_to_bhs(struct 
+ 				if (buffer_delay(bh)) {
+ 					bh->b_blocknr = pblock;
+ 					clear_buffer_delay(bh);
++					bh->b_bdev = inode->i_sb->s_bdev;
++				} else if (buffer_unwritten(bh)) {
++					bh->b_blocknr = pblock;
++					clear_buffer_unwritten(bh);
++					set_buffer_mapped(bh);
++					set_buffer_new(bh);
++					bh->b_bdev = inode->i_sb->s_bdev;
+ 				} else if (buffer_mapped(bh))
+ 					BUG_ON(bh->b_blocknr != pblock);
+ 
+@@ -1793,7 +1800,7 @@ static void mpage_da_map_blocks(struct m
+ 		 * If blocks are delayed marked, we need to
+ 		 * put actual blocknr and drop delayed bit
+ 		 */
+-		if (buffer_delay(lbh))
++		if (buffer_delay(lbh) || buffer_unwritten(lbh))
+ 			mpage_put_bnr_to_bhs(mpd, next, &new);
+ 
+ 		/* go for the remaining blocks */
+@@ -1802,7 +1809,8 @@ static void mpage_da_map_blocks(struct m
+ 	}
+ }
+ 
+-#define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | (1 << BH_Delay))
++#define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | \
++		(1 << BH_Delay) | (1 << BH_Unwritten))
+ 
+ /*
+  * mpage_add_bh_to_extent - try to add one more block to extent of blocks

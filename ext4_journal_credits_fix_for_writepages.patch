@@ -40,12 +40,20 @@ Verified with memory pressure case and umount case,
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
-diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+---
+ fs/ext4/ext4.h         |    4 -
+ fs/ext4/ext4_extents.h |    3 -
+ fs/ext4/ext4_jbd2.h    |   10 +++
+ fs/ext4/extents.c      |   77 +++++++++++++++++------------
+ fs/ext4/inode.c        |  127 +++++++++++++++++++++++++++----------------------
+ fs/ext4/migrate.c      |    6 +-
+ 6 files changed, 134 insertions(+), 93 deletions(-)
+
+Index: linux-2.6.27-rc1/fs/ext4/ext4.h
 ===================================================================
-index 303e41c..bf7936e 100644
---- a/fs/ext4/ext4.h
-+++ b/fs/ext4/ext4.h
-@@ -1072,7 +1072,7 @@ extern void ext4_truncate (struct inode *);
+--- linux-2.6.27-rc1.orig/fs/ext4/ext4.h	2008-08-11 14:27:56.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/ext4.h	2008-08-11 14:29:20.000000000 -0700
+@@ -1071,7 +1071,7 @@ extern void ext4_truncate (struct inode 
  extern void ext4_set_inode_flags(struct inode *);
  extern void ext4_get_inode_flags(struct ext4_inode_info *);
  extern void ext4_set_aops(struct inode *inode);
@@ -54,7 +62,7 @@ index 303e41c..bf7936e 100644
  extern int ext4_block_truncate_page(handle_t *handle,
  		struct address_space *mapping, loff_t from);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
-@@ -1227,7 +1227,7 @@ extern const struct inode_operations ext4_fast_symlink_inode_operations;
+@@ -1226,7 +1226,7 @@ extern const struct inode_operations ext
  
  /* extents.c */
  extern int ext4_ext_tree_init(handle_t *handle, struct inode *);
@@ -63,12 +71,11 @@ index 303e41c..bf7936e 100644
  extern int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  			ext4_lblk_t iblock,
  			unsigned long max_blocks, struct buffer_head *bh_result,
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+Index: linux-2.6.27-rc1/fs/ext4/extents.c
 ===================================================================
-index 8ee1fa5..dc6ca5e 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -1747,34 +1747,43 @@ static int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
+--- linux-2.6.27-rc1.orig/fs/ext4/extents.c	2008-08-11 14:29:19.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/extents.c	2008-08-11 14:29:20.000000000 -0700
+@@ -1747,34 +1747,43 @@ static int ext4_ext_rm_idx(handle_t *han
  }
  
  /*
@@ -109,24 +116,23 @@ index 8ee1fa5..dc6ca5e 100644
 +			return 2;
  	}
  
--	/*
++	/* add one more level in case of tree increase when insert a extent */
++	depth += 1;
++
+ 	/*
 -	 * given 32-bit logical block (4294967296 blocks), max. tree
 -	 * can be 4 levels in depth -- 4 * 340^4 == 53453440000.
 -	 * Let's also add one more level for imbalance.
--	 */
--	depth = 5;
-+	/* add one more level in case of tree increase when insert a extent */
-+	depth += 1;
- 
--	/* allocation of new data block(s) */
-+	/*
 +	 * bitmap blocks and group descriptor block for
 +	 * allocation of new extent
-+	 */
+ 	 */
+-	depth = 5;
+-
+-	/* allocation of new data block(s) */
  	needed = 2;
  
  	/*
-@@ -1791,9 +1800,6 @@ int ext4_ext_calc_credits_for_insert(struct inode *inode,
+@@ -1791,9 +1800,6 @@ int ext4_ext_calc_credits_for_insert(str
  	 */
  	needed += (depth * 2) + (depth * 2);
  
@@ -136,7 +142,7 @@ index 8ee1fa5..dc6ca5e 100644
  	return needed;
  }
  
-@@ -1917,9 +1923,7 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -1921,9 +1927,7 @@ ext4_ext_rm_leaf(handle_t *handle, struc
  			correct_index = 1;
  			credits += (ext_depth(inode)) + 1;
  		}
@@ -146,7 +152,7 @@ index 8ee1fa5..dc6ca5e 100644
  
  		err = ext4_ext_journal_restart(handle, credits);
  		if (err)
-@@ -2801,8 +2805,8 @@ void ext4_ext_truncate(struct inode *inode)
+@@ -2805,8 +2809,8 @@ void ext4_ext_truncate(struct inode *ino
  	/*
  	 * probably first extent we're gonna free will be last in block
  	 */
@@ -157,7 +163,7 @@ index 8ee1fa5..dc6ca5e 100644
  	if (IS_ERR(handle))
  		return;
  
-@@ -2855,22 +2859,32 @@ out_stop:
+@@ -2859,22 +2863,32 @@ out_stop:
  }
  
  /*
@@ -199,7 +205,7 @@ index 8ee1fa5..dc6ca5e 100644
  
  	return needed;
  }
-@@ -2935,10 +2949,9 @@ long ext4_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
+@@ -2939,10 +2953,9 @@ long ext4_fallocate(struct inode *inode,
  	max_blocks = (EXT4_BLOCK_ALIGN(len + offset, blkbits) >> blkbits)
  							- block;
  	/*
@@ -212,11 +218,10 @@ index 8ee1fa5..dc6ca5e 100644
  	mutex_lock(&inode->i_mutex);
  retry:
  	while (ret >= 0 && ret < max_blocks) {
+Index: linux-2.6.27-rc1/fs/ext4/inode.c
 ===================================================================
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index efe8caa..3d25196 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
+--- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-11 14:28:03.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-11 14:29:20.000000000 -0700
 @@ -1,5 +1,5 @@
  /*
 - *  linux/fs/ext4/inode.c
@@ -224,7 +229,7 @@ index efe8caa..3d25196 100644
   *
   * Copyright (C) 1992, 1993, 1994, 1995
   * Remy Card (card@masi.ibp.fr)
-@@ -954,15 +954,6 @@ out:
+@@ -1043,15 +1043,6 @@ static void ext4_da_update_reserve_space
  
  /* Maximum number of blocks we map for direct IO at once. */
  #define DIO_MAX_BLOCKS 4096
@@ -239,8 +244,8 @@ index efe8caa..3d25196 100644
 -
  
  /*
-  *
-@@ -1082,13 +1073,13 @@ static int ext4_get_block(struct inode *inode, sector_t iblock,
+  * The ext4_get_blocks_wrap() function try to look up the requested blocks,
+@@ -1170,13 +1161,13 @@ static int ext4_get_block(struct inode *
  	handle_t *handle = ext4_journal_current_handle();
  	int ret = 0, started = 0;
  	unsigned max_blocks = bh_result->b_size >> inode->i_blkbits;
@@ -256,7 +261,7 @@ index efe8caa..3d25196 100644
  		if (IS_ERR(handle)) {
  			ret = PTR_ERR(handle);
  			goto out;
-@@ -1267,7 +1258,7 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
+@@ -1355,7 +1346,7 @@ static int ext4_write_begin(struct file 
  				struct page **pagep, void **fsdata)
  {
   	struct inode *inode = mapping->host;
@@ -265,7 +270,7 @@ index efe8caa..3d25196 100644
  	handle_t *handle;
  	int retries = 0;
   	struct page *page;
-@@ -2153,20 +2144,6 @@ static int ext4_da_writepage(struct page *page,
+@@ -2210,20 +2201,6 @@ static int ext4_da_writepage(struct page
  
  	return ret;
  }
@@ -286,7 +291,7 @@ index efe8caa..3d25196 100644
  static int ext4_da_writepages(struct address_space *mapping,
  				struct writeback_control *wbc)
  {
-@@ -2176,22 +2153,24 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -2233,22 +2210,24 @@ static int ext4_da_writepages(struct add
  	int ret = 0;
  	long to_write;
  	loff_t range_start = 0;
@@ -317,7 +322,7 @@ index efe8caa..3d25196 100644
  	if (!wbc->range_cyclic) {
  		/*
  		 * If range_cyclic is not set force range_cont
-@@ -2202,10 +2181,32 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -2259,10 +2238,32 @@ static int ext4_da_writepages(struct add
  	}
  
  	while (!ret && to_write) {
@@ -350,7 +355,7 @@ index efe8caa..3d25196 100644
  			goto out_writepages;
  		}
  		if (ext4_should_order_data(inode)) {
-@@ -2221,12 +2222,6 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -2278,12 +2279,6 @@ static int ext4_da_writepages(struct add
  			}
  
  		}
@@ -363,7 +368,7 @@ index efe8caa..3d25196 100644
  
  		to_write -= wbc->nr_to_write;
  		ret = mpage_da_writepages(mapping, wbc,
-@@ -2587,7 +2582,8 @@ static int __ext4_journalled_writepage(struct page *page,
+@@ -2647,7 +2642,8 @@ static int __ext4_journalled_writepage(s
  	 * references to buffers so we are safe */
  	unlock_page(page);
  
@@ -373,7 +378,7 @@ index efe8caa..3d25196 100644
  	if (IS_ERR(handle)) {
  		ret = PTR_ERR(handle);
  		goto out;
-@@ -4275,20 +4271,20 @@ int ext4_getattr(struct vfsmount *mnt, struct dentry *dentry,
+@@ -4335,20 +4331,20 @@ int ext4_getattr(struct vfsmount *mnt, s
  /*
   * How many blocks doth make a writepage()?
   *
@@ -400,7 +405,7 @@ index efe8caa..3d25196 100644
   *
   * If the inode's direct blocks can hold an integral number of pages then a
   * page cannot straddle two indirect blocks, and we can only touch one indirect
-@@ -4299,30 +4295,49 @@ int ext4_getattr(struct vfsmount *mnt, struct dentry *dentry,
+@@ -4359,30 +4355,49 @@ int ext4_getattr(struct vfsmount *mnt, s
   * block and work out the exact number of indirects which are touched.  Pah.
   */
  
@@ -460,12 +465,11 @@ index efe8caa..3d25196 100644
   * The caller must have previously called ext4_reserve_inode_write().
   * Give this, we know that the caller already has write access to iloc->bh.
   */
+Index: linux-2.6.27-rc1/fs/ext4/migrate.c
 ===================================================================
-diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
-index b9e077b..b3fa8dc 100644
---- a/fs/ext4/migrate.c
-+++ b/fs/ext4/migrate.c
-@@ -52,9 +52,11 @@ static int finish_range(handle_t *handle, struct inode *inode,
+--- linux-2.6.27-rc1.orig/fs/ext4/migrate.c	2008-08-11 14:27:09.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/migrate.c	2008-08-11 14:29:20.000000000 -0700
+@@ -52,9 +52,11 @@ static int finish_range(handle_t *handle
  	 * Since we are doing this in loop we may accumalate extra
  	 * credit. But below we try to not accumalate too much
  	 * of them by restarting the journal.
@@ -479,12 +483,11 @@ index b9e077b..b3fa8dc 100644
  	/*
  	 * Make sure the credit we accumalated is not really high
  	 */
+Index: linux-2.6.27-rc1/fs/ext4/ext4_extents.h
 ===================================================================
-diff --git a/fs/ext4/ext4_extents.h b/fs/ext4/ext4_extents.h
-index 6c166c0..da8986c 100644
---- a/fs/ext4/ext4_extents.h
-+++ b/fs/ext4/ext4_extents.h
-@@ -216,7 +216,8 @@ extern int ext4_ext_calc_metadata_amount(struct inode *inode, int blocks);
+--- linux-2.6.27-rc1.orig/fs/ext4/ext4_extents.h	2008-08-11 14:27:09.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/ext4_extents.h	2008-08-11 14:29:20.000000000 -0700
+@@ -216,7 +216,8 @@ extern int ext4_ext_calc_metadata_amount
  extern ext4_fsblk_t idx_pblock(struct ext4_extent_idx *);
  extern void ext4_ext_store_pblock(struct ext4_extent *, ext4_fsblk_t);
  extern int ext4_extent_tree_init(handle_t *, struct inode *);
@@ -494,12 +497,11 @@ index 6c166c0..da8986c 100644
  extern int ext4_ext_try_to_merge(struct inode *inode,
  				 struct ext4_ext_path *path,
  				 struct ext4_extent *);
+Index: linux-2.6.27-rc1/fs/ext4/ext4_jbd2.h
 ===================================================================
-diff --git a/fs/ext4/ext4_jbd2.h b/fs/ext4/ext4_jbd2.h
-index eb8bc3a..3e61a1d 100644
---- a/fs/ext4/ext4_jbd2.h
-+++ b/fs/ext4/ext4_jbd2.h
-@@ -231,4 +231,14 @@ static inline int ext4_should_writeback_data(struct inode *inode)
+--- linux-2.6.27-rc1.orig/fs/ext4/ext4_jbd2.h	2008-08-11 14:27:09.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/ext4_jbd2.h	2008-08-11 14:29:20.000000000 -0700
+@@ -231,4 +231,14 @@ static inline int ext4_should_writeback_
  	return 0;
  }
  
