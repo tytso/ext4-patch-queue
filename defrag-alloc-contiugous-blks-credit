@@ -9,17 +9,20 @@ Cc: Takashi Sato <t-sato@yk.jp.nec.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
-Index: linux-2.6.26-git6/fs/ext4/defrag.c
+Index: linux-2.6.27-rc1/fs/ext4/defrag.c
 ===================================================================
---- linux-2.6.26-git6.orig/fs/ext4/defrag.c	2008-07-25 17:39:23.000000000 -0700
-+++ linux-2.6.26-git6/fs/ext4/defrag.c	2008-07-25 17:39:52.000000000 -0700
-@@ -1385,7 +1385,8 @@ ext4_defrag_alloc_blocks(handle_t *handl
+--- linux-2.6.27-rc1.orig/fs/ext4/defrag.c	2008-08-11 17:15:49.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/defrag.c	2008-08-11 19:46:59.000000000 -0700
+@@ -186,9 +186,9 @@ ext4_defrag_alloc_blocks(handle_t *handl
  	struct buffer_head *bh = NULL;
  	int err, i, credits = 0;
  
 -	credits = ext4_ext_calc_credits_for_insert(dest_inode, dest_path);
-+	credits = ext4_ext_calc_credits_for_single_extent(dest_inode, dest_path)
-+		  + 4;
- 	err = ext4_ext_journal_restart(handle,
- 				credits + EXT4_TRANS_META_BLOCKS);
+-	err = ext4_ext_journal_restart(handle,
+-				credits + EXT4_TRANS_META_BLOCKS);
++	credits = ext4_ext_calc_credits_for_single_extent(dest_inode,
++							  ar->len, dest_path);
++	err = ext4_ext_journal_restart(handle, credits);
  	if (err)
+ 		return err;
+ 

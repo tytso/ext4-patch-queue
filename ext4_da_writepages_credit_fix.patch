@@ -1,0 +1,91 @@
+Ext4: journal credit fix the delalloc writepages
+
+From: Mingming Cao <cmm@us.ibm.com>
+
+Previous delalloc writepages implementation start a new transaction outside
+a loop call of get_block() to do the block allocation. Due to lack of
+information of how many blocks to be allocated, the estimate of the journal
+credits is very conservtive and caused many issues.
+
+With the rewored delayed allocation, a new transaction is created for
+each get_block(), thus we don't need to guess how many credits for the multiple
+chunk of allocation. Start every transaction with credits for insert a
+single exent is enough. But we still need to consider the journalled mode,
+where it need to account for the number of data blocks.  So we guess
+max number of data blocks for each allocation.  Due to the current VFS
+implementation writepages() could only flush PAGEVEC lengh of pages at a
+time, the max block allocation is limited and calculated based on
+that, and the total number of reserved delalloc datablocks, whichever
+is smaller.
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/inode.c |   39 ++++++++++++++++++++++++---------------
+ 1 file changed, 24 insertions(+), 15 deletions(-)
+
+Index: linux-2.6.27-rc1/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-12 08:15:59.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-12 08:30:41.000000000 -0700
+@@ -2210,17 +2210,28 @@ static int ext4_da_writepage(struct page
+ }
+ 
+ /*
+- * For now just follow the DIO way to estimate the max credits
+- * needed to write out EXT4_MAX_WRITEBACK_PAGES.
+- * todo: need to calculate the max credits need for
+- * extent based files, currently the DIO credits is based on
+- * indirect-blocks mapping way.
+- *
+- * Probably should have a generic way to calculate credits
+- * for DIO, writepages, and truncate
++ * This is called via ext4_da_writepages() to
++ * calulate the total number of credits to reserve to fit
++ * a single extent allocation into a single transaction,
++ * ext4_da_writpeages() will loop calling this before
++ * the block allocation.
++ *
++ * The page vector size limited the max number of pages could
++ * be writeout at a time. Based on this, the max blocks to pass to
++ * get_block is calculated
+  */
+-#define EXT4_MAX_WRITEBACK_PAGES      DIO_MAX_BLOCKS
+-#define EXT4_MAX_WRITEBACK_CREDITS    25
++
++#define		EXT4_MAX_WRITEPAGES_SIZE	PAGEVEC_SIZE
++static int ext4_writepages_trans_blocks(struct inode *inode)
++{
++	int bpp = ext4_journal_blocks_per_page(inode);
++	int max_blocks = EXT4_MAX_WRITEPAGES_SIZE * bpp;
++
++	if (max_blocks > EXT4_I(inode)->i_reserved_data_blocks)
++		max_blocks =  EXT4_I(inode)->i_reserved_data_blocks;
++
++	return ext4_data_trans_blocks(inode, max_blocks);
++}
+ 
+ static int ext4_da_writepages(struct address_space *mapping,
+                                 struct writeback_control *wbc)
+@@ -2262,7 +2273,7 @@ restart_loop:
+ 		 * by delalloc
+ 		 */
+ 		BUG_ON(ext4_should_journal_data(inode));
+-		needed_blocks = EXT4_DATA_TRANS_BLOCKS(inode->i_sb);
++		needed_blocks = ext4_writepages_trans_blocks(inode);
+ 
+ 		/* start a new transaction*/
+ 		handle = ext4_journal_start(inode, needed_blocks);
+@@ -4449,11 +4460,9 @@ static int ext4_writeblocks_trans_credit
+  * the modification of a single pages into a single transaction,
+  * which may include multile chunk of block allocations.
+  *
+- * This could be called via ext4_write_begin() or later
+- * ext4_da_writepages() in delalyed allocation case.
++ * This could be called via ext4_write_begin()
+  *
+- * In both case it's possible that we could allocating multiple
+- * chunks of blocks. We need to consider the worse case, when
++ * We need to consider the worse case, when
+  * one new block per extent.
+  */
+ int ext4_writepage_trans_blocks(struct inode *inode)

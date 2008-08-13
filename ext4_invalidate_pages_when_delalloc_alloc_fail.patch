@@ -1,0 +1,161 @@
+From aneesh.kumar@linux.vnet.ibm.com Mon Aug 11 06:23:22 2008
+Return-Path: <aneesh.kumar@linux.vnet.ibm.com>
+Received: from imap.linux.ibm.com ([unix socket]) by imap.linux.ibm.com
+	(Cyrus v2.3.7-Invoca-RPM-2.3.7-7) with LMTPA; Mon, 11 Aug 2008 06:23:22
+	-0400
+X-Sieve: CMU Sieve 2.3
+Received: by imap.linux.ibm.com (Postfix, from userid 101) id 824811910021;
+	Mon, 11 Aug 2008 06:23:22 -0400 (EDT)
+X-Spam-TestScore: ALL_TRUSTED=-1.44,DNS_FROM_RFC_ABUSE=0.479
+X-Spam-TokenSummary: Bayes not run.
+X-Spam-Checker-Version: SpamAssassin 3.1.7 (2006-10-05) on
+	imap.linux.ibm.com
+X-Spam-Level: 
+X-Spam-Status: No, score=-1.0 required=5.0 tests=ALL_TRUSTED,
+	DNS_FROM_RFC_ABUSE autolearn=disabled version=3.1.7
+X-Spam-Relay-Country: 
+Received: from smtp.linux.ibm.com (smtp.linux.ibm.com [9.26.4.197]) by
+	imap.linux.ibm.com (Postfix) with ESMTP id F1DF61910020 for
+	<cmm@imap.linux.ibm.com>; Mon, 11 Aug 2008 06:23:21 -0400 (EDT)
+Received: from localhost (localhost.localdomain [127.0.0.1]) by
+	smtp.linux.ibm.com (Postfix) with ESMTP id 8A39EC040 for
+	<cmm@linux.ibm.com>; Mon, 11 Aug 2008 06:23:21 -0400 (EDT)
+X-Virus-Scanned: amavisd-new at linux.ibm.com
+Received: from VMSDVMA.POK.IBM.COM (vmsdvma.pok.ibm.com [9.56.231.65]) by
+	smtp.linux.ibm.com (Postfix) with ESMTP id 3974DC03F for
+	<cmm@linux.ibm.com>; Mon, 11 Aug 2008 06:23:21 -0400 (EDT)
+Received:  by VMSDVMA.POK.IBM.COM (IBM VM SMTP Level 530) via spool with
+	SMTP id 8464 ; Mon, 11 Aug 2008 06:22:01 EDT
+Received: by vmsdvma.vnet.ibm.com (xagent2 6.0.1) via xagsmtp3 with spool
+	id 9833 for cmm@linux.vnet.ibm.com; Mon, 11 Aug 2008 06:22:01 -0400 (EDT)
+Received: from d01relay01.pok.ibm.com [9.56.227.233] by VMSDVMA.POK.IBM.COM
+	(IBM VM SMTP Level 530) via TCP with ESMTP ; Mon, 11 Aug 2008 06:22:01 EDT
+Received: from d01av01.pok.ibm.com (d01av01.pok.ibm.com [9.56.224.215]) by
+	d01relay01.pok.ibm.com (8.13.8/8.13.8/NCO v9.0) with ESMTP id
+	m7BANKvL076622 for <cmm@us.ibm.com>; Mon, 11 Aug 2008 06:23:20 -0400
+Received: from d01av01.pok.ibm.com (loopback [127.0.0.1]) by
+	d01av01.pok.ibm.com (8.12.11.20060308/8.13.3) with ESMTP id m7BANKch016459
+	for <cmm@us.ibm.com>; Mon, 11 Aug 2008 06:23:20 -0400
+Received: from d23relay01.au.ibm.com (d23relay01.au.ibm.com [9.190.234.17])
+	by d01av01.pok.ibm.com (8.12.11.20060308/8.12.11) with ESMTP id
+	m7BANJe6016382 for <cmm@us.ibm.com>; Mon, 11 Aug 2008 06:23:19 -0400
+Received: from d23av01.au.ibm.com (d23av01.au.ibm.com [9.190.234.96]) by
+	d23relay01.au.ibm.com (8.13.8/8.13.8/NCO v9.0) with ESMTP id m7BANIvZ524638
+	for <cmm@us.ibm.com>; Mon, 11 Aug 2008 20:23:18 +1000
+Received: from d23av01.au.ibm.com (loopback [127.0.0.1]) by
+	d23av01.au.ibm.com (8.12.11.20060308/8.13.3) with ESMTP id m7BANIc3001691
+	for <cmm@us.ibm.com>; Mon, 11 Aug 2008 20:23:18 +1000
+Received: from localhost.localdomain ([9.124.35.187]) by d23av01.au.ibm.com
+	(8.12.11.20060308/8.12.11) with ESMTP id m7BAN8g6001560; Mon, 11 Aug 2008
+	20:23:15 +1000
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+To: cmm@us.ibm.com, tytso@mit.edu, sandeen@redhat.com
+Cc: linux-ext4@vger.kernel.org,        "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+Subject: [PATCH -v2] ext4: invalidate pages if delalloc block allocation
+	fails.
+Date: Mon, 11 Aug 2008 15:53:08 +0530
+Message-Id: <1218450188-9643-3-git-send-email-aneesh.kumar@linux.vnet.ibm.com>
+X-Mailer: git-send-email 1.6.0.rc0.42.g186458.dirty
+In-Reply-To: <1218450188-9643-2-git-send-email-aneesh.kumar@linux.vnet.ibm.com>
+References:
+	 <1218450188-9643-1-git-send-email-aneesh.kumar@linux.vnet.ibm.com>
+	 <1218450188-9643-2-git-send-email-aneesh.kumar@linux.vnet.ibm.com>
+X-Xagent-From: aneesh.kumar@linux.vnet.ibm.com
+X-Xagent-To: cmm@linux.vnet.ibm.com
+X-Xagent-Gateway: vmsdvma.vnet.ibm.com (XAGENTU2 at VMSDVMA)
+X-Evolution-Source: imap://cmm;auth=DIGEST-MD5@imap.linux.ibm.com/
+Content-Transfer-Encoding: 8bit
+Mime-Version: 1.0
+
+We are a bit agressive in invalidating all the pages. But
+it is ok because we really don't know why the block allocation
+failed and it is better to come of the writeback path
+so that user can look for more info.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+ fs/ext4/inode.c |   63 ++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 files changed, 62 insertions(+), 1 deletions(-)
+
+Index: linux-2.6.27-rc1/fs/ext4/inode.c
+===================================================================
+--- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-11 15:32:10.000000000 -0700
++++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-11 15:33:49.000000000 -0700
+@@ -1762,6 +1762,39 @@ static inline void __unmap_underlying_bl
+ 		unmap_underlying_metadata(bdev, bh->b_blocknr + i);
+ }
+ 
++static void ext4_da_block_invalidatepages(struct mpage_da_data *mpd,
++					sector_t logical, long blk_cnt)
++{
++	int nr_pages, i;
++	pgoff_t index, end;
++	struct pagevec pvec;
++	struct inode *inode = mpd->inode;
++	struct address_space *mapping = inode->i_mapping;
++
++	index = logical >> (PAGE_CACHE_SHIFT - inode->i_blkbits);
++	end   = (logical + blk_cnt - 1) >>
++				(PAGE_CACHE_SHIFT - inode->i_blkbits);
++	while (index <= end) {
++		nr_pages = pagevec_lookup(&pvec, mapping, index, PAGEVEC_SIZE);
++		if (nr_pages == 0)
++			break;
++		for (i = 0; i < nr_pages; i++) {
++			struct page *page = pvec.pages[i];
++			index = page->index;
++			if (index > end)
++				break;
++			index++;
++
++			BUG_ON(!PageLocked(page));
++			BUG_ON(PageWriteback(page));
++			block_invalidatepage(page, 0);
++			ClearPageUptodate(page);
++			unlock_page(page);
++		}
++	}
++	return;
++}
++
+ /*
+  * mpage_da_map_blocks - go through given space
+  *
+@@ -1795,8 +1828,36 @@ static void mpage_da_map_blocks(struct m
+ 	if (!new.b_size)
+ 		return;
+ 	err = mpd->get_block(mpd->inode, next, &new, 1);
+-	if (err)
++	if (err) {
++
++		/* If get block returns with error
++		 * we simply return. Later writepage
++		 * will redirty the page and writepages
++		 * will find the dirty page again
++		 */
++		if (err == -EAGAIN)
++			return;
++		/*
++		 * get block failure will cause us
++		 * to loop in writepages. Because
++		 * a_ops->writepage won't be able to
++		 * make progress. The page will be redirtied
++		 * by writepage and writepages will again
++		 * try to write the same.
++		 */
++		printk(KERN_EMERG "%s block allocation failed for inode %lu "
++				  "at logical offset %llu with max blocks "
++				  "%zd with error %d\n",
++				  __func__, mpd->inode->i_ino,
++				  (unsigned long long)next,
++				  lbh->b_size >> mpd->inode->i_blkbits, err);
++		printk(KERN_EMERG "This should not happen.!! "
++					"Data will be lost\n");
++		/* invlaidate all the pages */
++		ext4_da_block_invalidatepages(mpd, next,
++				lbh->b_size >> mpd->inode->i_blkbits);
+ 		return;
++	}
+ 	BUG_ON(new.b_size == 0);
+ 
+ 	if (buffer_new(&new))
