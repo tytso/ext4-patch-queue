@@ -26,22 +26,53 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
  fs/ext4/ext4.h      |    1 
  fs/ext4/ext4_jbd2.h |    8 +++
- fs/ext4/inode.c     |  136 ++++++++++++++++++++++++++++++++++++++--------------
- 3 files changed, 110 insertions(+), 35 deletions(-)
+ fs/ext4/inode.c     |  133 ++++++++++++++++++++++++++++++++++++++--------------
+ 3 files changed, 107 insertions(+), 35 deletions(-)
 
-Index: linux-2.6.27-rc1/fs/ext4/inode.c
+Index: linux-2.6.27-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-11 15:11:51.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-11 15:11:55.000000000 -0700
-@@ -4333,56 +4333,125 @@ int ext4_getattr(struct vfsmount *mnt, s
+--- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-15 12:37:21.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-15 14:18:30.000000000 -0700
+@@ -4354,56 +4354,120 @@ int ext4_getattr(struct vfsmount *mnt, s
+ 	return 0;
  }
  
++static int ext4_indirect_trans_blocks(struct inode *inode, int nrblocks,
++				      int chunk)
++{
++	int indirects;
++
++	/* if nrblocks are contiguous */
++	if (chunk) {
++		/*
++		 * With N contiguous data blocks, it need at most
++		 * N/EXT4_ADDR_PER_BLOCK(inode->i_sb) indirect blocks
++		 * 2 dindirect blocks
++		 * 1 tindirect block
++		 */
++		indirects = nrblocks / EXT4_ADDR_PER_BLOCK(inode->i_sb);
++		return indirects + 3;
++	}
++	/*
++	 * if nrblocks are not contiguous, worse case, each block touch
++ 	 * a indirect block, and each indirect block touch a double indirect
++ 	 * block, plus a triple indirect block
++ 	 */
++	indirects = nrblocks * 2 + 1;
++	return indirects;
++}
++
++static int ext4_index_trans_blocks(struct inode *inode, int nrblocks, int chunk)
++{
++	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL))
++		return ext4_indirect_trans_blocks(inode, nrblocks, 0);
++	return ext4_ext_index_trans_blocks(inode, nrblocks, 0);
++}
  /*
 - * How many blocks doth make a writepage()?
-+ * Account for block groups bitmaps and block group descriptor blocks
-+ * if modify datablocks and indexing blocks
-+ * worse case, the nrblocks and indexs blocks spread
-+ * over different block groups
++ * Account for index blocks, block groups bitmaps and block group
++ * descriptor blocks if modify datablocks and index blocks
++ * worse case, the indexs blocks spread over different block groups
   *
 - * With N blocks per page, it may be:
 - * N data blocks
@@ -53,22 +84,42 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
 - * 1 inode block
 - * 1 superblock.
 - * 2 * EXT4_SINGLEDATA_TRANS_BLOCKS for the quote files
-- *
++ * If datablocks are discontiguous, they are possible to spread over
++ * different block groups too. If they are contiugous, with flexbg,
++ * they could still across block group boundary.
+  *
 - * 3 * (N + 5) + 2 + 2 * EXT4_SINGLEDATA_TRANS_BLOCKS
-- *
-- * With ordered or writeback data it's the same, less the N data blocks.
-- *
-- * If the inode's direct blocks can hold an integral number of pages then a
-- * page cannot straddle two indirect blocks, and we can only touch one indirect
-- * and dindirect block, and the "5" above becomes "3".
 + * Also account for superblock, inode, quota and xattr blocks
 + */
-+int ext4_meta_trans_blocks(struct inode* inode, int nrblocks, int idxblocks)
++int ext4_meta_trans_blocks(struct inode* inode, int nrblocks, int chunk)
 +{
 +	int groups, gdpblocks;
++	int idxblocks;
 +	int ret = 0;
 +
-+	groups = nrblocks + idxblocks;
++	/*
++	 * How many index blocks need to touch to modify nrblocks?
++	 * The "Chunk" flag indicating whether the nrblocks is
++	 * physically contiguous on disk
++	 *
++ 	 * For Direct IO and fallocate, they calls get_block to allocate
++ 	 * one single extent at a time, so they could set the "Chunk" flag
++	 */
++	idxblocks = ext4_index_trans_blocks(inode, nrblocks, chunk);
++
++	ret = idxblocks;
++
++	/*
++	 * Now let's see how many group bitmaps and group descriptors need
++ 	 * to account
++	 */
++	groups = idxblocks;
++	if (chunk)
++		groups += (nrblocks + EXT4_BLOCKS_PER_GROUP(inode->i_sb)
++			    -1 )/EXT4_BLOCKS_PER_GROUP(inode->i_sb);
++	else
++		groups += nrblocks;
++
 +	gdpblocks = groups;
 +	if (groups > EXT4_SB(inode->i_sb)->s_groups_count)
 +		groups = EXT4_SB(inode->i_sb)->s_groups_count;
@@ -78,125 +129,69 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
 +	/* bitmaps and block group descriptor blocks */
 +	ret += groups + gdpblocks;
 +
-+	ret += idxblocks;
-+
-+	/* journalled mode, include buffer to modify data blocks */
-+	if (ext4_should_journal_data(inode))
-+		ret += nrblocks;
-+
 +	/* Blocks for super block, inode, quota and xattr blocks */
 +	ret += EXT4_META_TRANS_BLOCKS(inode->i_sb);
 +
 +	return ret;
 +}
 +
-+static int ext4_indirect_trans_blocks(struct inode *inode, int nrblocks,
-+				      int chunk)
-+{
-+	int indirects;
-+
-+	/* if nrblocks are contigous */
-+	if (chunk) {
-+		/*
-+		 * With N contigous data blocks, it need at most
-+		 * N/EXT4_ADDR_PER_BLOCK(inode->i_sb) indirect blocks
-+		 * 2 dindirect blocks
-+		 * 1 tindirect block
-+		 */
-+		indirects = nrblocks / EXT4_ADDR_PER_BLOCK(inode->i_sb);
-+		return indirects + 3;
-+	}
-+	/*
-+	 * if nrblocks are not contigous, worse case, each block touch
-+ 	 * a indirect block, and each indirect block touch a double indirect
-+ 	 * block, plus a triple indirect block
-+ 	 */
-+	indirects = nrblocks * 2 + 1;
-+	return indirects;
-+}
 +/*
-+ * How many journal blocks are need to modify N blocks contigous data()?
-+ *
-+ * It need to account indirect blocks, data blocks, and
-+ * bitmap blocks and group descriptor blocks.
++ * Calulate the total number of credits to reserve to fit
++ * the modification of a single pages into a single transaction
   *
-  * This still overestimates under most circumstances.  If we were to pass the
-  * start and end offsets in here as well we could do block_to_path() on each
-  * block and work out the exact number of indirects which are touched.  Pah.
+- * With ordered or writeback data it's the same, less the N data blocks.
++ * This could be called via ext4_write_begin() or later
++ * ext4_da_writepages() in delalyed allocation case.
+  *
+- * If the inode's direct blocks can hold an integral number of pages then a
+- * page cannot straddle two indirect blocks, and we can only touch one indirect
+- * and dindirect block, and the "5" above becomes "3".
++ * In both case it's possible that we could allocating multiple
++ * chunks of blocks. We need to consider the worse case, when
++ * one new block per extent.
+  *
+- * This still overestimates under most circumstances.  If we were to pass the
+- * start and end offsets in here as well we could do block_to_path() on each
+- * block and work out the exact number of indirects which are touched.  Pah.
++ * For Direct IO and fallocate, the journal credits reservation
++ * is based on one single extent allocation, so they could use
++ * EXT4_DATA_TRANS_BLOCKS to get the needed credit to log a single
++ * chunk of allocation needs.
   */
- 
--int ext4_writepage_trans_blocks(struct inode *inode)
-+static int ext4_writeblocks_trans_credits_old(struct inode *inode, int nrblocks,
-+					      int chunk)
+-
+ int ext4_writepage_trans_blocks(struct inode *inode)
  {
--	int bpp = ext4_journal_blocks_per_page(inode);
+ 	int bpp = ext4_journal_blocks_per_page(inode);
 -	int indirects = (EXT4_NDIR_BLOCKS % bpp) ? 5 : 3;
-+	int indirects;
  	int ret;
  
 -	if (EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL)
 -		return ext4_ext_writepage_trans_blocks(inode, bpp);
--
--	if (ext4_should_journal_data(inode))
++	ret = ext4_meta_trans_blocks(inode, bpp, 0);
+ 
++	/* Account for data blocks for journalled mode */
+ 	if (ext4_should_journal_data(inode))
 -		ret = 3 * (bpp + indirects) + 2;
 -	else
 -		ret = 2 * (bpp + indirects) + 2;
-+	/*
-+	 * How many index blocks need to touch to modify nrblocks?
-+	 * The "Chunk" flag indicating whether the nrblocks is
-+	 * physically contigous on disk
-+	 *
-+ 	 * For Direct IO and fallocate, they calls get_block to allocate
-+ 	 * one single extent at a time, so they could set the "Chunk" flag
-+	 */
-+	indirects = ext4_indirect_trans_blocks(inode, nrblocks, chunk);
- 
+-
 -#ifdef CONFIG_QUOTA
 -	/* We know that structure was already allocated during DQUOT_INIT so
 -	 * we will be updating only the data blocks + inodes */
 -	ret += 2*EXT4_QUOTA_TRANS_BLOCKS(inode->i_sb);
 -#endif
-+	/* Account for block group bitmaps and block groups
-+	 * descriptors.Worse case, the nrblocks+indirects blocks spread
-+	 * over different block groups
-+	 */
-+	ret = ext4_meta_trans_blocks(inode, nrblocks, indirects);
- 
+-
++		ret += bpp;
  	return ret;
  }
- 
+-
  /*
-+ * Calulate the total number of credits to reserve to fit
-+ * the modification of a single pages into a single transaction
-+ *
-+ * This could be called via ext4_write_begin() or later
-+ * ext4_da_writepages() in delalyed allocation case.
-+ *
-+ * In both case it's possible that we could allocating multiple
-+ * chunks of blocks. We need to consider the worse case, when
-+ * one new block per extent.
-+ *
-+ * For Direct IO and fallocate, the journal credits reservation
-+ * is based on one single extent allocation, so they could use
-+ * EXT4_DATA_TRANS_BLOCKS to get the needed credit to log a single
-+ * chunk of allocation needs.
-+ */
-+int ext4_writepage_trans_blocks(struct inode *inode)
-+{
-+	int bpp = ext4_journal_blocks_per_page(inode);
-+
-+	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL))
-+		return ext4_writeblocks_trans_credits_old(inode, bpp, 0);
-+	return ext4_ext_writepage_trans_blocks(inode, bpp);
-+}
-+/*
   * The caller must have previously called ext4_reserve_inode_write().
   * Give this, we know that the caller already has write access to iloc->bh.
-  */
-Index: linux-2.6.27-rc1/fs/ext4/ext4.h
+Index: linux-2.6.27-rc3/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/ext4.h	2008-08-11 15:11:51.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/ext4.h	2008-08-11 15:11:55.000000000 -0700
+--- linux-2.6.27-rc3.orig/fs/ext4/ext4.h	2008-08-14 07:34:44.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/ext4.h	2008-08-15 14:17:10.000000000 -0700
 @@ -1072,6 +1072,7 @@ extern void ext4_set_inode_flags(struct 
  extern void ext4_get_inode_flags(struct ext4_inode_info *);
  extern void ext4_set_aops(struct inode *inode);
@@ -205,10 +200,19 @@ Index: linux-2.6.27-rc1/fs/ext4/ext4.h
  extern int ext4_block_truncate_page(handle_t *handle,
  		struct address_space *mapping, loff_t from);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
-Index: linux-2.6.27-rc1/fs/ext4/ext4_jbd2.h
+@@ -1227,6 +1228,8 @@ extern const struct inode_operations ext
+ /* extents.c */
+ extern int ext4_ext_tree_init(handle_t *handle, struct inode *);
+ extern int ext4_ext_writepage_trans_blocks(struct inode *, int);
++extern int ext4_ext_index_trans_blocks(struct inode *inode, int nrblocks,
++				       int chunk);
+ extern int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 			ext4_lblk_t iblock,
+ 			unsigned long max_blocks, struct buffer_head *bh_result,
+Index: linux-2.6.27-rc3/fs/ext4/ext4_jbd2.h
 ===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/ext4_jbd2.h	2008-08-11 15:11:51.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/ext4_jbd2.h	2008-08-11 15:11:55.000000000 -0700
+--- linux-2.6.27-rc3.orig/fs/ext4/ext4_jbd2.h	2008-08-14 07:34:44.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/ext4_jbd2.h	2008-08-15 12:37:25.000000000 -0700
 @@ -51,6 +51,14 @@
  					 EXT4_XATTR_TRANS_BLOCKS - 2 + \
  					 2*EXT4_QUOTA_TRANS_BLOCKS(sb))
@@ -224,3 +228,9 @@ Index: linux-2.6.27-rc1/fs/ext4/ext4_jbd2.h
  /* Delete operations potentially hit one directory's namespace plus an
   * entire inode, plus arbitrary amounts of bitmap/indirection data.  Be
   * generous.  We can grow the delete transaction later if necessary. */
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html

@@ -20,14 +20,43 @@ is smaller.
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
- fs/ext4/inode.c |   39 ++++++++++++++++++++++++---------------
- 1 file changed, 24 insertions(+), 15 deletions(-)
+ fs/ext4/inode.c |   42 +++++++++++++++++++++++++++---------------
+ 1 file changed, 27 insertions(+), 15 deletions(-)
 
-Index: linux-2.6.27-rc1/fs/ext4/inode.c
+Index: linux-2.6.27-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-12 08:15:59.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-12 08:30:41.000000000 -0700
-@@ -2210,17 +2210,28 @@ static int ext4_da_writepage(struct page
+--- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-15 14:51:22.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-15 17:18:09.000000000 -0700
+@@ -1850,8 +1850,11 @@ static void mpage_add_bh_to_extent(struc
+ {
+ 	struct buffer_head *lbh = &mpd->lbh;
+ 	sector_t next;
++	int nrblocks = lbh->b_size >> mpd->inode->i_blkbits;
+ 
+-	next = lbh->b_blocknr + (lbh->b_size >> mpd->inode->i_blkbits);
++	/* check if thereserved journal credits might overflow */
++	if (nrblocks >EXT4_MAX_TRANS_DATA)
++		goto flush_it;
+ 
+ 	/*
+ 	 * First block in the extent
+@@ -1863,6 +1866,7 @@ static void mpage_add_bh_to_extent(struc
+ 		return;
+ 	}
+ 
++	next = lbh->b_blocknr + nrblocks;
+ 	/*
+ 	 * Can we merge the block to our big extent?
+ 	 */
+@@ -1871,6 +1875,7 @@ static void mpage_add_bh_to_extent(struc
+ 		return;
+ 	}
+ 
++flush_it:
+ 	/*
+ 	 * We couldn't merge the block to our extent, so we
+ 	 * need to flush current  extent and start new one
+@@ -2231,17 +2236,26 @@ static int ext4_da_writepage(struct page
  }
  
  /*
@@ -36,15 +65,14 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
 - * todo: need to calculate the max credits need for
 - * extent based files, currently the DIO credits is based on
 - * indirect-blocks mapping way.
-- *
-- * Probably should have a generic way to calculate credits
-- * for DIO, writepages, and truncate
 + * This is called via ext4_da_writepages() to
 + * calulate the total number of credits to reserve to fit
 + * a single extent allocation into a single transaction,
 + * ext4_da_writpeages() will loop calling this before
 + * the block allocation.
-+ *
+  *
+- * Probably should have a generic way to calculate credits
+- * for DIO, writepages, and truncate
 + * The page vector size limited the max number of pages could
 + * be writeout at a time. Based on this, the max blocks to pass to
 + * get_block is calculated
@@ -52,21 +80,19 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
 -#define EXT4_MAX_WRITEBACK_PAGES      DIO_MAX_BLOCKS
 -#define EXT4_MAX_WRITEBACK_CREDITS    25
 +
-+#define		EXT4_MAX_WRITEPAGES_SIZE	PAGEVEC_SIZE
 +static int ext4_writepages_trans_blocks(struct inode *inode)
 +{
-+	int bpp = ext4_journal_blocks_per_page(inode);
-+	int max_blocks = EXT4_MAX_WRITEPAGES_SIZE * bpp;
++	int max_blocks = EXT4_MAX_TRANS_DATA;
 +
 +	if (max_blocks > EXT4_I(inode)->i_reserved_data_blocks)
 +		max_blocks =  EXT4_I(inode)->i_reserved_data_blocks;
 +
-+	return ext4_data_trans_blocks(inode, max_blocks);
++	return ext4_chunk_trans_blocks(inode, max_blocks);
 +}
  
  static int ext4_da_writepages(struct address_space *mapping,
                                  struct writeback_control *wbc)
-@@ -2262,7 +2273,7 @@ restart_loop:
+@@ -2283,7 +2297,7 @@ restart_loop:
  		 * by delalloc
  		 */
  		BUG_ON(ext4_should_journal_data(inode));
@@ -75,7 +101,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  
  		/* start a new transaction*/
  		handle = ext4_journal_start(inode, needed_blocks);
-@@ -4449,11 +4460,9 @@ static int ext4_writeblocks_trans_credit
+@@ -4462,11 +4476,9 @@ int ext4_meta_trans_blocks(struct inode*
   * the modification of a single pages into a single transaction,
   * which may include multile chunk of block allocations.
   *
@@ -89,3 +115,5 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
   * one new block per extent.
   */
  int ext4_writepage_trans_blocks(struct inode *inode)
+
+

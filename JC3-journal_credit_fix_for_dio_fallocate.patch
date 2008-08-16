@@ -19,16 +19,43 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 ---
 ---
  fs/ext4/ext4.h    |    1 +
- fs/ext4/extents.c |    7 +++----
- fs/ext4/inode.c   |   49 ++++++++++++++++++++++++++++---------------------
- 3 files changed, 32 insertions(+), 25 deletions(-)
+ fs/ext4/extents.c |   14 +++++++-------
+ fs/ext4/inode.c   |   45 ++++++++++++++++++++++++---------------------
+ 3 files changed, 32 insertions(+), 28 deletions(-)
 
 ===================================================================
-Index: linux-2.6.27-rc1/fs/ext4/extents.c
+Index: linux-2.6.27-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/extents.c	2008-08-11 22:25:39.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/extents.c	2008-08-11 22:25:55.000000000 -0700
-@@ -2799,7 +2799,7 @@ void ext4_ext_truncate(struct inode *ino
+--- linux-2.6.27-rc3.orig/fs/ext4/extents.c	2008-08-15 14:51:07.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/extents.c	2008-08-15 17:22:02.000000000 -0700
+@@ -1758,7 +1758,7 @@ int ext4_ext_calc_credits_for_single_ext
+ {
+ 	if (path) {
+ 		int depth = ext_depth(inode);
+-		int ret;
++		int ret = 0;
+ 
+ 		/* probably there is space in leaf? */
+ 		if (le16_to_cpu(path[depth].p_hdr->eh_entries)
+@@ -1771,14 +1771,15 @@ int ext4_ext_calc_credits_for_single_ext
+ 			 *  bitmaps and block group descriptor blocks
+ 			 *  and other metadat blocks still need to be
+ 			 *  accounted.
++			 */
+ 			ret = (num + EXT4_BLOCKS_PER_GROUP(inode->i_sb) -1)
+                              /EXT4_BLOCKS_PER_GROUP(inode->i_sb);
+ 			/* 1 one bitmap, 1 block group descriptor */
+-			ret = ret*2  + EXT4_META_TRANS_BLOCKS(inode->i_sb);
++			ret = ret* 2  + EXT4_META_TRANS_BLOCKS(inode->i_sb);
+ 		}
+ 	}
+ 
+-	return ext4_meta_trans_blocks(inode, num, 1);
++	return ext4_chunk_trans_blocks(inode, num);
+ }
+ 
+ /*
+@@ -2811,7 +2812,7 @@ void ext4_ext_truncate(struct inode *ino
  	/*
  	 * probably first extent we're gonna free will be last in block
  	 */
@@ -37,7 +64,7 @@ Index: linux-2.6.27-rc1/fs/ext4/extents.c
  	handle = ext4_journal_start(inode, err);
  	if (IS_ERR(handle))
  		return;
-@@ -2951,10 +2951,9 @@ long ext4_fallocate(struct inode *inode,
+@@ -2924,10 +2925,9 @@ long ext4_fallocate(struct inode *inode,
  	max_blocks = (EXT4_BLOCK_ALIGN(len + offset, blkbits) >> blkbits)
  							- block;
  	/*
@@ -46,15 +73,15 @@ Index: linux-2.6.27-rc1/fs/ext4/extents.c
 +	 * credits to insert 1 extent into extent tree
  	 */
 -	credits = EXT4_DATA_TRANS_BLOCKS(inode->i_sb) + 3;
-+	credits = ext4_data_trans_blocks(inode, max_blocks);
++	credits = ext4_chunk_trans_blocks(inode, max_blocks);
  	mutex_lock(&inode->i_mutex);
  retry:
  	while (ret >= 0 && ret < max_blocks) {
-Index: linux-2.6.27-rc1/fs/ext4/inode.c
+Index: linux-2.6.27-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-11 22:18:31.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-11 22:25:55.000000000 -0700
-@@ -1041,18 +1041,6 @@ static void ext4_da_update_reserve_space
+--- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-15 14:43:20.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-15 17:21:04.000000000 -0700
+@@ -1044,18 +1044,6 @@ static void ext4_da_update_reserve_space
  	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
  }
  
@@ -73,7 +100,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  /*
   * The ext4_get_blocks_wrap() function try to look up the requested blocks,
   * and returns if the blocks are already mapped.
-@@ -1164,19 +1152,23 @@ int ext4_get_blocks_wrap(handle_t *handl
+@@ -1167,19 +1155,23 @@ int ext4_get_blocks_wrap(handle_t *handl
  	return retval;
  }
  
@@ -94,12 +121,12 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  			max_blocks = DIO_MAX_BLOCKS;
 -		handle = ext4_journal_start(inode, DIO_CREDITS +
 -			      2 * EXT4_QUOTA_TRANS_BLOCKS(inode->i_sb));
-+		dio_credits = ext4_data_trans_blocks(inode, max_blocks);
++		dio_credits = ext4_chunk_trans_blocks(inode, max_blocks);
 +		handle = ext4_journal_start(inode, dio_credits);
  		if (IS_ERR(handle)) {
  			ret = PTR_ERR(handle);
  			goto out;
-@@ -2222,7 +2214,7 @@ static int ext4_da_writepage(struct page
+@@ -2243,7 +2235,7 @@ static int ext4_da_writepage(struct page
   * for DIO, writepages, and truncate
   */
  #define EXT4_MAX_WRITEBACK_PAGES      DIO_MAX_BLOCKS
@@ -108,7 +135,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  
  static int ext4_da_writepages(struct address_space *mapping,
  				struct writeback_control *wbc)
-@@ -4429,7 +4421,8 @@ static int ext4_writeblocks_trans_credit
+@@ -4442,7 +4434,8 @@ int ext4_meta_trans_blocks(struct inode*
  
  /*
   * Calulate the total number of credits to reserve to fit
@@ -118,7 +145,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
   *
   * This could be called via ext4_write_begin() or later
   * ext4_da_writepages() in delalyed allocation case.
-@@ -4437,11 +4430,6 @@ static int ext4_writeblocks_trans_credit
+@@ -4450,11 +4443,6 @@ int ext4_meta_trans_blocks(struct inode*
   * In both case it's possible that we could allocating multiple
   * chunks of blocks. We need to consider the worse case, when
   * one new block per extent.
@@ -130,41 +157,39 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
   */
  int ext4_writepage_trans_blocks(struct inode *inode)
  {
-@@ -4451,6 +4439,25 @@ int ext4_writepage_trans_blocks(struct i
- 		return ext4_writeblocks_trans_credits_old(inode, bpp, 0);
- 	return ext4_ext_writepage_trans_blocks(inode, bpp, 0);
+@@ -4468,6 +4456,21 @@ int ext4_writepage_trans_blocks(struct i
+ 		ret += bpp;
+ 	return ret;
  }
 +
 +/*
 + * Calculate the journal credits for a chunk of data modification.
 + *
-+ * For Direct IO and fallocate, the journal credits reservation
-+ * is based on one single extent allocation, so they could use
-+ * this function to get the needed credit to log a single
-+ * chunk of allocation needs.
-+ *
 + * This is called from DIO, fallocate or whoever calling
-+ * ext4_get_blocks_wrap() to map/allocate a chunk of contigous disk blocks
++ * ext4_get_blocks_wrap() to map/allocate a chunk of contigous disk blocks.
++ *
++ * journal buffers for data blocks are not included here, as DIO
++ * and fallocate do no need to journal data buffers.
 + */
-+int ext4_data_trans_blocks(struct inode *inode, int nrblocks)
++int ext4_chunk_trans_blocks(struct inode *inode, int nrblocks)
 +{
-+	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL))
-+		return ext4_writeblocks_trans_credits_old(inode, nrblocks, 1);
-+	return ext4_ext_writepage_trans_blocks(inode, nrblocks, 1);
++	return ext4_meta_trans_blocks(inode, nrblocks, 1);
 +}
 +
  /*
   * The caller must have previously called ext4_reserve_inode_write().
   * Give this, we know that the caller already has write access to iloc->bh.
-Index: linux-2.6.27-rc1/fs/ext4/ext4.h
+Index: linux-2.6.27-rc3/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/ext4.h	2008-08-11 22:18:31.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/ext4.h	2008-08-11 22:25:55.000000000 -0700
+--- linux-2.6.27-rc3.orig/fs/ext4/ext4.h	2008-08-15 14:43:20.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/ext4.h	2008-08-15 14:51:20.000000000 -0700
 @@ -1073,6 +1073,7 @@ extern void ext4_get_inode_flags(struct 
  extern void ext4_set_aops(struct inode *inode);
  extern int ext4_writepage_trans_blocks(struct inode *);
  extern int ext4_meta_trans_blocks(struct inode *, int nrblocks, int idxblocks);
-+extern int ext4_data_trans_blocks(struct inode *, int nrblocks);
++extern int ext4_chunk_trans_blocks(struct inode *, int nrblocks);
  extern int ext4_block_truncate_page(handle_t *handle,
  		struct address_space *mapping, loff_t from);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
+
+
