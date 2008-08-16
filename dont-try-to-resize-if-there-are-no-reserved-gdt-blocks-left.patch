@@ -1,0 +1,33 @@
+From: Josef Bacik <jbacik@redhat.com>
+
+When trying to resize a ext3 fs and you run out of reserved gdt blocks,
+you get an error that doesn't actually tell you what went wrong, it just
+says that the gdb it picked is not correct, which is the case since you
+don't have any reserved gdt blocks left.  This patch adds a check to make
+sure you have reserved gdt blocks to use, and if not prints out a more
+relevant error.
+
+Signed-off-by: Josef Bacik <jbacik@redhat.com>
+Cc: <linux-ext4@vger.kernel.org>
+Cc: Andreas Dilger <adilger@sun.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+ fs/ext4/resize.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff -puN fs/ext4/resize.c~ext4-dont-try-to-resize-if-there-are-no-reserved-gdt-blocks-left fs/ext4/resize.c
+--- a/fs/ext4/resize.c~ext4-dont-try-to-resize-if-there-are-no-reserved-gdt-blocks-left
++++ a/fs/ext4/resize.c
+@@ -773,7 +773,8 @@ int ext4_group_add(struct super_block *s
+ 
+ 	if (reserved_gdb || gdb_off == 0) {
+ 		if (!EXT4_HAS_COMPAT_FEATURE(sb,
+-					     EXT4_FEATURE_COMPAT_RESIZE_INODE)){
++					     EXT4_FEATURE_COMPAT_RESIZE_INODE)
++		    || !le16_to_cpu(es->s_reserved_gdt_blocks)) {
+ 			ext4_warning(sb, __func__,
+ 				     "No reserved GDT blocks, can't resize");
+ 			return -EPERM;
+_
