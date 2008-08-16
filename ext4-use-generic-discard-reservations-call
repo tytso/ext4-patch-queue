@@ -1,0 +1,22 @@
+ext4: Use ext4_discard_reservations instead of mballoc-specific call
+
+In ext4_ext_truncate(), we should use the more generic
+ext4_discard_reservations() call so we do the right thing when the
+filesystem is mounted with the nomballoc option.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Mingming Cao <cmm@us.ibm.com>
+---
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 3c82ab1..30a59b8 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2963,7 +2963,7 @@ void ext4_ext_truncate(struct inode *inode)
+ 	down_write(&EXT4_I(inode)->i_data_sem);
+ 	ext4_ext_invalidate_cache(inode);
+ 
+-	ext4_mb_discard_inode_preallocations(inode);
++	ext4_discard_reservation(inode);
+ 
+ 	/*
+ 	 * TODO: optimization is possible here.
