@@ -1,0 +1,28 @@
+ext4: make sure ext4_has_free_blocks return 0 for ENOSPC
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+Fix ext4_has_free_blocks to return 0 when we don't have
+enought space.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+
+ fs/ext4/balloc.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+Index: linux-2.6.27-rc3/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.27-rc3.orig/fs/ext4/balloc.c	2008-08-18 11:38:07.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/balloc.c	2008-08-18 11:40:12.000000000 -0700
+@@ -1626,6 +1626,9 @@ ext4_fsblk_t ext4_has_free_blocks(struct
+ 		free_blocks =
+ 			percpu_counter_sum_and_set(&sbi->s_freeblocks_counter);
+ #endif
++	if (free_blocks <= root_blocks)
++		/* we don't have free space */
++		return 0;
+ 	if (free_blocks - root_blocks < nblocks)
+ 		return free_blocks - root_blocks;
+ 	return nblocks;
