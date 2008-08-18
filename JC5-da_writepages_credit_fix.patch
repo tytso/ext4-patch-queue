@@ -10,24 +10,22 @@ credits is very conservtive and caused many issues.
 With the rewored delayed allocation, a new transaction is created for
 each get_block(), thus we don't need to guess how many credits for the multiple
 chunk of allocation. Start every transaction with credits for insert a
-single exent is enough. But we still need to consider the journalled mode,
-where it need to account for the number of data blocks.  So we guess
-max number of data blocks for each allocation.  Due to the current VFS
-implementation writepages() could only flush PAGEVEC lengh of pages at a
-time, the max block allocation is limited and calculated based on
-that, and the total number of reserved delalloc datablocks, whichever
-is smaller.
+single exent is enough. When estimate the credits for indirect blocks 
+to allocate a chunk of blocks, it needs to know the number of data blocks to
+allocate. We use the total number of reserved delalloc datablocks, if that
+gets too big, for non extent file, we need to limit to the EXT4_MAX_TRANS_BLOCKS
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Reviewed-off-by:  Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
- fs/ext4/inode.c |   42 +++++++++++++++++++++++++++---------------
- 1 file changed, 27 insertions(+), 15 deletions(-)
+ fs/ext4/inode.c |   51 ++++++++++++++++++++++++++++++++++++---------------
+ 1 file changed, 36 insertions(+), 15 deletions(-)
 
 Index: linux-2.6.27-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-15 14:51:22.000000000 -0700
-+++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-15 17:18:09.000000000 -0700
-@@ -1850,8 +1850,11 @@ static void mpage_add_bh_to_extent(struc
+--- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-18 10:46:14.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-18 11:26:40.000000000 -0700
+@@ -1850,8 +1850,18 @@ static void mpage_add_bh_to_extent(struc
  {
  	struct buffer_head *lbh = &mpd->lbh;
  	sector_t next;
@@ -35,12 +33,19 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
  
 -	next = lbh->b_blocknr + (lbh->b_size >> mpd->inode->i_blkbits);
 +	/* check if thereserved journal credits might overflow */
-+	if (nrblocks >EXT4_MAX_TRANS_DATA)
++	if (!(EXT4_I(mpd->inode)->i_flags & EXT4_EXTENTS_FL) &&
++	     (nrblocks >= EXT4_MAX_TRANS_DATA))
++		/*
++		 * With noextent format we are limited by the journal
++		 * credit available. Total credit needed to insert
++		 * nrblocks contiguous blocks is dependent on the
++		 * nrblocks. So limit nrblocks.
++		 */
 +		goto flush_it;
  
  	/*
  	 * First block in the extent
-@@ -1863,6 +1866,7 @@ static void mpage_add_bh_to_extent(struc
+@@ -1863,6 +1873,7 @@ static void mpage_add_bh_to_extent(struc
  		return;
  	}
  
@@ -48,7 +53,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
  	/*
  	 * Can we merge the block to our big extent?
  	 */
-@@ -1871,6 +1875,7 @@ static void mpage_add_bh_to_extent(struc
+@@ -1871,6 +1882,7 @@ static void mpage_add_bh_to_extent(struc
  		return;
  	}
  
@@ -56,7 +61,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
  	/*
  	 * We couldn't merge the block to our extent, so we
  	 * need to flush current  extent and start new one
-@@ -2231,17 +2236,26 @@ static int ext4_da_writepage(struct page
+@@ -2231,17 +2243,27 @@ static int ext4_da_writepage(struct page
  }
  
  /*
@@ -82,17 +87,18 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
 +
 +static int ext4_writepages_trans_blocks(struct inode *inode)
 +{
-+	int max_blocks = EXT4_MAX_TRANS_DATA;
++	int max_blocks = EXT4_I(inode)->i_reserved_data_blocks;
 +
-+	if (max_blocks > EXT4_I(inode)->i_reserved_data_blocks)
-+		max_blocks =  EXT4_I(inode)->i_reserved_data_blocks;
++	if (!(inode->i_flags & EXT4_EXTENTS_FL) &&
++	    (max_blocks > EXT4_MAX_TRANS_DATA))
++		max_blocks = EXT4_MAX_TRANS_DATA;
 +
 +	return ext4_chunk_trans_blocks(inode, max_blocks);
 +}
  
  static int ext4_da_writepages(struct address_space *mapping,
                                  struct writeback_control *wbc)
-@@ -2283,7 +2297,7 @@ restart_loop:
+@@ -2283,7 +2305,7 @@ restart_loop:
  		 * by delalloc
  		 */
  		BUG_ON(ext4_should_journal_data(inode));
@@ -101,7 +107,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
  
  		/* start a new transaction*/
  		handle = ext4_journal_start(inode, needed_blocks);
-@@ -4462,11 +4476,9 @@ int ext4_meta_trans_blocks(struct inode*
+@@ -4462,11 +4484,9 @@ int ext4_meta_trans_blocks(struct inode*
   * the modification of a single pages into a single transaction,
   * which may include multile chunk of block allocations.
   *
@@ -115,5 +121,3 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
   * one new block per extent.
   */
  int ext4_writepage_trans_blocks(struct inode *inode)
-
-
