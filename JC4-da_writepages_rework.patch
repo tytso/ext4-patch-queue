@@ -21,10 +21,10 @@ Reviewed-by: Mingming Cao <cmm@us.ibm.com>
  fs/ext4/inode.c |  201 +++++++++++++++++++++++++++++++-------------------------
  1 file changed, 113 insertions(+), 88 deletions(-)
 
-Index: linux-2.6.27-rc1/fs/ext4/inode.c
+Index: linux-2.6.27-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-11 15:12:11.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-11 15:38:09.000000000 -0700
+--- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-18 12:18:44.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-18 12:28:46.000000000 -0700
 @@ -41,6 +41,8 @@
  #include "acl.h"
  #include "ext4_extents.h"
@@ -34,7 +34,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  static inline int ext4_begin_ordered_truncate(struct inode *inode,
  					      loff_t new_size)
  {
-@@ -1605,11 +1607,13 @@ struct mpage_da_data {
+@@ -1626,11 +1628,13 @@ struct mpage_da_data {
  	unsigned long first_page, next_page;	/* extent of pages */
  	get_block_t *get_block;
  	struct writeback_control *wbc;
@@ -49,7 +49,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
   *
   * @mpd->inode: inode
   * @mpd->first_page: first page of the extent
-@@ -1624,18 +1628,11 @@ struct mpage_da_data {
+@@ -1645,18 +1649,11 @@ struct mpage_da_data {
  static int mpage_da_submit_io(struct mpage_da_data *mpd)
  {
  	struct address_space *mapping = mpd->inode->i_mapping;
@@ -68,7 +68,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  	pagevec_init(&pvec, 0);
  	index = mpd->first_page;
  	end = mpd->next_page - 1;
-@@ -1653,8 +1650,9 @@ static int mpage_da_submit_io(struct mpa
+@@ -1674,8 +1671,9 @@ static int mpage_da_submit_io(struct mpa
  				break;
  			index++;
  
@@ -80,7 +80,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  			/*
  			 * In error case, we have to continue because
  			 * remaining pages are still locked
-@@ -1665,9 +1663,6 @@ static int mpage_da_submit_io(struct mpa
+@@ -1686,9 +1684,6 @@ static int mpage_da_submit_io(struct mpa
  		}
  		pagevec_release(&pvec);
  	}
@@ -90,7 +90,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  	return ret;
  }
  
-@@ -1690,7 +1685,7 @@ static void mpage_put_bnr_to_bhs(struct 
+@@ -1711,7 +1706,7 @@ static void mpage_put_bnr_to_bhs(struct 
  	int blocks = exbh->b_size >> inode->i_blkbits;
  	sector_t pblock = exbh->b_blocknr, cur_logical;
  	struct buffer_head *head, *bh;
@@ -99,7 +99,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  	struct pagevec pvec;
  	int nr_pages, i;
  
-@@ -1775,13 +1770,11 @@ static inline void __unmap_underlying_bl
+@@ -1796,13 +1791,11 @@ static inline void __unmap_underlying_bl
   *
   * The function skips space we know is already mapped to disk blocks.
   *
@@ -114,7 +114,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  	sector_t next = lbh->b_blocknr;
  	struct buffer_head new;
  
-@@ -1791,35 +1784,32 @@ static void mpage_da_map_blocks(struct m
+@@ -1812,35 +1805,32 @@ static void mpage_da_map_blocks(struct m
  	if (buffer_mapped(lbh) && !buffer_delay(lbh))
  		return;
  
@@ -173,7 +173,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  }
  
  #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | \
-@@ -1865,13 +1855,9 @@ static void mpage_add_bh_to_extent(struc
+@@ -1886,13 +1876,9 @@ static void mpage_add_bh_to_extent(struc
  	 * need to flush current  extent and start new one
  	 */
  	mpage_da_map_blocks(mpd);
@@ -190,7 +190,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  }
  
  /*
-@@ -1891,17 +1877,35 @@ static int __mpage_da_writepage(struct p
+@@ -1912,17 +1898,35 @@ static int __mpage_da_writepage(struct p
  	struct buffer_head *bh, *head, fake;
  	sector_t logical;
  
@@ -227,7 +227,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  		}
  
  		/*
-@@ -1932,6 +1936,8 @@ static int __mpage_da_writepage(struct p
+@@ -1953,6 +1957,8 @@ static int __mpage_da_writepage(struct p
  		set_buffer_dirty(bh);
  		set_buffer_uptodate(bh);
  		mpage_add_bh_to_extent(mpd, logical, bh);
@@ -236,7 +236,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  	} else {
  		/*
  		 * Page with regular buffer heads, just add all dirty ones
-@@ -1940,8 +1946,12 @@ static int __mpage_da_writepage(struct p
+@@ -1961,8 +1967,12 @@ static int __mpage_da_writepage(struct p
  		bh = head;
  		do {
  			BUG_ON(buffer_locked(bh));
@@ -250,7 +250,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  			logical++;
  		} while ((bh = bh->b_this_page) != head);
  	}
-@@ -1960,22 +1970,13 @@ static int __mpage_da_writepage(struct p
+@@ -1981,22 +1991,13 @@ static int __mpage_da_writepage(struct p
   *
   * This is a library function, which implements the writepages()
   * address_space_operation.
@@ -274,7 +274,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  	int ret;
  
  	if (!get_block)
-@@ -1989,17 +1990,22 @@ static int mpage_da_writepages(struct ad
+@@ -2010,17 +2011,22 @@ static int mpage_da_writepages(struct ad
  	mpd.first_page = 0;
  	mpd.next_page = 0;
  	mpd.get_block = get_block;
@@ -298,7 +298,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  	return ret;
  }
  
-@@ -2217,7 +2223,7 @@ static int ext4_da_writepage(struct page
+@@ -2238,7 +2244,7 @@ static int ext4_da_writepage(struct page
  #define EXT4_MAX_WRITEBACK_CREDITS    25
  
  static int ext4_da_writepages(struct address_space *mapping,
@@ -307,7 +307,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  {
  	struct inode *inode = mapping->host;
  	handle_t *handle = NULL;
-@@ -2225,42 +2231,53 @@ static int ext4_da_writepages(struct add
+@@ -2246,42 +2252,53 @@ static int ext4_da_writepages(struct add
  	int ret = 0;
  	long to_write;
  	loff_t range_start = 0;
@@ -374,7 +374,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  			 * when we do block allocation.
  			 */
  			ret = ext4_jbd2_file_inode(handle, inode);
-@@ -2268,20 +2285,20 @@ static int ext4_da_writepages(struct add
+@@ -2289,20 +2306,20 @@ static int ext4_da_writepages(struct add
  				ext4_journal_stop(handle);
  				goto out_writepages;
  			}
@@ -404,7 +404,7 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  			/*
  			 * There is no more writeout needed
  			 * or we requested for a noblocking writeout
-@@ -2293,10 +2310,18 @@ static int ext4_da_writepages(struct add
+@@ -2314,10 +2331,18 @@ static int ext4_da_writepages(struct add
  		wbc->nr_to_write = to_write;
  	}
  
@@ -425,9 +425,3 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  	return ret;
  }
  
-
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html

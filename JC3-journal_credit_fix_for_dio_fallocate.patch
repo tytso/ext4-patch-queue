@@ -27,8 +27,8 @@ Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ===================================================================
 Index: linux-2.6.27-rc3/fs/ext4/extents.c
 ===================================================================
---- linux-2.6.27-rc3.orig/fs/ext4/extents.c	2008-08-15 14:51:07.000000000 -0700
-+++ linux-2.6.27-rc3/fs/ext4/extents.c	2008-08-15 17:22:02.000000000 -0700
+--- linux-2.6.27-rc3.orig/fs/ext4/extents.c	2008-08-18 12:17:27.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/extents.c	2008-08-18 12:20:11.000000000 -0700
 @@ -1758,7 +1758,7 @@ int ext4_ext_calc_credits_for_single_ext
  {
  	if (path) {
@@ -38,16 +38,7 @@ Index: linux-2.6.27-rc3/fs/ext4/extents.c
  
  		/* probably there is space in leaf? */
  		if (le16_to_cpu(path[depth].p_hdr->eh_entries)
-@@ -1771,14 +1771,15 @@ int ext4_ext_calc_credits_for_single_ext
- 			 *  bitmaps and block group descriptor blocks
- 			 *  and other metadat blocks still need to be
- 			 *  accounted.
-+			 */
- 			ret = (num + EXT4_BLOCKS_PER_GROUP(inode->i_sb) -1)
-                              /EXT4_BLOCKS_PER_GROUP(inode->i_sb);
- 			/* 1 one bitmap, 1 block group descriptor */
--			ret = ret*2  + EXT4_META_TRANS_BLOCKS(inode->i_sb);
-+			ret = ret* 2  + EXT4_META_TRANS_BLOCKS(inode->i_sb);
+@@ -1777,7 +1777,7 @@ int ext4_ext_calc_credits_for_single_ext
  		}
  	}
  
@@ -56,7 +47,7 @@ Index: linux-2.6.27-rc3/fs/ext4/extents.c
  }
  
  /*
-@@ -2811,7 +2812,7 @@ void ext4_ext_truncate(struct inode *ino
+@@ -2810,7 +2810,7 @@ void ext4_ext_truncate(struct inode *ino
  	/*
  	 * probably first extent we're gonna free will be last in block
  	 */
@@ -65,7 +56,7 @@ Index: linux-2.6.27-rc3/fs/ext4/extents.c
  	handle = ext4_journal_start(inode, err);
  	if (IS_ERR(handle))
  		return;
-@@ -2924,10 +2925,9 @@ long ext4_fallocate(struct inode *inode,
+@@ -2923,10 +2923,9 @@ long ext4_fallocate(struct inode *inode,
  	max_blocks = (EXT4_BLOCK_ALIGN(len + offset, blkbits) >> blkbits)
  							- block;
  	/*
@@ -80,8 +71,8 @@ Index: linux-2.6.27-rc3/fs/ext4/extents.c
  	while (ret >= 0 && ret < max_blocks) {
 Index: linux-2.6.27-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-15 14:43:20.000000000 -0700
-+++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-15 17:21:04.000000000 -0700
+--- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-18 12:14:42.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-18 12:28:49.000000000 -0700
 @@ -1044,18 +1044,6 @@ static void ext4_da_update_reserve_space
  	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
  }
@@ -136,7 +127,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
  
  static int ext4_da_writepages(struct address_space *mapping,
  				struct writeback_control *wbc)
-@@ -4442,7 +4434,8 @@ int ext4_meta_trans_blocks(struct inode*
+@@ -4441,7 +4433,8 @@ int ext4_meta_trans_blocks(struct inode 
  
  /*
   * Calulate the total number of credits to reserve to fit
@@ -146,7 +137,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
   *
   * This could be called via ext4_write_begin() or later
   * ext4_da_writepages() in delalyed allocation case.
-@@ -4450,11 +4443,6 @@ int ext4_meta_trans_blocks(struct inode*
+@@ -4449,11 +4442,6 @@ int ext4_meta_trans_blocks(struct inode 
   * In both case it's possible that we could allocating multiple
   * chunks of blocks. We need to consider the worse case, when
   * one new block per extent.
@@ -158,7 +149,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
   */
  int ext4_writepage_trans_blocks(struct inode *inode)
  {
-@@ -4468,6 +4456,21 @@ int ext4_writepage_trans_blocks(struct i
+@@ -4467,6 +4455,21 @@ int ext4_writepage_trans_blocks(struct i
  		ret += bpp;
  	return ret;
  }
@@ -182,8 +173,8 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
   * Give this, we know that the caller already has write access to iloc->bh.
 Index: linux-2.6.27-rc3/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.27-rc3.orig/fs/ext4/ext4.h	2008-08-15 14:43:20.000000000 -0700
-+++ linux-2.6.27-rc3/fs/ext4/ext4.h	2008-08-15 14:51:20.000000000 -0700
+--- linux-2.6.27-rc3.orig/fs/ext4/ext4.h	2008-08-18 12:10:11.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/ext4.h	2008-08-18 12:18:44.000000000 -0700
 @@ -1073,6 +1073,7 @@ extern void ext4_get_inode_flags(struct 
  extern void ext4_set_aops(struct inode *inode);
  extern int ext4_writepage_trans_blocks(struct inode *);
@@ -192,5 +183,3 @@ Index: linux-2.6.27-rc3/fs/ext4/ext4.h
  extern int ext4_block_truncate_page(handle_t *handle,
  		struct address_space *mapping, loff_t from);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
-
-

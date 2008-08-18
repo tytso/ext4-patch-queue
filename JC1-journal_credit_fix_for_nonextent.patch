@@ -32,9 +32,9 @@ Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 Index: linux-2.6.27-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-15 12:37:21.000000000 -0700
-+++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-15 14:18:30.000000000 -0700
-@@ -4354,56 +4354,120 @@ int ext4_getattr(struct vfsmount *mnt, s
+--- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-18 12:07:18.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-18 12:28:52.000000000 -0700
+@@ -4354,56 +4354,119 @@ int ext4_getattr(struct vfsmount *mnt, s
  	return 0;
  }
  
@@ -56,8 +56,8 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
 +	}
 +	/*
 +	 * if nrblocks are not contiguous, worse case, each block touch
-+ 	 * a indirect block, and each indirect block touch a double indirect
-+ 	 * block, plus a triple indirect block
++	 * a indirect block, and each indirect block touch a double indirect
++	 * block, plus a triple indirect block
 + 	 */
 +	indirects = nrblocks * 2 + 1;
 +	return indirects;
@@ -92,7 +92,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
 - * 3 * (N + 5) + 2 + 2 * EXT4_SINGLEDATA_TRANS_BLOCKS
 + * Also account for superblock, inode, quota and xattr blocks
 + */
-+int ext4_meta_trans_blocks(struct inode* inode, int nrblocks, int chunk)
++int ext4_meta_trans_blocks(struct inode *inode, int nrblocks, int chunk)
 +{
 +	int groups, gdpblocks;
 +	int idxblocks;
@@ -116,8 +116,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
 +	 */
 +	groups = idxblocks;
 +	if (chunk)
-+		groups += (nrblocks + EXT4_BLOCKS_PER_GROUP(inode->i_sb)
-+			    -1 )/EXT4_BLOCKS_PER_GROUP(inode->i_sb);
++		groups += 1;
 +	else
 +		groups += nrblocks;
 +
@@ -191,8 +190,8 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
   * Give this, we know that the caller already has write access to iloc->bh.
 Index: linux-2.6.27-rc3/fs/ext4/ext4.h
 ===================================================================
---- linux-2.6.27-rc3.orig/fs/ext4/ext4.h	2008-08-14 07:34:44.000000000 -0700
-+++ linux-2.6.27-rc3/fs/ext4/ext4.h	2008-08-15 14:17:10.000000000 -0700
+--- linux-2.6.27-rc3.orig/fs/ext4/ext4.h	2008-08-18 12:06:30.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/ext4.h	2008-08-18 12:28:52.000000000 -0700
 @@ -1072,6 +1072,7 @@ extern void ext4_set_inode_flags(struct 
  extern void ext4_get_inode_flags(struct ext4_inode_info *);
  extern void ext4_set_aops(struct inode *inode);
@@ -212,8 +211,8 @@ Index: linux-2.6.27-rc3/fs/ext4/ext4.h
  			unsigned long max_blocks, struct buffer_head *bh_result,
 Index: linux-2.6.27-rc3/fs/ext4/ext4_jbd2.h
 ===================================================================
---- linux-2.6.27-rc3.orig/fs/ext4/ext4_jbd2.h	2008-08-14 07:34:44.000000000 -0700
-+++ linux-2.6.27-rc3/fs/ext4/ext4_jbd2.h	2008-08-15 12:37:25.000000000 -0700
+--- linux-2.6.27-rc3.orig/fs/ext4/ext4_jbd2.h	2008-08-18 12:06:30.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/ext4_jbd2.h	2008-08-18 12:10:11.000000000 -0700
 @@ -51,6 +51,14 @@
  					 EXT4_XATTR_TRANS_BLOCKS - 2 + \
  					 2*EXT4_QUOTA_TRANS_BLOCKS(sb))
@@ -229,9 +228,3 @@ Index: linux-2.6.27-rc3/fs/ext4/ext4_jbd2.h
  /* Delete operations potentially hit one directory's namespace plus an
   * entire inode, plus arbitrary amounts of bitmap/indirection data.  Be
   * generous.  We can grow the delete transaction later if necessary. */
-
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
