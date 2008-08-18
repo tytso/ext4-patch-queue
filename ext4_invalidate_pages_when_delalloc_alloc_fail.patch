@@ -1,6 +1,6 @@
 ext4: invalidate pages if delalloc block allocation fails.
 
-From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 We are a bit agressive in invalidating all the pages. But
 it is ok because we really don't know why the block allocation
@@ -10,16 +10,14 @@ so that user can look for more info.
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 ---
 
-This is the -v2 version of the patch
+ fs/ext4/inode.c |   85 ++++++++++++++++++++++++++++++++++++++++++++++++--------
+ 1 file changed, 73 insertions(+), 12 deletions(-)
 
- fs/ext4/inode.c |   63 ++++++++++++++++++++++++++++++++++++++++++++++++++++++-
- 1 files changed, 62 insertions(+), 1 deletions(-)
-
-Index: linux-2.6.27-rc1/fs/ext4/inode.c
+Index: linux-2.6.27-rc3/fs/ext4/inode.c
 ===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-11 15:32:10.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-11 15:33:49.000000000 -0700
-@@ -1762,6 +1762,39 @@ static inline void __unmap_underlying_bl
+--- linux-2.6.27-rc3.orig/fs/ext4/inode.c	2008-08-18 11:55:43.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/inode.c	2008-08-18 11:56:07.000000000 -0700
+@@ -1783,6 +1783,39 @@ static inline void __unmap_underlying_bl
  		unmap_underlying_metadata(bdev, bh->b_blocknr + i);
  }
  
@@ -59,11 +57,33 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
  /*
   * mpage_da_map_blocks - go through given space
   *
-@@ -1795,8 +1828,36 @@ static void mpage_da_map_blocks(struct m
+@@ -1792,7 +1825,7 @@ static inline void __unmap_underlying_bl
+  * The function skips space we know is already mapped to disk blocks.
+  *
+  */
+-static void mpage_da_map_blocks(struct mpage_da_data *mpd)
++static int  mpage_da_map_blocks(struct mpage_da_data *mpd)
+ {
+ 	int err = 0;
+ 	struct buffer_head *lbh = &mpd->lbh;
+@@ -1803,7 +1836,7 @@ static void mpage_da_map_blocks(struct m
+ 	 * We consider only non-mapped and non-allocated blocks
+ 	 */
+ 	if (buffer_mapped(lbh) && !buffer_delay(lbh))
+-		return;
++		return 0;
+ 
+ 	new.b_state = lbh->b_state;
+ 	new.b_blocknr = 0;
+@@ -1814,10 +1847,38 @@ static void mpage_da_map_blocks(struct m
+ 	 * to write simply return
+ 	 */
  	if (!new.b_size)
- 		return;
+-		return;
++		return 0;
  	err = mpd->get_block(mpd->inode, next, &new, 1);
 -	if (err)
+-		return;
 +	if (err) {
 +
 +		/* If get block returns with error
@@ -92,8 +112,50 @@ Index: linux-2.6.27-rc1/fs/ext4/inode.c
 +		/* invlaidate all the pages */
 +		ext4_da_block_invalidatepages(mpd, next,
 +				lbh->b_size >> mpd->inode->i_blkbits);
- 		return;
++		return err;
 +	}
  	BUG_ON(new.b_size == 0);
  
  	if (buffer_new(&new))
+@@ -1830,7 +1891,7 @@ static void mpage_da_map_blocks(struct m
+ 	if (buffer_delay(lbh) || buffer_unwritten(lbh))
+ 		mpage_put_bnr_to_bhs(mpd, next, &new);
+ 
+-	return;
++	return 0;
+ }
+ 
+ #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | \
+@@ -1887,8 +1948,8 @@ flush_it:
+ 	 * We couldn't merge the block to our extent, so we
+ 	 * need to flush current  extent and start new one
+ 	 */
+-	mpage_da_map_blocks(mpd);
+-	mpage_da_submit_io(mpd);
++	if (mpage_da_map_blocks(mpd) == 0)
++		mpage_da_submit_io(mpd);
+ 	mpd->io_done = 1;
+ 	return;
+ }
+@@ -1930,8 +1991,8 @@ static int __mpage_da_writepage(struct p
+ 		 * and start IO on them using writepage()
+ 		 */
+ 		if (mpd->next_page != mpd->first_page) {
+-			mpage_da_map_blocks(mpd);
+-			mpage_da_submit_io(mpd);
++			if (mpage_da_map_blocks(mpd) == 0)
++				mpage_da_submit_io(mpd);
+ 			/*
+ 			 * skip rest of the page in the page_vec
+ 			 */
+@@ -2034,8 +2095,8 @@ static int mpage_da_writepages(struct ad
+ 	 * Handle last extent of pages
+ 	 */
+ 	if (!mpd.io_done && mpd.next_page != mpd.first_page) {
+-		mpage_da_map_blocks(&mpd);
+-		mpage_da_submit_io(&mpd);
++		if (mpage_da_map_blocks(&mpd) == 0)
++			mpage_da_submit_io(&mpd);
+ 	}
+ 
+ 	wbc->nr_to_write = to_write - mpd.pages_written;
