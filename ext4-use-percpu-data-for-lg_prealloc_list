@@ -1,0 +1,61 @@
+ext4: use percpu data structures for lg_prealloc_list
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+lg_prealloc_list seems to cry out for a per-cpu data structure; on a large
+smp system I think this should be better.  I've lightly tested this change
+on a 4-cpu system.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Acked-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+
+ mballoc.c |   13 +++++--------
+ 1 file changed, 5 insertions(+), 8 deletions(-)
+
+Index: linux-2.6/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.orig/fs/ext4/mballoc.c	2008-08-04 15:30:30.000000000 -0500
++++ linux-2.6/fs/ext4/mballoc.c	2008-08-13 13:48:33.224165751 -0500
+@@ -2540,17 +2540,16 @@ int ext4_mb_init(struct super_block *sb,
+ 	sbi->s_mb_history_filter = EXT4_MB_HISTORY_DEFAULT;
+ 	sbi->s_mb_group_prealloc = MB_DEFAULT_GROUP_PREALLOC;
+ 
+-	i = sizeof(struct ext4_locality_group) * nr_cpu_ids;
+-	sbi->s_locality_groups = kmalloc(i, GFP_KERNEL);
++	sbi->s_locality_groups = alloc_percpu(struct ext4_locality_group);
+ 	if (sbi->s_locality_groups == NULL) {
+ 		clear_opt(sbi->s_mount_opt, MBALLOC);
+ 		kfree(sbi->s_mb_offsets);
+ 		kfree(sbi->s_mb_maxs);
+ 		return -ENOMEM;
+ 	}
+-	for (i = 0; i < nr_cpu_ids; i++) {
++	for_each_possible_cpu(i) {
+ 		struct ext4_locality_group *lg;
+-		lg = &sbi->s_locality_groups[i];
++		lg = per_cpu_ptr(sbi->s_locality_groups, i);
+ 		mutex_init(&lg->lg_mutex);
+ 		for (j = 0; j < PREALLOC_TB_SIZE; j++)
+ 			INIT_LIST_HEAD(&lg->lg_prealloc_list[j]);
+@@ -2647,8 +2646,7 @@ int ext4_mb_release(struct super_block *
+ 				atomic_read(&sbi->s_mb_discarded));
+ 	}
+ 
+-	kfree(sbi->s_locality_groups);
+-
++	free_percpu(sbi->s_locality_groups);
+ 	ext4_mb_history_release(sb);
+ 	ext4_mb_destroy_per_dev_proc(sb);
+ 
+@@ -4055,8 +4053,7 @@ static void ext4_mb_group_or_file(struct
+ 	 * per cpu locality group is to reduce the contention between block
+ 	 * request from multiple CPUs.
+ 	 */
+-	ac->ac_lg = &sbi->s_locality_groups[get_cpu()];
+-	put_cpu();
++	ac->ac_lg = per_cpu_ptr(sbi->s_locality_groups, smp_processor_id());
+ 
+ 	/* we're going to use group allocation */
+ 	ac->ac_flags |= EXT4_MB_HINT_GROUP_ALLOC;
+
