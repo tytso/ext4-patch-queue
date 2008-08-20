@@ -1,24 +1,27 @@
-Ext4: journal credit fix the delalloc writepages
+Ext4: journal credit fix for the delayed allocation's writepages() function
 
 From: Mingming Cao <cmm@us.ibm.com>
 
-Previous delalloc writepages implementation start a new transaction outside
-a loop call of get_block() to do the block allocation. Due to lack of
-information of how many blocks to be allocated, the estimate of the journal
-credits is very conservtive and caused many issues.
+Previous delalloc writepages implementation started a new transaction
+outside of a loop which called get_block() to do the block allocation.
+Since we didn't know exactly how many blocks would need to be allocated,
+the estimated journal credits required was very conservative and caused
+many issues.
 
-With the rewored delayed allocation, a new transaction is created for
-each get_block(), thus we don't need to guess how many credits for the multiple
-chunk of allocation. Start every transaction with credits for insert a
-single exent is enough. When estimate the credits for indirect blocks 
-to allocate a chunk of blocks, it needs to know the number of data blocks to
-allocate. We use the total number of reserved delalloc datablocks, if that
-gets too big, for non extent file, we need to limit to the EXT4_MAX_TRANS_BLOCKS
+With the reworked delayed allocation, a new transaction is created for
+each get_block(), thus we don't need to guess how many credits for the
+multiple chunk of allocation.  We start every transaction with enough
+credits for inserting a single exent.  When estimate the credits for
+indirect blocks to allocate a chunk of blocks, we need to know the
+number of data blocks to allocate.  We use the total number of reserved
+delalloc datablocks; if that is too big, for non-extent files, we need
+to limit the number of blocks to EXT4_MAX_TRANS_BLOCKS.
 
 Code cleanup from Aneesh.
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Reviewed-off-by:  Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/extents.c |    8 ++---
  fs/ext4/inode.c   |   74 +++++++++++++++++++++++++++++++++++++++---------------
@@ -44,10 +47,10 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
 +	if (!(EXT4_I(mpd->inode)->i_flags & EXT4_EXTENTS_FL)) {
 +		if (nrblocks >= EXT4_MAX_TRANS_DATA) {
 +			/*
-+			 * With noextent format we are limited by the journal
-+			 * credit available. Total credit needed to insert
++			 * With non-extent format we are limited by the journal
++			 * credit available.  Total credit needed to insert
 +			 * nrblocks contiguous blocks is dependent on the
-+			 * nrblocks. So limit nrblocks.
++			 * nrblocks.  So limit nrblocks.
 +			 */
 +			goto flush_it;
 +		} else if ((nrblocks + (b_size >> mpd->inode->i_blkbits)) >
@@ -113,7 +116,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
 +	int max_blocks = EXT4_I(inode)->i_reserved_data_blocks;
 +
 +	/*
-+	 * With noextent format the journal credit needed to
++	 * With non-extent format the journal credit needed to
 +	 * insert nrblocks contiguous block is dependent on
 +	 * number of contiguous block. So we will limit
 +	 * number of contiguous block to a sane value

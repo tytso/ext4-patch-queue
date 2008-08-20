@@ -30,20 +30,20 @@ index 05346fb..2f95937 100644
 -
 -	if (!info->curr_node)
 +	if (info->extra_fname) {
-+                if (call_filldir(filp, dirent, filldir, info->extra_fname))
-+                        goto finished;
++		if (call_filldir(filp, dirent, filldir, info->extra_fname))
++			goto finished;
 +
-+                info->extra_fname = NULL;
-+                info->curr_node = rb_next(info->curr_node);
-+                if (!info->curr_node) {
-+                        if (info->next_hash == ~0) {
-+                                filp->f_pos = EXT4_HTREE_EOF;
-+                                goto finished;
-+                        }
-+                        info->curr_hash = info->next_hash;
-+                        info->curr_minor_hash = 0;
-+                }
-+        } else if (!info->curr_node)
++		info->extra_fname = NULL;
++		info->curr_node = rb_next(info->curr_node);
++		if (!info->curr_node) {
++			if (info->next_hash == ~0) {
++				filp->f_pos = EXT4_HTREE_EOF;
++				goto finished;
++			}
++			info->curr_hash = info->next_hash;
++			info->curr_minor_hash = 0;
++		}
++	} else if (!info->curr_node)
  		info->curr_node = rb_first(&info->root);
  
  	while (1) {

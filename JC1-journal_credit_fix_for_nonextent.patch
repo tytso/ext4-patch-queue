@@ -1,29 +1,30 @@
-Ext4: journal credits calulation cleanup and fix that for nonextent writepage
+Ext4: journal credits calulation cleanup and fix for non-extent writepage
 
 From: Mingming Cao <cmm@us.ibm.com>
 
-When considering how many journal credits are needed for modifying a chunk of
-data, we need to account for the super block, inode
-block, quota blocks and xattr block, indirect/index blocks, 
-also, group bitmap and group descriptor blocks for new allocation (including
-data and indirect/index blocks). There are many places in ext4 do the
-calculation on their own and often missed one or two meta blocks, and
-often they assume single block allocation, and did not considering the
-multile chunk of allocation case.
+When considering how many journal credits are needed for modifying a
+chunk of data, we need to account for the super block, inode block,
+quota blocks and xattr block, indirect/index blocks, also, group bitmap
+and group descriptor blocks for new allocation (including data and
+indirect/index blocks). There are many places in ext4 do the calculation
+on their own and often missed one or two meta blocks, and often they
+assume single block allocation, and did not considering the multile
+chunk of allocation case.
 
-This patch is trying to cleanup current journal credit code, 
-provides some common helper funtion  to calculate the journal credits, to
-be used for  writepage, writepages, DIO, fallocate, migration, defrag, and for
+This patch is trying to cleanup current journal credit code, provides
+some common helper funtion to calculate the journal credits, to be used
+for writepage, writepages, DIO, fallocate, migration, defrag, and for
 both nonextent and extent files.
 
 This patch modified the writepage/write_begin credit caculation for
-nonextent files, to use the new helper function. It also fixed the problem
-that writepage on nonextent files did not consider the case blocksize <pagesize,
- thus could possibelly need multiple block allocation in a single transaction.
+nonextent files, to use the new helper function. It also fixed the
+problem that writepage on nonextent files did not consider the case
+blocksize <pagesize, thus could possibelly need multiple block
+allocation in a single transaction.
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
----
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h      |    1 
  fs/ext4/ext4_jbd2.h |    8 +++
@@ -58,7 +59,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
 +	 * if nrblocks are not contiguous, worse case, each block touch
 +	 * a indirect block, and each indirect block touch a double indirect
 +	 * block, plus a triple indirect block
-+ 	 */
++	 */
 +	indirects = nrblocks * 2 + 1;
 +	return indirects;
 +}
@@ -103,8 +104,8 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
 +	 * The "Chunk" flag indicating whether the nrblocks is
 +	 * physically contiguous on disk
 +	 *
-+ 	 * For Direct IO and fallocate, they calls get_block to allocate
-+ 	 * one single extent at a time, so they could set the "Chunk" flag
++	 * For Direct IO and fallocate, they calls get_block to allocate
++	 * one single extent at a time, so they could set the "Chunk" flag
 +	 */
 +	idxblocks = ext4_index_trans_blocks(inode, nrblocks, chunk);
 +
@@ -112,7 +113,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
 +
 +	/*
 +	 * Now let's see how many group bitmaps and group descriptors need
-+ 	 * to account
++	 * to account
 +	 */
 +	groups = idxblocks;
 +	if (chunk)

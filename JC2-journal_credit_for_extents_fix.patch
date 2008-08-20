@@ -2,19 +2,20 @@ Ext4: journal credits reservation fixes for extent file writepage
 
 From: Mingming Cao <cmm@us.ibm.com>
 
-This patch modified the writepage/write_begin credit caculation for
-extent files, to use the credits caculation helper function. 
+This patch modified the writepage/write_begin credit calculation for
+extent files, to use the credits caculation helper function.
 
 The current calculation of how many index/leaf blocks should be
-accounted is too conservetive, it always consider the worse case, where
-the tree level is 5, and in the case of multiple chunk allocation, it
-always multiple the needed credits. This path uses the accurate depth of
-the inode with some extras to caluate the index blocks, and also less
-conservetive in the case of multiple allocation accounting.
+accounted is too conservetive, it always considered the worse case,
+where the tree level is 5, and in the case of multiple chunk
+allocations, it always assumed no blocks were dirtied in common across
+the allocations. This path uses the accurate depth of the inode with
+some extras to calculate the index blocks, and also less conservative in
+the case of multiple allocation accounting.
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
----
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4_extents.h |    3 +
  fs/ext4/extents.c      |   88 ++++++++++++++++---------------------------------

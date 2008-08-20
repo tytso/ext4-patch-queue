@@ -1,22 +1,24 @@
-ext4: Rework the ext4_da_writepages
+ext4: Rework the ext4_da_writepages() function
 
 From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-With the below changes we reserve credit needed to insert only one extent
-resulting from a call to single get_block. That make sure we don't take
-too much journal credits during writeout. We also don't limit the pages
-to write. That means we loop through the dirty pages building largest
-possible contiguous block request. Then we issue a single get_block request.
-We may get less block that we requested. If so we would end up not mapping
-some of the buffer_heads. That means those buffer_heads are still marked delay.
-Later in the writepage callback via __mpage_writepage we redirty those pages.
+With the below changes we reserve credit needed to insert only one
+extent resulting from a call to single get_block.  This makes sure we
+don't take too much journal credits during writeout.  We also don't
+limit the pages to write.  That means we loop through the dirty pages
+building largest possible contiguous block request.  Then we issue a
+single get_block request.  We may get less block that we requested.  If
+so we would end up not mapping some of the buffer_heads.  That means
+those buffer_heads are still marked delay.  Later in the writepage
+callback via __mpage_writepage we redirty those pages.
 
-We should also not limit/throttle wbc->nr_to_write in the filesystem writepages
-callback. That cause wrong behaviour in generic_sync_sb_inodes caused by
-wbc->nr_to_write being <= 0
+We should also not limit/throttle wbc->nr_to_write in the filesystem
+writepages callback. That cause wrong behaviour in
+generic_sync_sb_inodes caused by wbc->nr_to_write being <= 0
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Reviewed-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/inode.c |  201 +++++++++++++++++++++++++++++++-------------------------
  1 file changed, 113 insertions(+), 88 deletions(-)
@@ -303,7 +305,7 @@ Index: linux-2.6.27-rc3/fs/ext4/inode.c
  
  static int ext4_da_writepages(struct address_space *mapping,
 -				struct writeback_control *wbc)
-+                                struct writeback_control *wbc)
++			      struct writeback_control *wbc)
  {
  	struct inode *inode = mapping->host;
  	handle_t *handle = NULL;
