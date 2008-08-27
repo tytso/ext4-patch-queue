@@ -1,0 +1,166 @@
+percpu_counters: make fbc->count read atomic on 32 bit architecture
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+fbc->count is of type s64. The change was introduced by
+0216bfcffe424a5473daa4da47440881b36c1f4 which changed the type
+from long to s64. Moving to s64 also means on 32 bit architectures
+we can get wrong values on fbc->count. Since fbc->count is read
+more frequently and updated rarely use seqlocks. This should
+reduce the impact of locking in the read path for 32bit arch.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+CC: Peter Zijlstra <a.p.zijlstra@chello.nl>
+CC: Andrew Morton <akpm@linux-foundation.org>
+CC: linux-kernel@vger.kernel.org
+---
+ include/linux/percpu_counter.h |   28 ++++++++++++++++++++++++----
+ lib/percpu_counter.c           |   20 ++++++++++----------
+ 2 files changed, 34 insertions(+), 14 deletions(-)
+
+Index: linux-2.6.27-rc3/include/linux/percpu_counter.h
+===================================================================
+--- linux-2.6.27-rc3.orig/include/linux/percpu_counter.h	2008-08-27 09:37:37.000000000 -0700
++++ linux-2.6.27-rc3/include/linux/percpu_counter.h	2008-08-27 09:37:40.000000000 -0700
+@@ -6,7 +6,7 @@
+  * WARNING: these things are HUGE.  4 kbytes per counter on 32-way P4.
+  */
+ 
+-#include <linux/spinlock.h>
++#include <linux/seqlock.h>
+ #include <linux/smp.h>
+ #include <linux/list.h>
+ #include <linux/threads.h>
+@@ -16,7 +16,7 @@
+ #ifdef CONFIG_SMP
+ 
+ struct percpu_counter {
+-	spinlock_t lock;
++	seqlock_t lock;
+ 	s64 count;
+ #ifdef CONFIG_HOTPLUG_CPU
+ 	struct list_head list;	/* All percpu_counters are on a list */
+@@ -53,10 +53,30 @@
+ 	return __percpu_counter_sum(fbc);
+ }
+ 
+-static inline s64 percpu_counter_read(struct percpu_counter *fbc)
++#if BITS_PER_LONG == 64
++static inline s64 fbc_count(struct percpu_counter *fbc)
+ {
+ 	return fbc->count;
+ }
++#else
++/* doesn't have atomic 64 bit operation */
++static inline s64 fbc_count(struct percpu_counter *fbc)
++{
++	s64 ret;
++	unsigned seq;
++	do {
++		seq = read_seqbegin(&fbc->lock);
++		ret = fbc->count;
++	} while (read_seqretry(&fbc->lock, seq));
++	return ret;
++
++}
++#endif
++
++static inline s64 percpu_counter_read(struct percpu_counter *fbc)
++{
++	return fbc_count(fbc);
++}
+ 
+ /*
+  * It is possible for the percpu_counter_read() to return a small negative
+@@ -65,7 +85,7 @@
+  */
+ static inline s64 percpu_counter_read_positive(struct percpu_counter *fbc)
+ {
+-	s64 ret = fbc->count;
++	s64 ret = fbc_count(fbc);
+ 
+ 	barrier();		/* Prevent reloads of fbc->count */
+ 	if (ret >= 0)
+Index: linux-2.6.27-rc3/lib/percpu_counter.c
+===================================================================
+--- linux-2.6.27-rc3.orig/lib/percpu_counter.c	2008-08-27 09:37:37.000000000 -0700
++++ linux-2.6.27-rc3/lib/percpu_counter.c	2008-08-27 09:37:40.000000000 -0700
+@@ -18,13 +18,13 @@
+ {
+ 	int cpu;
+ 
+-	spin_lock(&fbc->lock);
++	write_seqlock(&fbc->lock);
+ 	for_each_possible_cpu(cpu) {
+ 		s32 *pcount = per_cpu_ptr(fbc->counters, cpu);
+ 		*pcount = 0;
+ 	}
+ 	fbc->count = amount;
+-	spin_unlock(&fbc->lock);
++	write_sequnlock(&fbc->lock);
+ }
+ EXPORT_SYMBOL(percpu_counter_set);
+ 
+@@ -37,10 +37,10 @@
+ 	pcount = per_cpu_ptr(fbc->counters, cpu);
+ 	count = *pcount + amount;
+ 	if (count >= batch || count <= -batch) {
+-		spin_lock(&fbc->lock);
++		write_seqlock(&fbc->lock);
+ 		fbc->count += count;
+ 		*pcount = 0;
+-		spin_unlock(&fbc->lock);
++		write_sequnlock(&fbc->lock);
+ 	} else {
+ 		*pcount = count;
+ 	}
+@@ -57,7 +57,7 @@
+ 	s64 ret;
+ 	int cpu;
+ 
+-	spin_lock(&fbc->lock);
++	write_seqlock(&fbc->lock);
+ 	ret = fbc->count;
+ 	for_each_online_cpu(cpu) {
+ 		s32 *pcount = per_cpu_ptr(fbc->counters, cpu);
+@@ -66,7 +66,7 @@
+ 	}
+ 	fbc->count = ret;
+ 
+-	spin_unlock(&fbc->lock);
++	write_sequnlock(&fbc->lock);
+ 	return ret;
+ }
+ EXPORT_SYMBOL(__percpu_counter_sum);
+@@ -75,7 +75,7 @@
+ 
+ int percpu_counter_init(struct percpu_counter *fbc, s64 amount)
+ {
+-	spin_lock_init(&fbc->lock);
++	seqlock_init(&fbc->lock);
+ 	fbc->count = amount;
+ 	fbc->counters = alloc_percpu(s32);
+ 	if (!fbc->counters)
+@@ -95,7 +95,7 @@
+ 
+ 	err = percpu_counter_init(fbc, amount);
+ 	if (!err)
+-		lockdep_set_class(&fbc->lock, &percpu_counter_irqsafe);
++		lockdep_set_class(&fbc->lock.lock, &percpu_counter_irqsafe);
+ 	return err;
+ }
+ 
+@@ -130,11 +130,11 @@
+ 		s32 *pcount;
+ 		unsigned long flags;
+ 
+-		spin_lock_irqsave(&fbc->lock, flags);
++		write_seqlock_irqsave(&fbc->lock, flags);
+ 		pcount = per_cpu_ptr(fbc->counters, cpu);
+ 		fbc->count += *pcount;
+ 		*pcount = 0;
+-		spin_unlock_irqrestore(&fbc->lock, flags);
++		write_sequnlock_irqrestore(&fbc->lock, flags);
+ 	}
+ 	mutex_unlock(&percpu_counters_lock);
+ 	return NOTIFY_OK;
