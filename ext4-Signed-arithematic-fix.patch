@@ -1,0 +1,90 @@
+ext4: Signed arithematic fix
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+This patch converts some usage of ext4_fsblk_t to s64
+This is needed so that some of the sign conversion works
+as expected in if loops.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/balloc.c |   19 ++++++++++---------
+ fs/ext4/ext4.h   |    4 ++--
+ 2 files changed, 12 insertions(+), 11 deletions(-)
+
+Index: linux-2.6.27-rc3/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.27-rc3.orig/fs/ext4/balloc.c	2008-08-27 13:59:34.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/balloc.c	2008-08-27 14:52:28.000000000 -0700
+@@ -1601,10 +1601,10 @@
+ }
+ 
+ int ext4_claim_free_blocks(struct ext4_sb_info *sbi,
+-						ext4_fsblk_t nblocks)
++						s64 nblocks)
+ {
+ 	s64 free_blocks, dirty_blocks;
+-	ext4_fsblk_t root_blocks = 0;
++	s64 root_blocks = 0;
+ 	struct percpu_counter *fbc = &sbi->s_freeblocks_counter;
+ 	struct percpu_counter *dbc = &sbi->s_dirtyblocks_counter;
+ 
+@@ -1629,7 +1629,7 @@
+ 	/* Check whether we have space after
+ 	 * accounting for current dirty blocks
+ 	 */
+-	if (free_blocks < ((s64)(root_blocks + nblocks) + dirty_blocks))
++	if (free_blocks < ((root_blocks + nblocks) + dirty_blocks))
+ 		/* we don't have free space */
+ 		return -ENOSPC;
+ 
+@@ -1648,10 +1648,10 @@
+  * On success, return nblocks
+  */
+ ext4_fsblk_t ext4_has_free_blocks(struct ext4_sb_info *sbi,
+-						ext4_fsblk_t nblocks)
++						s64 nblocks)
+ {
+-	ext4_fsblk_t free_blocks, dirty_blocks;
+-	ext4_fsblk_t root_blocks = 0;
++	s64 free_blocks, dirty_blocks;
++	s64 root_blocks = 0;
+ 	struct percpu_counter *fbc = &sbi->s_freeblocks_counter;
+ 	struct percpu_counter *dbc = &sbi->s_dirtyblocks_counter;
+ 
+@@ -1665,14 +1665,15 @@
+ 
+ 	if (free_blocks - (nblocks + root_blocks + dirty_blocks) <
+ 						EXT4_FREEBLOCKS_WATERMARK) {
+-		free_blocks  = percpu_counter_sum_positive(fbc);
+-		dirty_blocks = percpu_counter_sum_positive(dbc);
++		free_blocks  = percpu_counter_sum(fbc);
++		dirty_blocks = percpu_counter_sum(dbc);
+ 	}
+ 	if (free_blocks <= (root_blocks + dirty_blocks))
+ 		/* we don't have free space */
+ 		return 0;
++
+ 	if (free_blocks - (root_blocks + dirty_blocks) < nblocks)
+-		return free_blocks - root_blocks;
++		return free_blocks - (root_blocks + dirty_blocks);
+ 	return nblocks;
+ }
+ 
+Index: linux-2.6.27-rc3/fs/ext4/ext4.h
+===================================================================
+--- linux-2.6.27-rc3.orig/fs/ext4/ext4.h	2008-08-27 09:45:05.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/ext4.h	2008-08-27 14:52:28.000000000 -0700
+@@ -984,9 +984,9 @@
+ extern ext4_fsblk_t ext4_old_new_blocks(handle_t *handle, struct inode *inode,
+ 			ext4_fsblk_t goal, unsigned long *count, int *errp);
+ extern int ext4_claim_free_blocks(struct ext4_sb_info *sbi,
+-						ext4_fsblk_t nblocks);
++						s64 nblocks);
+ extern ext4_fsblk_t ext4_has_free_blocks(struct ext4_sb_info *sbi,
+-						ext4_fsblk_t nblocks);
++						s64  nblocks);
+ extern void ext4_free_blocks (handle_t *handle, struct inode *inode,
+ 			ext4_fsblk_t block, unsigned long count, int metadata);
+ extern void ext4_free_blocks_sb (handle_t *handle, struct super_block *sb,

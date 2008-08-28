@@ -1,0 +1,25 @@
+Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+ext4: Fix ext4 nomballoc allocator for ENOSPC
+    
+We need to check freeblock count with windowsz only
+when we have specified a reservation.  Otherwise
+we skip some group with low freeblock count during
+block allocation
+    
+    
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+Index: linux-2.6.27-rc3/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.27-rc3.orig/fs/ext4/balloc.c	2008-08-28 12:41:55.000000000 -0700
++++ linux-2.6.27-rc3/fs/ext4/balloc.c	2008-08-28 12:47:41.000000000 -0700
+@@ -1843,7 +1843,7 @@
+ 		 * free blocks is less than half of the reservation
+ 		 * window size.
+ 		 */
+-		if (free_blocks <= (windowsz/2))
++		if (my_rsv && (free_blocks <= (windowsz/2)))
+ 			continue;
+ 
+ 		brelse(bitmap_bh);
