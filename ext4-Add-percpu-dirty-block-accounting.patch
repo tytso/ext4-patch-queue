@@ -2,22 +2,11 @@ ext4: Add percpu dirty block accounting.
 
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
-In the current delalloc implementation, the fs wide free blocks counter
-was reduced directly when the blocks are reserved, same as the real block
-allocation with no delalloc mode.  This makes ext4 lost of the information
-of totally how many blocks are reserved for delayed allocation. We could
-like to have that information to help us decide when should we fall back
-to non delalloc mode in the case fs is close to full, to avoid later ENOSPC
-error.
-
-This patch add dirty blocks percpu_counters to keep track of fs wide
-reserved blocks for allocation.
-Delayed allocation block reservation is now done by increasing the
-dirty block counter. When real block allocation is finished, the reserved dirty blocks will be committed to the total free blocks counter.
-
-In the later patch we use this information to help decide when to 
-switch to non delalloc mode, when the filesystem free blocks is < that
-150 % of total filesystem  dirty blocks.
+This patch add dirty block accounting using percpu_counters.
+Delayed allocation block reservation is now done by updating
+dirty block counter. In the later patch we switch to non
+delalloc mode if the filesystem free blocks is < that
+150 % of total filesystem  dirty blocks
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao<cmm@us.ibm.com>
