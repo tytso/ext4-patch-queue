@@ -1,20 +1,46 @@
-Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+From: Mingming Cao <cmm@us.ibm.com>
 
 ext4: Fix ext4 nomballoc allocator for ENOSPC
     
-We need to check freeblock count with windowsz only
-when we have specified a reservation.  Otherwise
-we skip some group with low freeblock count during
-block allocation
-    
-    
-Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+We run into ENOSPC error on nonmballoc ext4, even when there is free blocks
+on the filesystem.
+
+The problem is triggered in the case the goal block group has 0 free blocks
+, and the rest block groups are skipped due to the check of "free_blocks 
+< windowsz/2". Current code could fall back to non reservation allocation
+to prevent early ENOSPC after examing all the block groups with reservation on
+, but this code was  bypassed if the reservation window is turned off already,
+which is true in this case.
+
+This patch fixed two issues:
+1) We don't need to turn off block reservation if the goal block group has 
+0 free blocks left and continue search for the rest of block groups.
+
+Current code the intention is to turn off the block reservation if the
+ goal allocation group has a few (some) free blocks left (not enough 
+for make the desired reservation window),to try to allocation in the
+ goal block group, to get better locality. But if the goal blocks have 
+0 free blocks,  it should leave the block reservation on, and continues
+search for the next block groups,rather than turn off block reservation
+completely.
+
+2) we don't need to check the window size if the block reservation is off. 
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.27-rc3/fs/ext4/balloc.c
 ===================================================================
 --- linux-2.6.27-rc3.orig/fs/ext4/balloc.c	2008-08-28 12:41:55.000000000 -0700
-+++ linux-2.6.27-rc3/fs/ext4/balloc.c	2008-08-28 12:47:41.000000000 -0700
-@@ -1843,7 +1843,7 @@
++++ linux-2.6.27-rc3/fs/ext4/balloc.c	2008-08-28 14:40:43.000000000 -0700
+@@ -1807,6 +1807,7 @@
+ 	 * turn off reservation for this allocation
+ 	 */
+ 	if (my_rsv && (free_blocks < windowsz)
++		&& (free_blocks > 0)
+ 		&& (rsv_is_empty(&my_rsv->rsv_window)))
+ 		my_rsv = NULL;
+ 
+@@ -1843,7 +1844,7 @@
  		 * free blocks is less than half of the reservation
  		 * window size.
  		 */
