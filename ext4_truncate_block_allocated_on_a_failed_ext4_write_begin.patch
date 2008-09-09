@@ -2,14 +2,15 @@ ext4: truncate block allocated on a failed ext4_write_begin
 
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
-For blocksize < pagesize we need to remove blocks that
-got allocte in block_wirte_begin if we fail with ENOSPC
-for later blocks. block_write_begin internally does
-this if it allocated page locally. This make sure
-we don't have blocks outisde inode.i_size during
-ENOSPC
+For blocksize < pagesize we need to remove blocks that got allocated in
+block_write_begin() if we fail with ENOSPC for later blocks.
+block_write_begin() internally does this if it allocated page
+locally. This makes sure we don't have blocks outside inode.i_size
+during ENOSPC.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
 index 5a595af..6cfe142 100644
 --- a/fs/ext4/inode.c
