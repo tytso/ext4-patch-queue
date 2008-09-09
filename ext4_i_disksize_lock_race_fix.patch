@@ -2,20 +2,19 @@ ext4: Properly update i_disksize.
 
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
-With delayed allocation we use i_data_sem to update
-i_disksize. We need to update i_disksize only
-if the new size specified is greater than the
-current value and we need to make sure we don't
-race with other i_disksize update. With delayed
-allocation we will switch to nondelalloc write_begin
-if we are low on free blocks. That means nondelalloc
-write_begin also need to use the same locking.
+With delayed allocation we use i_data_sem to update i_disksize.  We need
+to update i_disksize only if the new size specified is greater than the
+current value and we need to make sure we don't race with other
+i_disksize update.  With delayed allocation we will switch to the
+write_begin function for non-delayed allocation if we are low on free
+blocks.  That means write_begin function for non-delayed allocation also
+needs to use the same locking.
 
-We also need to check and update i_disksize even
-if the new size is less that inode.i_size because
-of delayed allocation.
+We also need to check and update i_disksize even if the new size is less
+that inode.i_size because of delayed allocation.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h    |   11 ++++++++++
  fs/ext4/extents.c |    9 ++++----

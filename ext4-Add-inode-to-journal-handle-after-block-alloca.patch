@@ -1,15 +1,14 @@
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
-ext4: Add inode to journal handle after block allocation for ordered mode
+ext4: Don't add the inode to journal handle until after the block is allocated
     
-This make sure when we have block allocation failure
-we don't have inode inode added to the journal handle.
-So journal commit will not include the inode for which
-block allocation failed.
-    
+Make sure we don't add the inode to the journal handle until after the
+block allocation, so that a journal commit will not include the inode in
+case of block allocation failure.
+
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
-
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/balloc.c |    2 +-
  fs/ext4/inode.c  |   36 +++++++++++++++---------------------

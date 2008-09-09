@@ -1,20 +1,18 @@
 ext4: Make sure all the block allocation paths reserve blocks
 
-With delayed allocation we need to make sure block are reserved
-before we attempt to allocate them. Otherwise we get block
-allocation failure (ENOSPC) during writepages which cannot
-be handled. This would mean silent data loss (We do a printk
-stating data will be lost). This patch update the DIO
-and fallocate code path to do block reservation before block
-allocation. This is needed to make sure parallel DIO and
-fallocate request doesn't take block out of delayed reserve
-space.
+With delayed allocation we need to make sure block are reserved before
+we attempt to allocate them. Otherwise we get block allocation failure
+(ENOSPC) during writepages which cannot be handled. This would mean
+silent data loss (We do a printk stating data will be lost). This patch
+updates the DIO and fallocate code path to do block reservation before
+block allocation. This is needed to make sure parallel DIO and fallocate
+request doesn't take block out of delayed reserve space.
 
-When free blocks count go below a threshold we switch to
-a slow patch which looks at other CPU's accumulated percpu
-counter values.
+When free blocks count go below a threshold we switch to a slow patch
+which looks at other CPU's accumulated percpu counter values.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/balloc.c  |   58 ++++++++++++++++++++++++++++++++++++++--------------
  fs/ext4/ext4.h    |   13 +++++++++++

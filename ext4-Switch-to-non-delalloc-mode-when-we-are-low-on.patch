@@ -2,16 +2,16 @@ ext4: Switch to non delalloc mode when we are low on free blocks count.
 
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
-delayed allocation allocate blocks during writepages. That also
-means we cannot handle block allocation failures. Switch to
-non - delalloc when we are running low on free blocks.
-Delayed allocation need to do aggressive meta-data block reservation
-considering that the requested blocks can all be discontiguous.
-Switching to non-delalloc avoids that. Also we can satisfy
-partial write in non-delalloc mode.
+The delayed allocation code allocates blocks during writepages(), which
+can not handle block allocation failures.  To deal with this, we switch
+away from delayed allocation mode when we are running low on free bocks.
+This also allows us to avoid needing to reserve a large number of
+meta-data blocks in case all of the requested blocks are discontiguous,
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
 ---
  fs/ext4/inode.c |   52 ++++++++++++++++++++++++++++++++++++++++++++++++++--
  1 file changed, 50 insertions(+), 2 deletions(-)

@@ -1,15 +1,16 @@
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
 ext4: Retry block allocation if we have free blocks left
 
-When we truncate files, the meta-data blocks released
-are not reused untill we commit the truncate transaction.
-That means delayed get_block request will return ENOSPC
-even if we have free blocks left. Force a journal commit
-and retry block allocation if we get ENOSPC with free
+When we truncate files, the meta-data blocks released are not reused
+untill we commit the truncate transaction.  That means delayed get_block
+request will return ENOSPC even if we have free blocks left.  Force a
+journal commit and retry block allocation if we get ENOSPC with free
 blocks left.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/inode.c |   81 +++++++++++++++++++++++++++++++++++++++-----------------
  1 file changed, 57 insertions(+), 24 deletions(-)
