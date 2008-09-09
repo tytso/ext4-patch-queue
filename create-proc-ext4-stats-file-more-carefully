@@ -17,12 +17,11 @@ http://bugzilla.kernel.org/show_bug.cgi?id=11321
 
 Signed-off-by: Alexey Dobriyan <adobriyan@gmail.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 2721643..984144d 100644
+index 2721643..78d628b 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -2785,14 +2785,19 @@ static int ext4_mb_init_per_dev_proc(struct super_block *sb)
+@@ -2785,14 +2785,20 @@ static int ext4_mb_init_per_dev_proc(struct super_block *sb)
  	mode_t mode = S_IFREG | S_IRUGO | S_IWUSR;
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
  	struct proc_dir_entry *proc;
@@ -34,7 +33,8 @@ index 2721643..984144d 100644
  		return -EINVAL;
  	}
  	bdevname(sb->s_bdev, devname);
-+	while (p = strchr(p, '/'))
++	p = devname;
++	while ((p = strchr(p, '/')))
 +		*p = '!';
 +
  	sbi->s_mb_proc = proc_mkdir(devname, proc_root_ext4);
@@ -43,7 +43,7 @@ index 2721643..984144d 100644
  
  	MB_PROC_HANDLER(EXT4_MB_STATS_NAME, stats);
  	MB_PROC_HANDLER(EXT4_MB_MAX_TO_SCAN_NAME, max_to_scan);
-@@ -2804,7 +2809,6 @@ static int ext4_mb_init_per_dev_proc(struct super_block *sb)
+@@ -2804,7 +2810,6 @@ static int ext4_mb_init_per_dev_proc(struct super_block *sb)
  	return 0;
  
  err_out:
@@ -51,7 +51,7 @@ index 2721643..984144d 100644
  	remove_proc_entry(EXT4_MB_GROUP_PREALLOC, sbi->s_mb_proc);
  	remove_proc_entry(EXT4_MB_STREAM_REQ, sbi->s_mb_proc);
  	remove_proc_entry(EXT4_MB_ORDER2_REQ, sbi->s_mb_proc);
-@@ -2813,6 +2817,8 @@ err_out:
+@@ -2813,6 +2818,8 @@ err_out:
  	remove_proc_entry(EXT4_MB_STATS_NAME, sbi->s_mb_proc);
  	remove_proc_entry(devname, proc_root_ext4);
  	sbi->s_mb_proc = NULL;
