@@ -1,0 +1,46 @@
+ext3: Avoid printk floods in the face of directory corruption
+
+Note: some people thinks this represents a security bug, since it
+might make the system go away while it is printing a large number of
+console messages, especially if a serial console is involved.  Hence,
+it has been assigned CVE-2008-3528, but it requires that the attacker
+either has physical access to your machine to insert a USB disk with a
+corrupted filesystem image (at which point why not just hit the power
+button), or is otherwise able to convince the system administrator to
+mount an arbitrary filesystem image (at which point why not just
+include a setuid shell or world-writable hard disk device file or some
+such).  Me, I think they're just being silly.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: linux-ext4@vger.kernel.org
+Cc: Eugene Teo <eugeneteo@kernel.sg>
+---
+Index: linux-2.6.26.x86_64/fs/ext3/dir.c
+===================================================================
+--- linux-2.6.26.x86_64.orig/fs/ext3/dir.c
++++ linux-2.6.26.x86_64/fs/ext3/dir.c
+@@ -102,6 +102,7 @@ static int ext3_readdir(struct file * fi
+ 	int err;
+ 	struct inode *inode = filp->f_path.dentry->d_inode;
+ 	int ret = 0;
++	int dir_has_error = 0;
+ 
+ 	sb = inode->i_sb;
+ 
+@@ -148,9 +149,12 @@ static int ext3_readdir(struct file * fi
+ 		 * of recovering data when there's a bad sector
+ 		 */
+ 		if (!bh) {
+-			ext3_error (sb, "ext3_readdir",
+-				"directory #%lu contains a hole at offset %lu",
+-				inode->i_ino, (unsigned long)filp->f_pos);
++			if (!dir_has_error) {
++				ext3_error(sb, __func__, "directory #%lu "
++					"contains a hole at offset %lld",
++					inode->i_ino, filp->f_pos);
++				dir_has_error = 1;
++			}
+ 			/* corrupt size?  Maybe no more blocks to read */
+ 			if (filp->f_pos > inode->i_blocks << 9)
+ 				break;
