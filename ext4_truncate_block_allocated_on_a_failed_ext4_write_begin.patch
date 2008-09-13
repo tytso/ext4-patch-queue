@@ -9,18 +9,14 @@ This makes sure we don't have blocks outside inode.i_size during ENOSPC.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/ext4/inode.c |   14 ++++++++++++++
- 1 files changed, 14 insertions(+), 0 deletions(-)
-
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 48534be..e7c84e4 100644
+index 5a595af..a1e235d 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1391,6 +1391,13 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
-  		unlock_page(page);
+@@ -1391,6 +1391,13 @@ retry:
+ 		unlock_page(page);
  		ext4_journal_stop(handle);
-  		page_cache_release(page);
+ 		page_cache_release(page);
 +		/*
 +		 * block_write_begin may have instantiated a few blocks
 +		 * outside i_size.  Trim these off again. Don't need
@@ -31,7 +27,7 @@ index 48534be..e7c84e4 100644
  	}
  
  	if (ret == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
-@@ -2560,6 +2567,13 @@ static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
+@@ -2560,6 +2567,13 @@ retry:
  		unlock_page(page);
  		ext4_journal_stop(handle);
  		page_cache_release(page);
