@@ -6,6 +6,7 @@ ext4_ext_walk_space() was reinstated to be used for iterating over file
 extents with a callback; it is used by the ext4 fiemap implementation.
 
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h         |    2 +
  fs/ext4/ext4_extents.h |   15 +++
@@ -251,7 +252,7 @@ Index: linux-2.6/fs/ext4/extents.c
 +		flags |= FIEMAP_EXTENT_LAST;
 +
 +	error = fiemap_fill_next_extent(fieinfo, logical, physical,
-+					length, flags, inode->i_sb->s_dev);
++					length, flags);
 +	if (error < 0)
 +		return error;
 +	if (error == 1)
@@ -292,7 +293,7 @@ Index: linux-2.6/fs/ext4/extents.c
 +
 +	if (physical)
 +		error = fiemap_fill_next_extent(fieinfo, 0, physical,
-+					length, flags, inode->i_sb->s_dev);
++						length, flags);
 +	return (error < 0 ? error : 0);
 +}
 +

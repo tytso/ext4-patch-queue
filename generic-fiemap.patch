@@ -1,3 +1,5 @@
+generic block based fiemap implementation
+
 From: Josef Bacik <jbacik@redhat.com>
 
 Any block based fs (this patch includes ext3) just has to declare its own
@@ -19,16 +21,16 @@ Signed-off-by: Mark Fasheh <mfasheh@suse.com>
  fs/ext2/inode.c         |    8 +++
  fs/ext3/file.c          |    1 +
  fs/ext3/inode.c         |    8 +++
- fs/ioctl.c              |  119 +++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ioctl.c              |  118 +++++++++++++++++++++++++++++++++++++++++++++++
  include/linux/ext3_fs.h |    2 +
  include/linux/fs.h      |    3 +
- 8 files changed, 144 insertions(+), 0 deletions(-)
+ 8 files changed, 143 insertions(+), 0 deletions(-)
 
-Index: linux-2.6/fs/ext2/ext2.h
-===================================================================
---- linux-2.6.orig/fs/ext2/ext2.h	2008-07-07 20:08:38.830291129 -0500
-+++ linux-2.6/fs/ext2/ext2.h	2008-07-14 16:55:46.403353646 -0500
-@@ -133,6 +133,8 @@ extern void ext2_truncate (struct inode 
+diff --git a/fs/ext2/ext2.h b/fs/ext2/ext2.h
+index 47d88da..bae998c 100644
+--- a/fs/ext2/ext2.h
++++ b/fs/ext2/ext2.h
+@@ -133,6 +133,8 @@ extern void ext2_truncate (struct inode *);
  extern int ext2_setattr (struct dentry *, struct iattr *);
  extern void ext2_set_inode_flags(struct inode *inode);
  extern void ext2_get_inode_flags(struct ext2_inode_info *);
@@ -37,20 +39,20 @@ Index: linux-2.6/fs/ext2/ext2.h
  int __ext2_write_begin(struct file *file, struct address_space *mapping,
  		loff_t pos, unsigned len, unsigned flags,
  		struct page **pagep, void **fsdata);
-Index: linux-2.6/fs/ext2/file.c
-===================================================================
---- linux-2.6.orig/fs/ext2/file.c	2008-06-05 13:44:20.383046060 -0500
-+++ linux-2.6/fs/ext2/file.c	2008-07-14 16:55:46.411353467 -0500
-@@ -86,4 +86,5 @@ const struct inode_operations ext2_file_
+diff --git a/fs/ext2/file.c b/fs/ext2/file.c
+index 5f2fa9c..45ed071 100644
+--- a/fs/ext2/file.c
++++ b/fs/ext2/file.c
+@@ -86,4 +86,5 @@ const struct inode_operations ext2_file_inode_operations = {
  #endif
  	.setattr	= ext2_setattr,
  	.permission	= ext2_permission,
 +	.fiemap		= ext2_fiemap,
  };
-Index: linux-2.6/fs/ext2/inode.c
-===================================================================
---- linux-2.6.orig/fs/ext2/inode.c	2008-07-07 20:08:38.830291129 -0500
-+++ linux-2.6/fs/ext2/inode.c	2008-07-14 16:55:46.452353760 -0500
+diff --git a/fs/ext2/inode.c b/fs/ext2/inode.c
+index 991d6df..7658b33 100644
+--- a/fs/ext2/inode.c
++++ b/fs/ext2/inode.c
 @@ -31,6 +31,7 @@
  #include <linux/writeback.h>
  #include <linux/buffer_head.h>
@@ -59,7 +61,7 @@ Index: linux-2.6/fs/ext2/inode.c
  #include "ext2.h"
  #include "acl.h"
  #include "xip.h"
-@@ -704,6 +705,13 @@ int ext2_get_block(struct inode *inode, 
+@@ -704,6 +705,13 @@ int ext2_get_block(struct inode *inode, sector_t iblock, struct buffer_head *bh_
  
  }
  
@@ -73,21 +75,21 @@ Index: linux-2.6/fs/ext2/inode.c
  static int ext2_writepage(struct page *page, struct writeback_control *wbc)
  {
  	return block_write_full_page(page, ext2_get_block, wbc);
-Index: linux-2.6/fs/ext3/file.c
-===================================================================
---- linux-2.6.orig/fs/ext3/file.c	2008-06-05 13:44:20.413983372 -0500
-+++ linux-2.6/fs/ext3/file.c	2008-07-14 16:55:46.493353485 -0500
-@@ -134,5 +134,6 @@ const struct inode_operations ext3_file_
+diff --git a/fs/ext3/file.c b/fs/ext3/file.c
+index acc4913..3be1e06 100644
+--- a/fs/ext3/file.c
++++ b/fs/ext3/file.c
+@@ -134,5 +134,6 @@ const struct inode_operations ext3_file_inode_operations = {
  	.removexattr	= generic_removexattr,
  #endif
  	.permission	= ext3_permission,
 +	.fiemap		= ext3_fiemap,
  };
  
-Index: linux-2.6/fs/ext3/inode.c
-===================================================================
---- linux-2.6.orig/fs/ext3/inode.c	2008-06-05 13:44:20.416982997 -0500
-+++ linux-2.6/fs/ext3/inode.c	2008-07-14 16:55:46.514353977 -0500
+diff --git a/fs/ext3/inode.c b/fs/ext3/inode.c
+index 507d868..ebfec4d 100644
+--- a/fs/ext3/inode.c
++++ b/fs/ext3/inode.c
 @@ -36,6 +36,7 @@
  #include <linux/mpage.h>
  #include <linux/uio.h>
@@ -110,10 +112,10 @@ Index: linux-2.6/fs/ext3/inode.c
  /*
   * `handle' can be NULL if create is zero
   */
-Index: linux-2.6/fs/ioctl.c
-===================================================================
---- linux-2.6.orig/fs/ioctl.c	2008-07-14 16:53:46.019353480 -0500
-+++ linux-2.6/fs/ioctl.c	2008-07-14 16:55:46.552353665 -0500
+diff --git a/fs/ioctl.c b/fs/ioctl.c
+index 274625a..682c252 100644
+--- a/fs/ioctl.c
++++ b/fs/ioctl.c
 @@ -13,6 +13,8 @@
  #include <linux/security.h>
  #include <linux/module.h>
@@ -123,7 +125,7 @@ Index: linux-2.6/fs/ioctl.c
  
  #include <asm/ioctls.h>
  
-@@ -227,6 +229,123 @@ static int ioctl_fiemap(struct file *fil
+@@ -223,6 +225,122 @@ static int ioctl_fiemap(struct file *filp, unsigned long arg)
  	return error;
  }
  
@@ -153,7 +155,6 @@ Index: linux-2.6/fs/ioctl.c
 +	u64 logical = 0, phys = 0, size = 0;
 +	u32 flags = FIEMAP_EXTENT_MERGED;
 +	int ret = 0;
-+	dev_t dev = inode->i_sb->s_dev;
 +
 +	if ((ret = fiemap_check_flags(fieinfo, FIEMAP_FLAG_SYNC)))
 +		return ret;
@@ -188,7 +189,7 @@ Index: linux-2.6/fs/ioctl.c
 +				flags = FIEMAP_EXTENT_MERGED|FIEMAP_EXTENT_LAST;
 +				ret = fiemap_fill_next_extent(fieinfo, logical,
 +							      phys, size,
-+							      flags, dev);
++							      flags);
 +				break;
 +			}
 +
@@ -203,7 +204,7 @@ Index: linux-2.6/fs/ioctl.c
 +			if (length <= 0 && size) {
 +				ret = fiemap_fill_next_extent(fieinfo, logical,
 +							      phys, size,
-+							      flags, dev);
++							      flags);
 +				if (ret)
 +					break;
 +			}
@@ -227,7 +228,7 @@ Index: linux-2.6/fs/ioctl.c
 +				continue;
 +
 +			ret = fiemap_fill_next_extent(fieinfo, logical, phys,
-+						      size, flags, dev);
++						      size, flags);
 +			if (ret)
 +				break;
 +		}
@@ -247,11 +248,11 @@ Index: linux-2.6/fs/ioctl.c
  static int file_ioctl(struct file *filp, unsigned int cmd,
  		unsigned long arg)
  {
-Index: linux-2.6/include/linux/ext3_fs.h
-===================================================================
---- linux-2.6.orig/include/linux/ext3_fs.h	2008-06-05 13:44:39.555984803 -0500
-+++ linux-2.6/include/linux/ext3_fs.h	2008-07-14 16:55:46.602353561 -0500
-@@ -836,6 +836,8 @@ extern void ext3_truncate (struct inode 
+diff --git a/include/linux/ext3_fs.h b/include/linux/ext3_fs.h
+index 80171ee..8120fa1 100644
+--- a/include/linux/ext3_fs.h
++++ b/include/linux/ext3_fs.h
+@@ -837,6 +837,8 @@ extern void ext3_truncate (struct inode *);
  extern void ext3_set_inode_flags(struct inode *);
  extern void ext3_get_inode_flags(struct ext3_inode_info *);
  extern void ext3_set_aops(struct inode *inode);
@@ -260,11 +261,11 @@ Index: linux-2.6/include/linux/ext3_fs.h
  
  /* ioctl.c */
  extern int ext3_ioctl (struct inode *, struct file *, unsigned int,
-Index: linux-2.6/include/linux/fs.h
-===================================================================
---- linux-2.6.orig/include/linux/fs.h	2008-07-14 16:53:46.046353840 -0500
-+++ linux-2.6/include/linux/fs.h	2008-07-14 16:55:46.605354149 -0500
-@@ -1979,6 +1979,9 @@ extern int vfs_fstat(unsigned int, struc
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 194fb23..385c9a1 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -1998,6 +1998,9 @@ extern int vfs_fstat(unsigned int, struct kstat *);
  
  extern int do_vfs_ioctl(struct file *filp, unsigned int fd, unsigned int cmd,
  		    unsigned long arg);
@@ -274,3 +275,6 @@ Index: linux-2.6/include/linux/fs.h
  
  extern void get_filesystem(struct file_system_type *fs);
  extern void put_filesystem(struct file_system_type *fs);
+-- 
+1.5.6.1.205.ge2c7.dirty
+

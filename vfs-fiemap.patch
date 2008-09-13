@@ -1,3 +1,7 @@
+vfs: vfs-level fiemap interface
+
+From: Mark Fasheh <mfasheh@suse.com>
+
 Basic vfs-level fiemap infrastructure, which sets up a new ->fiemap
 inode operation.
 
@@ -25,19 +29,20 @@ Mark Fasheh <mfasheh@suse.com>
 
 Signed-off-by: Mark Fasheh <mfasheh@suse.com>
 ---
- Documentation/filesystems/fiemap.txt |  227 ++++++++++++++++++++++++++++++++++
- fs/ioctl.c                           |  158 +++++++++++++++++++++++
- include/linux/fiemap.h               |   68 ++++++++++
+ Documentation/filesystems/fiemap.txt |  216 ++++++++++++++++++++++++++++++++++
+ fs/ioctl.c                           |  154 ++++++++++++++++++++++++
+ include/linux/fiemap.h               |   62 ++++++++++
  include/linux/fs.h                   |   18 +++
- 4 files changed, 471 insertions(+), 0 deletions(-)
+ 4 files changed, 450 insertions(+), 0 deletions(-)
  create mode 100644 Documentation/filesystems/fiemap.txt
  create mode 100644 include/linux/fiemap.h
 
-Index: linux-2.6/Documentation/filesystems/fiemap.txt
-===================================================================
---- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6/Documentation/filesystems/fiemap.txt	2008-07-14 16:53:46.018353648 -0500
-@@ -0,0 +1,227 @@
+diff --git a/Documentation/filesystems/fiemap.txt b/Documentation/filesystems/fiemap.txt
+new file mode 100644
+index 0000000..5e95e8f
+--- /dev/null
++++ b/Documentation/filesystems/fiemap.txt
+@@ -0,0 +1,216 @@
 +============
 +Fiemap Ioctl
 +============
@@ -124,7 +129,7 @@ Index: linux-2.6/Documentation/filesystems/fiemap.txt
 +			      * of the extent */
 +	__u64	fe_length;   /* length in bytes for the extent */
 +	__u32	fe_flags;    /* FIEMAP_EXTENT_* flags for this extent */
-+	__u32	fe_device;   /* device number for extent */
++	__u32	fe_reserved;
 +};
 +
 +All offsets and lengths are in bytes and mirror those on disk.  It is valid
@@ -167,25 +172,12 @@ Index: linux-2.6/Documentation/filesystems/fiemap.txt
 +Delayed allocation - while there is data for this extent, it's
 +physical location has not been allocated yet.
 +
-+* FIEMAP_EXTENT_NO_DIRECT
++* FIEMAP_EXTENT_NO_BYPASS
 +Direct access to the data in this extent is illegal or will have
 +undefined results.
 +
-+* FIEMAP_EXTENT_SECONDARY
-+The data for this extent is in secondary storage (e.g. HSM).  If the
-+data is not also in the filesystem, then FIEMAP_EXTENT_NO_DIRECT
-+should also be set.
-+
-+* FIEMAP_EXTENT_NET
-+  - This will also set FIEMAP_EXTENT_NO_DIRECT
-+The data for this extent is not stored in a locally-accessible device.
-+
-+* FIEMAP_EXTENT_DATA_COMPRESSED
-+  - This will also set FIEMAP_EXTENT_NO_DIRECT
-+The data in this extent has been compressed by the file system.
-+
 +* FIEMAP_EXTENT_DATA_ENCRYPTED
-+  - This will also set FIEMAP_EXTENT_NO_DIRECT
++  - This will also set FIEMAP_EXTENT_NO_BYPASS
 +The data in this extent has been encrypted by the file system.
 +
 +* FIEMAP_EXTENT_NOT_ALIGNED
@@ -201,7 +193,9 @@ Index: linux-2.6/Documentation/filesystems/fiemap.txt
 +
 +* FIEMAP_EXTENT_UNWRITTEN
 +Unwritten extent - the extent is allocated but it's data has not been
-+initialized.  This indicates the extent's data will be all zero.
++initialized.  This indicates the extent's data will be all zero if read
++through the filesystem but the contents are undefined if read directly from
++the device.
 +
 +* FIEMAP_EXTENT_MERGED
 +This will be set when a file does not support extents, i.e., it uses a block
@@ -265,10 +259,10 @@ Index: linux-2.6/Documentation/filesystems/fiemap.txt
 +fiemap_fill_next_extent() returns 0 on success, and 1 when the
 +user-supplied fm_extents array is full. If an error is encountered
 +while copying the extent to user memory, -EFAULT will be returned.
-Index: linux-2.6/fs/ioctl.c
-===================================================================
---- linux-2.6.orig/fs/ioctl.c	2008-07-14 16:51:43.073354079 -0500
-+++ linux-2.6/fs/ioctl.c	2008-07-14 16:53:46.019353480 -0500
+diff --git a/fs/ioctl.c b/fs/ioctl.c
+index 7db32b3..274625a 100644
+--- a/fs/ioctl.c
++++ b/fs/ioctl.c
 @@ -16,6 +16,9 @@
  
  #include <asm/ioctls.h>
@@ -279,7 +273,7 @@ Index: linux-2.6/fs/ioctl.c
  /**
   * vfs_ioctl - call filesystem specific ioctl methods
   * @filp:	open file to invoke ioctl method on
-@@ -71,6 +74,159 @@ static int ioctl_fibmap(struct file *fil
+@@ -71,6 +74,155 @@ static int ioctl_fibmap(struct file *filp, int __user *p)
  	return put_user(res, p);
  }
  
@@ -290,7 +284,6 @@ Index: linux-2.6/fs/ioctl.c
 + * @phys:	Extent physical start offset, in bytes
 + * @len:	Extent length, in bytes
 + * @flags:	FIEMAP_EXTENT flags that describe this extent
-+ * @dev:	Device on which this extent resides
 + *
 + * Called from file system ->fiemap callback. Will populate extent
 + * info as passed in via arguments and copy to user memory. On
@@ -300,12 +293,10 @@ Index: linux-2.6/fs/ioctl.c
 + * extent that will fit in user array.
 + */
 +#define SET_UNKNOWN_FLAGS	(FIEMAP_EXTENT_DELALLOC)
-+#define SET_NO_DIRECT_FLAGS	(FIEMAP_EXTENT_DATA_COMPRESSED		\
-+				 |FIEMAP_EXTENT_DATA_ENCRYPTED		\
-+				 |FIEMAP_EXTENT_NET)
++#define SET_NO_BYPASS_FLAGS	(FIEMAP_EXTENT_DATA_ENCRYPTED)
 +#define SET_NOT_ALIGNED_FLAGS	(FIEMAP_EXTENT_DATA_TAIL|FIEMAP_EXTENT_DATA_INLINE)
 +int fiemap_fill_next_extent(struct fiemap_extent_info *fieinfo, u64 logical,
-+			    u64 phys, u64 len, u32 flags, dev_t dev)
++			    u64 phys, u64 len, u32 flags)
 +{
 +	struct fiemap_extent extent;
 +	struct fiemap_extent *dest = fieinfo->fi_extents_start;
@@ -321,8 +312,8 @@ Index: linux-2.6/fs/ioctl.c
 +
 +	if (flags & SET_UNKNOWN_FLAGS)
 +		flags |= FIEMAP_EXTENT_UNKNOWN;
-+	if (flags & SET_NO_DIRECT_FLAGS)
-+		flags |= FIEMAP_EXTENT_NO_DIRECT;
++	if (flags & SET_NO_BYPASS_FLAGS)
++		flags |= FIEMAP_EXTENT_NO_BYPASS;
 +	if (flags & SET_NOT_ALIGNED_FLAGS)
 +		flags |= FIEMAP_EXTENT_NOT_ALIGNED;
 +
@@ -330,7 +321,6 @@ Index: linux-2.6/fs/ioctl.c
 +	extent.fe_physical = phys;
 +	extent.fe_length = len;
 +	extent.fe_flags = flags;
-+	extent.fe_device = new_encode_dev(dev);
 +
 +	dest += fieinfo->fi_extents_mapped;
 +	if (copy_to_user(dest, &extent, sizeof(extent)))
@@ -439,7 +429,7 @@ Index: linux-2.6/fs/ioctl.c
  static int file_ioctl(struct file *filp, unsigned int cmd,
  		unsigned long arg)
  {
-@@ -80,6 +236,8 @@ static int file_ioctl(struct file *filp,
+@@ -80,6 +232,8 @@ static int file_ioctl(struct file *filp, unsigned int cmd,
  	switch (cmd) {
  	case FIBMAP:
  		return ioctl_fibmap(filp, p);
@@ -448,11 +438,12 @@ Index: linux-2.6/fs/ioctl.c
  	case FIGETBSZ:
  		return put_user(inode->i_sb->s_blocksize, p);
  	case FIONREAD:
-Index: linux-2.6/include/linux/fiemap.h
-===================================================================
---- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6/include/linux/fiemap.h	2008-07-14 16:53:46.040353378 -0500
-@@ -0,0 +1,68 @@
+diff --git a/include/linux/fiemap.h b/include/linux/fiemap.h
+new file mode 100644
+index 0000000..29e5862
+--- /dev/null
++++ b/include/linux/fiemap.h
+@@ -0,0 +1,62 @@
 +/*
 + * FS_IOC_FIEMAP ioctl infrastructure.
 + *
@@ -473,7 +464,7 @@ Index: linux-2.6/include/linux/fiemap.h
 +			    * of the extent from the beginning of the disk */
 +	__u64 fe_length;   /* length in bytes for this extent */
 +	__u32 fe_flags;    /* FIEMAP_EXTENT_* flags for this extent */
-+	__u32 fe_device;   /* device number for this extent */
++	__u32 fe_reserved;
 +};
 +
 +struct fiemap {
@@ -499,15 +490,9 @@ Index: linux-2.6/include/linux/fiemap.h
 +#define FIEMAP_EXTENT_UNKNOWN		0x00000002 /* Data location unknown. */
 +#define FIEMAP_EXTENT_DELALLOC		0x00000004 /* Location still pending.
 +						    * Sets EXTENT_UNKNOWN. */
-+#define FIEMAP_EXTENT_NO_DIRECT		0x00000008 /* Data mapping undefined */
-+#define FIEMAP_EXTENT_SECONDARY		0x00000010 /* Data copied offline. May
-+						    * set EXTENT_NO_DIRECT. */
-+#define FIEMAP_EXTENT_NET		0x00000020 /* Data stored remotely.
-+						    * Sets EXTENT_NO_DIRECT. */
-+#define FIEMAP_EXTENT_DATA_COMPRESSED	0x00000040 /* Data is compressed by fs.
-+						    * Sets EXTENT_NO_DIRECT. */
++#define FIEMAP_EXTENT_NO_BYPASS		0x00000008 /* Data mapping undefined */
 +#define FIEMAP_EXTENT_DATA_ENCRYPTED	0x00000080 /* Data is encrypted by fs.
-+						    * Sets EXTENT_NO_DIRECT. */
++						    * Sets EXTENT_NO_BYPASS. */
 +#define FIEMAP_EXTENT_NOT_ALIGNED	0x00000100 /* Extent offsets may not be
 +						    * block aligned. */
 +#define FIEMAP_EXTENT_DATA_INLINE	0x00000200 /* Data mixed with metadata.
@@ -521,11 +506,11 @@ Index: linux-2.6/include/linux/fiemap.h
 +						    * merged for efficiency. */
 +
 +#endif /* _LINUX_FIEMAP_H */
-Index: linux-2.6/include/linux/fs.h
-===================================================================
---- linux-2.6.orig/include/linux/fs.h	2008-07-14 16:51:43.073354079 -0500
-+++ linux-2.6/include/linux/fs.h	2008-07-14 16:53:46.046353840 -0500
-@@ -229,6 +229,7 @@ extern int dir_notify_enable;
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 580b513..194fb23 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -231,6 +231,7 @@ extern int dir_notify_enable;
  #define	FS_IOC_SETFLAGS			_IOW('f', 2, long)
  #define	FS_IOC_GETVERSION		_IOR('v', 1, long)
  #define	FS_IOC_SETVERSION		_IOW('v', 2, long)
@@ -533,7 +518,7 @@ Index: linux-2.6/include/linux/fs.h
  #define FS_IOC32_GETFLAGS		_IOR('f', 1, int)
  #define FS_IOC32_SETFLAGS		_IOW('f', 2, int)
  #define FS_IOC32_GETVERSION		_IOR('v', 1, int)
-@@ -289,6 +290,7 @@ extern int dir_notify_enable;
+@@ -291,6 +292,7 @@ extern int dir_notify_enable;
  #include <linux/mutex.h>
  #include <linux/capability.h>
  #include <linux/semaphore.h>
@@ -541,7 +526,7 @@ Index: linux-2.6/include/linux/fs.h
  
  #include <asm/atomic.h>
  #include <asm/byteorder.h>
-@@ -1143,6 +1145,20 @@ extern void dentry_unhash(struct dentry 
+@@ -1179,6 +1181,20 @@ extern void dentry_unhash(struct dentry *dentry);
  extern int file_permission(struct file *, int);
  
  /*
@@ -555,14 +540,14 @@ Index: linux-2.6/include/linux/fs.h
 +						 * array */
 +};
 +int fiemap_fill_next_extent(struct fiemap_extent_info *info, u64 logical,
-+			    u64 phys, u64 len, u32 flags, dev_t dev);
++			    u64 phys, u64 len, u32 flags);
 +int fiemap_check_flags(struct fiemap_extent_info *fieinfo, u32 fs_flags);
 +
 +/*
   * File types
   *
   * NOTE! These match bits 12..15 of stat.st_mode
-@@ -1272,6 +1288,8 @@ struct inode_operations {
+@@ -1287,6 +1303,8 @@ struct inode_operations {
  	void (*truncate_range)(struct inode *, loff_t, loff_t);
  	long (*fallocate)(struct inode *inode, int mode, loff_t offset,
  			  loff_t len);
@@ -571,3 +556,6 @@ Index: linux-2.6/include/linux/fs.h
  };
  
  struct seq_file;
+-- 
+1.5.6.1.205.ge2c7.dirty
+
