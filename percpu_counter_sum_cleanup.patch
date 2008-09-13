@@ -3,14 +3,18 @@ percpu counter: clean up percpu_counter_sum_and_set()
 From: Mingming Cao <cmm@us.ibm.com>
 
 percpu_counter_sum_and_set() and percpu_counter_sum() is the same except
-the former update the global counter after accounting.  Since we are
-taking the fbc->lock to calculate the precise value of the
-counter in percpu_counter_sum() anyway, it should simply set fbc->count
-too, as the percpu_counter_sum_and_set() dose.
+the former updates the global counter after accounting.  Since we are
+taking the fbc->lock to calculate the precise value of the counter in
+percpu_counter_sum() anyway, it should simply set fbc->count too, as the
+percpu_counter_sum_and_set() does.
 
 This patch merge these two interfaces into one.
  
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Cc: <linux-ext4@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/balloc.c               |    2 +-
  include/linux/percpu_counter.h |   12 +++---------
