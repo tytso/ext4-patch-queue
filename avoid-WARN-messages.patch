@@ -6,10 +6,18 @@ This fixes some very common warnings reported by kerneloops.org
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 8175318..fb5766e 100644
+index 8175318..c057c6b 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -2810,13 +2810,34 @@ static void ext4_commit_super(struct super_block *sb,
+@@ -509,7 +509,6 @@ static void ext4_put_super(struct super_block *sb)
+ 		EXT4_CLEAR_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER);
+ 		es->s_state = cpu_to_le16(sbi->s_mount_state);
+ 		BUFFER_TRACE(sbi->s_sbh, "marking dirty");
+-		mark_buffer_dirty(sbi->s_sbh);
+ 		ext4_commit_super(sb, es, 1);
+ 	}
+ 
+@@ -2810,13 +2809,34 @@ static void ext4_commit_super(struct super_block *sb,
  
  	if (!sbh)
  		return;
@@ -46,7 +54,7 @@ index 8175318..fb5766e 100644
  
  
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 0c4dcc2..d21e384 100644
+index 81186a2..01c3901 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
 @@ -1255,6 +1255,22 @@ void jbd2_journal_update_superblock(journal_t *journal, int wait)
