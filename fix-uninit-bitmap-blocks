@@ -1,0 +1,77 @@
+ext4: fix initialization of UNINIT bitmap blocks
+
+From: Frederic Bohe <frederic.bohe@bull.net>
+
+We must always initialize uninitialized bitmap blocks even if the
+buffer head is marked uptodate, since it could have been read in by a
+userspace program.  So always initialized the bitmap block if it is
+marked uninitialzied and not dirty; it will marked initialized as soon
+as we allocate a block or inode out of that bitmap.
+
+Signed-off-by: Frederic Bohe <frederic.bohe@bull.net>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+ balloc.c  |    4 +++-
+ ialloc.c  |    4 +++-
+ mballoc.c |    4 +++-
+ 3 files changed, 9 insertions(+), 3 deletions(-)
+
+Index: linux-2.6.27-rc5+patch_queue/fs/ext4/balloc.c
+===================================================================
+--- linux-2.6.27-rc5+patch_queue.orig/fs/ext4/balloc.c	2008-09-15 10:59:27.000000000 +0200
++++ linux-2.6.27-rc5+patch_queue/fs/ext4/balloc.c	2008-09-15 14:03:04.000000000 +0200
+@@ -318,9 +318,11 @@ ext4_read_block_bitmap(struct super_bloc
+ 			    block_group, bitmap_blk);
+ 		return NULL;
+ 	}
+-	if (bh_uptodate_or_lock(bh))
++	if (buffer_uptodate(bh) &&
++	    !(desc->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)))
+ 		return bh;
+ 
++	lock_buffer(bh);
+ 	spin_lock(sb_bgl_lock(EXT4_SB(sb), block_group));
+ 	if (desc->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
+ 		ext4_init_block_bitmap(sb, bh, block_group, desc);
+Index: linux-2.6.27-rc5+patch_queue/fs/ext4/ialloc.c
+===================================================================
+--- linux-2.6.27-rc5+patch_queue.orig/fs/ext4/ialloc.c	2008-09-15 10:59:27.000000000 +0200
++++ linux-2.6.27-rc5+patch_queue/fs/ext4/ialloc.c	2008-09-15 11:12:16.000000000 +0200
+@@ -115,9 +115,11 @@ ext4_read_inode_bitmap(struct super_bloc
+ 			    block_group, bitmap_blk);
+ 		return NULL;
+ 	}
+-	if (bh_uptodate_or_lock(bh))
++	if (buffer_uptodate(bh) &&
++	    !(desc->bg_flags & cpu_to_le16(EXT4_BG_INODE_UNINIT)))
+ 		return bh;
+ 
++	lock_buffer(bh);
+ 	spin_lock(sb_bgl_lock(EXT4_SB(sb), block_group));
+ 	if (desc->bg_flags & cpu_to_le16(EXT4_BG_INODE_UNINIT)) {
+ 		ext4_init_inode_bitmap(sb, bh, block_group, desc);
+Index: linux-2.6.27-rc5+patch_queue/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.27-rc5+patch_queue.orig/fs/ext4/mballoc.c	2008-09-15 10:59:27.000000000 +0200
++++ linux-2.6.27-rc5+patch_queue/fs/ext4/mballoc.c	2008-09-15 14:02:44.000000000 +0200
+@@ -785,9 +785,11 @@ static int ext4_mb_init_cache(struct pag
+ 		if (bh[i] == NULL)
+ 			goto out;
+ 
+-		if (bh_uptodate_or_lock(bh[i]))
++		if (buffer_uptodate(bh[i]) &&
++		    !(desc->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)))
+ 			continue;
+ 
++		lock_buffer(bh[i]);
+ 		spin_lock(sb_bgl_lock(EXT4_SB(sb), first_group + i));
+ 		if (desc->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
+ 			ext4_init_block_bitmap(sb, bh[i],
+
+--
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
