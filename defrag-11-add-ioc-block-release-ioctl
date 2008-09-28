@@ -1,0 +1,66 @@
+ext4: online defrag: Add the EXT4_IOC_BLOCK_RELEASE ioctl.
+
+From: Akira Fujita <a-fujita@rs.jp.nec.com>
+
+The EXT4_IOC_BLOCK_RELEASE releases the reserved blocks
+which target inode holds.
+This ioctl is used if defrag failed and it was after the block reservation.
+
+The block reservation will be removed from defrag in the next version,
+so this ioctl also will go away.
+
+Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
+Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
+---
+ fs/ext4/defrag.c |    4 ++++
+ fs/ext4/ext4.h   |    1 +
+ fs/ext4/ioctl.c  |    3 ++-
+ 3 files changed, 7 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
+index a2b17c5..bdfbb68 100644
+--- a/fs/ext4/defrag.c
++++ b/fs/ext4/defrag.c
+@@ -622,6 +622,10 @@ int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
+
+ 		err = ext4_defrag_move_victim(filp, &ext_info);
+
++	} else if (cmd == EXT4_IOC_BLOCK_RELEASE) {
++		down_write(&EXT4_I(inode)->i_data_sem);
++		ext4_discard_reservation(inode);
++		up_write(&EXT4_I(inode)->i_data_sem);
+ 	} else if (cmd == EXT4_IOC_DEFRAG) {
+ 		struct ext4_ext_defrag_data defrag;
+ 		struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 4e54eb4..6ad86f9 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -314,6 +314,7 @@ struct ext4_new_group_data {
+ #define EXT4_IOC_FIEMAP_INO		_IOW('f', 19, struct fiemap_ino)
+ #define EXT4_IOC_RESERVE_BLOCK		_IOW('f', 20, struct ext4_extents_info)
+ #define EXT4_IOC_MOVE_VICTIM		_IOW('f', 21, struct ext4_extents_info)
++#define EXT4_IOC_BLOCK_RELEASE		_IO('f', 22)
+
+ /*
+  * ioctl commands in 32 bit emulation
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index a596785..329847f 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -262,7 +262,8 @@ setversion_out:
+ 	case EXT4_IOC_FREE_BLOCKS_INFO:
+ 	case EXT4_IOC_FIEMAP_INO:
+ 	case EXT4_IOC_RESERVE_BLOCK:
+-	case EXT4_IOC_MOVE_VICTIM: {
++	case EXT4_IOC_MOVE_VICTIM:
++	case EXT4_IOC_BLOCK_RELEASE: {
+ 		return ext4_defrag_ioctl(inode, filp, cmd, arg);
+ 	}
+ 	case EXT4_IOC_GROUP_ADD: {
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

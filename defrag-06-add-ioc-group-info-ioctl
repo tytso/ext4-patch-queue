@@ -1,0 +1,85 @@
+ext4: online defrag: Add the EXT4_IOC_GROUP_INFO ioctl.
+
+From: Akira Fujita <a-fujita@rs.jp.nec.com>
+
+The EXT4_IOC_GROUP_INFO ioctl gets the block group information of
+target inode is located in.  This ioctl is used only in the force
+defrag (-f).
+
+The defragger will do the same thing in user space instead of
+implement the ioctl, so this ioctl will go away in the next version.
+
+Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
+Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
+---
+ fs/ext4/defrag.c |   11 +++++++++++
+ fs/ext4/ext4.h   |    6 ++++++
+ fs/ext4/ioctl.c  |    3 ++-
+ 3 files changed, 19 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
+index 49b8d49..cb7d237 100644
+--- a/fs/ext4/defrag.c
++++ b/fs/ext4/defrag.c
+@@ -114,6 +114,17 @@ int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
+ 		block = ext4_bmap(mapping, block);
+
+ 		return put_user(block, p);
++	} else if (cmd == EXT4_IOC_GROUP_INFO) {
++		struct ext4_group_data_info grp_data;
++
++		grp_data.s_blocks_per_group =
++			EXT4_BLOCKS_PER_GROUP(inode->i_sb);
++		grp_data.s_inodes_per_group =
++			EXT4_INODES_PER_GROUP(inode->i_sb);
++
++		if (copy_to_user((struct ext4_group_data_info __user *)arg,
++			&grp_data, sizeof(grp_data)))
++			return -EFAULT;
+ 	} else if (cmd == EXT4_IOC_DEFRAG) {
+ 		struct ext4_ext_defrag_data defrag;
+ 		struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index db4891c..a635a76 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -304,6 +304,7 @@ struct ext4_new_group_data {
+  /* note ioctl 11 reserved for filesystem-independent FIEMAP ioctl */
+ #define EXT4_IOC_DEFRAG			_IOW('f', 15, struct ext4_ext_defrag_data)
+ #define EXT4_IOC_FIBMAP			_IOW('f', 16, ext4_fsblk_t)
++#define EXT4_IOC_GROUP_INFO		_IOW('f', 17, struct ext4_group_data_info)
+
+ /*
+  * ioctl commands in 32 bit emulation
+@@ -327,6 +328,11 @@ struct ext4_ext_defrag_data {
+ 	ext4_fsblk_t goal;		/* block offset for allocation */
+ };
+
++struct ext4_group_data_info {
++	int s_blocks_per_group;		/* blocks per group */
++	int s_inodes_per_group;		/* inodes per group */
++};
++
+ #define EXT4_TRANS_META_BLOCKS 4 /* bitmap + group desc + sb + inode */
+
+ /*
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 5982f3e..c05502f 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -257,7 +257,8 @@ setversion_out:
+ 		return err;
+ 	}
+ 	case EXT4_IOC_FIBMAP:
+-	case EXT4_IOC_DEFRAG: {
++	case EXT4_IOC_DEFRAG:
++	case EXT4_IOC_GROUP_INFO: {
+ 		return ext4_defrag_ioctl(inode, filp, cmd, arg);
+ 	}
+ 	case EXT4_IOC_GROUP_ADD: {
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

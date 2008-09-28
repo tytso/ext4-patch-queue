@@ -1,39 +1,47 @@
-ext4: online defrag-- Main function of defrag and ioctl implementation
+ext4: online defrag: Add the EXT4_IOC_DEFRAG ioctl and defrag main function.
 
 From: Akira Fujita <a-fujita@rs.jp.nec.com>
 
-Create the temporary inode and do defrag per
-defrag_size (defalut 64MB).
+The EXT4_IOC_DEFRAG ioctl is the main ioctl of ext4 online defrag.
+Create the temporary inode in memory and allocate contiguous blocks to it.
+After that exchange data blocks between original inode and temporary inode.
+Lastly, remove the temporary inode which has fragmented data blocks.
+This method would be done between user space and kernel space per 64MB data size.
+
+This patch is equivalent to creating/removing a temporary inode
+and common defrag functions.
 
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 ---
- fs/ext4/Makefile       |    2 
- fs/ext4/defrag.c       |  448 +++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/ext4.h         |   18 +
- fs/ext4/ext4_extents.h |    2 
- fs/ext4/extents.c      |    2 
- fs/ext4/ioctl.c        |    3 
- 6 files changed, 473 insertions(+), 2 deletions(-)
+ fs/ext4/Makefile       |    2 +-
+ fs/ext4/defrag.c       |  467 ++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/ext4.h         |   14 ++
+ fs/ext4/ext4_extents.h |    2 +
+ fs/ext4/extents.c      |    2 +-
+ fs/ext4/inode.c        |    2 +-
+ fs/ext4/ioctl.c        |    3 +
+ 7 files changed, 489 insertions(+), 3 deletions(-)
 
-Index: linux-2.6.26-rc9/fs/ext4/Makefile
-===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/Makefile	2008-07-11 16:04:25.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/Makefile	2008-07-11 16:05:18.000000000 -0700
+diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
+index ac6fa8c..8028102 100644
+--- a/fs/ext4/Makefile
++++ b/fs/ext4/Makefile
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
- 
+
  ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
  		   ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
 -		   ext4_jbd2.o migrate.o mballoc.o
 +		   ext4_jbd2.o migrate.o mballoc.o defrag.o
- 
+
  ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
  ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
-Index: linux-2.6.26-rc9/fs/ext4/defrag.c
-===================================================================
---- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ linux-2.6.26-rc9/fs/ext4/defrag.c	2008-07-11 16:05:18.000000000 -0700
-@@ -0,0 +1,448 @@
+diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
+new file mode 100644
+index 0000000..1750714
+--- /dev/null
++++ b/fs/ext4/defrag.c
+@@ -0,0 +1,467 @@
 +/*
 + * Copyright (c) 2008, NEC Software Tohoku, Ltd.
 + * Written by Takashi Sato <t-sato@yk.jp.nec.com>
@@ -86,7 +94,6 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +
 +	if (cmd == EXT4_IOC_DEFRAG) {
 +		struct ext4_ext_defrag_data defrag;
-+		struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
 +
 +		if (!capable(CAP_DAC_OVERRIDE)) {
 +			if ((inode->i_mode & S_IRUSR) != S_IRUSR)
@@ -100,15 +107,6 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +						sizeof(defrag)))
 +			return -EFAULT;
 +
-+		/* Check goal offset if goal offset was given from userspace */
-+		if (defrag.goal != -1 &&
-+				ext4_blocks_count(es) <= defrag.goal) {
-+			printk(KERN_ERR "ext4 defrag: Invalid goal offset"
-+				" %llu, you can set goal offset up to %llu\n",
-+				defrag.goal, ext4_blocks_count(es) - 1);
-+			return -EINVAL;
-+		}
-+
 +		err = ext4_defrag(filp, defrag.start_offset,
 +				defrag.defrag_size);
 +	}
@@ -119,17 +117,19 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +/**
 + * ext4_defrag_partial - Defrag a file per page
 + *
-+ * @tmp_inode:		temporary inode
-+ * @filp:		pointer to file
-+ * @org_offset:		page index on original file
-+ * @dest_offset:	page index on temporary file
-+ *
++ * @tmp_inode:			temporary inode
++ * @filp:			pointer to file
++ * @org_page_offset:		page index on original file
++ * @dest_blk_offset:		block index on temporary file
++ * @data_offset_in_page:	block index where data swapping starts
++ * @block_len_in_page:		the number of blocks to be swapped
 + *
 + * This function returns 0 if succeed, otherwise returns error value.
 + */
 +static int
 +ext4_defrag_partial(struct inode *tmp_inode, struct file *filp,
-+			pgoff_t org_offset, pgoff_t dest_offset)
++			pgoff_t org_page_offset, ext4_lblk_t dest_blk_offset,
++			int data_offset_in_page, int block_len_in_page)
 +{
 +	return 0;
 +}
@@ -140,10 +140,9 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 + * @org_inode:		original inode
 + * @tmp_inode:		temporary inode
 + * @org_path:		indicating the original inode's extent
-+ * @tar_start:		starting offset to allocate in blocks
-+ * @tar_blocks:		the number of blocks to allocate
++ * @req_start:		starting offset to allocate in blocks
++ * @req_blocks:		the number of blocks to allocate
 + * @iblock:		file related offset
-+ *
 + *
 + * This function returns the value as below:
 + *	0 (succeed)
@@ -152,14 +151,14 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 + */
 +static int
 +ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
-+			struct ext4_ext_path *org_path, ext4_lblk_t tar_start,
-+			ext4_lblk_t tar_blocks, ext4_lblk_t iblock)
++			struct ext4_ext_path *org_path, ext4_lblk_t req_start,
++			ext4_lblk_t req_blocks, ext4_lblk_t iblock)
 +{
 +	return 0;
 +}
 +
 +/**
-+ * ext4_defrag_check - Check the enviroment whether a defrag can be done
++ * ext4_defrag_check - Check the environment whether a defrag can be done
 + *
 + * @org_inode:		original inode
 + * @defrag_size:	size of defrag in blocks
@@ -169,14 +168,6 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +static int
 +ext4_defrag_check(struct inode *org_inode, ext4_lblk_t defrag_size)
 +{
-+
-+	/* ext4 online defrag supports only 4KB block size */
-+	if (org_inode->i_sb->s_blocksize != DEFRAG_BLOCK_SIZE) {
-+		printk(KERN_ERR "ext4 defrag: ext4 online defrag supports "
-+				"only 4KB block size for the moment.\n");
-+		return -EOPNOTSUPP;
-+	}
-+
 +	/* ext4 online defrag needs mballoc mount option. */
 +	if (!test_opt(org_inode->i_sb, MBALLOC)) {
 +		printk(KERN_ERR "ext4 defrag: multiblock allocation "
@@ -245,9 +236,12 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 + *   allocates continuous blocks to a temporary inode
 + *   by ext4_defrag_new_extent_tree().
 + * 5.Exchange the original inode data with temporary inode data
-+ *   from page_offset to seq_end_page by page unit.
-+ *   The start page index of data are specified as arguments:
-+ *   the original inode is page_offset, the temporary inode is dest_offset.
++ *   from org_page_offset to seq_end_page.
++ *   The start indexes of data are specified as arguments.
++ *   That of the original inode is org_page_offset,
++ *   and that of the temporary inode is dest_block_offset
++ *   (To easily handle blocksize != pagesize case, the offset for the
++ *    temporary inode is block unit).
 + * 6.Update holecheck_path and org_path to points a next proceeding extent,
 + *   and release the temporary inode holding the original fragmented data.
 + *   Then, returns to step 2.
@@ -273,14 +267,20 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +	struct ext4_ext_path *org_path = NULL, *holecheck_path = NULL;
 +	struct ext4_extent *ext_prev, *ext_cur, *ext_dummy;
 +	ext4_lblk_t block_end, seq_start, add_blocks, file_end, seq_blocks = 0;
-+	pgoff_t page_offset, seq_end_page, dest_offset;
++	ext4_lblk_t dest_block_offset;
++	ext4_lblk_t rest_blocks;
++	pgoff_t org_page_offset, seq_end_page;
 +	int ret, depth, seq_extents, last_extent = 0;
++	int blocks_per_page;
++	int data_offset_in_page;
++	int block_len_in_page;
 +
-+	/* Check the filesystem enviroment whether defrag can be done */
++	/* Check the filesystem environment whether defrag can be done */
 +	ret = ext4_defrag_check(org_inode, defrag_size);
 +	if (ret < 0)
 +		return ret;
 +
++	blocks_per_page = PAGE_CACHE_SIZE >> org_inode->i_blkbits;
 +	file_end = (org_inode->i_size - 1) >> org_inode->i_blkbits;
 +	block_end = block_start + defrag_size - 1;
 +	if (file_end < block_end)
@@ -403,12 +403,29 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +			goto CLEANUP;
 +		}
 +
-+		page_offset = seq_start >>
++		data_offset_in_page = seq_start % blocks_per_page;
++
++		/*
++		 * Calculate data blocks count that should be swapped
++		 * at the first page.
++		 */
++		if (data_offset_in_page + seq_blocks > blocks_per_page) {
++			/* Swapped blocks are across pages */
++			block_len_in_page =
++					blocks_per_page - data_offset_in_page;
++		} else {
++			/* Swapped blocks are in a page */
++			block_len_in_page = seq_blocks;
++		}
++
++		org_page_offset = seq_start >>
 +				(PAGE_CACHE_SHIFT - org_inode->i_blkbits);
-+		dest_offset = 0;
 +		seq_end_page = (seq_start + seq_blocks - 1) >>
 +				(PAGE_CACHE_SHIFT - org_inode->i_blkbits);
 +		seq_start = le32_to_cpu(ext_cur->ee_block);
++		rest_blocks = seq_blocks;
++		/* Offset for the tmp_inode */
++		dest_block_offset = 0;
 +
 +		/*
 +		 * Discard all preallocations.
@@ -418,15 +435,26 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +		 */
 +		ext4_mb_discard_inode_preallocations(org_inode);
 +
-+		while (page_offset <= seq_end_page) {
++		while (org_page_offset <= seq_end_page) {
++
 +			/* Swap original branches with new branches */
 +			ret = ext4_defrag_partial(tmp_inode, filp,
-+					page_offset, dest_offset);
++						org_page_offset,
++						dest_block_offset,
++						data_offset_in_page,
++						block_len_in_page);
 +			if (ret < 0)
 +				goto out;
 +
-+			page_offset++;
-+			dest_offset++;
++			org_page_offset++;
++			dest_block_offset += block_len_in_page;
++
++			data_offset_in_page = 0;
++			rest_blocks -= block_len_in_page;
++			if (rest_blocks > blocks_per_page)
++				block_len_in_page = blocks_per_page;
++			else
++				block_len_in_page = rest_blocks;
 +		}
 +
 +		/* Decrease buffer counter */
@@ -455,7 +483,6 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +		ext_cur = holecheck_path[depth].p_ext;
 +		add_blocks = le16_to_cpu(ext_cur->ee_len);
 +		seq_blocks = 0;
-+		dest_offset = 0;
 +		seq_extents = 1;
 +
 +		if (tmp_inode) {
@@ -480,41 +507,43 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +	if (tmp_inode)
 +		iput(tmp_inode);
 +
-+	return (ret ? ret : defrag_size);
++	return ret ? ret : defrag_size;
 +}
-Index: linux-2.6.26-rc9/fs/ext4/ext4.h
-===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/ext4.h	2008-07-11 16:05:15.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/ext4.h	2008-07-11 16:05:18.000000000 -0700
-@@ -301,7 +301,8 @@ struct ext4_new_group_data {
- #define EXT4_IOC_GROUP_EXTEND		_IOW('f', 7, unsigned long)
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index c8ab668..64c61ae 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -302,6 +302,7 @@ struct ext4_new_group_data {
  #define EXT4_IOC_GROUP_ADD		_IOW('f', 8, struct ext4_new_group_input)
  #define EXT4_IOC_MIGRATE		_IO('f', 9)
   /* note ioctl 11 reserved for filesystem-independent FIEMAP ioctl */
 +#define EXT4_IOC_DEFRAG			_IOW('f', 15, struct ext4_ext_defrag_data)
- 
+
  /*
   * ioctl commands in 32 bit emulation
-@@ -318,6 +319,18 @@ struct ext4_new_group_data {
+@@ -319,6 +320,12 @@ struct ext4_new_group_data {
  #define EXT4_IOC32_GETVERSION_OLD	FS_IOC32_GETVERSION
  #define EXT4_IOC32_SETVERSION_OLD	FS_IOC32_SETVERSION
- 
-+/*
-+ * Will go away.
-+ * ext4 online defrag supports only 4KB block size.
-+ */
-+#define DEFRAG_BLOCK_SIZE	4096
-+
+
 +struct ext4_ext_defrag_data {
 +	ext4_lblk_t start_offset;	/* start offset to defrag in blocks */
 +	ext4_lblk_t defrag_size;	/* size of defrag in blocks */
 +	ext4_fsblk_t goal;		/* block offset for allocation */
 +};
 +
- 
+
  /*
   *  Mount options
-@@ -1124,6 +1137,11 @@ extern void ext4_inode_bitmap_set(struct
+@@ -1081,6 +1088,8 @@ extern int ext4_chunk_trans_blocks(struct inode *, int nrblocks);
+ extern int ext4_block_truncate_page(handle_t *handle,
+ 		struct address_space *mapping, loff_t from);
+ extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
++extern int ext4_get_block(struct inode *inode, sector_t iblock,
++		struct buffer_head *bh_result, int create);
+
+ /* ioctl.c */
+ extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
+@@ -1128,6 +1137,11 @@ extern void ext4_inode_bitmap_set(struct super_block *sb,
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
@@ -523,26 +552,26 @@ Index: linux-2.6.26-rc9/fs/ext4/ext4.h
 +			ext4_lblk_t defrag_size);
 +extern int ext4_defrag_ioctl(struct inode *, struct file *, unsigned int,
 +				unsigned long);
- 
+
  static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
  {
-Index: linux-2.6.26-rc9/fs/ext4/ext4_extents.h
-===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/ext4_extents.h	2008-07-11 16:05:13.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/ext4_extents.h	2008-07-11 16:05:18.000000000 -0700
-@@ -229,5 +229,7 @@ extern int ext4_ext_search_left(struct i
+diff --git a/fs/ext4/ext4_extents.h b/fs/ext4/ext4_extents.h
+index bec7ce5..0325158 100644
+--- a/fs/ext4/ext4_extents.h
++++ b/fs/ext4/ext4_extents.h
+@@ -246,5 +246,7 @@ extern int ext4_ext_search_left(struct inode *, struct ext4_ext_path *,
  extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
  						ext4_lblk_t *, ext4_fsblk_t *);
  extern void ext4_ext_drop_refs(struct ext4_ext_path *);
 +extern ext4_fsblk_t ext_pblock(struct ext4_extent *ex);
 +extern void ext4_ext_drop_refs(struct ext4_ext_path *path);
  #endif /* _EXT4_EXTENTS */
- 
-Index: linux-2.6.26-rc9/fs/ext4/extents.c
-===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/extents.c	2008-07-11 16:05:17.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/extents.c	2008-07-11 16:05:18.000000000 -0700
-@@ -48,7 +48,7 @@
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 3094ed3..d05dfb7 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -49,7 +49,7 @@
   * ext_pblock:
   * combine low and high parts of physical block number into ext4_fsblk_t
   */
@@ -550,13 +579,26 @@ Index: linux-2.6.26-rc9/fs/ext4/extents.c
 +ext4_fsblk_t ext_pblock(struct ext4_extent *ex)
  {
  	ext4_fsblk_t block;
- 
-Index: linux-2.6.26-rc9/fs/ext4/ioctl.c
-===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/ioctl.c	2008-07-11 16:04:26.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/ioctl.c	2008-07-11 16:05:18.000000000 -0700
-@@ -241,6 +241,9 @@ setversion_out:
- 
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 9764b79..9b0117c 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1161,7 +1161,7 @@ int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+ /* Maximum number of blocks we map for direct IO at once. */
+ #define DIO_MAX_BLOCKS 4096
+
+-static int ext4_get_block(struct inode *inode, sector_t iblock,
++int ext4_get_block(struct inode *inode, sector_t iblock,
+ 			struct buffer_head *bh_result, int create)
+ {
+ 	handle_t *handle = ext4_journal_current_handle();
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 3e14060..1c25e8e 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -256,6 +256,9 @@ setversion_out:
+
  		return err;
  	}
 +	case EXT4_IOC_DEFRAG: {
@@ -565,3 +607,9 @@ Index: linux-2.6.26-rc9/fs/ext4/ioctl.c
  	case EXT4_IOC_GROUP_ADD: {
  		struct ext4_new_group_data input;
  		struct super_block *sb = inode->i_sb;
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

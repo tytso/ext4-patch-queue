@@ -1,4 +1,4 @@
-ext4: online defrag-- Read and write file data with memory page
+ext4: online defrag: Read and write file data with memory page.
 
 From: Akira Fujita <a-fujita@rs.jp.nec.com>
 
@@ -8,18 +8,16 @@ write the file data on the page into the new blocks.
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 ---
- fs/ext4/defrag.c |  464 ++++++++++++++++++++++++++++++++++++++++++++++++++++++-
- fs/ext4/ext4.h   |    2 
- fs/ext4/inode.c  |    2 
- 3 files changed, 466 insertions(+), 2 deletions(-)
+ fs/ext4/defrag.c |  478 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 files changed, 477 insertions(+), 1 deletions(-)
 
-Index: linux-2.6.27-rc1/fs/ext4/defrag.c
-===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/defrag.c	2008-08-11 17:17:20.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/defrag.c	2008-08-11 17:17:25.000000000 -0700
-@@ -134,6 +134,368 @@ int ext4_defrag_ioctl(struct inode *inod
+diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
+index 2fc8d9f..d3ff958 100644
+--- a/fs/ext4/defrag.c
++++ b/fs/ext4/defrag.c
+@@ -124,6 +124,362 @@ int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
  }
- 
+
  /**
 + * ext4_defrag_merge_extents - Merge new extent
 + *
@@ -43,6 +41,7 @@ Index: linux-2.6.27-rc1/fs/ext4/defrag.c
 +		struct ext4_extent *end_ext, ext4_fsblk_t replaced)
 +{
 +	return 0;
++
 +}
 +
 +/**
@@ -209,33 +208,26 @@ Index: linux-2.6.27-rc1/fs/ext4/defrag.c
 + * @handle:		journal handle
 + * @org_inode:		original inode
 + * @dest_inode:		temporary inode
-+ * @from_page:		page offset of org_inode
-+ * @dest_from_page:	page offset of dest_inode
-+ * @count_page:		page count to be replaced
++ * @from:		block offset of org_inode
++ * @dest_off:		block offset of dest_inode
++ * @count:		block count to be replaced
 + *
 + * This function returns 0 if succeed, otherwise returns error value.
 + * Replace extents for blocks from "from" to "from + count - 1".
 + */
 +static int
 +ext4_defrag_replace_branches(handle_t *handle, struct inode *org_inode,
-+			struct inode *dest_inode, pgoff_t from_page,
-+			pgoff_t dest_from_page, pgoff_t count_page)
++			struct inode *dest_inode, ext4_lblk_t from,
++			ext4_lblk_t dest_off, ext4_lblk_t count)
 +{
 +	struct ext4_ext_path *org_path = NULL;
 +	struct ext4_ext_path *dest_path = NULL;
 +	struct ext4_extent *oext, *dext, *swap_ext;
 +	struct ext4_extent tmp_ext, tmp_ext2;
-+	ext4_lblk_t from, count, dest_off, diff, org_diff;
++	ext4_lblk_t diff, org_diff;
 +	int err = 0;
 +	int depth;
 +	int replaced_count = 0;
-+
-+	from = (ext4_lblk_t)from_page <<
-+			(PAGE_CACHE_SHIFT - dest_inode->i_blkbits);
-+	count = (ext4_lblk_t)count_page <<
-+			(PAGE_CACHE_SHIFT - dest_inode->i_blkbits);
-+	dest_off = (ext4_lblk_t)dest_from_page <<
-+			(PAGE_CACHE_SHIFT - dest_inode->i_blkbits);
 +
 +	/* Get the original extent for the block "from" */
 +	org_path = ext4_ext_find_extent(org_inode, from, NULL);
@@ -386,24 +378,26 @@ Index: linux-2.6.27-rc1/fs/ext4/defrag.c
   * ext4_defrag_fill_ar - Prepare to multiple block allocate for tmp inode
   *
   * @org_inode:		original inode
-@@ -227,7 +589,107 @@ static int
- ext4_defrag_partial(struct inode *tmp_inode, struct file *filp,
- 			pgoff_t org_offset, pgoff_t dest_offset)
+@@ -218,7 +574,127 @@ ext4_defrag_partial(struct inode *tmp_inode, struct file *filp,
+ 			pgoff_t org_page_offset, ext4_lblk_t dest_blk_offset,
+ 			int data_offset_in_page, int block_len_in_page)
  {
 -	return 0;
 +	struct inode *org_inode = filp->f_dentry->d_inode;
 +	struct address_space *mapping = org_inode->i_mapping;
 +	struct buffer_head *bh;
-+	struct page *page;
++	struct page *page = NULL;
 +	const struct address_space_operations *a_ops = mapping->a_ops;
 +	handle_t *handle;
-+	pgoff_t offset_in_page = PAGE_SIZE;
-+	int ret, i, jblocks, blocks_per_page;
-+	int blocksize = org_inode->i_sb->s_blocksize;
-+	long long offs = org_offset << PAGE_CACHE_SHIFT;
-+	unsigned long blk_off = 0;
++	ext4_lblk_t org_blk_offset;
++	long long offs = org_page_offset << PAGE_CACHE_SHIFT;
++	unsigned long blocksize = org_inode->i_sb->s_blocksize;
 +	unsigned int w_flags = 0;
++	unsigned int tmp_data_len;
++	unsigned data_len;
 +	void *fsdata;
++	int ret, i, jblocks;
++	int blocks_per_page = PAGE_CACHE_SIZE >> org_inode->i_blkbits;
 +
 +	/*
 +	 * It needs twice the amount of ordinary journal buffers because
@@ -419,32 +413,45 @@ Index: linux-2.6.27-rc1/fs/ext4/defrag.c
 +	if (segment_eq(get_fs(), KERNEL_DS))
 +		w_flags |= AOP_FLAG_UNINTERRUPTIBLE;
 +
-+	if (org_offset == ((org_inode->i_size - 1) >> PAGE_CACHE_SHIFT)) {
-+		offset_in_page = (org_inode->i_size & (PAGE_CACHE_SIZE - 1));
++	org_blk_offset = org_page_offset * blocks_per_page +
++							data_offset_in_page;
++	offs = (long long)org_blk_offset << org_inode->i_blkbits;
++
++	/* Calculate data_len */
++	if ((org_blk_offset + block_len_in_page - 1) ==
++			((org_inode->i_size - 1) >> org_inode->i_blkbits)) {
++		/* the case which we replace the last block */
++		tmp_data_len = org_inode->i_size & (blocksize - 1);
 +		/*
-+		 * Set PAGE_CACHE_SIZE to offset_in_page not be 0
-+		 * if org_offset is the last page and i_size is
-+		 * multiples of PAGE_CACHE_SIZE.
++		 * If data_len equal zero, it shows data_len is multiples of
++		 * blocksize. So we set appropriate value.
 +		 */
-+		if (offset_in_page == 0)
-+			offset_in_page = PAGE_CACHE_SIZE;
++		if (tmp_data_len == 0)
++			tmp_data_len = blocksize;
++
++		data_len = tmp_data_len +
++			((block_len_in_page - 1) << org_inode->i_blkbits);
++	} else {
++		data_len = block_len_in_page << org_inode->i_blkbits;
 +	}
 +
 +	up_write(&EXT4_I(org_inode)->i_data_sem);
-+	ret = a_ops->write_begin(filp, mapping, offs,
-+				offset_in_page, w_flags, &page, &fsdata);
++	ret = a_ops->write_begin(filp, mapping, offs, data_len, w_flags, &page,
++								&fsdata);
 +	down_write(&EXT4_I(org_inode)->i_data_sem);
 +
 +	if (unlikely(ret < 0))
 +		goto out;
 +
 +	if (!PageUptodate(page)) {
++		up_write(&EXT4_I(org_inode)->i_data_sem);
 +		mapping->a_ops->readpage(filp, page);
++		down_write(&EXT4_I(org_inode)->i_data_sem);
 +		lock_page(page);
 +	}
 +
 +	/*
-+	 * try_to_release_page() doesn't call relasepage in writeback mode.
++	 * try_to_release_page() doesn't call releasepage in writeback mode.
 +	 * We should care about the order of writing to the same file
 +	 * by multiple defrag processes.
 +	 * It needs to call wait_on_page_writeback() to wait for the
@@ -456,8 +463,8 @@ Index: linux-2.6.27-rc1/fs/ext4/defrag.c
 +	/* Release old bh and drop refs */
 +	try_to_release_page(page, 0);
 +	ret = ext4_defrag_replace_branches(handle, org_inode, tmp_inode,
-+					org_offset, dest_offset, 1);
-+
++						org_blk_offset, dest_blk_offset,
++						block_len_in_page);
 +	if (ret < 0)
 +		goto out;
 +
@@ -467,13 +474,14 @@ Index: linux-2.6.27-rc1/fs/ext4/defrag.c
 +	if (!page_has_buffers(page))
 +		create_empty_buffers(page, 1 << org_inode->i_blkbits, 0);
 +
-+	blocks_per_page = PAGE_SIZE / blocksize;
-+	blk_off = org_offset * blocks_per_page;
-+
 +	bh = page_buffers(page);
-+	for (i = 0; i < blocks_per_page; i++) {
++	for (i = 0; i < data_offset_in_page; i++)
++		bh = bh->b_this_page;
++
++	for (i = 0; i < block_len_in_page; i++) {
 +		up_write(&EXT4_I(org_inode)->i_data_sem);
-+		ret = ext4_get_block(org_inode, blk_off++, bh, 0);
++		ret = ext4_get_block(org_inode, (sector_t)(org_blk_offset + i),
++									bh, 0);
 +		down_write(&EXT4_I(org_inode)->i_data_sem);
 +
 +		if (ret < 0)
@@ -483,41 +491,26 @@ Index: linux-2.6.27-rc1/fs/ext4/defrag.c
 +			bh = bh->b_this_page;
 +	}
 +
-+	ret = a_ops->write_end(filp, mapping, offs, offset_in_page,
-+				offset_in_page, page, fsdata);
++	ret = a_ops->write_end(filp, mapping, offs, data_len, data_len, page,
++									fsdata);
++	page = NULL;
 +
-+	if (unlikely(ret < 0))
-+		goto out;
 +out:
++	if (unlikely(page)) {
++		if (PageLocked(page))
++			unlock_page(page);
++		page_cache_release(page);
++	}
 +	ext4_journal_stop(handle);
 +
-+	return (ret < 0 ? ret : 0);
++	return ret < 0 ? ret : 0;
  }
- 
+
  /**
-Index: linux-2.6.27-rc1/fs/ext4/ext4.h
-===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/ext4.h	2008-08-11 17:15:30.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/ext4.h	2008-08-11 17:17:25.000000000 -0700
-@@ -1091,6 +1091,8 @@ extern int ext4_data_trans_blocks(struct
- extern int ext4_block_truncate_page(handle_t *handle,
- 		struct address_space *mapping, loff_t from);
- extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
-+extern int ext4_get_block(struct inode *inode, sector_t iblock,
-+		struct buffer_head *bh_result, int create);
- 
- /* ioctl.c */
- extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
-Index: linux-2.6.27-rc1/fs/ext4/inode.c
-===================================================================
---- linux-2.6.27-rc1.orig/fs/ext4/inode.c	2008-08-11 17:15:30.000000000 -0700
-+++ linux-2.6.27-rc1/fs/ext4/inode.c	2008-08-11 17:18:19.000000000 -0700
-@@ -1157,7 +1157,7 @@ int ext4_get_blocks_wrap(handle_t *handl
- /* Maximum number of blocks we map for direct IO at once. */
- #define DIO_MAX_BLOCKS 4096
- 
--static int ext4_get_block(struct inode *inode, sector_t iblock,
-+int ext4_get_block(struct inode *inode, sector_t iblock,
- 			struct buffer_head *bh_result, int create)
- {
- 	handle_t *handle = ext4_journal_current_handle();
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

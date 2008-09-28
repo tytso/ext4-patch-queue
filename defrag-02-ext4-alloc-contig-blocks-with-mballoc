@@ -1,23 +1,23 @@
-ext4: online defrag-- Allocate new contiguous blocks with mballoc
+ext4: online defrag: Allocate new contiguous blocks with mballoc.
 
 From: Akira Fujita <a-fujita@rs.jp.nec.com>
 
-Search contiguous free blocks with mutil-block allocation
+Search contiguous free blocks with multi-block allocation
 and allocate them for the temporary inode.
 
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 ---
- fs/ext4/defrag.c       |  279 ++++++++++++++++++++++++++++++++++++++++++++++++-
- fs/ext4/ext4.h         |    4 
- fs/ext4/ext4_extents.h |    3 
- fs/ext4/extents.c      |    6 -
- 4 files changed, 287 insertions(+), 5 deletions(-)
+ fs/ext4/defrag.c       |  279 +++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/ext4.h         |    3 +
+ fs/ext4/ext4_extents.h |    3 +
+ fs/ext4/extents.c      |    4 +-
+ 4 files changed, 285 insertions(+), 4 deletions(-)
 
-Index: linux-2.6.26-rc9/fs/ext4/defrag.c
-===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/defrag.c	2008-07-11 16:05:18.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/defrag.c	2008-07-11 16:05:18.000000000 -0700
+diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
+index 1750714..2fc8d9f 100644
+--- a/fs/ext4/defrag.c
++++ b/fs/ext4/defrag.c
 @@ -34,7 +34,60 @@ static int
  ext4_defrag_next_extent(struct inode *inode, struct ext4_ext_path *path,
  			struct ext4_extent **extent)
@@ -78,11 +78,11 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +		ext4_ext_drop_refs(path);
 +	return -EIO;
  }
- 
+
  int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
-@@ -81,6 +134,84 @@ int ext4_defrag_ioctl(struct inode *inod
+@@ -71,6 +124,84 @@ int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
  }
- 
+
  /**
 + * ext4_defrag_fill_ar - Prepare to multiple block allocate for tmp inode
 + *
@@ -125,7 +125,7 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 + * @dest_path:		indicating the temporary inode's extent
 + * @newblock:		start offset of contiguous blocks
 + *
-+ * This function returns 0 if succeeed, otherwise returns error value.
++ * This function returns 0 if succeed, otherwise returns error value.
 + */
 +static int
 +ext4_defrag_alloc_blocks(handle_t *handle, struct inode *org_inode,
@@ -136,9 +136,9 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +	struct buffer_head *bh = NULL;
 +	int err, i, credits = 0;
 +
-+	credits = ext4_ext_calc_credits_for_insert(dest_inode, dest_path);
-+	err = ext4_ext_journal_restart(handle,
-+				credits + EXT4_TRANS_META_BLOCKS);
++	credits = ext4_ext_calc_credits_for_single_extent(dest_inode,
++							  ar->len, dest_path);
++	err = ext4_ext_journal_restart(handle, credits);
 +	if (err)
 +		return err;
 +
@@ -164,10 +164,10 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +/**
   * ext4_defrag_partial - Defrag a file per page
   *
-  * @tmp_inode:		temporary inode
-@@ -99,6 +230,70 @@ ext4_defrag_partial(struct inode *tmp_in
+  * @tmp_inode:			temporary inode
+@@ -91,6 +222,69 @@ ext4_defrag_partial(struct inode *tmp_inode, struct file *filp,
  }
- 
+
  /**
 + * ext4_defrag_comp_ext_count- Check whether fragments are improved or not
 + *
@@ -176,7 +176,6 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 + *			original extent tree
 + * @tar_end:		the last block number of the allocated blocks
 + * @sum_tmp:		the extents count  in the allocated blocks
-+ *
 + *
 + * This function returns the values as below.
 + *	0 (improved)
@@ -236,22 +235,24 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
   * ext4_defrag_new_extent_tree - Get contiguous blocks and build an extent tree
   *
   * @org_inode:		original inode
-@@ -119,7 +314,87 @@ ext4_defrag_new_extent_tree(struct inode
- 			struct ext4_ext_path *org_path, ext4_lblk_t tar_start,
- 			ext4_lblk_t tar_blocks, ext4_lblk_t iblock)
+@@ -110,7 +304,88 @@ ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
+ 			struct ext4_ext_path *org_path, ext4_lblk_t req_start,
+ 			ext4_lblk_t req_blocks, ext4_lblk_t iblock)
  {
 -	return 0;
 +	handle_t *handle;
++	struct ext4_sb_info *sbi = EXT4_SB(org_inode->i_sb);
 +	struct ext4_extent_header *eh = NULL;
 +	struct ext4_allocation_request ar;
 +	struct ext4_ext_path *dest_path = NULL;
 +	struct ext4_extent newex;
 +	ext4_fsblk_t alloc_total = 0;
 +	ext4_fsblk_t newblock = 0;
-+	ext4_lblk_t tar_end = tar_start + tar_blocks - 1;
++	ext4_lblk_t req_end = req_start + req_blocks - 1;
++	ext4_lblk_t rest_blocks = 0;
 +	int sum_tmp = 0;
 +	int metadata = 1;
-+	int ret, ret2;
++	int ret;
 +
 +	eh = ext_inode_hdr(tmp_inode);
 +	eh->eh_depth = 0;
@@ -265,7 +266,7 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +
 +	/* Fill struct ext4_allocation_request with necessary info */
 +	ext4_defrag_fill_ar(org_inode, tmp_inode, &ar, org_path,
-+				dest_path, tar_blocks, iblock);
++				dest_path, req_blocks, iblock);
 +
 +	handle = ext4_journal_start(tmp_inode, 0);
 +	if (IS_ERR(handle)) {
@@ -273,14 +274,17 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +		goto out2;
 +	}
 +
-+	while (alloc_total != tar_blocks) {
++	while (alloc_total != req_blocks) {
 +		/* Allocate blocks */
 +		ret = ext4_defrag_alloc_blocks(handle, org_inode, tmp_inode,
 +						&ar, dest_path, &newblock);
 +		if (ret < 0)
 +			goto out;
++		/* Claimed blocks are already reserved */
++		EXT4_I(ar.inode)->i_delalloc_reserved_flag = 1;
 +
 +		alloc_total += ar.len;
++		rest_blocks = req_blocks - alloc_total;
 +
 +		newex.ee_block = cpu_to_le32(alloc_total - ar.len);
 +		ext4_ext_store_pblock(&newex, newblock);
@@ -292,26 +296,22 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +			goto out;
 +
 +		ar.goal = newblock + ar.len;
-+		ar.len = tar_blocks - alloc_total;
++		ar.len = req_blocks - alloc_total;
 +		sum_tmp++;
 +	}
 +
-+	ret = ext4_defrag_comp_ext_count(org_inode, org_path, tar_end,
++	ret = ext4_defrag_comp_ext_count(org_inode, org_path, req_end,
 +					sum_tmp);
 +
 +out:
-+	if (ret < 0 || ret == 1) {
-+		if (ar.len)
-+			ext4_free_blocks(handle, tmp_inode, newblock, ar.len,
-+					metadata);
-+		/* Faild case: We have to remove halfway blocks */
-+		ret2 = ext4_ext_remove_space(tmp_inode, 0);
-+		if (ret2) {
-+			printk(KERN_ERR "ext4 defrag: "
-+				"Failed to remove temporary inode blocks\n");
-+			ret = ret2;
-+		}
-+	}
++	if (ret < 0 && ar.len)
++		ext4_free_blocks(handle, tmp_inode, newblock, ar.len, metadata);
++	/*
++	 * Update dirty-blocks counter if we cannot allocate the all of
++	 * requested blocks.
++	 */
++	if (rest_blocks)
++		percpu_counter_sub(&sbi->s_dirtyblocks_counter, rest_blocks);
 +
 +	ext4_journal_stop(handle);
 +
@@ -323,21 +323,21 @@ Index: linux-2.6.26-rc9/fs/ext4/defrag.c
 +
 +	return ret;
  }
- 
+
  /**
-Index: linux-2.6.26-rc9/fs/ext4/ext4.h
-===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/ext4.h	2008-07-11 16:05:18.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/ext4.h	2008-07-11 16:05:18.000000000 -0700
-@@ -331,6 +331,7 @@ struct ext4_ext_defrag_data {
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 64c61ae..3c6a194 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -326,6 +326,7 @@ struct ext4_ext_defrag_data {
  	ext4_fsblk_t goal;		/* block offset for allocation */
  };
- 
+
 +#define EXT4_TRANS_META_BLOCKS 4 /* bitmap + group desc + sb + inode */
- 
+
  /*
   *  Mount options
-@@ -1137,6 +1138,8 @@ extern void ext4_inode_bitmap_set(struct
+@@ -1137,6 +1138,8 @@ extern void ext4_inode_bitmap_set(struct super_block *sb,
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
@@ -346,19 +346,11 @@ Index: linux-2.6.26-rc9/fs/ext4/ext4.h
  /* defrag.c */
  extern int ext4_defrag(struct file *filp, ext4_lblk_t block_start,
  			ext4_lblk_t defrag_size);
-@@ -1259,6 +1262,7 @@ extern int ext4_get_blocks_wrap(handle_t
- 			sector_t block, unsigned long max_blocks,
- 			struct buffer_head *bh, int create,
- 			int extend_disksize, int flag);
-+extern int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start);
- #endif	/* __KERNEL__ */
- 
- #endif	/* _EXT4_H */
-Index: linux-2.6.26-rc9/fs/ext4/ext4_extents.h
-===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/ext4_extents.h	2008-07-11 16:05:18.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/ext4_extents.h	2008-07-11 16:05:18.000000000 -0700
-@@ -231,5 +231,8 @@ extern int ext4_ext_search_right(struct 
+diff --git a/fs/ext4/ext4_extents.h b/fs/ext4/ext4_extents.h
+index 0325158..6407222 100644
+--- a/fs/ext4/ext4_extents.h
++++ b/fs/ext4/ext4_extents.h
+@@ -248,5 +248,8 @@ extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
  extern void ext4_ext_drop_refs(struct ext4_ext_path *);
  extern ext4_fsblk_t ext_pblock(struct ext4_extent *ex);
  extern void ext4_ext_drop_refs(struct ext4_ext_path *path);
@@ -366,35 +358,32 @@ Index: linux-2.6.26-rc9/fs/ext4/ext4_extents.h
 +					struct ext4_ext_path *path,
 +					ext4_lblk_t block);
  #endif /* _EXT4_EXTENTS */
- 
-Index: linux-2.6.26-rc9/fs/ext4/extents.c
-===================================================================
---- linux-2.6.26-rc9.orig/fs/ext4/extents.c	2008-07-11 16:05:18.000000000 -0700
-+++ linux-2.6.26-rc9/fs/ext4/extents.c	2008-07-11 16:05:18.000000000 -0700
-@@ -92,7 +92,7 @@ static void ext4_idx_store_pblock(struct
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index d05dfb7..6e2ccb8 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -93,7 +93,7 @@ static void ext4_idx_store_pblock(struct ext4_extent_idx *ix, ext4_fsblk_t pb)
  	ix->ei_leaf_hi = cpu_to_le16((unsigned long) ((pb >> 31) >> 1) & 0xffff);
  }
- 
+
 -static int ext4_ext_journal_restart(handle_t *handle, int needed)
 +int ext4_ext_journal_restart(handle_t *handle, int needed)
  {
  	int err;
- 
-@@ -141,7 +141,7 @@ static int ext4_ext_dirty(handle_t *hand
+
+@@ -142,7 +142,7 @@ static int ext4_ext_dirty(handle_t *handle, struct inode *inode,
  	return err;
  }
- 
+
 -static ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
 +ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
  			      struct ext4_ext_path *path,
  			      ext4_lblk_t block)
  {
-@@ -1992,7 +1992,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path
- 	return 1;
- }
- 
--static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
-+int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
- {
- 	struct super_block *sb = inode->i_sb;
- 	int depth = ext_depth(inode);
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

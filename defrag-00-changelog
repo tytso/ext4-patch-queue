@@ -1,0 +1,135 @@
+Hi,
+
+I've updated the ext4 online defragmentation patches.
+In this version, mainly there are following two changes and some fixes:
+  - Support 1KB and 2KB block size.
+  - Implement EXT4_IOC_FIEMAP_INO instead of EXT4_IOC_EXTENTS_INFO
+    to get extetns information.
+
+Changelog:
+- 0.95(Sep. 26, 2008)
+  - Support 1KB and 2KB block size.
+  - Implement EXT4_IOC_FIEMAP_INO which calls ext4_fiemap() for specified inode number
+    instead of EXT4_IOC_EXTENTS_INFO to get extents information.
+  - Merge "JC6-defrag-alloc-contiguous-blks-credit" and
+    "ext4-request-for-blocks-with-ar.excepted_group-1.patch" in the ext4 patch queue
+    into this version.
+  - Handle s_dirtyblocks_counter correctly in defrag when delalloc enabled.
+  - Remove unneeded copy_from_user() in EXT4_IOC_GROUP_INFO ioctl.  Ted pointed this out.
+- 0.9 (May 30, 2008)
+  - Create some new functions (ext4_defrag_fill_ar(),
+    ext4_defrag_check_phase() ...) to separate block allocation function,
+    since the phase mode plug into the allocation function isn't good.
+  - Add the description of ext4_defrag() which is main function.
+  - Add the capability check.
+  - Some cleanups.
+- 0.8 (Apr. 8, 2008)
+    Fix sparse warnings and change the construction of patches.
+
+Outline for ext4 online defragmentation:
+Ext4 online defrag has the following three functions.
+
+ no option  Solving a single file fragmentation.
+            Single file fragmentation is solved by moving file
+            data to contiguous free blocks.
+
+    -r      Solving a relevant file fragmentation.
+            Relevant file fragmentation could be solved by moving
+            the files under the specified directory close together with
+            the block containing the directory data.
+
+    -f      Solving a free space fragmentation.
+            If there is no contiguous free blocks in the filesystem,
+            the other files are moved to make sufficient space to allocate
+            contiguous blocks for the target file.
+
+Notes:
+- Ext4 online defarg needs "mballoc" and "extents" mount options.
+- "ext4-fiemap.patch" in the ext4 patch queue is necessary
+   for EXT4_IOC_FIEMAP_INO ioctl.  We have to apply fiemap patches previously
+   then apply defrag patches, so it is necessary to change
+   the order of series in the ext4 patch queue.
+
+Next steps:
+1. Address the following items that Ted pointed out.
+ - Move all of the defrag ioctls from ext4_defrag_ioctl() to ext4_ioctl()
+   so that defrag does not have a double layer ioctl's dispatch.
+ - Remove the block reservation in the force defrag (-f).
+ - Remove the EXT4_IOC_FIBMAP ioctl and use the EXT4_IOC_FIEMAP instead.
+ - Get super block information with opening block device in user space
+   so that we can remove the EXT4_IOC_GROUP_INFO ioctl.
+
+Summary of patches:
+* The followings are new ext4 online defrag patches and they consist
+  of ioctl unit except 1-4.  Because the EXT4_IOC_DEFRAG is too big to review,
+  I divided it into 4 patches.
+
+[PATCH 1/12] EXT4_IOC_DEFRAG ioctl and main functions of defrag
+- Create the temporary inode and do defrag per
+  defrag_size (defalut 64MB).
+
+[PATCH 2/12] Allocate new contiguous blocks with mballoc
+- Search contiguous free blocks with mutil-block allocation
+  and allocate them for the temporary inode.
+
+[PATCH 3/12] Read and write file data with memory page
+- Read the file data from the old blocks to the page cache and
+  write the file data on the page into the new blocks.
+
+[PATCH 4/12]  Exchange the blocks between two inodes
+- Exchange the data blocks between the temporary inode and
+  the original inode.
+
+[PATCH 5/12] EXT4_IOC_FIBMAP ioctl
+- The EXT4_IOC_FIBMAP ioctl gets the physical block offset of target inode
+  with ext4_bmap().  This ioctl is used only in the relevant defrag (-r).
+
+[PATCH 6/12] EXT4_IOC_GROUP_INFO ioctl
+- The EXT4_IOC_GROUP_INFO ioctl gets the block group information
+  of target inode is located in.  This ioctl is used only in the force defrag (-f).
+
+[PATCH 7/12] EXT4_IOC_FREE_BLOCKS_INFO ioctl
+- The EXT4_IOC_FREE_BLOCKS_INFO ioctl gets free extents
+  information of the target block group.
+  This ioctl is used only in the force defrag (-f).
+
+[PATCH 8/12] EXT4_IOC_FIEMAP_INO ioctl
+- The EXT4_IOC_FIEMAP_INO is used to get extents information of
+  inode which set to ioctl.
+  The defragger uses this ioctl to check the fragment condition
+  and to get extents information in the specified block group.
+
+[PATCH 9/12] EXT4_IOC_RESERVE_BLOCK ioctl
+- The EXT4_IOC_RESERVE_BLOCK ioctl reserves the specified
+  contiguous free space with ext4 block reservation function.
+  This ioctl is used only in the force defrag (-f).
+
+[PATCH 10/12] EXT4_IOC_MOVE_VICTIM ioctl
+- The EXT4_IOC_MOVE_VICTIM moves the victim extents into other block group.
+  Therefore the contiguous free space is made in the target block group.
+  This ioctl is used only in the force defrag (-f).
+
+[PATCH 11/12] EXT4_IOC_BLOCK_RELEASE ioctl
+- The EXT4_IOC_BLOCK_RELEASE releases the reserved blocks
+  which target inode holds.
+  This ioctl is used if defrag failed and it was after the block reservation.
+
+[PATCH 12/12] Online defrag command
+- The defrag command. Usage is as follows:
+  - Defrag for a single file.
+    # e4defrag file-name
+  - Defrag for all files on ext4.
+    # e4defrag device-name
+  - Put the multiple files closer together.
+    # e4defrag -r directory-name
+  - Defrag for free space fragmentation.
+    # e4defrag -f file-name
+
+Any comments and tests are welcome.
+
+Best regards,
+Akira Fujita
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
