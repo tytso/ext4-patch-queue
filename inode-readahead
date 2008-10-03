@@ -179,7 +179,7 @@ index eed1265..5bd700f 100644
  
  make_io:
  		/*
-+		 * If we need to do any I/O, try to readahead up to 16
++		 * If we need to do any I/O, try to pre-readahead extra
 +		 * blocks from the inode table.
 +		 */
 +		if (EXT4_SB(sb)->s_inode_readahead_blks) {
@@ -220,7 +220,7 @@ index eed1265..5bd700f 100644
 -					"unable to read inode block - "
 -					"inode=%lu, block=%llu",
 -					inode->i_ino, block);
-+			ext4_error(sb, "ext4_get_inode_loc",
++			ext4_error(sb, __func__,
 +				   "unable to read inode block - inode=%lu, "
 +				   "block=%llu", inode->i_ino, block);
  			brelse(bh);
@@ -276,7 +276,7 @@ index 6dee26d..9094095 100644
 +		case Opt_inode_readahead_blks:
 +			if (match_int(&args[0], &option))
 +				return 0;
-+			if (option < 0 || option > 31)
++			if (option < 0 || option > (1 << 30))
 +				return 0;
 +			sbi->s_inode_readahead_blks = option;
 +			break;
