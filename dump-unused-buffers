@@ -1,7 +1,6 @@
 Add a ioctl which dumps out all of the in-use buffer heads for a block device
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
 diff --git a/block/compat_ioctl.c b/block/compat_ioctl.c
 index c23177e..c2a788d 100644
 --- a/block/compat_ioctl.c
@@ -15,14 +14,16 @@ index c23177e..c2a788d 100644
  	case BLKROSET:
  	/*
 diff --git a/block/ioctl.c b/block/ioctl.c
-index 77185e5..11af31c 100644
+index 77185e5..5eba4d6 100644
 --- a/block/ioctl.c
 +++ b/block/ioctl.c
-@@ -279,6 +279,9 @@ int blkdev_ioctl(struct inode *inode, struct file *file, unsigned cmd,
+@@ -279,6 +279,11 @@ int blkdev_ioctl(struct inode *inode, struct file *file, unsigned cmd,
  			return -EFAULT;
  		return 0;
  	}
 +	case BLKDUMPUSEDBUFFERS:
++		if (!capable(CAP_SYS_ADMIN))
++			return -EACCES;
 +		dump_used_buffers(bdev);
 +		return 0;
  	}
