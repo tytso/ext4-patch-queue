@@ -1,0 +1,108 @@
+diff --git a/block/compat_ioctl.c b/block/compat_ioctl.c
+index c23177e..c2a788d 100644
+--- a/block/compat_ioctl.c
++++ b/block/compat_ioctl.c
+@@ -786,6 +786,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
+ 	switch (cmd) {
+ 	case HDIO_GETGEO:
+ 		return compat_hdio_getgeo(disk, bdev, compat_ptr(arg));
++	case BLKDUMPUSEDBUFFERS:
+ 	case BLKFLSBUF:
+ 	case BLKROSET:
+ 	/*
+diff --git a/block/ioctl.c b/block/ioctl.c
+index 77185e5..11af31c 100644
+--- a/block/ioctl.c
++++ b/block/ioctl.c
+@@ -279,6 +279,9 @@ int blkdev_ioctl(struct inode *inode, struct file *file, unsigned cmd,
+ 			return -EFAULT;
+ 		return 0;
+ 	}
++	case BLKDUMPUSEDBUFFERS:
++		dump_used_buffers(bdev);
++		return 0;
+ 	}
+ 
+ 	lock_kernel();
+diff --git a/fs/buffer.c b/fs/buffer.c
+index ac78d4c..4e4a7ce 100644
+--- a/fs/buffer.c
++++ b/fs/buffer.c
+@@ -33,6 +33,7 @@
+ #include <linux/writeback.h>
+ #include <linux/hash.h>
+ #include <linux/suspend.h>
++#include <linux/pagevec.h>
+ #include <linux/buffer_head.h>
+ #include <linux/task_io_accounting_ops.h>
+ #include <linux/bio.h>
+@@ -247,6 +248,45 @@ void thaw_bdev(struct block_device *bdev, struct super_block *sb)
+ }
+ EXPORT_SYMBOL(thaw_bdev);
+ 
++void dump_used_buffers(struct block_device *bdev)
++{
++	struct inode *bd_inode = bdev->bd_inode;
++	struct address_space *bd_mapping = bd_inode->i_mapping;
++	struct buffer_head *bh, *head;
++	struct pagevec pvec;
++	unsigned long index = 0;
++	int nr_pages, i, count, total = 0;
++	char b[BDEVNAME_SIZE];
++
++	spin_lock(&bd_mapping->private_lock);
++	printk(KERN_INFO "Begin dump of block device %s\n", bdevname(bdev, b));
++	while (1) {
++		nr_pages = pagevec_lookup(&pvec, bd_mapping, index, PAGEVEC_SIZE);
++		if (nr_pages == 0)
++			break;
++		for (i = 0; i < nr_pages; i++) {
++			struct page *page = pvec.pages[i];
++			index = page->index + 1;
++
++			if (!page_has_buffers(page))
++				continue;
++			bh = head = page_buffers(page);
++			do {
++				count = atomic_read(&bh->b_count);
++				if (count) {
++					printk(KERN_INFO
++					       "buffer dirty: block %Lu count %d\n",
++					       (unsigned long long) bh->b_blocknr, count);
++					total++;
++				}
++				bh = bh->b_this_page;
++			} while (bh != head);
++		}
++	}
++	printk(KERN_INFO "Total number of dirty buffers: %d\n", total);
++	spin_unlock(&bd_mapping->private_lock);
++}
++
+ /*
+  * Various filesystems appear to want __find_get_block to be non-blocking.
+  * But it's the page lock which protects the buffers.  To get around this,
+diff --git a/include/linux/buffer_head.h b/include/linux/buffer_head.h
+index eadaab4..1c48dff 100644
+--- a/include/linux/buffer_head.h
++++ b/include/linux/buffer_head.h
+@@ -193,6 +193,7 @@ void write_boundary_block(struct block_device *bdev,
+ 			sector_t bblock, unsigned blocksize);
+ int bh_uptodate_or_lock(struct buffer_head *bh);
+ int bh_submit_read(struct buffer_head *bh);
++void dump_used_buffers(struct block_device *bdev);
+ 
+ extern int buffer_heads_over_limit;
+ 
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 580b513..ae0ab82 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -222,6 +222,7 @@ extern int dir_notify_enable;
+ #define BLKTRACESTART _IO(0x12,116)
+ #define BLKTRACESTOP _IO(0x12,117)
+ #define BLKTRACETEARDOWN _IO(0x12,118)
++#define BLKDUMPUSEDBUFFERS _IO(0x12,119)
+ 
+ #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
+ #define FIBMAP	   _IO(0x00,1)	/* bmap access */
