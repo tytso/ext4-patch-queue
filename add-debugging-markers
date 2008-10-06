@@ -4,9 +4,8 @@ This debugging markers are designed to debug problems such as the
 random filesystem latency problems reported by Arjan.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
 diff --git a/fs/ext4/fsync.c b/fs/ext4/fsync.c
-index c37d1e8..f8b57a2 100644
+index c37d1e8..5afe437 100644
 --- a/fs/ext4/fsync.c
 +++ b/fs/ext4/fsync.c
 @@ -28,6 +28,7 @@
@@ -21,15 +20,15 @@ index c37d1e8..f8b57a2 100644
  
  	J_ASSERT(ext4_journal_current_handle() == NULL);
  
-+	trace_mark(ext4_sync_file, "datasync %d dev %d ino %ld parent %ld",
-+		   datasync, inode->i_sb->s_dev, inode->i_ino,
++	trace_mark(ext4_sync_file, "dev %s datasync %d ino %ld parent %ld",
++		   inode->i_sb->s_id, datasync, inode->i_ino,
 +		   dentry->d_parent->d_inode->i_ino);
 +
  	/*
  	 * data=writeback:
  	 *  The caller's filemap_fdatawrite()/wait will sync the data.
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 515af05..68b0301 100644
+index eca9ce0..a9ea5a7 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -35,6 +35,7 @@
@@ -44,12 +43,12 @@ index 515af05..68b0301 100644
  {
  	tid_t target;
  
-+	trace_mark(ext4_sync_fs, "dev %d wait %d", sb->s_dev, wait);
++	trace_mark(ext4_sync_fs, "dev %s wait %d", sb->s_id, wait);
  	sb->s_dirt = 0;
  	if (jbd2_journal_start_commit(EXT4_SB(sb)->s_journal, &target)) {
  		if (wait)
 diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
-index 91389c8..72bec15 100644
+index af4651b..42895d3 100644
 --- a/fs/jbd2/checkpoint.c
 +++ b/fs/jbd2/checkpoint.c
 @@ -20,6 +20,7 @@
@@ -60,17 +59,17 @@ index 91389c8..72bec15 100644
  #include <linux/errno.h>
  #include <linux/slab.h>
  
-@@ -313,6 +329,8 @@ int jbd2_log_do_checkpoint(journal_t *journal)
+@@ -328,6 +329,8 @@ int jbd2_log_do_checkpoint(journal_t *journal)
  	 * journal straight away.
  	 */
  	result = jbd2_cleanup_journal_tail(journal);
-+	trace_mark(jbd2_checkpoint, "dev %d need_checkpoint %d",
-+		   journal->j_fs_dev->bd_dev, result);
++	trace_mark(jbd2_checkpoint, "dev %s need_checkpoint %d",
++		   journal->j_devname, result);
  	jbd_debug(1, "cleanup_journal_tail returned %d\n", result);
  	if (result <= 0)
  		return result;
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index b091e53..ecb485b 100644
+index b091e53..e91f051 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
 @@ -16,6 +16,7 @@
@@ -85,8 +84,8 @@ index b091e53..ecb485b 100644
  	commit_transaction = journal->j_running_transaction;
  	J_ASSERT(commit_transaction->t_state == T_RUNNING);
  
-+	trace_mark(jbd2_start_commit, "dev %d transaction %d",
-+		   journal->j_fs_dev->bd_dev, commit_transaction->t_tid);
++	trace_mark(jbd2_start_commit, "dev %s transaction %d",
++		   journal->j_devname, commit_transaction->t_tid);
  	jbd_debug(1, "JBD: starting commit of transaction %d\n",
  			commit_transaction->t_tid);
  
@@ -94,8 +93,8 @@ index b091e53..ecb485b 100644
  	}
  	spin_unlock(&journal->j_list_lock);
  
-+	trace_mark(jbd2_end_commit, "dev %d transaction %d head %d",
-+		   journal->j_fs_dev->bd_dev, commit_transaction->t_tid,
++	trace_mark(jbd2_end_commit, "dev %s transaction %d head %d",
++		   journal->j_devname, commit_transaction->t_tid,
 +		   journal->j_tail_sequence);
  	jbd_debug(1, "JBD: commit %d complete, head %d\n",
  		  journal->j_commit_sequence, journal->j_tail_sequence);
