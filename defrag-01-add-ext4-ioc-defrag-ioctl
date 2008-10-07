@@ -534,15 +534,6 @@ index c8ab668..64c61ae 100644
 
  /*
   *  Mount options
-@@ -1081,6 +1088,8 @@ extern int ext4_chunk_trans_blocks(struct inode *, int nrblocks);
- extern int ext4_block_truncate_page(handle_t *handle,
- 		struct address_space *mapping, loff_t from);
- extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
-+extern int ext4_get_block(struct inode *inode, sector_t iblock,
-+		struct buffer_head *bh_result, int create);
-
- /* ioctl.c */
- extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
 @@ -1128,6 +1137,11 @@ extern void ext4_inode_bitmap_set(struct super_block *sb,
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
@@ -580,19 +571,6 @@ index 3094ed3..d05dfb7 100644
  {
  	ext4_fsblk_t block;
 
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 9764b79..9b0117c 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -1161,7 +1161,7 @@ int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
- /* Maximum number of blocks we map for direct IO at once. */
- #define DIO_MAX_BLOCKS 4096
-
--static int ext4_get_block(struct inode *inode, sector_t iblock,
-+int ext4_get_block(struct inode *inode, sector_t iblock,
- 			struct buffer_head *bh_result, int create)
- {
- 	handle_t *handle = ext4_journal_current_handle();
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
 index 3e14060..1c25e8e 100644
 --- a/fs/ext4/ioctl.c
