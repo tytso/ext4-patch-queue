@@ -9,19 +9,11 @@ Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: linux-ext4@vger.kernel.org
 Cc: linux-fsdevel@vger.kernel.org
----
- fs/ext4/ext4.h         |    2 +
- fs/ext4/ext4_extents.h |   15 +++
- fs/ext4/extents.c      |  248 ++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/file.c         |    4 +
- fs/ext4/inode.c        |    2 +-
- 5 files changed, 270 insertions(+), 1 deletions(-)
-
-Index: linux-2.6/fs/ext4/ext4.h
-===================================================================
---- linux-2.6.orig/fs/ext4/ext4.h	2008-07-14 16:51:40.000000000 -0500
-+++ linux-2.6/fs/ext4/ext4.h	2008-07-14 16:56:12.038353463 -0500
-@@ -1127,6 +1127,8 @@ struct buffer_head *ext4_getblk(handle_t
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index c50c04c..f46a513 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1067,6 +1067,8 @@ struct buffer_head *ext4_getblk(handle_t *, struct inode *,
  						ext4_lblk_t, int, int *);
  struct buffer_head *ext4_bread(handle_t *, struct inode *,
  						ext4_lblk_t, int, int *);
@@ -30,10 +22,10 @@ Index: linux-2.6/fs/ext4/ext4.h
  int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
  				ext4_lblk_t iblock, unsigned long maxblocks,
  				struct buffer_head *bh_result,
-Index: linux-2.6/fs/ext4/ext4_extents.h
-===================================================================
---- linux-2.6.orig/fs/ext4/ext4_extents.h	2008-07-14 16:51:41.000000000 -0500
-+++ linux-2.6/fs/ext4/ext4_extents.h	2008-07-14 16:56:12.040354241 -0500
+diff --git a/fs/ext4/ext4_extents.h b/fs/ext4/ext4_extents.h
+index d33dc56..bec7ce5 100644
+--- a/fs/ext4/ext4_extents.h
++++ b/fs/ext4/ext4_extents.h
 @@ -124,6 +124,19 @@ struct ext4_ext_path {
  #define EXT4_EXT_CACHE_GAP	1
  #define EXT4_EXT_CACHE_EXTENT	2
@@ -54,7 +46,7 @@ Index: linux-2.6/fs/ext4/ext4_extents.h
  
  #define EXT_MAX_BLOCK	0xffffffff
  
-@@ -222,6 +235,8 @@ extern int ext4_ext_try_to_merge(struct 
+@@ -224,6 +237,8 @@ extern int ext4_ext_try_to_merge(struct inode *inode,
  				 struct ext4_extent *);
  extern unsigned int ext4_ext_check_overlap(struct inode *, struct ext4_extent *, struct ext4_ext_path *);
  extern int ext4_ext_insert_extent(handle_t *, struct inode *, struct ext4_ext_path *, struct ext4_extent *);
@@ -63,10 +55,10 @@ Index: linux-2.6/fs/ext4/ext4_extents.h
  extern struct ext4_ext_path *ext4_ext_find_extent(struct inode *, ext4_lblk_t,
  							struct ext4_ext_path *);
  extern int ext4_ext_search_left(struct inode *, struct ext4_ext_path *,
-Index: linux-2.6/fs/ext4/extents.c
-===================================================================
---- linux-2.6.orig/fs/ext4/extents.c	2008-07-14 16:51:41.000000000 -0500
-+++ linux-2.6/fs/ext4/extents.c	2008-07-14 16:56:12.044353533 -0500
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index c8f81f2..ea2ce3c 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
 @@ -40,6 +40,7 @@
  #include <linux/slab.h>
  #include <linux/falloc.h>
@@ -75,7 +67,7 @@ Index: linux-2.6/fs/ext4/extents.c
  #include "ext4_jbd2.h"
  #include "ext4_extents.h"
  
-@@ -1656,6 +1657,113 @@ cleanup:
+@@ -1626,6 +1627,113 @@ cleanup:
  	return err;
  }
  
@@ -189,7 +181,7 @@ Index: linux-2.6/fs/ext4/extents.c
  static void
  ext4_ext_put_in_cache(struct inode *inode, ext4_lblk_t block,
  			__u32 len, ext4_fsblk_t start, int type)
-@@ -3011,3 +3119,143 @@ retry:
+@@ -2971,3 +3079,143 @@ retry:
  	mutex_unlock(&inode->i_mutex);
  	return ret > 0 ? ret2 : ret;
  }
@@ -333,11 +325,11 @@ Index: linux-2.6/fs/ext4/extents.c
 +	return error;
 +}
 +
-Index: linux-2.6/fs/ext4/file.c
-===================================================================
---- linux-2.6.orig/fs/ext4/file.c	2008-07-14 16:51:40.000000000 -0500
-+++ linux-2.6/fs/ext4/file.c	2008-07-14 16:56:12.066353577 -0500
-@@ -140,6 +140,9 @@ static int ext4_file_mmap(struct file *f
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 62796b7..6d5be15 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -140,6 +140,9 @@ static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
  	return 0;
  }
  
@@ -347,10 +339,25 @@ Index: linux-2.6/fs/ext4/file.c
  const struct file_operations ext4_file_operations = {
  	.llseek		= generic_file_llseek,
  	.read		= do_sync_read,
-@@ -170,5 +173,6 @@ const struct inode_operations ext4_file_
+@@ -170,5 +173,6 @@ const struct inode_operations ext4_file_inode_operations = {
  #endif
  	.permission	= ext4_permission,
  	.fallocate	= ext4_fallocate,
 +	.fiemap		= ext4_fiemap,
  };
  
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index b6d2263..243de27 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1135,8 +1135,8 @@ int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+ /* Maximum number of blocks we map for direct IO at once. */
+ #define DIO_MAX_BLOCKS 4096
+ 
+-static int ext4_get_block(struct inode *inode, sector_t iblock,
+-			struct buffer_head *bh_result, int create)
++int ext4_get_block(struct inode *inode, sector_t iblock,
++		   struct buffer_head *bh_result, int create)
+ {
+ 	handle_t *handle = ext4_journal_current_handle();
+ 	int ret = 0, started = 0;

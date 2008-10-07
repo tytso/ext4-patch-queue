@@ -30,7 +30,7 @@ Mark Fasheh <mfasheh@suse.com>
 Signed-off-by: Mark Fasheh <mfasheh@suse.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: Michael Kerrisk <mtk.manpages@googlemail.com>
-Cc: linux-abi@vger.kernel.org
+Cc: linux-api@vger.kernel.org
 Cc: linux-fsdevel@vger.kernel.org
 diff --git a/Documentation/filesystems/fiemap.txt b/Documentation/filesystems/fiemap.txt
 new file mode 100644
@@ -89,7 +89,7 @@ index 0000000..0945d96
 +fm_extents[] to hold the file's current mapping.  Note that there is
 +nothing to prevent the file from changing between calls to FIEMAP.
 +
-+Currently, there are three flags which can be set in fm_flags:
++The following flags can be set in fm_flags:
 +
 +* FIEMAP_FLAG_SYNC
 +If this flag is set, the kernel will sync the file before mapping extents.
@@ -168,16 +168,16 @@ index 0000000..0945d96
 +Delayed allocation - while there is data for this extent, it's
 +physical location has not been allocated yet.
 +
-+* FIEMAP_EXTENT_NO_MOUNTED_IO
++* FIEMAP_EXTENT_NO_UNMOUNTED_IO
 +Accessing the data in this extent via I/O to the block device while the
 +filesystem is unmounted is illegal or will have undefined results.  This
-+may because the data is somehow encrypted or compressed by the filesystem.
++may be because the data is somehow encrypted or compressed by the filesystem.
 +Note that accessing the data using the information returned by the
-+FIEMAP interface is *always* undefined should not be attempted by user
-+applications. 
++FIEMAP interface while the filesystem is mounted is *always* undefined
++should not be attempted by user applications. 
 +
 +* FIEMAP_EXTENT_DATA_ENCRYPTED
-+  - This will also set FIEMAP_EXTENT_NO_MOUNTED_IO
++  - This will also set FIEMAP_EXTENT_NO_UNMOUNTED_IO
 +The data in this extent has been encrypted by the file system.
 +
 +* FIEMAP_EXTENT_NOT_ALIGNED
@@ -293,7 +293,7 @@ index 7db32b3..1f3a658 100644
 + * extent that will fit in user array.
 + */
 +#define SET_UNKNOWN_FLAGS	(FIEMAP_EXTENT_DELALLOC)
-+#define SET_NO_MOUNTED_IO_FLAGS	(FIEMAP_EXTENT_DATA_ENCRYPTED)
++#define SET_NO_UNMOUNTED_IO_FLAGS	(FIEMAP_EXTENT_DATA_ENCRYPTED)
 +#define SET_NOT_ALIGNED_FLAGS	(FIEMAP_EXTENT_DATA_TAIL|FIEMAP_EXTENT_DATA_INLINE)
 +int fiemap_fill_next_extent(struct fiemap_extent_info *fieinfo, u64 logical,
 +			    u64 phys, u64 len, u32 flags)
@@ -312,8 +312,8 @@ index 7db32b3..1f3a658 100644
 +
 +	if (flags & SET_UNKNOWN_FLAGS)
 +		flags |= FIEMAP_EXTENT_UNKNOWN;
-+	if (flags & SET_NO_MOUNTED_IO_FLAGS)
-+		flags |= FIEMAP_EXTENT_NO_MOUNTED_IO;
++	if (flags & SET_NO_UNMOUNTED_IO_FLAGS)
++		flags |= FIEMAP_EXTENT_NO_UNMOUNTED_IO;
 +	if (flags & SET_NOT_ALIGNED_FLAGS)
 +		flags |= FIEMAP_EXTENT_NOT_ALIGNED;
 +
@@ -492,7 +492,7 @@ index 0000000..90c2e88
 +#define FIEMAP_EXTENT_UNKNOWN		0x00000002 /* Data location unknown. */
 +#define FIEMAP_EXTENT_DELALLOC		0x00000004 /* Location still pending.
 +						    * Sets EXTENT_UNKNOWN. */
-+#define FIEMAP_EXTENT_NO_MOUNTED_IO	0x00000008 /* Data can not be read
++#define FIEMAP_EXTENT_NO_UNMOUNTED_IO	0x00000008 /* Data can not be read
 +						    * while fs is unmounted */
 +#define FIEMAP_EXTENT_DATA_ENCRYPTED	0x00000080 /* Data is encrypted by fs.
 +						    * Sets EXTENT_NO_BYPASS. */
