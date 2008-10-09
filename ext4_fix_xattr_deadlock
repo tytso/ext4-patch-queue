@@ -1,14 +1,17 @@
 ext4: fix xattr deadlock
 
+From: Kalpak Shah <kalpak.shah@sun.com>
+
 ext4_xattr_set_handle() eventually ends up calling
-ext4_mark_inode_dirty() which tries to expand the inode by shifting the
-EAs. This leads to the xattr_sem being downed again and leading to a
-deadlock.
+ext4_mark_inode_dirty() which tries to expand the inode by shifting
+the EAs.  This leads to the xattr_sem being downed again and leading
+to a deadlock.
 
 This patch makes sure that if ext4_xattr_set_handle() is in the
 call-chain, ext4_mark_inode_dirty() will not expand the inode.
 
 Signed-off-by: Kalpak Shah <kalpak.shah@sun.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
 
 Index: linux-2.6.27-rc7/fs/ext4/xattr.c
