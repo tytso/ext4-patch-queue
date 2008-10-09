@@ -37,7 +37,7 @@ new file mode 100644
 index 0000000..0945d96
 --- /dev/null
 +++ b/Documentation/filesystems/fiemap.txt
-@@ -0,0 +1,221 @@
+@@ -0,0 +1,228 @@
 +============
 +Fiemap Ioctl
 +============
@@ -168,16 +168,23 @@ index 0000000..0945d96
 +Delayed allocation - while there is data for this extent, it's
 +physical location has not been allocated yet.
 +
-+* FIEMAP_EXTENT_NO_UNMOUNTED_IO
-+Accessing the data in this extent via I/O to the block device while the
-+filesystem is unmounted is illegal or will have undefined results.  This
-+may be because the data is somehow encrypted or compressed by the filesystem.
-+Note that accessing the data using the information returned by the
-+FIEMAP interface while the filesystem is mounted is *always* undefined
-+should not be attempted by user applications. 
++* FIEMAP_EXTENT_ENCODED
++This extent does not consist of plain filesystem blocks but is
++encoded (e.g. encrypted or compressed).  Reading the data in this
++extent via I/O to the block device will have undefined results.
++
++Note that it is *always* undefined to try to update the data
++in-place by writing to the indicated location without the
++assistance of the filesystem, or to access the data using the
++information returned by the FIEMAP interface while the filesystem
++is mounted.  In other words, user applications may only read the
++extent data via I/O to the block device while the filesystem is
++unmounted, and then only if the FIEMAP_EXTENT_ENCODED flag is
++clear; user applications must not try reading or writing to the
++filesystem via the block device under any other circumstances.
 +
 +* FIEMAP_EXTENT_DATA_ENCRYPTED
-+  - This will also set FIEMAP_EXTENT_NO_UNMOUNTED_IO
++  - This will also set FIEMAP_EXTENT_ENCODED
 +The data in this extent has been encrypted by the file system.
 +
 +* FIEMAP_EXTENT_NOT_ALIGNED
@@ -313,7 +320,7 @@ index 7db32b3..1f3a658 100644
 +	if (flags & SET_UNKNOWN_FLAGS)
 +		flags |= FIEMAP_EXTENT_UNKNOWN;
 +	if (flags & SET_NO_UNMOUNTED_IO_FLAGS)
-+		flags |= FIEMAP_EXTENT_NO_UNMOUNTED_IO;
++		flags |= FIEMAP_EXTENT_ENCODED;
 +	if (flags & SET_NOT_ALIGNED_FLAGS)
 +		flags |= FIEMAP_EXTENT_NOT_ALIGNED;
 +
@@ -492,7 +499,7 @@ index 0000000..90c2e88
 +#define FIEMAP_EXTENT_UNKNOWN		0x00000002 /* Data location unknown. */
 +#define FIEMAP_EXTENT_DELALLOC		0x00000004 /* Location still pending.
 +						    * Sets EXTENT_UNKNOWN. */
-+#define FIEMAP_EXTENT_NO_UNMOUNTED_IO	0x00000008 /* Data can not be read
++#define FIEMAP_EXTENT_ENCODED		0x00000008 /* Data can not be read
 +						    * while fs is unmounted */
 +#define FIEMAP_EXTENT_DATA_ENCRYPTED	0x00000080 /* Data is encrypted by fs.
 +						    * Sets EXTENT_NO_BYPASS. */
