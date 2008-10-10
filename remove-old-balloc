@@ -2,7 +2,7 @@ ext4: Remove old legacy block allocator
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 02068fa..59566c0 100644
+index cca7fd5..59566c0 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -83,6 +83,7 @@ static int ext4_group_used_meta_blocks(struct super_block *sb,
@@ -1081,7 +1081,7 @@ index 02068fa..59566c0 100644
  int ext4_claim_free_blocks(struct ext4_sb_info *sbi,
  						s64 nblocks)
  {
-@@ -1702,310 +679,6 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+@@ -1702,313 +679,6 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
  	return jbd2_journal_force_commit_nested(EXT4_SB(sb)->s_journal);
  }
  
@@ -1350,7 +1350,10 @@ index 02068fa..59566c0 100644
 -	/*
 -	 * Now reduce the dirty block count also. Should not go negative
 -	 */
--	percpu_counter_sub(&sbi->s_dirtyblocks_counter, num);
+-	if (!EXT4_I(inode)->i_delalloc_reserved_flag)
+-		percpu_counter_sub(&sbi->s_dirtyblocks_counter, *count);
+-	else
+-		percpu_counter_sub(&sbi->s_dirtyblocks_counter, num);
 -	if (sbi->s_log_groups_per_flex) {
 -		ext4_group_t flex_group = ext4_flex_group(sbi, group_no);
 -		spin_lock(sb_bgl_lock(sbi, flex_group));
@@ -1392,7 +1395,7 @@ index 02068fa..59566c0 100644
  #define EXT4_META_BLOCK 0x1
  
  static ext4_fsblk_t do_blk_alloc(handle_t *handle, struct inode *inode,
-@@ -2015,10 +688,6 @@ static ext4_fsblk_t do_blk_alloc(handle_t *handle, struct inode *inode,
+@@ -2018,10 +688,6 @@ static ext4_fsblk_t do_blk_alloc(handle_t *handle, struct inode *inode,
  	struct ext4_allocation_request ar;
  	ext4_fsblk_t ret;
  
@@ -1403,7 +1406,7 @@ index 02068fa..59566c0 100644
  	memset(&ar, 0, sizeof(ar));
  	/* Fill with neighbour allocated blocks */
  
-@@ -2239,3 +908,4 @@ unsigned long ext4_bg_num_gdb(struct super_block *sb, ext4_group_t group)
+@@ -2242,3 +908,4 @@ unsigned long ext4_bg_num_gdb(struct super_block *sb, ext4_group_t group)
  	return ext4_bg_num_gdb_meta(sb,group);
  
  }
@@ -1581,7 +1584,7 @@ index 5e66a2f..1343bf1 100644
  
  	ext4_set_inode_flags(inode);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 5bd700f..193b09f 100644
+index ef4ca3d..bd770c3 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -486,18 +486,9 @@ static ext4_fsblk_t ext4_find_near(struct inode *inode, Indirect *ind)
@@ -1727,7 +1730,7 @@ index 3e14060..ea27eaa 100644
  		ext4_fsblk_t n_blocks_count;
  		struct super_block *sb = inode->i_sb;
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 3373f89..c84b68f 100644
+index b9118bb..335faee 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -534,9 +534,6 @@ static int __mb_check_buddy(struct ext4_buddy *e4b, char *file,
@@ -1786,7 +1789,7 @@ index 3373f89..c84b68f 100644
  	/* release freed, non-committed blocks */
  	spin_lock(&sbi->s_md_lock);
  	list_splice_init(&sbi->s_closed_transaction,
-@@ -3799,7 +3786,7 @@ out:
+@@ -3805,7 +3792,7 @@ out:
   *
   * FIXME!! Make sure it is valid at all the call sites
   */
@@ -1795,7 +1798,7 @@ index 3373f89..c84b68f 100644
  {
  	struct ext4_inode_info *ei = EXT4_I(inode);
  	struct super_block *sb = inode->i_sb;
-@@ -3811,7 +3798,7 @@ void ext4_mb_discard_inode_preallocations(struct inode *inode)
+@@ -3817,7 +3804,7 @@ void ext4_mb_discard_inode_preallocations(struct inode *inode)
  	struct ext4_buddy e4b;
  	int err;
  
@@ -1804,7 +1807,7 @@ index 3373f89..c84b68f 100644
  		/*BUG_ON(!list_empty(&ei->i_prealloc_list));*/
  		return;
  	}
-@@ -4293,11 +4280,6 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+@@ -4300,11 +4287,6 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  	sb = ar->inode->i_sb;
  	sbi = EXT4_SB(sb);
  
@@ -1854,10 +1857,10 @@ index b60afbc..b6ec184 100644
  		struct inode *inode = sbi->s_buddy_cache;
  		int blocks_per_page;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 9094095..515af05 100644
+index 6583aee..dfcd41f 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -573,7 +573,6 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
+@@ -574,7 +574,6 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
  	ei->i_acl = EXT4_ACL_NOT_CACHED;
  	ei->i_default_acl = EXT4_ACL_NOT_CACHED;
  #endif
@@ -1865,7 +1868,7 @@ index 9094095..515af05 100644
  	ei->vfs_inode.i_version = 1;
  	ei->vfs_inode.i_data.writeback_index = 0;
  	memset(&ei->i_cached_extent, 0, sizeof(struct ext4_ext_cache));
-@@ -632,7 +631,6 @@ static void destroy_inodecache(void)
+@@ -633,7 +632,6 @@ static void destroy_inodecache(void)
  
  static void ext4_clear_inode(struct inode *inode)
  {
@@ -1873,7 +1876,7 @@ index 9094095..515af05 100644
  #ifdef CONFIG_EXT4DEV_FS_POSIX_ACL
  	if (EXT4_I(inode)->i_acl &&
  			EXT4_I(inode)->i_acl != EXT4_ACL_NOT_CACHED) {
-@@ -645,10 +643,7 @@ static void ext4_clear_inode(struct inode *inode)
+@@ -646,10 +644,7 @@ static void ext4_clear_inode(struct inode *inode)
  		EXT4_I(inode)->i_default_acl = EXT4_ACL_NOT_CACHED;
  	}
  #endif
@@ -1885,7 +1888,7 @@ index 9094095..515af05 100644
  	jbd2_journal_release_jbd_inode(EXT4_SB(inode->i_sb)->s_journal,
  				       &EXT4_I(inode)->jinode);
  }
-@@ -759,8 +754,6 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+@@ -760,8 +755,6 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
  		seq_puts(seq, ",nobh");
  	if (!test_opt(sb, EXTENTS))
  		seq_puts(seq, ",noextents");
@@ -1894,7 +1897,7 @@ index 9094095..515af05 100644
  	if (test_opt(sb, I_VERSION))
  		seq_puts(seq, ",i_version");
  	if (!test_opt(sb, DELALLOC))
-@@ -1372,12 +1365,6 @@ set_qf_format:
+@@ -1373,12 +1366,6 @@ set_qf_format:
  		case Opt_nodelalloc:
  			clear_opt(sbi->s_mount_opt, DELALLOC);
  			break;
@@ -1907,7 +1910,7 @@ index 9094095..515af05 100644
  		case Opt_stripe:
  			if (match_int(&args[0], &option))
  				return 0;
-@@ -2039,11 +2026,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2040,11 +2027,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		ext4_warning(sb, __func__,
  			"extents feature not enabled on this filesystem, "
  			"use tune2fs.\n");
@@ -1919,7 +1922,7 @@ index 9094095..515af05 100644
  
  	/*
  	 * enable delayed allocation by default
-@@ -2300,19 +2282,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2301,19 +2283,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		goto failed_mount3;
  	}
  
@@ -1939,7 +1942,7 @@ index 9094095..515af05 100644
  	sbi->s_stripe = ext4_get_stripe_size(sbi);
  
  	/*
-@@ -2509,7 +2478,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2510,7 +2479,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		printk(KERN_INFO "EXT4-fs: delayed allocation enabled\n");
  
  	ext4_ext_init(sb);
