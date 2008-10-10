@@ -2,11 +2,24 @@ ext4: fix initialization of UNINIT bitmap blocks
 
 From: Frederic Bohe <frederic.bohe@bull.net>
 
-We must always initialize uninitialized bitmap blocks even if the
-buffer head is marked uptodate, since it could have been read in by a
-userspace program.  So always initialized the bitmap block if it is
-marked uninitialzied and not dirty; it will marked initialized as soon
-as we allocate a block or inode out of that bitmap.
+This fixes a bug which caused on-line resizing of filesystems with a
+1k blocksize to fail.  The root cause of this bug was the fact that if
+an uninitalized bitmap block gets read in by userspace (which
+e2fsprogs does try to avoid, but can happen when the blocksize is less
+than the pagesize and an adjacent blocks is read into memory)
+ext4_read_block_bitmap() was erroneously depending on the buffer
+uptodate flag to decide whether it needed to initialize the bitmap
+block in memory --- i.e., to set the standard set of blocks in use by
+a block group (superblock, bitmaps, inode table, etc.).  Essentially,
+ext4_read_block_bitmap() assumed it was the only routine that might
+try to read a block containing a block bitmap, which is simply not
+true.  
+
+To fix this, ext4_read_block_bitmap() and ext4_read_inode_bitmap()
+must always initialize uninitialized bitmap blocks.  Once a block or
+inode is allocated out of that bitmap, it will be marked as
+initialized in the block group descriptor, so in general this won't
+result any extra unnecessary work.
 
 Signed-off-by: Frederic Bohe <frederic.bohe@bull.net>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
