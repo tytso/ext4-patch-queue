@@ -9,6 +9,44 @@ tree after flushing the caches via "echo 3 > /proc/sys/vm/drop_caches"
 is reduced by 21%.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
+index 0d53949..2890579 100644
+--- a/Documentation/filesystems/ext4.txt
++++ b/Documentation/filesystems/ext4.txt
+@@ -177,6 +177,11 @@ barrier=<0|1(*)>	This enables/disables the use of write barriers in
+ 			your disks are battery-backed in one way or another,
+ 			disabling barriers may safely improve performance.
+ 
++inode_readahead=n	This tuning parameter controls the maximum
++			number of inode table blocks that ext4's inode
++			table readahead algorithm will pre-read into
++			the buffer cache.  The default value is 32 blocks.
++
+ orlov		(*)	This enables the new Orlov block allocator. It is
+ 			enabled by default.
+ 
+@@ -252,6 +257,7 @@ stripe=n		Number of filesystem blocks that mballoc will try
+ delalloc	(*)	Deferring block allocation until write-out time.
+ nodelalloc		Disable delayed allocation. Blocks are allocation
+ 			when data is copied from user to page cache.
++
+ Data Mode
+ =========
+ There are 3 different data modes:
+diff --git a/Documentation/filesystems/proc.txt b/Documentation/filesystems/proc.txt
+index d9ac970..d831d24 100644
+--- a/Documentation/filesystems/proc.txt
++++ b/Documentation/filesystems/proc.txt
+@@ -956,6 +956,9 @@ Table 1-10: Files in /proc/fs/ext4/<devname>
+                  files are packed closely together.  Each large file
+                  will have its blocks allocated out of its own unique
+                  preallocation pool.
++inode_readahead  Tuning parameter which controls the maximum number of
++                 inode table blocks that ext4's inode table readahead
++                 algorithm will pre-read into the buffer cache
+ ..............................................................................
+ 
+ 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 163c445..922d187 100644
 --- a/fs/ext4/ext4.h
@@ -35,7 +73,7 @@ index f92af01..94e0757 100644
  	u32 s_next_generation;
  	u32 s_hash_seed[4];
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index eed1265..5bd700f 100644
+index 22fcbb6..ef4ca3d 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -3833,41 +3833,6 @@ out_stop:
@@ -227,11 +265,11 @@ index eed1265..5bd700f 100644
  			return -EIO;
  		}
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 6dee26d..9094095 100644
+index 9f5468f..6583aee 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -514,8 +514,10 @@ static void ext4_put_super(struct super_block *sb)
- 		BUFFER_TRACE(sbi->s_sbh, "marking dirty");
+@@ -515,8 +515,10 @@ static void ext4_put_super(struct super_block *sb)
+ 		mark_buffer_dirty(sbi->s_sbh);
  		ext4_commit_super(sb, es, 1);
  	}
 -	if (sbi->s_proc)
@@ -242,7 +280,7 @@ index 6dee26d..9094095 100644
  
  	for (i = 0; i < sbi->s_gdb_count; i++)
  		brelse(sbi->s_group_desc[i]);
-@@ -778,6 +780,10 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+@@ -779,6 +781,10 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
  	else if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_WRITEBACK_DATA)
  		seq_puts(seq, ",data=writeback");
  
@@ -253,7 +291,7 @@ index 6dee26d..9094095 100644
  	ext4_show_quota_options(seq, sb);
  	return 0;
  }
-@@ -912,6 +918,7 @@ enum {
+@@ -913,6 +919,7 @@ enum {
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
  	Opt_grpquota, Opt_extents, Opt_noextents, Opt_i_version,
  	Opt_mballoc, Opt_nomballoc, Opt_stripe, Opt_delalloc, Opt_nodelalloc,
@@ -261,7 +299,7 @@ index 6dee26d..9094095 100644
  };
  
  static match_table_t tokens = {
-@@ -972,6 +979,7 @@ static match_table_t tokens = {
+@@ -973,6 +980,7 @@ static match_table_t tokens = {
  	{Opt_resize, "resize"},
  	{Opt_delalloc, "delalloc"},
  	{Opt_nodelalloc, "nodelalloc"},
@@ -269,7 +307,7 @@ index 6dee26d..9094095 100644
  	{Opt_err, NULL},
  };
  
-@@ -1380,6 +1388,13 @@ set_qf_format:
+@@ -1381,6 +1389,13 @@ set_qf_format:
  		case Opt_delalloc:
  			set_opt(sbi->s_mount_opt, DELALLOC);
  			break;
@@ -283,7 +321,7 @@ index 6dee26d..9094095 100644
  		default:
  			printk(KERN_ERR
  			       "EXT4-fs: Unrecognized mount option \"%s\" "
-@@ -1937,6 +1952,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -1938,6 +1953,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	sbi->s_mount_opt = 0;
  	sbi->s_resuid = EXT4_DEF_RESUID;
  	sbi->s_resgid = EXT4_DEF_RESGID;
@@ -291,7 +329,7 @@ index 6dee26d..9094095 100644
  	sbi->s_sb_block = sb_block;
  
  	unlock_kernel();
-@@ -2233,6 +2249,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2234,6 +2250,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	if (ext4_proc_root)
  		sbi->s_proc = proc_mkdir(sb->s_id, ext4_proc_root);
  
@@ -303,7 +341,7 @@ index 6dee26d..9094095 100644
  	bgl_lock_init(&sbi->s_blockgroup_lock);
  
  	for (i = 0; i < db_count; i++) {
-@@ -2512,8 +2533,10 @@ failed_mount2:
+@@ -2513,8 +2534,10 @@ failed_mount2:
  		brelse(sbi->s_group_desc[i]);
  	kfree(sbi->s_group_desc);
  failed_mount:
