@@ -1,0 +1,135 @@
+ext4: add an option to control error handling on file data
+
+From: Hidehiro Kawai <hidehiro.kawai.ez@hitachi.com>
+
+If the journal doesn't abort when it gets an IO error in file data
+blocks, the file data corruption will spread silently.  Because
+most of applications and commands do buffered writes without fsync(),
+they don't notice the IO error.  It's scary for mission critical
+systems.  On the other hand, if the journal aborts whenever it gets
+an IO error in file data blocks, the system will easily become
+inoperable.  So this patch introduces a filesystem option to
+determine whether it aborts the journal or just call printk() when
+it gets an IO error in file data.
+
+If you mount an ext4 fs with data_err=abort option, it aborts on file
+data write error.  If you mount it with data_err=ignore, it doesn't
+abort, just call printk().  data_err=ignore is the default.
+
+Here is the corresponding patch of the ext3 version:
+http://kerneltrap.org/mailarchive/linux-kernel/2008/9/9/3239374
+
+Signed-off-by: Hidehiro Kawai <hidehiro.kawai.ez@hitachi.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
+index 74484e6..eb154ef 100644
+--- a/Documentation/filesystems/ext4.txt
++++ b/Documentation/filesystems/ext4.txt
+@@ -223,6 +223,11 @@ errors=remount-ro(*)	Remount the filesystem read-only on an error.
+ errors=continue		Keep going on a filesystem error.
+ errors=panic		Panic and halt the machine if an error occurs.
+ 
++data_err=ignore(*)	Just print an error message if an error occurs
++			in a file data buffer in ordered mode.
++data_err=abort		Abort the journal if an error occurs in a file
++			data buffer in ordered mode.
++
+ grpid			Give objects the same group ID as their creator.
+ bsdgroups
+ 
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index f46a513..4b7698e 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -540,6 +540,8 @@ do {									       \
+ #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
+ #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
+ #define EXT4_MOUNT_DELALLOC		0x8000000 /* Delalloc support */
++#define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write
++
+ /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
+ #ifndef _LINUX_EXT2_FS_H
+ #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index f6febb4..149b584 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -778,6 +778,9 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+ 		seq_printf(seq, ",inode_readahead_blks=%u",
+ 			   sbi->s_inode_readahead_blks);
+ 
++	if (test_opt(sb, DATA_ERR_ABORT))
++		seq_puts(seq, ",data_err=abort");
++
+ 	ext4_show_quota_options(seq, sb);
+ 	return 0;
+ }
+@@ -907,6 +910,7 @@ enum {
+ 	Opt_commit, Opt_journal_update, Opt_journal_inum, Opt_journal_dev,
+ 	Opt_journal_checksum, Opt_journal_async_commit,
+ 	Opt_abort, Opt_data_journal, Opt_data_ordered, Opt_data_writeback,
++	Opt_data_err_abort, Opt_data_err_ignore,
+ 	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
+ 	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
+ 	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
+@@ -953,6 +957,8 @@ static match_table_t tokens = {
+ 	{Opt_data_journal, "data=journal"},
+ 	{Opt_data_ordered, "data=ordered"},
+ 	{Opt_data_writeback, "data=writeback"},
++	{Opt_data_err_abort, "data_err=abort"},
++	{Opt_data_err_ignore, "data_err=ignore"},
+ 	{Opt_offusrjquota, "usrjquota="},
+ 	{Opt_usrjquota, "usrjquota=%s"},
+ 	{Opt_offgrpjquota, "grpjquota="},
+@@ -1187,6 +1193,12 @@ static int parse_options(char *options, struct super_block *sb,
+ 				sbi->s_mount_opt |= data_opt;
+ 			}
+ 			break;
++		case Opt_data_err_abort:
++			set_opt(sbi->s_mount_opt, DATA_ERR_ABORT);
++			break;
++		case Opt_data_err_ignore:
++			clear_opt(sbi->s_mount_opt, DATA_ERR_ABORT);
++			break;
+ #ifdef CONFIG_QUOTA
+ 		case Opt_usrjquota:
+ 			qtype = USRQUOTA;
+@@ -2535,6 +2547,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+ 		journal->j_flags |= JBD2_BARRIER;
+ 	else
+ 		journal->j_flags &= ~JBD2_BARRIER;
++	if (test_opt(sb, DATA_ERR_ABORT))
++		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
++	else
++		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
+ 	spin_unlock(&journal->j_state_lock);
+ }
+ 
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index 849f104..0abe02c 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -684,6 +684,8 @@ start_journal_io:
+ 		printk(KERN_WARNING
+ 			"JBD2: Detected IO errors while flushing file data "
+ 		       "on %s\n", journal->j_devname);
++		if (journal->j_flags & JBD2_ABORT_ON_SYNCDATA_ERR)
++			jbd2_journal_abort(journal, err);
+ 		err = 0;
+ 	}
+ 
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index c9e7d78..d2e91ea 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -967,6 +967,9 @@ struct journal_s
+ #define JBD2_FLUSHED	0x008	/* The journal superblock has been flushed */
+ #define JBD2_LOADED	0x010	/* The journal superblock has been loaded */
+ #define JBD2_BARRIER	0x020	/* Use IDE barriers */
++#define JBD2_ABORT_ON_SYNCDATA_ERR	0x040	/* Abort the journal on file
++						 * data write error in ordered
++						 * mode */
+ 
+ /*
+  * Function declarations for the journaling transaction and buffer

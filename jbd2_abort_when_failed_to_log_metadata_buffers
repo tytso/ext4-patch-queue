@@ -1,0 +1,33 @@
+jbd2: abort when failed to log metadata buffers
+
+From: Hidehiro Kawai <hidehiro.kawai.ez@hitachi.com>
+
+If we failed to write metadata buffers to the journal space and
+succeeded to write the commit record, stale data can be written
+back to the filesystem as metadata in the recovery phase.
+
+To avoid this, when we failed to write out metadata buffers,
+abort the journal before writing the commit record.
+
+We can also avoid this kind of corruption by using check-summing
+feature because it can detect invalid metadata blocks in the
+journal and avoid them from being replayed.  So we don't need to
+care about asynchronous commit record writeout with a check sum.
+
+Signed-off-by: Hidehiro Kawai <hidehiro.kawai.ez@hitachi.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index 0d3814a..78e4da9 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -783,6 +783,9 @@ wait_for_iobuf:
+ 		/* AKPM: bforget here */
+ 	}
+ 
++	if (err)
++		jbd2_journal_abort(journal, err);
++
+ 	jbd_debug(3, "JBD: commit phase 5\n");
+ 
+ 	if (!JBD2_HAS_INCOMPAT_FEATURE(journal,
