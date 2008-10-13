@@ -8,9 +8,13 @@ in one rb node.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |  176 +++++++++++++++++++++++++++++++++--------------------
+ fs/ext4/mballoc.h |   24 ++++++--
+ 2 files changed, 128 insertions(+), 72 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index b580714..9c151f2 100644
+index b580714..2f38754 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -2300,6 +2300,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
@@ -147,7 +151,7 @@ index b580714..9c151f2 100644
  static noinline_for_stack int
  ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  			  ext4_group_t group, ext4_grpblk_t block, int count)
-@@ -4422,57 +4442,73 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
+@@ -4422,57 +4442,79 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  	struct ext4_group_info *db = e4b->bd_info;
  	struct super_block *sb = e4b->bd_sb;
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
@@ -204,9 +208,7 @@ index b580714..9c151f2 100644
 -				return -ENOMEM;
 -			md->num = 0;
 -			md->group = group;
-+	rb_link_node(new_node, parent, n);
-+	rb_insert_color(new_node, &db->bb_free_root);
- 
+-
 -			ext4_lock_group(sb, group);
 -			if (db->bb_md_cur == NULL) {
 -				spin_lock(&sbi->s_md_lock);
@@ -226,6 +228,9 @@ index b580714..9c151f2 100644
 -				kfree(md);
 -				md = db->bb_md_cur;
 -			}
++	rb_link_node(new_node, parent, n);
++	rb_insert_color(new_node, &db->bb_free_root);
++
 +	/* Now try to see the extent can be merged to left and right */
 +	node = rb_prev(new_node);
 +	if (node) {
@@ -234,7 +239,10 @@ index b580714..9c151f2 100644
 +			new_entry->start_blk = entry->start_blk;
 +			new_entry->count += entry->count;
 +			rb_erase(node, &(db->bb_free_root));
++			spin_lock(&sbi->s_md_lock);
 +			list_del(&entry->list);
++			spin_unlock(&sbi->s_md_lock);
++			kmem_cache_free(ext4_free_ext_cachep, entry);
  		}
 +	}
  
@@ -250,7 +258,10 @@ index b580714..9c151f2 100644
 +		if (can_merge(new_entry, entry)) {
 +			new_entry->count += entry->count;
 +			rb_erase(node, &(db->bb_free_root));
++			spin_lock(&sbi->s_md_lock);
 +			list_del(&entry->list);
++			spin_unlock(&sbi->s_md_lock);
++			kmem_cache_free(ext4_free_ext_cachep, entry);
  		}
  	}
 +	/* Add the extent to active_transaction list */
