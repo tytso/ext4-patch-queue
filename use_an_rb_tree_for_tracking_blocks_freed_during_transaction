@@ -9,12 +9,12 @@ in one rb node.
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/mballoc.c |  176 +++++++++++++++++++++++++++++++++--------------------
- fs/ext4/mballoc.h |   24 ++++++--
- 2 files changed, 128 insertions(+), 72 deletions(-)
+ fs/ext4/mballoc.c |  184 +++++++++++++++++++++++++++++++++-------------------
+ fs/ext4/mballoc.h |   23 +++++--
+ 2 files changed, 134 insertions(+), 73 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index b580714..2f38754 100644
+index 154f8de..1ba9586 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -2300,6 +2300,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
@@ -96,12 +96,12 @@ index b580714..2f38754 100644
  		}
 -		mb_debug("\n");
 -		ext4_unlock_group(sb, md->group);
-+		ext4_unlock_group(sb, entry->group);
- 
+-
 -		/* balance refcounts from ext4_mb_free_metadata() */
 -		page_cache_release(e4b.bd_buddy_page);
 -		page_cache_release(e4b.bd_bitmap_page);
--
++		ext4_unlock_group(sb, entry->group);
+ 
 -		kfree(md);
 +		kmem_cache_free(ext4_free_ext_cachep, entry);
  		ext4_mb_release_desc(&e4b);
@@ -136,14 +136,21 @@ index b580714..2f38754 100644
  }
  
  
-@@ -4415,6 +4427,14 @@ static void ext4_mb_poll_new_transaction(struct super_block *sb,
+@@ -4415,6 +4427,21 @@ static void ext4_mb_poll_new_transaction(struct super_block *sb,
  	ext4_mb_free_committed_blocks(sb);
  }
  
++/*
++ * We can merge two free data extents of the physical blocks
++ * are contiguous, AND the extents were freed by the same transaction, 
++ * AND the blocks are associated with the same group.
++ */
 +static int can_merge(struct ext4_free_data *entry1,
 +			struct ext4_free_data *entry2)
 +{
-+	if (entry1->start_blk + entry1->count == entry2->start_blk)
++	if ((entry1->t_tid == entry2->t_tid) &&
++	    (entry1->group == entry2->group) &&
++	    (entry1->start_blk + entry1->count) == entry2->start_blk)
 +		return 1;
 +	return 0;
 +}
@@ -151,7 +158,7 @@ index b580714..2f38754 100644
  static noinline_for_stack int
  ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  			  ext4_group_t group, ext4_grpblk_t block, int count)
-@@ -4422,57 +4442,79 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
+@@ -4422,57 +4449,80 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  	struct ext4_group_info *db = e4b->bd_info;
  	struct super_block *sb = e4b->bd_sb;
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
@@ -169,6 +176,7 @@ index b580714..2f38754 100644
 +	new_entry->start_blk = block;
 +	new_entry->group  = group;
 +	new_entry->count = count;
++	new_entry->t_tid = handle->h_transaction->t_tid;
 +	new_node = &new_entry->node;
 +
  	ext4_lock_group(sb, group);
@@ -272,10 +280,10 @@ index b580714..2f38754 100644
  	return 0;
  }
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
-index b3b4828..07dff39 100644
+index b3b4828..23e08e5 100644
 --- a/fs/ext4/mballoc.h
 +++ b/fs/ext4/mballoc.h
-@@ -98,23 +98,37 @@
+@@ -98,23 +98,34 @@
  
  static struct kmem_cache *ext4_pspace_cachep;
  static struct kmem_cache *ext4_ac_cachep;
@@ -287,27 +295,25 @@ index b3b4828..07dff39 100644
  #define EXT4_BB_MAX_BLOCKS	30
  
 -struct ext4_free_metadata {
-+struct ext4_free_data {
-+	/* this link the free block
-+	 * information from group_info
-+	 */
-+	struct rb_node node;
-+
-+	/* group this free block
-+	 * extent belong
-+	 */
- 	ext4_group_t group;
+-	ext4_group_t group;
 -	unsigned short num;
 -	ext4_grpblk_t  blocks[EXT4_BB_MAX_BLOCKS];
++struct ext4_free_data {
++	/* this links the free block information from group_info */
++	struct rb_node node;
++
++	/* this links the free block information from ext4_sb_info */
+ 	struct list_head list;
++
++	/* group which free block extent belongs */
++	ext4_group_t group;
 +
 +	/* free block extent */
 +	ext4_grpblk_t start_blk;
 +	ext4_grpblk_t count;
 +
-+	/* this link the free block
-+	 * information from ext4_sb_info
-+	 */
- 	struct list_head list;
++	/* transaction which freed this extent */
++	tid_t	t_tid;
  };
  
  struct ext4_group_info {
