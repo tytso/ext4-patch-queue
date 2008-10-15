@@ -1,22 +1,21 @@
 ext4: Fix file fragmentation during large file write.
 
-From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
 The range_cyclic writeback mode uses the address_space writeback_index
 as the start index for writeback.  With delayed allocation we were
 updating writeback_index wrongly resulting in highly fragmented file.
-Number of extents reduced from 4000 to 27 for a 3GB file with the below
-patch.
-
-The patch also removes the range_cont writeback mode added for ext4
-delayed allocation. Instead we add two new flags in writeback_control
-which control the behaviour of write_cache_pages.
+Number of extents reduced from 4000 to 27 for a 3GB file with the
+below patch.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/inode.c |   83 +++++++++++++++++++++++++++++++++----------------------
+ 1 files changed, 50 insertions(+), 33 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 9b4ec9d..3e216ac 100644
+index cba7960..844c136 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -1648,6 +1648,7 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
@@ -27,34 +26,18 @@ index 9b4ec9d..3e216ac 100644
  
  	BUG_ON(mpd->next_page <= mpd->first_page);
  	pagevec_init(&pvec, 0);
-@@ -1655,20 +1656,30 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+@@ -1655,7 +1656,6 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
  	end = mpd->next_page - 1;
  
  	while (index <= end) {
 -		/* XXX: optimize tail */
--		nr_pages = pagevec_lookup(&pvec, mapping, index, PAGEVEC_SIZE);
-+		/*
-+		 * We can use PAGECACHE_TAG_DIRTY lookup here because
-+		 * even though we have cleared the dirty flag on the page
-+		 * We still keep the page in the radix tree with tag
-+		 * PAGECACHE_TAG_DIRTY. See clear_page_dirty_for_io.
-+		 * The PAGECACHE_TAG_DIRTY is cleared in set_page_writeback
-+		 * which is called via the below writepage callback.
-+		 */
-+		nr_pages = pagevec_lookup_tag(&pvec, mapping, &index,
-+					PAGECACHE_TAG_DIRTY,
-+					min(end - index,
-+					(pgoff_t)PAGEVEC_SIZE-1) + 1);
- 		if (nr_pages == 0)
- 			break;
+ 		/*
+ 		 * We can use PAGECACHE_TAG_DIRTY lookup here because
+ 		 * even though we have cleared the dirty flag on the page
+@@ -1673,8 +1673,13 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
  		for (i = 0; i < nr_pages; i++) {
  			struct page *page = pvec.pages[i];
  
--			index = page->index;
--			if (index > end)
--				break;
--			index++;
--
 +			pages_skipped = mpd->wbc->pages_skipped;
  			err = mapping->a_ops->writepage(page, mpd->wbc);
 -			if (!err)
@@ -66,7 +49,7 @@ index 9b4ec9d..3e216ac 100644
  				mpd->pages_written++;
  			/*
  			 * In error case, we have to continue because
-@@ -2104,7 +2115,6 @@ static int mpage_da_writepages(struct address_space *mapping,
+@@ -2110,7 +2115,6 @@ static int mpage_da_writepages(struct address_space *mapping,
  			       struct writeback_control *wbc,
  			       struct mpage_da_data *mpd)
  {
@@ -74,7 +57,7 @@ index 9b4ec9d..3e216ac 100644
  	int ret;
  
  	if (!mpd->get_block)
-@@ -2119,10 +2129,7 @@ static int mpage_da_writepages(struct address_space *mapping,
+@@ -2125,10 +2129,7 @@ static int mpage_da_writepages(struct address_space *mapping,
  	mpd->pages_written = 0;
  	mpd->retval = 0;
  
@@ -85,7 +68,7 @@ index 9b4ec9d..3e216ac 100644
  	/*
  	 * Handle last extent of pages
  	 */
-@@ -2131,7 +2138,7 @@ static int mpage_da_writepages(struct address_space *mapping,
+@@ -2137,7 +2138,7 @@ static int mpage_da_writepages(struct address_space *mapping,
  			mpage_da_submit_io(mpd);
  	}
  
@@ -94,14 +77,13 @@ index 9b4ec9d..3e216ac 100644
  	return ret;
  }
  
-@@ -2360,12 +2367,14 @@ static int ext4_da_writepages_trans_blocks(struct inode *inode)
+@@ -2366,11 +2367,14 @@ static int ext4_da_writepages_trans_blocks(struct inode *inode)
  static int ext4_da_writepages(struct address_space *mapping,
  			      struct writeback_control *wbc)
  {
 +	pgoff_t	index;
 +	int range_whole = 0;
  	handle_t *handle = NULL;
--	loff_t range_start = 0;
 +	long pages_written = 0;
  	struct mpage_da_data mpd;
  	struct inode *inode = mapping->host;
@@ -111,21 +93,14 @@ index 9b4ec9d..3e216ac 100644
  	struct ext4_sb_info *sbi = EXT4_SB(mapping->host->i_sb);
  
  	/*
-@@ -2385,23 +2394,27 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -2390,16 +2394,27 @@ static int ext4_da_writepages(struct address_space *mapping,
  		nr_to_writebump = sbi->s_mb_stream_request - wbc->nr_to_write;
  		wbc->nr_to_write = sbi->s_mb_stream_request;
  	}
 +	if (wbc->range_start == 0 && wbc->range_end == LLONG_MAX)
 +		range_whole = 1;
  
--	if (!wbc->range_cyclic)
--		/*
--		 * If range_cyclic is not set force range_cont
--		 * and save the old writeback_index
--		 */
--		wbc->range_cont = 1;
 -
--	range_start =  wbc->range_start;
 -	pages_skipped = wbc->pages_skipped;
 +	if (wbc->range_cyclic)
 +		index = mapping->writeback_index;
@@ -151,7 +126,7 @@ index 9b4ec9d..3e216ac 100644
  
  		/*
  		 * we  insert one extent at a time. So we need
-@@ -2422,48 +2435,49 @@ restart_loop:
+@@ -2420,46 +2435,48 @@ static int ext4_da_writepages(struct address_space *mapping,
  			dump_stack();
  			goto out_writepages;
  		}
@@ -192,16 +167,15 @@ index 9b4ec9d..3e216ac 100644
  			break;
 -		}
 -		wbc->nr_to_write = to_write;
- 	}
- 
--	if (wbc->range_cont && (pages_skipped != wbc->pages_skipped)) {
+-	}
+-
+-	if (!wbc->range_cyclic && (pages_skipped != wbc->pages_skipped)) {
 -		/* We skipped pages in this loop */
--		wbc->range_start = range_start;
 -		wbc->nr_to_write = to_write +
 -				wbc->pages_skipped - pages_skipped;
 -		wbc->pages_skipped = pages_skipped;
 -		goto restart_loop;
--	}
+ 	}
 +	/* Update index */
 +	index += pages_written;
 +	if (wbc->range_cyclic || (range_whole && wbc->nr_to_write > 0))
@@ -213,7 +187,6 @@ index 9b4ec9d..3e216ac 100644
  
  out_writepages:
 -	wbc->nr_to_write = to_write - nr_to_writebump;
--	wbc->range_start = range_start;
 +	if (!no_nrwrite_update)
 +		wbc->no_nrwrite_update = 0;
 +	if (!no_index_update)
@@ -222,57 +195,3 @@ index 9b4ec9d..3e216ac 100644
  	return ret;
  }
  
-diff --git a/include/linux/writeback.h b/include/linux/writeback.h
-index 12b15c5..b04287e 100644
---- a/include/linux/writeback.h
-+++ b/include/linux/writeback.h
-@@ -63,7 +63,10 @@ struct writeback_control {
- 	unsigned for_writepages:1;	/* This is a writepages() call */
- 	unsigned range_cyclic:1;	/* range_start is cyclic */
- 	unsigned more_io:1;		/* more io to be dispatched */
--	unsigned range_cont:1;
-+
-+	/* write_cache_pages() control */
-+	unsigned no_nrwrite_update:1;	/* don't update nr_to_write */
-+	unsigned no_index_update:1;	/* don't update writeback_index */
- };
- 
- /*
-diff --git a/mm/page-writeback.c b/mm/page-writeback.c
-index 24de8b6..4f359f4 100644
---- a/mm/page-writeback.c
-+++ b/mm/page-writeback.c
-@@ -876,6 +876,7 @@ int write_cache_pages(struct address_space *mapping,
- 	pgoff_t end;		/* Inclusive */
- 	int scanned = 0;
- 	int range_whole = 0;
-+	long nr_to_write = wbc->nr_to_write;
- 
- 	if (wbc->nonblocking && bdi_write_congested(bdi)) {
- 		wbc->encountered_congestion = 1;
-@@ -939,7 +940,7 @@ retry:
- 				unlock_page(page);
- 				ret = 0;
- 			}
--			if (ret || (--(wbc->nr_to_write) <= 0))
-+			if (ret || (--nr_to_write <= 0))
- 				done = 1;
- 			if (wbc->nonblocking && bdi_write_congested(bdi)) {
- 				wbc->encountered_congestion = 1;
-@@ -958,11 +959,13 @@ retry:
- 		index = 0;
- 		goto retry;
- 	}
--	if (wbc->range_cyclic || (range_whole && wbc->nr_to_write > 0))
-+	if (!wbc->no_index_update &&
-+		(wbc->range_cyclic || (range_whole && nr_to_write > 0))) {
- 		mapping->writeback_index = index;
-+	}
-+	if (!wbc->no_nrwrite_update)
-+		wbc->nr_to_write = nr_to_write;
- 
--	if (wbc->range_cont)
--		wbc->range_start = index << PAGE_CACHE_SHIFT;
- 	return ret;
- }
- EXPORT_SYMBOL(write_cache_pages);

@@ -3,18 +3,18 @@ ext4: Use an rbtree for tracking blocks freed during transaction.
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 With this patch we track the block freed during a transaction using
-rb tree. We also make sure contiguous blocks freed are collected
-in one rb node.
+red-black tree.  We also make sure contiguous blocks freed are collected
+in one node in the tree.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/mballoc.c |  184 +++++++++++++++++++++++++++++++++-------------------
- fs/ext4/mballoc.h |   23 +++++--
- 2 files changed, 134 insertions(+), 73 deletions(-)
+ fs/ext4/mballoc.h |   26 +++++---
+ 2 files changed, 133 insertions(+), 77 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 154f8de..1ba9586 100644
+index b580714..7023228 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -2300,6 +2300,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
@@ -141,16 +141,16 @@ index 154f8de..1ba9586 100644
  }
  
 +/*
-+ * We can merge two free data extents of the physical blocks
-+ * are contiguous, AND the extents were freed by the same transaction, 
++ * We can merge two free data extents only if the physical blocks
++ * are contiguous, AND the extents were freed by the same transaction,
 + * AND the blocks are associated with the same group.
 + */
 +static int can_merge(struct ext4_free_data *entry1,
 +			struct ext4_free_data *entry2)
 +{
-+	if ((entry1->t_tid == entry2->t_tid) &&
-+	    (entry1->group == entry2->group) &&
-+	    (entry1->start_blk + entry1->count) == entry2->start_blk)
++	if (entry1->t_tid == entry2->t_tid &&
++		(entry1->group == entry2->group) &&
++		(entry1->start_blk + entry1->count) == entry2->start_blk)
 +		return 1;
 +	return 0;
 +}
@@ -280,28 +280,27 @@ index 154f8de..1ba9586 100644
  	return 0;
  }
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
-index b3b4828..23e08e5 100644
+index b3b4828..9e815c4 100644
 --- a/fs/ext4/mballoc.h
 +++ b/fs/ext4/mballoc.h
-@@ -98,23 +98,34 @@
+@@ -98,23 +98,29 @@
  
  static struct kmem_cache *ext4_pspace_cachep;
  static struct kmem_cache *ext4_ac_cachep;
 +static struct kmem_cache *ext4_free_ext_cachep;
  
- #ifdef EXT4_BB_MAX_BLOCKS
- #undef EXT4_BB_MAX_BLOCKS
- #endif
- #define EXT4_BB_MAX_BLOCKS	30
+-#ifdef EXT4_BB_MAX_BLOCKS
+-#undef EXT4_BB_MAX_BLOCKS
+-#endif
+-#define EXT4_BB_MAX_BLOCKS	30
++struct ext4_free_data {
++	/* this links the free block information from group_info */
++	struct rb_node node;
  
 -struct ext4_free_metadata {
 -	ext4_group_t group;
 -	unsigned short num;
 -	ext4_grpblk_t  blocks[EXT4_BB_MAX_BLOCKS];
-+struct ext4_free_data {
-+	/* this links the free block information from group_info */
-+	struct rb_node node;
-+
 +	/* this links the free block information from ext4_sb_info */
  	struct list_head list;
 +
