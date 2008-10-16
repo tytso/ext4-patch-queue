@@ -5,17 +5,17 @@ From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 The range_cyclic writeback mode uses the address_space writeback_index
 as the start index for writeback.  With delayed allocation we were
 updating writeback_index wrongly resulting in highly fragmented file.
-Number of extents reduced from 4000 to 27 for a 3GB file with the
-below patch.
+This patch reduces the number of extents reduced from 4000 to 27 for a
+3GB file.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/inode.c |   83 +++++++++++++++++++++++++++++++++----------------------
- 1 files changed, 50 insertions(+), 33 deletions(-)
+ fs/ext4/inode.c |   91 ++++++++++++++++++++++++++++++++++--------------------
+ 1 files changed, 57 insertions(+), 34 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index cba7960..844c136 100644
+index cba7960..46ffd0a 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -1648,6 +1648,7 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
@@ -57,7 +57,7 @@ index cba7960..844c136 100644
  	int ret;
  
  	if (!mpd->get_block)
-@@ -2125,10 +2129,7 @@ static int mpage_da_writepages(struct address_space *mapping,
+@@ -2125,19 +2129,18 @@ static int mpage_da_writepages(struct address_space *mapping,
  	mpd->pages_written = 0;
  	mpd->retval = 0;
  
@@ -68,32 +68,36 @@ index cba7960..844c136 100644
  	/*
  	 * Handle last extent of pages
  	 */
-@@ -2137,7 +2138,7 @@ static int mpage_da_writepages(struct address_space *mapping,
+ 	if (!mpd->io_done && mpd->next_page != mpd->first_page) {
+ 		if (mpage_da_map_blocks(mpd) == 0)
  			mpage_da_submit_io(mpd);
- 	}
+-	}
  
 -	wbc->nr_to_write = to_write - mpd->pages_written;
++		mpd->io_done = 1;
++		ret = MPAGE_DA_EXTENT_TAIL;
++	}
 +	wbc->nr_to_write -= mpd->pages_written;
  	return ret;
  }
  
-@@ -2366,11 +2367,14 @@ static int ext4_da_writepages_trans_blocks(struct inode *inode)
+@@ -2366,11 +2369,14 @@ static int ext4_da_writepages_trans_blocks(struct inode *inode)
  static int ext4_da_writepages(struct address_space *mapping,
  			      struct writeback_control *wbc)
  {
 +	pgoff_t	index;
 +	int range_whole = 0;
  	handle_t *handle = NULL;
-+	long pages_written = 0;
  	struct mpage_da_data mpd;
  	struct inode *inode = mapping->host;
-+	int no_nrwrite_update, no_index_update;
++	int no_nrwrite_index_update;
++	long pages_written = 0, pages_skipped;
  	int needed_blocks, ret = 0, nr_to_writebump = 0;
 -	long to_write, pages_skipped = 0;
  	struct ext4_sb_info *sbi = EXT4_SB(mapping->host->i_sb);
  
  	/*
-@@ -2390,16 +2394,27 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -2390,16 +2396,26 @@ static int ext4_da_writepages(struct address_space *mapping,
  		nr_to_writebump = sbi->s_mb_stream_request - wbc->nr_to_write;
  		wbc->nr_to_write = sbi->s_mb_stream_request;
  	}
@@ -117,16 +121,15 @@ index cba7960..844c136 100644
 +	 * we don't want write_cache_pages to update
 +	 * nr_to_write and writeback_index
 +	 */
-+	no_nrwrite_update = wbc->no_nrwrite_update;
-+	wbc->no_nrwrite_update = 1;
-+	no_index_update = wbc->no_index_update;
-+	wbc->no_index_update   = 1;
++	no_nrwrite_index_update = wbc->no_nrwrite_index_update;
++	wbc->no_nrwrite_index_update = 1;
++	pages_skipped = wbc->pages_skipped;
 +
 +	while (!ret && wbc->nr_to_write > 0) {
  
  		/*
  		 * we  insert one extent at a time. So we need
-@@ -2420,46 +2435,48 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -2420,46 +2436,53 @@ static int ext4_da_writepages(struct address_space *mapping,
  			dump_stack();
  			goto out_writepages;
  		}
@@ -147,6 +150,7 @@ index cba7960..844c136 100644
 -
 -		/* reset the retry count */
 -		if (ret == MPAGE_DA_EXTENT_TAIL) {
++			wbc->pages_skipped = pages_skipped;
 +			ret = 0;
 +		} else if (ret == MPAGE_DA_EXTENT_TAIL) {
  			/*
@@ -155,6 +159,7 @@ index cba7960..844c136 100644
  			 */
 -			to_write += wbc->nr_to_write;
 +			pages_written += mpd.pages_written;
++			wbc->pages_skipped = pages_skipped;
  			ret = 0;
 -		} else if (wbc->nr_to_write) {
 +		} else if (wbc->nr_to_write)
@@ -176,6 +181,11 @@ index cba7960..844c136 100644
 -		wbc->pages_skipped = pages_skipped;
 -		goto restart_loop;
  	}
++	if (pages_skipped != wbc->pages_skipped)
++		printk(KERN_EMERG "This should not happen leaving %s "
++				"with nr_to_write = %ld ret = %d\n",
++				__func__, wbc->nr_to_write, ret);
++
 +	/* Update index */
 +	index += pages_written;
 +	if (wbc->range_cyclic || (range_whole && wbc->nr_to_write > 0))
@@ -187,11 +197,17 @@ index cba7960..844c136 100644
  
  out_writepages:
 -	wbc->nr_to_write = to_write - nr_to_writebump;
-+	if (!no_nrwrite_update)
-+		wbc->no_nrwrite_update = 0;
-+	if (!no_index_update)
-+		wbc->no_index_update   = 0;
++	if (!no_nrwrite_index_update)
++		wbc->no_nrwrite_index_update = 0;
 +	wbc->nr_to_write -= nr_to_writebump;
  	return ret;
  }
  
+-- 
+1.6.0.2.526.g5c283
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

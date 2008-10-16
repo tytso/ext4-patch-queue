@@ -1,39 +1,43 @@
-vfs: Add no_nrwrite_update and no_index_update writeback control flags
+vfs: Add no_nrwrite_index_update writeback control flag
 
 From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-If no_nrwrite_update is set we don't update nr_to_write in
-write_cache_pages.  Similarly, if no_index_update is we don't update
-address space writeback_index.  These changes enable a file system to
-skip these updates in write_cache_pages and do them in the
-writepages() callback.  This patch will be followed by an ext4 patch
-that make use of these new flags.
+If no_nrwrite_index_update is set we don't update nr_to_write and
+address space writeback_index in write_cache_pages.  This change
+enables a file system to skip these updates in write_cache_pages and do
+them in the writepages() callback.  This patch will be followed by an
+ext4 patch that make use of these new flags.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 CC: linux-fsdevel@vger.kernel.org
 ---
- include/linux/writeback.h |    4 ++++
- mm/page-writeback.c       |    9 +++++++--
- 2 files changed, 11 insertions(+), 2 deletions(-)
+ include/linux/writeback.h |    9 +++++++++
+ mm/page-writeback.c       |   10 +++++++---
+ 2 files changed, 16 insertions(+), 3 deletions(-)
 
 diff --git a/include/linux/writeback.h b/include/linux/writeback.h
-index bd91987..b04287e 100644
+index bd91987..4de3941 100644
 --- a/include/linux/writeback.h
 +++ b/include/linux/writeback.h
-@@ -63,6 +63,10 @@ struct writeback_control {
+@@ -63,6 +63,15 @@ struct writeback_control {
  	unsigned for_writepages:1;	/* This is a writepages() call */
  	unsigned range_cyclic:1;	/* range_start is cyclic */
  	unsigned more_io:1;		/* more io to be dispatched */
-+
-+	/* write_cache_pages() control */
-+	unsigned no_nrwrite_update:1;	/* don't update nr_to_write */
-+	unsigned no_index_update:1;	/* don't update writeback_index */
++	/*
++	 * write_cache_pages() won't update wbc->nr_to_write and
++	 * mapping->writeback_index if no_nrwrite_index_update
++	 * is set.  write_cache_pages() may write more than we
++	 * requested and we want to make sure nr_to_write and
++	 * writeback_index are updated in a consistent manner
++	 * so we use a single control to update them
++	 */
++	unsigned no_nrwrite_index_update:1;
  };
  
  /*
 diff --git a/mm/page-writeback.c b/mm/page-writeback.c
-index 718efa6..4f359f4 100644
+index 718efa6..b6d66d3 100644
 --- a/mm/page-writeback.c
 +++ b/mm/page-writeback.c
 @@ -876,6 +876,7 @@ int write_cache_pages(struct address_space *mapping,
@@ -53,25 +57,17 @@ index 718efa6..4f359f4 100644
  				done = 1;
  			if (wbc->nonblocking && bdi_write_congested(bdi)) {
  				wbc->encountered_congestion = 1;
-@@ -958,8 +959,12 @@ int write_cache_pages(struct address_space *mapping,
+@@ -958,8 +959,11 @@ int write_cache_pages(struct address_space *mapping,
  		index = 0;
  		goto retry;
  	}
 -	if (wbc->range_cyclic || (range_whole && wbc->nr_to_write > 0))
-+	if (!wbc->no_index_update &&
-+		(wbc->range_cyclic || (range_whole && nr_to_write > 0))) {
- 		mapping->writeback_index = index;
-+	}
-+	if (!wbc->no_nrwrite_update)
+-		mapping->writeback_index = index;
++	if (!wbc->no_nrwrite_index_update) {
++		if (wbc->range_cyclic || (range_whole && nr_to_write > 0))
++			mapping->writeback_index = index;
 +		wbc->nr_to_write = nr_to_write;
++	}
  
  	return ret;
  }
--- 
-1.6.0.2.526.g5c283
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
