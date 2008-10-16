@@ -2,7 +2,7 @@ Add a ioctl which dumps out all of the in-use buffer heads for a block device
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/block/compat_ioctl.c b/block/compat_ioctl.c
-index c23177e..c2a788d 100644
+index 1e559fb..f81324d 100644
 --- a/block/compat_ioctl.c
 +++ b/block/compat_ioctl.c
 @@ -786,6 +786,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
@@ -12,12 +12,12 @@ index c23177e..c2a788d 100644
 +	case BLKDUMPUSEDBUFFERS:
  	case BLKFLSBUF:
  	case BLKROSET:
- 	/*
+ 	case BLKDISCARD:
 diff --git a/block/ioctl.c b/block/ioctl.c
-index 77185e5..5eba4d6 100644
+index 38bee32..df0fe37 100644
 --- a/block/ioctl.c
 +++ b/block/ioctl.c
-@@ -279,6 +279,11 @@ int blkdev_ioctl(struct inode *inode, struct file *file, unsigned cmd,
+@@ -357,6 +357,11 @@ int blkdev_ioctl(struct inode *inode, struct file *file, unsigned cmd,
  			return -EFAULT;
  		return 0;
  	}
@@ -100,14 +100,15 @@ index eadaab4..1c48dff 100644
  extern int buffer_heads_over_limit;
  
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index 580b513..ae0ab82 100644
+index a6a625b..c91f118 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -222,6 +222,7 @@ extern int dir_notify_enable;
- #define BLKTRACESTART _IO(0x12,116)
- #define BLKTRACESTOP _IO(0x12,117)
+@@ -226,6 +226,8 @@ extern int dir_notify_enable;
  #define BLKTRACETEARDOWN _IO(0x12,118)
-+#define BLKDUMPUSEDBUFFERS _IO(0x12,130)
+ #define BLKDISCARD _IO(0x12,119)
  
++#define BLKDUMPUSEDBUFFERS _IO(0x12,130)
++
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
+ #define FIGETBSZ   _IO(0x00,2)	/* get the block size used for bmap */
