@@ -1,3 +1,16 @@
+delay capable() check in ext4_has_free_blocks()
+
+As reported by Eric Paris, the capable() check in ext4_has_free_blocks()
+sometimes causes SELinux denials.
+
+We can rearrange the logic so that we only try to use the root-reserved
+blocks when necessary, and even then we can move the capable() test
+to last, to avoid the check most of the time.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Reviewed-by: Mingming Cao <cmm@us.ibm.com>
+--
+
 Index: linux-2.6/fs/ext4/balloc.c
 ===================================================================
 --- linux-2.6.orig/fs/ext4/balloc.c	2008-10-24 15:32:36.000000000 -0500
