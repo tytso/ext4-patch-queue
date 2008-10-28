@@ -1,21 +1,21 @@
-ext4: online defrag: Read and write file data with memory page.
+ext4: online defrag -- Exchange the extents between two inodes
 
 From: Akira Fujita <a-fujita@rs.jp.nec.com>
 
-Read the file data from the old blocks to the page and
-write the file data on the page into the new blocks.
+For each page, exchange the extents between the temporary inode
+and the original inode, and then write them.
 
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 ---
- fs/ext4/defrag.c |  478 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
- 1 files changed, 477 insertions(+), 1 deletions(-)
+ fs/ext4/defrag.c |  477 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 files changed, 476 insertions(+), 1 deletions(-)
 
 diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
-index 2fc8d9f..d3ff958 100644
+index 729f001..0b90d4d 100644
 --- a/fs/ext4/defrag.c
 +++ b/fs/ext4/defrag.c
-@@ -124,6 +124,362 @@ int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
+@@ -91,6 +91,361 @@ err:
  }
 
  /**
@@ -41,7 +41,6 @@ index 2fc8d9f..d3ff958 100644
 +		struct ext4_extent *end_ext, ext4_fsblk_t replaced)
 +{
 +	return 0;
-+
 +}
 +
 +/**
@@ -378,7 +377,7 @@ index 2fc8d9f..d3ff958 100644
   * ext4_defrag_fill_ar - Prepare to multiple block allocate for tmp inode
   *
   * @org_inode:		original inode
-@@ -218,7 +574,127 @@ ext4_defrag_partial(struct inode *tmp_inode, struct file *filp,
+@@ -185,7 +540,127 @@ ext4_defrag_partial(struct inode *tmp_inode, struct file *filp,
  			pgoff_t org_page_offset, ext4_lblk_t dest_blk_offset,
  			int data_offset_in_page, int block_len_in_page)
  {
@@ -507,10 +506,3 @@ index 2fc8d9f..d3ff958 100644
  }
 
  /**
-
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-

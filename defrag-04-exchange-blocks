@@ -1,48 +1,25 @@
-ext4: online defrag: Exchange the blocks between two inodes.
+ext4: online defrag -- Exchange the blocks between two inodes.
 
 From: Akira Fujita <a-fujita@rs.jp.nec.com>
 
-Exchange the data blocks between the temporary inode and
-the original inode.
+Merge extents of target inode which is increased by defragmentation.
+
+For relevant defrag, add the goal argument to related functions
+to allocate data block to the specified offset.
 
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 ---
- fs/ext4/defrag.c |  286 +++++++++++++++++++++++++++++++++++++++++++++++++++---
+ fs/ext4/defrag.c |  275 +++++++++++++++++++++++++++++++++++++++++++++++++++---
  fs/ext4/ext4.h   |    2 +-
- 2 files changed, 274 insertions(+), 14 deletions(-)
+ fs/ext4/ioctl.c  |   12 ++-
+ 3 files changed, 275 insertions(+), 14 deletions(-)
 
 diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
-index d3ff958..4dd4318 100644
+index 0b90d4d..891e599 100644
 --- a/fs/ext4/defrag.c
 +++ b/fs/ext4/defrag.c
-@@ -103,6 +103,7 @@ int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
-
- 	if (cmd == EXT4_IOC_DEFRAG) {
- 		struct ext4_ext_defrag_data defrag;
-+		struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
-
- 		if (!capable(CAP_DAC_OVERRIDE)) {
- 			if ((inode->i_mode & S_IRUSR) != S_IRUSR)
-@@ -116,14 +117,205 @@ int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
- 						sizeof(defrag)))
- 			return -EFAULT;
-
-+		/* Check goal offset if goal offset was given from userspace */
-+		if (defrag.goal != -1 &&
-+				ext4_blocks_count(es) <= defrag.goal) {
-+			printk(KERN_ERR "ext4 defrag: Invalid goal offset"
-+				" %llu, you can set goal offset up to %llu\n",
-+				defrag.goal, ext4_blocks_count(es) - 1);
-+			return -EINVAL;
-+		}
-+
- 		err = ext4_defrag(filp, defrag.start_offset,
--				defrag.defrag_size);
-+				defrag.defrag_size, defrag.goal);
- 	}
-
- 	return err;
+@@ -91,6 +91,188 @@ err:
  }
 
  /**
@@ -231,7 +208,7 @@ index d3ff958..4dd4318 100644
   * ext4_defrag_merge_extents - Merge new extent
   *
   * @handle:	journal handle
-@@ -145,6 +337,63 @@ ext4_defrag_merge_extents(handle_t *handle, struct inode *org_inode,
+@@ -112,7 +294,65 @@ ext4_defrag_merge_extents(handle_t *handle, struct inode *org_inode,
  		struct ext4_extent *start_ext, struct ext4_extent *new_ext,
  		struct ext4_extent *end_ext, ext4_fsblk_t replaced)
  {
@@ -293,9 +270,11 @@ index d3ff958..4dd4318 100644
 +	}
 +
  	return 0;
-
++
  }
-@@ -489,6 +738,7 @@ out:
+
+ /**
+@@ -455,6 +695,7 @@ out:
   * @dest_path:		indicating the temporary inode's extent
   * @req_blocks:		contiguous blocks count we need
   * @iblock:		target file offset
@@ -303,7 +282,7 @@ index d3ff958..4dd4318 100644
   *
   */
  static void
-@@ -496,7 +746,8 @@ ext4_defrag_fill_ar(struct inode *org_inode, struct inode *dest_inode,
+@@ -462,7 +703,8 @@ ext4_defrag_fill_ar(struct inode *org_inode, struct inode *dest_inode,
  			struct ext4_allocation_request *ar,
  			struct ext4_ext_path *org_path,
  			struct ext4_ext_path *dest_path,
@@ -313,7 +292,7 @@ index d3ff958..4dd4318 100644
  {
  	ar->inode = dest_inode;
  	ar->len = req_blocks;
-@@ -508,7 +759,10 @@ ext4_defrag_fill_ar(struct inode *org_inode, struct inode *dest_inode,
+@@ -474,7 +716,10 @@ ext4_defrag_fill_ar(struct inode *org_inode, struct inode *dest_inode,
  	ar->lright = 0;
  	ar->pright = 0;
 
@@ -325,7 +304,7 @@ index d3ff958..4dd4318 100644
  }
 
  /**
-@@ -705,6 +959,7 @@ out:
+@@ -671,6 +916,7 @@ out:
   *			original extent tree
   * @tar_end:		the last block number of the allocated blocks
   * @sum_tmp:		the extents count  in the allocated blocks
@@ -333,7 +312,7 @@ index d3ff958..4dd4318 100644
   *
   * This function returns the values as below.
   *	0 (improved)
-@@ -714,7 +969,7 @@ out:
+@@ -680,7 +926,7 @@ out:
  static int
  ext4_defrag_comp_ext_count(struct inode *org_inode,
  			struct ext4_ext_path *org_path, ext4_lblk_t tar_end,
@@ -342,16 +321,16 @@ index d3ff958..4dd4318 100644
  {
  	struct ext4_extent *ext = NULL;
  	int depth = ext_depth(org_inode);
-@@ -738,7 +993,7 @@ ext4_defrag_comp_ext_count(struct inode *org_inode,
- 			 * Fail if goal is not set and the fragmentation
- 			 * is not improved.
+@@ -704,7 +950,7 @@ ext4_defrag_comp_ext_count(struct inode *org_inode,
+ 			 * If the goal has not been set and the fragmentation
+ 			 * is not improved any more, defrag fails.
  			 */
 -			if (sum_org == sum_tmp) {
 +			if (sum_org == sum_tmp && !goal) {
  				/* Not improved */
  				ret = 1;
  			} else if (sum_org < sum_tmp) {
-@@ -769,6 +1024,7 @@ ext4_defrag_comp_ext_count(struct inode *org_inode,
+@@ -735,6 +981,7 @@ ext4_defrag_comp_ext_count(struct inode *org_inode,
   * @req_start:		starting offset to allocate in blocks
   * @req_blocks:		the number of blocks to allocate
   * @iblock:		file related offset
@@ -359,7 +338,7 @@ index d3ff958..4dd4318 100644
   *
   * This function returns the value as below:
   *	0 (succeed)
-@@ -778,7 +1034,8 @@ ext4_defrag_comp_ext_count(struct inode *org_inode,
+@@ -744,7 +991,8 @@ ext4_defrag_comp_ext_count(struct inode *org_inode,
  static int
  ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
  			struct ext4_ext_path *org_path, ext4_lblk_t req_start,
@@ -369,7 +348,7 @@ index d3ff958..4dd4318 100644
  {
  	handle_t *handle;
  	struct ext4_sb_info *sbi = EXT4_SB(org_inode->i_sb);
-@@ -806,7 +1063,7 @@ ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
+@@ -772,7 +1020,7 @@ ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
 
  	/* Fill struct ext4_allocation_request with necessary info */
  	ext4_defrag_fill_ar(org_inode, tmp_inode, &ar, org_path,
@@ -378,7 +357,7 @@ index d3ff958..4dd4318 100644
 
  	handle = ext4_journal_start(tmp_inode, 0);
  	if (IS_ERR(handle)) {
-@@ -841,7 +1098,7 @@ ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
+@@ -807,7 +1055,7 @@ ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
  	}
 
  	ret = ext4_defrag_comp_ext_count(org_inode, org_path, req_end,
@@ -387,7 +366,7 @@ index d3ff958..4dd4318 100644
 
  out:
  	if (ret < 0 && ar.len)
-@@ -869,11 +1126,13 @@ out2:
+@@ -835,11 +1083,13 @@ out2:
   *
   * @org_inode:		original inode
   * @defrag_size:	size of defrag in blocks
@@ -400,9 +379,9 @@ index d3ff958..4dd4318 100644
 +ext4_defrag_check(struct inode *org_inode, ext4_lblk_t defrag_size,
 +		ext4_fsblk_t *goal)
  {
- 	/* ext4 online defrag needs mballoc mount option. */
- 	if (!test_opt(org_inode->i_sb, MBALLOC)) {
-@@ -962,13 +1221,14 @@ out:
+
+ 	/* Ext4 online defrag supports only extent based file */
+@@ -940,13 +1190,14 @@ out:
   * @filp:		pointer to file
   * @block_start:	starting offset to defrag in blocks
   * @defrag_size:	size of defrag in blocks
@@ -418,7 +397,7 @@ index d3ff958..4dd4318 100644
  {
  	struct inode *org_inode = filp->f_dentry->d_inode, *tmp_inode = NULL;
  	struct ext4_ext_path *org_path = NULL, *holecheck_path = NULL;
-@@ -983,7 +1243,7 @@ ext4_defrag(struct file *filp, ext4_lblk_t block_start,
+@@ -961,7 +1212,7 @@ ext4_defrag(struct file *filp, ext4_lblk_t block_start,
  	int block_len_in_page;
 
  	/* Check the filesystem environment whether defrag can be done */
@@ -427,7 +406,7 @@ index d3ff958..4dd4318 100644
  	if (ret < 0)
  		return ret;
 
-@@ -1093,14 +1353,14 @@ ext4_defrag(struct file *filp, ext4_lblk_t block_start,
+@@ -1071,14 +1322,14 @@ ext4_defrag(struct file *filp, ext4_lblk_t block_start,
  		}
 
  		/* Found an isolated block */
@@ -445,20 +424,46 @@ index d3ff958..4dd4318 100644
  		if (ret < 0) {
  			break;
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 3c6a194..556ff5e 100644
+index aa3b639..ccea421 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1142,7 +1142,7 @@ extern void ext4_inode_table_set(struct super_block *sb,
+@@ -1156,7 +1156,7 @@ extern void ext4_inode_table_set(struct super_block *sb,
  extern int ext4_ext_journal_restart(handle_t *handle, int needed);
  /* defrag.c */
  extern int ext4_defrag(struct file *filp, ext4_lblk_t block_start,
 -			ext4_lblk_t defrag_size);
 +			ext4_lblk_t defrag_size, ext4_fsblk_t goal);
- extern int ext4_defrag_ioctl(struct inode *, struct file *, unsigned int,
- 				unsigned long);
 
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
+ static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
+ {
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 78d9174..d5e1fe7 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -217,6 +217,7 @@ setversion_out:
+
+ 	case EXT4_IOC_DEFRAG: {
+ 		struct ext4_ext_defrag_data defrag;
++		struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
+ 		int err;
+
+ 		if (!capable(CAP_DAC_OVERRIDE)) {
+@@ -231,8 +232,17 @@ setversion_out:
+ 							sizeof(defrag)))
+ 			return -EFAULT;
+
++		/* Check goal offset if goal offset was given from userspace */
++		if (defrag.goal != -1 && ext4_blocks_count(es)
++						<= defrag.goal) {
++			printk(KERN_ERR "ext4 defrag: Invalid goal offset"
++				" %llu, you can set goal offset up to %llu\n",
++				defrag.goal, ext4_blocks_count(es) - 1);
++			return -EINVAL;
++		}
++
+ 		err = ext4_defrag(filp, defrag.start_offset,
+-			defrag.defrag_size);
++			defrag.defrag_size, defrag.goal);
+ 		return err;
+ 	}
 

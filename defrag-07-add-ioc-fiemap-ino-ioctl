@@ -1,4 +1,4 @@
-ext4: online defrag: Add the EXT4_IOC_FIEMAP_INO ioctl.
+ext4: online defrag -- Add the EXT4_IOC_FIEMAP_INO ioctl.
 
 From: Akira Fujita <a-fujita@rs.jp.nec.com>
 
@@ -7,20 +7,16 @@ inode which set to ioctl.
 The defragger uses this ioctl to check the fragment condition
 and to get extents information in the specified block group.
 
-This ioctl is brand new, the EXT4_IOC_EXTENTS_INFO ioctl
-used to do the same thing in the previous version.
-
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 ---
- fs/ext4/defrag.c  |  105 +++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/ext4.h    |    7 ++++
- fs/ext4/extents.c |    2 +-
- fs/ext4/ioctl.c   |    3 +-
- 4 files changed, 115 insertions(+), 2 deletions(-)
+ fs/ext4/defrag.c |  113 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/ext4.h   |    7 +++
+ fs/ext4/ioctl.c  |    7 +++
+ 3 files changed, 127 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
-index 941414b..f7c99de 100644
+index 891e599..67030bc 100644
 --- a/fs/ext4/defrag.c
 +++ b/fs/ext4/defrag.c
 @@ -20,6 +20,8 @@
@@ -32,7 +28,7 @@ index 941414b..f7c99de 100644
  /**
   * ext4_defrag_next_extent - Search for the next extent and set it to "extent"
   *
-@@ -91,6 +93,106 @@ err:
+@@ -91,6 +93,117 @@ err:
  }
 
  /**
@@ -46,7 +42,7 @@ index 941414b..f7c99de 100644
 + *
 + * This function returns 0 if succeed, otherwise returns error value.
 + */
-+static int
++int
 +ext4_defrag_fiemap_ino(struct file *filp, unsigned long arg)
 +{
 +	struct fiemap_ino fiemap_ino;
@@ -67,6 +63,17 @@ index 941414b..f7c99de 100644
 +	inode = ext4_iget(sb, fiemap_ino.ino);
 +	if (IS_ERR(inode))
 +		return PTR_ERR(inode);
++
++	/*
++	 * If we do not have the permission to access the inode,
++	 * just skip it.
++	 */
++	if (!capable(CAP_DAC_OVERRIDE)) {
++		if ((inode->i_mode & S_IRUSR) != S_IRUSR)
++			return -EACCES;
++		if (current->fsuid != inode->i_uid)
++			return -EACCES;
++	}
 +
 +	/* Return -ENOENT if a file does not exist */
 +	if (!inode->i_nlink || !S_ISREG(inode->i_mode)) {
@@ -136,32 +143,22 @@ index 941414b..f7c99de 100644
 +}
 +
 +/**
-  * ext4_defrag_fblocks_distribution - Search free blocks distribution
+  * ext4_defrag_merge_across_blocks - Merge extents across leaf block
   *
-  * @org_inode:	original inode
-@@ -237,6 +339,9 @@ int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
- 			err = copy_to_user(
- 				(struct ext4_extents_info __user *)arg,
- 				&ext_info, sizeof(ext_info));
-+	} else if (cmd == EXT4_IOC_FIEMAP_INO) {
-+
-+		err = ext4_defrag_fiemap_ino(filp, arg);
- 	} else if (cmd == EXT4_IOC_DEFRAG) {
- 		struct ext4_ext_defrag_data defrag;
- 		struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
+  * @handle:		journal handle
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index ffe687b..8d008c8 100644
+index f7b092d..c72703f 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -306,6 +306,7 @@ struct ext4_new_group_data {
- #define EXT4_IOC_FIBMAP			_IOW('f', 16, ext4_fsblk_t)
- #define EXT4_IOC_GROUP_INFO		_IOW('f', 17, struct ext4_group_data_info)
- #define EXT4_IOC_FREE_BLOCKS_INFO	_IOW('f', 18, struct ext4_extents_info)
-+#define EXT4_IOC_FIEMAP_INO		_IOW('f', 19, struct fiemap_ino)
+@@ -305,6 +305,7 @@ struct ext4_new_group_data {
+ #define EXT4_IOC_DEFRAG			_IOW('f', 15, struct ext4_ext_defrag_data)
+ #define EXT4_IOC_SUPER_INFO		_IOR('f', 16, struct ext4_super_block)
+ #define EXT4_IOC_FREE_BLOCKS_INFO	_IOWR('f', 17, struct ext4_extents_info)
++#define EXT4_IOC_FIEMAP_INO		_IOWR('f', 18, struct fiemap_ino)
 
  /*
   * ioctl commands in 32 bit emulation
-@@ -358,6 +359,11 @@ struct ext4_extents_info {
+@@ -352,6 +353,11 @@ struct ext4_extents_info {
  	struct ext4_extent_data ext[DEFRAG_MAX_ENT];
  };
 
@@ -173,44 +170,29 @@ index ffe687b..8d008c8 100644
  #define EXT4_TRANS_META_BLOCKS 4 /* bitmap + group desc + sb + inode */
 
  /*
-@@ -1321,6 +1327,7 @@ extern int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode,
- 			sector_t block, unsigned long max_blocks,
- 			struct buffer_head *bh, int create,
- 			int extend_disksize, int flag);
-+extern int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start);
- #endif	/* __KERNEL__ */
+@@ -1185,6 +1191,7 @@ extern int ext4_ext_journal_restart(handle_t *handle, int needed);
+ /* defrag.c */
+ extern int ext4_defrag(struct file *filp, ext4_lblk_t block_start,
+ 			ext4_lblk_t defrag_size, ext4_fsblk_t goal);
++extern int ext4_defrag_fiemap_ino(struct file *filp, unsigned long arg);
 
- #endif	/* _EXT4_H */
-diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 6e2ccb8..7fcf72d 100644
---- a/fs/ext4/extents.c
-+++ b/fs/ext4/extents.c
-@@ -2110,7 +2110,7 @@ ext4_ext_more_to_rm(struct ext4_ext_path *path)
- 	return 1;
- }
-
--static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
-+int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
+ static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
  {
- 	struct super_block *sb = inode->i_sb;
- 	int depth = ext_depth(inode);
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 40bc2e1..a0e4915 100644
+index 5709574..b69b54a 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -259,7 +259,8 @@ setversion_out:
- 	case EXT4_IOC_FIBMAP:
- 	case EXT4_IOC_DEFRAG:
- 	case EXT4_IOC_GROUP_INFO:
--	case EXT4_IOC_FREE_BLOCKS_INFO: {
-+	case EXT4_IOC_FREE_BLOCKS_INFO:
-+	case EXT4_IOC_FIEMAP_INO: {
- 		return ext4_defrag_ioctl(inode, filp, cmd, arg);
+@@ -256,6 +256,13 @@ setversion_out:
+ 			return 0;
  	}
- 	case EXT4_IOC_GROUP_ADD: {
 
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
++	case EXT4_IOC_FIEMAP_INO: {
++		int err;
++
++		err = ext4_defrag_fiemap_ino(filp, arg);
++		return err;
++	}
++
+ 	case EXT4_IOC_FREE_BLOCKS_INFO: {
+ 		struct ext4_extents_info ext_info;
+ 		int err;

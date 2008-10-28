@@ -1,0 +1,201 @@
+ext4: online defrag -- Add the EXT4_IOC_FREE_BLOCKS_INFO ioctl.
+
+From: Akira Fujita <a-fujita@rs.jp.nec.com>
+
+The EXT4_IOC_FREE_BLOCKS_INFO ioctl gets free extents
+information of the target block group.
+This ioctl is used only in the force defrag (-f).
+
+Defragger calculates the victim extents (which will be moved
+into other block group in order to make contiguous free space for the target file)
+based on used/unused extents information.
+
+ext4_defrag_fblocks_distribution() was renamed as ext4_mb_search_free_extents()
+and moved into mballoc.c.  Because it uses ext4_buddy structure.
+
+Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
+Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
+---
+ fs/ext4/ext4.h    |   27 +++++++++++++++++
+ fs/ext4/ioctl.c   |   20 +++++++++++++
+ fs/ext4/mballoc.c |   81 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 128 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 94c4186..f7b092d 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -304,6 +304,7 @@ struct ext4_new_group_data {
+  /* note ioctl 11 reserved for filesystem-independent FIEMAP ioctl */
+ #define EXT4_IOC_DEFRAG			_IOW('f', 15, struct ext4_ext_defrag_data)
+ #define EXT4_IOC_SUPER_INFO		_IOR('f', 16, struct ext4_super_block)
++#define EXT4_IOC_FREE_BLOCKS_INFO	_IOWR('f', 17, struct ext4_extents_info)
+
+ /*
+  * ioctl commands in 32 bit emulation
+@@ -321,12 +322,36 @@ struct ext4_new_group_data {
+ #define EXT4_IOC32_GETVERSION_OLD	FS_IOC32_GETVERSION
+ #define EXT4_IOC32_SETVERSION_OLD	FS_IOC32_SETVERSION
+
++/*
++ * The following four macros are used for the defrag force mode.
++ *
++ * DEFRAG_MAX_ENT:	the maximum number of extents for exchanging between
++ *			kernel-space and user-space per an ioctl
++ */
++#define DEFRAG_MAX_ENT		32
++
++struct ext4_extent_data {
++	ext4_lblk_t block;		/* start logical block number */
++	ext4_fsblk_t start;		/* start physical block number */
++	int len;			/* blocks count */
++};
++
+ struct ext4_ext_defrag_data {
+ 	ext4_lblk_t start_offset;	/* start offset to defrag in blocks */
+ 	ext4_lblk_t defrag_size;	/* size of defrag in blocks */
+ 	ext4_fsblk_t goal;		/* block offset for allocation */
+ };
+
++struct ext4_extents_info {
++	unsigned long long ino;		/* inode number */
++	int max_entries;		/* maximum extents count */
++	int entries;			/* extent number/count */
++	ext4_lblk_t f_offset;		/* file offset */
++	ext4_grpblk_t g_offset;		/* group offset */
++	ext4_fsblk_t goal;		/* block offset for allocation */
++	struct ext4_extent_data ext[DEFRAG_MAX_ENT];
++};
++
+ #define EXT4_TRANS_META_BLOCKS 4 /* bitmap + group desc + sb + inode */
+
+ /*
+@@ -1069,6 +1094,8 @@ extern int ext4_mb_add_more_groupinfo(struct super_block *sb,
+ 		ext4_group_t i, struct ext4_group_desc *desc);
+ extern void ext4_mb_update_group_info(struct ext4_group_info *grp,
+ 		ext4_grpblk_t add);
++extern int ext4_mb_search_free_extents(struct inode *inode,
++					struct ext4_extents_info *ext_info);
+
+
+ /* inode.c */
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index f8ce89b..5709574 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -256,6 +256,26 @@ setversion_out:
+ 			return 0;
+ 	}
+
++	case EXT4_IOC_FREE_BLOCKS_INFO: {
++		struct ext4_extents_info ext_info;
++		int err;
++
++		if (copy_from_user(&ext_info,
++			(struct ext4_extents_info __user *)arg,
++						sizeof(ext_info)))
++			return -EFAULT;
++
++		BUG_ON(ext_info.ino != inode->i_ino);
++
++		err = ext4_mb_search_free_extents(inode, &ext_info);
++
++		if (!err)
++			err = copy_to_user(
++			(struct ext4_extents_info __user *)arg,
++				&ext_info, sizeof(ext_info));
++		return err;
++	}
++
+ 	case EXT4_IOC_GROUP_ADD: {
+ 		struct ext4_new_group_data input;
+ 		struct super_block *sb = inode->i_sb;
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index dfe17a1..eebcf7c 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4654,3 +4654,84 @@ error_return:
+ 		kmem_cache_free(ext4_ac_cachep, ac);
+ 	return;
+ }
++
++/**
++ * ext4_mb_search_free_extents
++ *    - Search free extents in the block group where target inode is located
++ *
++ * @inode:	target inode
++ * @ext_info:	ext4_extents_info is used to store free extents
++ *
++ * This function returns 0 if succeed, otherwise returns error value.
++ */
++int
++ext4_mb_search_free_extents(struct inode *inode,
++			struct ext4_extents_info *ext_info)
++{
++	struct super_block *sb = inode->i_sb;
++	struct ext4_buddy e4b;
++	ext4_group_t group_no;
++	ext4_grpblk_t start, end;
++	ext4_fsblk_t start_block = 0;
++	int i, err;
++	int num = 0;
++	int len = 0;
++	int block_set = 0;
++	int extra_block = 0;
++
++	if (!sb) {
++		printk(KERN_ERR "ext4 defrag: Non-existent device\n");
++		return -ENOSPC;
++	}
++
++	group_no = (inode->i_ino - 1) / EXT4_INODES_PER_GROUP(sb);
++	start = ext_info->g_offset;
++	end = EXT4_BLOCKS_PER_GROUP(sb) - 1;
++
++	err = ext4_mb_load_buddy(sb, group_no, &e4b);
++	if (err)
++		return err;
++
++	/* We consider about the boot block if bs = 1k */
++	if (sb->s_blocksize == 1024)
++		extra_block = 1;
++
++	ext4_lock_group(sb, group_no);
++
++	for (i = start; i <= end ; i++) {
++		if (!mb_test_bit(i, e4b.bd_bitmap)) {
++			len++;
++			/*
++			 * Reset start_block if the free block is
++			 * the head of region.
++			 */
++			if (!block_set) {
++				start_block =
++				 i + group_no * EXT4_BLOCKS_PER_GROUP(sb) +
++				 extra_block;
++				block_set = 1;
++			}
++		} else if (len) {
++			ext_info->ext[num].start = start_block;
++			ext_info->ext[num].len = len;
++			num++;
++			len = 0;
++			block_set = 0;
++			if (num == ext_info->max_entries) {
++				ext_info->g_offset = i + 1;
++				break;
++			}
++		}
++		if (i == end && len) {
++			ext_info->ext[num].start = start_block;
++			ext_info->ext[num].len = len;
++			num++;
++		}
++	}
++	ext_info->entries = num;
++
++	ext4_unlock_group(sb, group_no);
++	ext4_mb_release_desc(&e4b);
++
++	return err;
++}

@@ -15,33 +15,32 @@ Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 ---
  fs/ext4/Makefile       |    2 +-
- fs/ext4/defrag.c       |  467 ++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/ext4.h         |   14 ++
+ fs/ext4/defrag.c       |  499 ++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/ext4.h         |   10 +
  fs/ext4/ext4_extents.h |    2 +
  fs/ext4/extents.c      |    2 +-
- fs/ext4/inode.c        |    2 +-
- fs/ext4/ioctl.c        |    3 +
- 7 files changed, 489 insertions(+), 3 deletions(-)
+ fs/ext4/ioctl.c        |   22 ++
+ 6 files changed, 535 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
-index ac6fa8c..8028102 100644
+index a8ff003..e7fd8ba 100644
 --- a/fs/ext4/Makefile
 +++ b/fs/ext4/Makefile
-@@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4DEV_FS) += ext4dev.o
+@@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4_FS) += ext4.o
 
- ext4dev-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
+ ext4-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
  		   ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
 -		   ext4_jbd2.o migrate.o mballoc.o
 +		   ext4_jbd2.o migrate.o mballoc.o defrag.o
 
- ext4dev-$(CONFIG_EXT4DEV_FS_XATTR)	+= xattr.o xattr_user.o xattr_trusted.o
- ext4dev-$(CONFIG_EXT4DEV_FS_POSIX_ACL)	+= acl.o
+ ext4-$(CONFIG_EXT4_FS_XATTR)		+= xattr.o xattr_user.o xattr_trusted.o
+ ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
 new file mode 100644
-index 0000000..1750714
+index 0000000..1e36193
 --- /dev/null
 +++ b/fs/ext4/defrag.c
-@@ -0,0 +1,467 @@
+@@ -0,0 +1,499 @@
 +/*
 + * Copyright (c) 2008, NEC Software Tohoku, Ltd.
 + * Written by Takashi Sato <t-sato@yk.jp.nec.com>
@@ -78,40 +77,60 @@ index 0000000..1750714
 +ext4_defrag_next_extent(struct inode *inode, struct ext4_ext_path *path,
 +			struct ext4_extent **extent)
 +{
-+	return 0;
-+}
++	int ppos, leaf_ppos = path->p_depth;
 +
-+int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
-+			unsigned long arg)
-+{
-+	int err = 0;
-+
-+	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL)) {
-+		printk(KERN_ERR "ext4 defrag: ino[%lu] is not extents "
-+					"based file\n", inode->i_ino);
-+		return -EOPNOTSUPP;
++	ppos = leaf_ppos;
++	if (EXT_LAST_EXTENT(path[ppos].p_hdr) > path[ppos].p_ext) {
++		/* leaf block */
++		*extent = ++path[ppos].p_ext;
++		return 0;
 +	}
 +
-+	if (cmd == EXT4_IOC_DEFRAG) {
-+		struct ext4_ext_defrag_data defrag;
++	while (--ppos >= 0) {
++		if (EXT_LAST_INDEX(path[ppos].p_hdr) >
++		    path[ppos].p_idx) {
++			int cur_ppos = ppos;
 +
-+		if (!capable(CAP_DAC_OVERRIDE)) {
-+			if ((inode->i_mode & S_IRUSR) != S_IRUSR)
-+				return -EACCES;
-+			if (current->fsuid != inode->i_uid)
-+				return -EACCES;
++			/* index block */
++			path[ppos].p_idx++;
++			path[ppos].p_block = idx_pblock(path[ppos].p_idx);
++			if (path[ppos+1].p_bh)
++				brelse(path[ppos+1].p_bh);
++			path[ppos+1].p_bh =
++				sb_bread(inode->i_sb, path[ppos].p_block);
++			if (!path[ppos+1].p_bh)
++				goto err;
++			path[ppos+1].p_hdr =
++				ext_block_hdr(path[ppos+1].p_bh);
++
++			/* Halfway index block */
++			while (++cur_ppos < leaf_ppos) {
++				path[cur_ppos].p_idx =
++					EXT_FIRST_INDEX(path[cur_ppos].p_hdr);
++				path[cur_ppos].p_block =
++					idx_pblock(path[cur_ppos].p_idx);
++				if (path[cur_ppos+1].p_bh)
++					brelse(path[cur_ppos+1].p_bh);
++				path[cur_ppos+1].p_bh = sb_bread(inode->i_sb,
++					path[cur_ppos].p_block);
++				if (!path[cur_ppos+1].p_bh)
++					goto err;
++				path[cur_ppos+1].p_hdr =
++					ext_block_hdr(path[cur_ppos+1].p_bh);
++			}
++
++			/* leaf block */
++			path[leaf_ppos].p_ext = *extent =
++				EXT_FIRST_EXTENT(path[leaf_ppos].p_hdr);
++			return 0;
 +		}
-+
-+		if (copy_from_user(&defrag,
-+			(struct ext4_ext_defrag_data __user *)arg,
-+						sizeof(defrag)))
-+			return -EFAULT;
-+
-+		err = ext4_defrag(filp, defrag.start_offset,
-+				defrag.defrag_size);
 +	}
-+
-+	return err;
++	/* We found the last extent */
++	return 1;
++err:
++	if (path)
++		ext4_ext_drop_refs(path);
++	return -EIO;
 +}
 +
 +/**
@@ -168,10 +187,22 @@ index 0000000..1750714
 +static int
 +ext4_defrag_check(struct inode *org_inode, ext4_lblk_t defrag_size)
 +{
-+	/* ext4 online defrag needs mballoc mount option. */
-+	if (!test_opt(org_inode->i_sb, MBALLOC)) {
-+		printk(KERN_ERR "ext4 defrag: multiblock allocation "
-+				"is disabled\n");
++
++	/* Ext4 online defrag supports only extent based file */
++	if (!(EXT4_I(org_inode)->i_flags & EXT4_EXTENTS_FL)) {
++		printk(KERN_ERR "ext4 defrag: ino[%lu] is not extents "
++					"based file\n", org_inode->i_ino);
++		return -EOPNOTSUPP;
++	}
++
++	/*
++	 * Will go away.
++	 * Now ext4 online defrag does not support flex_bg feature.
++	 */
++	if (EXT4_HAS_INCOMPAT_FEATURE(org_inode->i_sb,
++					EXT4_FEATURE_INCOMPAT_FLEX_BG)) {
++		printk(KERN_ERR "ext4 defrag: online defrag does not support "
++				"flex_bg feature.\n");
 +		return -EOPNOTSUPP;
 +	}
 +
@@ -241,16 +272,16 @@ index 0000000..1750714
 + *   That of the original inode is org_page_offset,
 + *   and that of the temporary inode is dest_block_offset
 + *   (To easily handle blocksize != pagesize case, the offset for the
-+ *    temporary inode is block unit).
++ *   temporary inode is block unit).
 + * 6.Update holecheck_path and org_path to points a next proceeding extent,
 + *   and release the temporary inode holding the original fragmented data.
 + *   Then, returns to step 2.
 + * 7.Release holecheck_path, org_path and temporary inode,
-+ *    and returns the defrag_size which is the size of defraged data.
-+ *    The defrag_size is used for the command to calculate the file offset
-+ *    where a next defrag processing start.
-+ *    (Since the defrag command calls defrag_ioctl() by 64MB unit,
-+ *     a file bigger than 64MB calls defrag_ioctl many times.)
++ *   and returns the defrag_size which is the size of defraged data.
++ *   The defrag_size is used for the command to calculate the file offset
++ *   where a next defrag processing start.
++ *   (Since the defrag command calls defrag_ioctl() by 64MB unit,
++ *   a file bigger than 64MB calls defrag_ioctl many times.)
 + *
 + * @filp:		pointer to file
 + * @block_start:	starting offset to defrag in blocks
@@ -433,7 +464,7 @@ index 0000000..1750714
 +		 * When true ext4_mb_return_to_preallocation() is
 +		 * implemented, this will be removed.
 +		 */
-+		ext4_mb_discard_inode_preallocations(org_inode);
++		ext4_discard_preallocations(org_inode);
 +
 +		while (org_page_offset <= seq_end_page) {
 +
@@ -510,7 +541,7 @@ index 0000000..1750714
 +	return ret ? ret : defrag_size;
 +}
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index c8ab668..64c61ae 100644
+index b1cdd8d..30e3195 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -302,6 +302,7 @@ struct ext4_new_group_data {
@@ -534,20 +565,18 @@ index c8ab668..64c61ae 100644
 
  /*
   *  Mount options
-@@ -1128,6 +1137,11 @@ extern void ext4_inode_bitmap_set(struct super_block *sb,
+@@ -1144,6 +1151,9 @@ extern void ext4_inode_bitmap_set(struct super_block *sb,
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
 +/* defrag.c */
 +extern int ext4_defrag(struct file *filp, ext4_lblk_t block_start,
 +			ext4_lblk_t defrag_size);
-+extern int ext4_defrag_ioctl(struct inode *, struct file *, unsigned int,
-+				unsigned long);
 
  static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
  {
 diff --git a/fs/ext4/ext4_extents.h b/fs/ext4/ext4_extents.h
-index bec7ce5..0325158 100644
+index bec7ce5..a28d8d2 100644
 --- a/fs/ext4/ext4_extents.h
 +++ b/fs/ext4/ext4_extents.h
 @@ -246,5 +246,7 @@ extern int ext4_ext_search_left(struct inode *, struct ext4_ext_path *,
@@ -555,11 +584,11 @@ index bec7ce5..0325158 100644
  						ext4_lblk_t *, ext4_fsblk_t *);
  extern void ext4_ext_drop_refs(struct ext4_ext_path *);
 +extern ext4_fsblk_t ext_pblock(struct ext4_extent *ex);
-+extern void ext4_ext_drop_refs(struct ext4_ext_path *path);
++
  #endif /* _EXT4_EXTENTS */
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 3094ed3..d05dfb7 100644
+index ea2ce3c..406cab9 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -49,7 +49,7 @@
@@ -572,16 +601,35 @@ index 3094ed3..d05dfb7 100644
  	ext4_fsblk_t block;
 
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 3e14060..1c25e8e 100644
+index dc99b47..78d9174 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -256,6 +256,9 @@ setversion_out:
+@@ -214,6 +214,28 @@ setversion_out:
 
  		return err;
  	}
++
 +	case EXT4_IOC_DEFRAG: {
-+		return ext4_defrag_ioctl(inode, filp, cmd, arg);
++		struct ext4_ext_defrag_data defrag;
++		int err;
++
++		if (!capable(CAP_DAC_OVERRIDE)) {
++			if ((inode->i_mode & S_IRUSR) != S_IRUSR)
++				return -EACCES;
++			if (current->fsuid != inode->i_uid)
++				return -EACCES;
++		}
++
++		if (copy_from_user(&defrag,
++			(struct ext4_ext_defrag_data __user *)arg,
++							sizeof(defrag)))
++			return -EFAULT;
++
++		err = ext4_defrag(filp, defrag.start_offset,
++			defrag.defrag_size);
++		return err;
 +	}
++
  	case EXT4_IOC_GROUP_ADD: {
  		struct ext4_new_group_data input;
  		struct super_block *sb = inode->i_sb;
@@ -590,4 +638,3 @@ index 3e14060..1c25e8e 100644
 To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
 the body of a message to majordomo@vger.kernel.org
 More majordomo info at  http://vger.kernel.org/majordomo-info.html
-

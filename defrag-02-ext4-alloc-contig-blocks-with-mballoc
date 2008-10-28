@@ -1,4 +1,4 @@
-ext4: online defrag: Allocate new contiguous blocks with mballoc.
+ext4: online defrag -- Allocate new contiguous blocks with mballoc.
 
 From: Akira Fujita <a-fujita@rs.jp.nec.com>
 
@@ -8,79 +8,17 @@ and allocate them for the temporary inode.
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 ---
- fs/ext4/defrag.c       |  279 +++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/defrag.c       |  224 +++++++++++++++++++++++++++++++++++++++++++++++-
  fs/ext4/ext4.h         |    3 +
  fs/ext4/ext4_extents.h |    3 +
  fs/ext4/extents.c      |    4 +-
- 4 files changed, 285 insertions(+), 4 deletions(-)
+ 4 files changed, 231 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/defrag.c b/fs/ext4/defrag.c
-index 1750714..2fc8d9f 100644
+index 1e36193..729f001 100644
 --- a/fs/ext4/defrag.c
 +++ b/fs/ext4/defrag.c
-@@ -34,7 +34,60 @@ static int
- ext4_defrag_next_extent(struct inode *inode, struct ext4_ext_path *path,
- 			struct ext4_extent **extent)
- {
--	return 0;
-+	int ppos, leaf_ppos = path->p_depth;
-+
-+	ppos = leaf_ppos;
-+	if (EXT_LAST_EXTENT(path[ppos].p_hdr) > path[ppos].p_ext) {
-+		/* leaf block */
-+		*extent = ++path[ppos].p_ext;
-+		return 0;
-+	}
-+
-+	while (--ppos >= 0) {
-+		if (EXT_LAST_INDEX(path[ppos].p_hdr) >
-+		    path[ppos].p_idx) {
-+			int cur_ppos = ppos;
-+
-+			/* index block */
-+			path[ppos].p_idx++;
-+			path[ppos].p_block = idx_pblock(path[ppos].p_idx);
-+			if (path[ppos+1].p_bh)
-+				brelse(path[ppos+1].p_bh);
-+			path[ppos+1].p_bh =
-+				sb_bread(inode->i_sb, path[ppos].p_block);
-+			if (!path[ppos+1].p_bh)
-+				goto err;
-+			path[ppos+1].p_hdr =
-+				ext_block_hdr(path[ppos+1].p_bh);
-+
-+			/* Halfway index block */
-+			while (++cur_ppos < leaf_ppos) {
-+				path[cur_ppos].p_idx =
-+					EXT_FIRST_INDEX(path[cur_ppos].p_hdr);
-+				path[cur_ppos].p_block =
-+					idx_pblock(path[cur_ppos].p_idx);
-+				if (path[cur_ppos+1].p_bh)
-+					brelse(path[cur_ppos+1].p_bh);
-+				path[cur_ppos+1].p_bh = sb_bread(inode->i_sb,
-+					path[cur_ppos].p_block);
-+				if (!path[cur_ppos+1].p_bh)
-+					goto err;
-+				path[cur_ppos+1].p_hdr =
-+					ext_block_hdr(path[cur_ppos+1].p_bh);
-+			}
-+
-+			/* leaf block */
-+			path[leaf_ppos].p_ext = *extent =
-+				EXT_FIRST_EXTENT(path[leaf_ppos].p_hdr);
-+			return 0;
-+		}
-+	}
-+	/* We found the last extent */
-+	return 1;
-+err:
-+	if (path)
-+		ext4_ext_drop_refs(path);
-+	return -EIO;
- }
-
- int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
-@@ -71,6 +124,84 @@ int ext4_defrag_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
+@@ -91,6 +91,84 @@ err:
  }
 
  /**
@@ -165,7 +103,7 @@ index 1750714..2fc8d9f 100644
   * ext4_defrag_partial - Defrag a file per page
   *
   * @tmp_inode:			temporary inode
-@@ -91,6 +222,69 @@ ext4_defrag_partial(struct inode *tmp_inode, struct file *filp,
+@@ -111,6 +189,69 @@ ext4_defrag_partial(struct inode *tmp_inode, struct file *filp,
  }
 
  /**
@@ -206,8 +144,8 @@ index 1750714..2fc8d9f 100644
 +			       le16_to_cpu(ext->ee_len) - 1) ||
 +			       last_extent) {
 +			/*
-+			 * Fail if goal is not set and the fragmentation
-+			 * is not improved.
++			 * If the goal has not been set and the fragmentation
++			 * is not improved any more, defrag fails.
 +			 */
 +			if (sum_org == sum_tmp) {
 +				/* Not improved */
@@ -235,7 +173,7 @@ index 1750714..2fc8d9f 100644
   * ext4_defrag_new_extent_tree - Get contiguous blocks and build an extent tree
   *
   * @org_inode:		original inode
-@@ -110,7 +304,88 @@ ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
+@@ -130,7 +271,88 @@ ext4_defrag_new_extent_tree(struct inode *org_inode, struct inode *tmp_inode,
  			struct ext4_ext_path *org_path, ext4_lblk_t req_start,
  			ext4_lblk_t req_blocks, ext4_lblk_t iblock)
  {
@@ -326,7 +264,7 @@ index 1750714..2fc8d9f 100644
 
  /**
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 64c61ae..3c6a194 100644
+index 30e3195..aa3b639 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -326,6 +326,7 @@ struct ext4_ext_defrag_data {
@@ -337,7 +275,7 @@ index 64c61ae..3c6a194 100644
 
  /*
   *  Mount options
-@@ -1137,6 +1138,8 @@ extern void ext4_inode_bitmap_set(struct super_block *sb,
+@@ -1151,6 +1152,8 @@ extern void ext4_inode_bitmap_set(struct super_block *sb,
  				  struct ext4_group_desc *bg, ext4_fsblk_t blk);
  extern void ext4_inode_table_set(struct super_block *sb,
  				 struct ext4_group_desc *bg, ext4_fsblk_t blk);
@@ -347,20 +285,21 @@ index 64c61ae..3c6a194 100644
  extern int ext4_defrag(struct file *filp, ext4_lblk_t block_start,
  			ext4_lblk_t defrag_size);
 diff --git a/fs/ext4/ext4_extents.h b/fs/ext4/ext4_extents.h
-index 0325158..6407222 100644
+index a28d8d2..39e043b 100644
 --- a/fs/ext4/ext4_extents.h
 +++ b/fs/ext4/ext4_extents.h
-@@ -248,5 +248,8 @@ extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
+@@ -247,6 +247,9 @@ extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
+ 						ext4_lblk_t *, ext4_fsblk_t *);
  extern void ext4_ext_drop_refs(struct ext4_ext_path *);
  extern ext4_fsblk_t ext_pblock(struct ext4_extent *ex);
- extern void ext4_ext_drop_refs(struct ext4_ext_path *path);
 +extern ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
 +					struct ext4_ext_path *path,
 +					ext4_lblk_t block);
+
  #endif /* _EXT4_EXTENTS */
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index d05dfb7..6e2ccb8 100644
+index 406cab9..dde234f 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -93,7 +93,7 @@ static void ext4_idx_store_pblock(struct ext4_extent_idx *ix, ext4_fsblk_t pb)
@@ -381,9 +320,3 @@ index d05dfb7..6e2ccb8 100644
  			      struct ext4_ext_path *path,
  			      ext4_lblk_t block)
  {
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
