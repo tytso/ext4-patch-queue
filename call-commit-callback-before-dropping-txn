@@ -1,0 +1,46 @@
+jbd2: Call the commit callback before the transaction could get dropped
+
+From: Theodore Ts'o <tytso@mit.edu>
+
+The transaction can potentially get dropped if there are no buffers
+that need to be written.  Make sure we call the commit callback before
+potentially deciding to drop the transaction.  Also avoid
+dereferencing the commit_transaction pointer in the marker for the
+same reason.
+
+This patch fixes the bug reported by Eric Paris at:
+http://bugzilla.kernel.org/show_bug.cgi?id=11838
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Acked-by: Eric Sandeen <sandeen@redhat.com>
+---
+ fs/jbd2/commit.c |    8 ++++----
+ 1 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index 8b119e1..ebc667b 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -974,6 +974,9 @@ restart_loop:
+ 	journal->j_committing_transaction = NULL;
+ 	spin_unlock(&journal->j_state_lock);
+ 
++	if (journal->j_commit_callback)
++		journal->j_commit_callback(journal, commit_transaction);
++
+ 	if (commit_transaction->t_checkpoint_list == NULL &&
+ 	    commit_transaction->t_checkpoint_io_list == NULL) {
+ 		__jbd2_journal_drop_transaction(journal, commit_transaction);
+@@ -995,11 +998,8 @@ restart_loop:
+ 	}
+ 	spin_unlock(&journal->j_list_lock);
+ 
+-	if (journal->j_commit_callback)
+-		journal->j_commit_callback(journal, commit_transaction);
+-
+ 	trace_mark(jbd2_end_commit, "dev %s transaction %d head %d",
+-		   journal->j_devname, commit_transaction->t_tid,
++		   journal->j_devname, journal->j_commit_sequence,
+ 		   journal->j_tail_sequence);
+ 	jbd_debug(1, "JBD: commit %d complete, head %d\n",
+ 		  journal->j_commit_sequence, journal->j_tail_sequence);
