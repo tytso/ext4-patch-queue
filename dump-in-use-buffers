@@ -2,10 +2,10 @@ Add a ioctl which dumps out all of the in-use buffer heads for a block device
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/block/compat_ioctl.c b/block/compat_ioctl.c
-index 1e559fb..f81324d 100644
+index 3d3e7a4..5c428a8 100644
 --- a/block/compat_ioctl.c
 +++ b/block/compat_ioctl.c
-@@ -786,6 +786,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
+@@ -705,6 +705,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
  	switch (cmd) {
  	case HDIO_GETGEO:
  		return compat_hdio_getgeo(disk, bdev, compat_ptr(arg));
@@ -14,23 +14,25 @@ index 1e559fb..f81324d 100644
  	case BLKROSET:
  	case BLKDISCARD:
 diff --git a/block/ioctl.c b/block/ioctl.c
-index 38bee32..df0fe37 100644
+index c832d63..9b73953 100644
 --- a/block/ioctl.c
 +++ b/block/ioctl.c
-@@ -357,6 +357,11 @@ int blkdev_ioctl(struct inode *inode, struct file *file, unsigned cmd,
- 			return -EFAULT;
- 		return 0;
- 	}
+@@ -367,6 +367,13 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
+ 		ret = blk_trace_ioctl(bdev, cmd, (char __user *) arg);
+ 		unlock_kernel();
+ 		break;
 +	case BLKDUMPUSEDBUFFERS:
 +		if (!capable(CAP_SYS_ADMIN))
 +			return -EACCES;
 +		dump_used_buffers(bdev);
-+		return 0;
++		ret = 0;
++		break;
++
+ 	default:
+ 		ret = __blkdev_driver_ioctl(bdev, mode, cmd, arg);
  	}
- 
- 	lock_kernel();
 diff --git a/fs/buffer.c b/fs/buffer.c
-index ac78d4c..34ffeb4 100644
+index 6569fda..852e7ac 100644
 --- a/fs/buffer.c
 +++ b/fs/buffer.c
 @@ -33,6 +33,7 @@
@@ -41,7 +43,7 @@ index ac78d4c..34ffeb4 100644
  #include <linux/buffer_head.h>
  #include <linux/task_io_accounting_ops.h>
  #include <linux/bio.h>
-@@ -247,6 +248,45 @@ void thaw_bdev(struct block_device *bdev, struct super_block *sb)
+@@ -246,6 +247,45 @@ void thaw_bdev(struct block_device *bdev, struct super_block *sb)
  }
  EXPORT_SYMBOL(thaw_bdev);
  
@@ -88,7 +90,7 @@ index ac78d4c..34ffeb4 100644
   * Various filesystems appear to want __find_get_block to be non-blocking.
   * But it's the page lock which protects the buffers.  To get around this,
 diff --git a/include/linux/buffer_head.h b/include/linux/buffer_head.h
-index eadaab4..1c48dff 100644
+index 3ce64b9..053e644 100644
 --- a/include/linux/buffer_head.h
 +++ b/include/linux/buffer_head.h
 @@ -193,6 +193,7 @@ void write_boundary_block(struct block_device *bdev,
@@ -100,10 +102,10 @@ index eadaab4..1c48dff 100644
  extern int buffer_heads_over_limit;
  
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index a6a625b..c91f118 100644
+index 5b248d6..a08e4d0 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -226,6 +226,8 @@ extern int dir_notify_enable;
+@@ -231,6 +231,8 @@ extern int dir_notify_enable;
  #define BLKTRACETEARDOWN _IO(0x12,118)
  #define BLKDISCARD _IO(0x12,119)
  
