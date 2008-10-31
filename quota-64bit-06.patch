@@ -1,0 +1,53 @@
+ext3: Use sb_any_quota_loaded() instead of sb_any_quota_enabled()
+From: Jan Kara <jack@suse.cz>
+
+CC: linux-ext4@vger.kernel.org
+Signed-off-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext3/super.c |   12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+Index: linux-2.6.28-rc2/fs/ext3/super.c
+===================================================================
+--- linux-2.6.28-rc2.orig/fs/ext3/super.c	2008-10-31 14:07:40.000000000 -0700
++++ linux-2.6.28-rc2/fs/ext3/super.c	2008-10-31 14:18:38.000000000 -0700
+@@ -1035,8 +1035,7 @@ static int parse_options (char *options,
+ 		case Opt_grpjquota:
+ 			qtype = GRPQUOTA;
+ set_qf_name:
+-			if ((sb_any_quota_enabled(sb) ||
+-			     sb_any_quota_suspended(sb)) &&
++			if (sb_any_quota_loaded(sb) &&
+ 			    !sbi->s_qf_names[qtype]) {
+ 				printk(KERN_ERR
+ 					"EXT3-fs: Cannot change journaled "
+@@ -1075,8 +1074,7 @@ set_qf_name:
+ 		case Opt_offgrpjquota:
+ 			qtype = GRPQUOTA;
+ clear_qf_name:
+-			if ((sb_any_quota_enabled(sb) ||
+-			     sb_any_quota_suspended(sb)) &&
++			if (sb_any_quota_loaded(sb) &&
+ 			    sbi->s_qf_names[qtype]) {
+ 				printk(KERN_ERR "EXT3-fs: Cannot change "
+ 					"journaled quota options when "
+@@ -1095,8 +1093,7 @@ clear_qf_name:
+ 		case Opt_jqfmt_vfsv0:
+ 			qfmt = QFMT_VFS_V0;
+ set_qf_format:
+-			if ((sb_any_quota_enabled(sb) ||
+-			     sb_any_quota_suspended(sb)) &&
++			if (sb_any_quota_loaded(sb) &&
+ 			    sbi->s_jquota_fmt != qfmt) {
+ 				printk(KERN_ERR "EXT3-fs: Cannot change "
+ 					"journaled quota options when "
+@@ -1115,8 +1112,7 @@ set_qf_format:
+ 			set_opt(sbi->s_mount_opt, GRPQUOTA);
+ 			break;
+ 		case Opt_noquota:
+-			if (sb_any_quota_enabled(sb) ||
+-			    sb_any_quota_suspended(sb)) {
++			if (sb_any_quota_loaded(sb)) {
+ 				printk(KERN_ERR "EXT3-fs: Cannot change quota "
+ 					"options when quota turned on.\n");
+ 				return 0;

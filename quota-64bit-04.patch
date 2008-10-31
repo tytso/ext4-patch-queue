@@ -1,0 +1,61 @@
+quota: Make _SUSPENDED just a flag
+From: Jan Kara <jack@suse.cz>
+
+Upto now, DQUOT_USR_SUSPENDED behaved like a state - i.e., either quota
+was enabled or suspended or none. Now allowed states are 0, ENABLED,
+ENABLED | SUSPENDED. This will be useful later when we implement separate
+enabling of quota usage tracking and limits enforcement because we need to
+keep track of a state which has been suspended.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+---
+ fs/dquot.c               |   10 ++++++----
+ include/linux/quotaops.h |    6 ++++--
+ 2 files changed, 10 insertions(+), 6 deletions(-)
+
+Index: linux-2.6.28-rc2/fs/dquot.c
+===================================================================
+--- linux-2.6.28-rc2.orig/fs/dquot.c	2008-10-31 14:18:30.000000000 -0700
++++ linux-2.6.28-rc2/fs/dquot.c	2008-10-31 14:18:33.000000000 -0700
+@@ -1564,18 +1564,20 @@ static inline void reset_enable_flags(st
+ {
+ 	switch (type) {
+ 		case USRQUOTA:
+-			dqopt->flags &= ~DQUOT_USR_ENABLED;
+ 			if (remount)
+ 				dqopt->flags |= DQUOT_USR_SUSPENDED;
+-			else
++			else {
++				dqopt->flags &= ~DQUOT_USR_ENABLED;
+ 				dqopt->flags &= ~DQUOT_USR_SUSPENDED;
++			}
+ 			break;
+ 		case GRPQUOTA:
+-			dqopt->flags &= ~DQUOT_GRP_ENABLED;
+ 			if (remount)
+ 				dqopt->flags |= DQUOT_GRP_SUSPENDED;
+-			else
++			else {
++				dqopt->flags &= ~DQUOT_GRP_ENABLED;
+ 				dqopt->flags &= ~DQUOT_GRP_SUSPENDED;
++			}
+ 			break;
+ 	}
+ }
+Index: linux-2.6.28-rc2/include/linux/quotaops.h
+===================================================================
+--- linux-2.6.28-rc2.orig/include/linux/quotaops.h	2008-10-31 14:18:27.000000000 -0700
++++ linux-2.6.28-rc2/include/linux/quotaops.h	2008-10-31 14:18:33.000000000 -0700
+@@ -67,8 +67,10 @@ static inline struct mem_dqinfo *sb_dqin
+ static inline int sb_has_quota_enabled(struct super_block *sb, int type)
+ {
+ 	if (type == USRQUOTA)
+-		return sb_dqopt(sb)->flags & DQUOT_USR_ENABLED;
+-	return sb_dqopt(sb)->flags & DQUOT_GRP_ENABLED;
++		return (sb_dqopt(sb)->flags & DQUOT_USR_ENABLED)
++			&& !(sb_dqopt(sb)->flags & DQUOT_USR_SUSPENDED);
++	return (sb_dqopt(sb)->flags & DQUOT_GRP_ENABLED)
++		&& !(sb_dqopt(sb)->flags & DQUOT_GROUP_SUSPENDED);
+ }
+ 
+ static inline int sb_any_quota_enabled(struct super_block *sb)

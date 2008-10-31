@@ -1,0 +1,82 @@
+Some filesystems would like to keep private information together with each
+dquot. Add callbacks alloc_dquot and destroy_dquot allowing filesystem to
+allocate larger dquots from their private slab in a similar fashion we
+currently allocate inodes.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+---
+ fs/dquot.c            |   19 +++++++++++++++----
+ include/linux/quota.h |    2 ++
+ 2 files changed, 17 insertions(+), 4 deletions(-)
+
+Index: linux-2.6.28-rc2/fs/dquot.c
+===================================================================
+--- linux-2.6.28-rc2.orig/fs/dquot.c	2008-10-26 12:13:29.000000000 -0700
++++ linux-2.6.28-rc2/fs/dquot.c	2008-10-31 14:18:18.000000000 -0700
+@@ -415,6 +415,14 @@ out_dqlock:
+ 	return ret;
+ }
+ 
++static void destroy_dquot(struct dquot *dquot)
++{
++	if (dquot->dq_sb->dq_op->destroy_dquot)
++		dquot->dq_sb->dq_op->destroy_dquot(dquot);
++	else
++		kmem_cache_free(dquot_cachep, dquot);
++}
++
+ /* Invalidate all dquots on the list. Note that this function is called after
+  * quota is disabled and pointers from inodes removed so there cannot be new
+  * quota users. There can still be some users of quotas due to inodes being
+@@ -463,7 +471,7 @@ restart:
+ 		remove_dquot_hash(dquot);
+ 		remove_free_dquot(dquot);
+ 		remove_inuse(dquot);
+-		kmem_cache_free(dquot_cachep, dquot);
++		destroy_dquot(dquot);
+ 	}
+ 	spin_unlock(&dq_list_lock);
+ }
+@@ -527,7 +535,7 @@ static void prune_dqcache(int count)
+ 		remove_dquot_hash(dquot);
+ 		remove_free_dquot(dquot);
+ 		remove_inuse(dquot);
+-		kmem_cache_free(dquot_cachep, dquot);
++		destroy_dquot(dquot);
+ 		count--;
+ 		head = free_dquots.prev;
+ 	}
+@@ -629,7 +637,10 @@ static struct dquot *get_empty_dquot(str
+ {
+ 	struct dquot *dquot;
+ 
+-	dquot = kmem_cache_zalloc(dquot_cachep, GFP_NOFS);
++	if (sb->dq_op->alloc_dquot)
++		dquot = sb->dq_op->alloc_dquot(sb, type);
++	else
++		dquot = kmem_cache_zalloc(dquot_cachep, GFP_NOFS);
+ 	if(!dquot)
+ 		return NODQUOT;
+ 
+@@ -682,7 +693,7 @@ we_slept:
+ 		dqstats.lookups++;
+ 		spin_unlock(&dq_list_lock);
+ 		if (empty)
+-			kmem_cache_free(dquot_cachep, empty);
++			destroy_dquot(empty);
+ 	}
+ 	/* Wait for dq_lock - after this we know that either dquot_release() is already
+ 	 * finished or it will be canceled due to dq_count > 1 test */
+Index: linux-2.6.28-rc2/include/linux/quota.h
+===================================================================
+--- linux-2.6.28-rc2.orig/include/linux/quota.h	2008-10-26 12:13:29.000000000 -0700
++++ linux-2.6.28-rc2/include/linux/quota.h	2008-10-31 14:18:18.000000000 -0700
+@@ -292,6 +292,8 @@ struct dquot_operations {
+ 	int (*free_inode) (const struct inode *, unsigned long);
+ 	int (*transfer) (struct inode *, struct iattr *);
+ 	int (*write_dquot) (struct dquot *);		/* Ordinary dquot write */
++	struct dquot *(*alloc_dquot)(struct super_block *, int);	/* Allocate memory for new dquot (can be NULL if no special entries dquot are needed) */
++	void (*destroy_dquot)(struct dquot *);		/* Free memory for dquot (can be NULL if alloc_dquot is NULL) */
+ 	int (*acquire_dquot) (struct dquot *);		/* Quota is going to be created on disk */
+ 	int (*release_dquot) (struct dquot *);		/* Quota is going to be deleted from disk */
+ 	int (*mark_dirty) (struct dquot *);		/* Dquot is marked dirty */
