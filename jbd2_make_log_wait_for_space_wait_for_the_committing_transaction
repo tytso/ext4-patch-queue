@@ -1,0 +1,67 @@
+jbd2: Make __jbd2_log_wait_for_space wait for the committing transaction
+
+Commit 23f8b79e introducd a regression because it assumed that if
+there were no transactions ready to be checkpointed, that no progress
+could be made on making space available in the journal, and so the
+journal should be aborted.  This assumption is false; for small
+journals, the currently committing transaction could be responsible
+for chewing up the required space in the log, so we need to wait for
+the currently committing transaction to finish before trying to force
+a checkpoint operation.
+
+This patch fixes a related bug reported by Meelis Roos at:
+http://bugzilla.kernel.org/show_bug.cgi?id=11937
+
+(The bug was for ext3, but the bug applies for ext4 as well.)
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Duane Griffin <duaneg@dghda.com>
+---
+diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
+index 9203c33..02f9db1 100644
+--- a/fs/jbd2/checkpoint.c
++++ b/fs/jbd2/checkpoint.c
+@@ -129,25 +129,37 @@ void __jbd2_log_wait_for_space(journal_t *journal)
+ 		/*
+ 		 * Test again, another process may have checkpointed while we
+ 		 * were waiting for the checkpoint lock. If there are no
+-		 * outstanding transactions there is nothing to checkpoint and
+-		 * we can't make progress. Abort the journal in this case.
++		 * transactions ready to be checkpointed, we may need to
++		 * wait for the currently committing transaction to complete
++		 * first.  If there are no outstanding transactions we can't
++		 * make progress.  This should never happen, so call trigger
++		 * a BUG so we can debug the situation.
+ 		 */
+ 		spin_lock(&journal->j_state_lock);
+ 		spin_lock(&journal->j_list_lock);
+ 		nblocks = jbd_space_needed(journal);
+ 		if (__jbd2_log_space_left(journal) < nblocks) {
+ 			int chkpt = journal->j_checkpoint_transactions != NULL;
++			int tid = 0;
+ 
++			if (journal->j_committing_transaction)
++				tid = journal->j_committing_transaction->t_tid;
+ 			spin_unlock(&journal->j_list_lock);
+ 			spin_unlock(&journal->j_state_lock);
+ 			if (chkpt) {
+ 				jbd2_log_do_checkpoint(journal);
++			} else if (tid) {
++				jbd2_log_wait_commit(journal, tid);
+ 			} else {
+-				printk(KERN_ERR "%s: no transactions\n",
+-				       __func__);
+-				jbd2_journal_abort(journal, 0);
++				printk(KERN_ALERT "%s: needed %d blocks and "
++				       "only had %d space available\n",
++				       __func__, nblocks,
++				       __jbd2_log_space_left(journal));
++				printk(KERN_ALERT "%s: no way to get more "
++				       "journal space in %s\n", __func__,
++				       journal->j_devname);
++				BUG();
+ 			}
+-
+ 			spin_lock(&journal->j_state_lock);
+ 		} else {
+ 			spin_unlock(&journal->j_list_lock);
