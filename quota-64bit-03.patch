@@ -1,0 +1,34 @@
+quota: Remove bogus 'optimization' in check_idq() and check_bdq()
+From: Jan Kara <jack@suse.cz>
+
+Checks like <= 0 for an unsigned type do not make much sence. The value
+could be only 0 and that does not happen often enough for the check
+to be worth it.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+---
+ fs/dquot.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+Index: linux-2.6.28-rc2/fs/dquot.c
+===================================================================
+--- linux-2.6.28-rc2.orig/fs/dquot.c	2008-10-31 14:18:27.000000000 -0700
++++ linux-2.6.28-rc2/fs/dquot.c	2008-10-31 14:18:30.000000000 -0700
+@@ -1037,7 +1037,7 @@ static inline char ignore_hardlimit(stru
+ static int check_idq(struct dquot *dquot, qsize_t inodes, char *warntype)
+ {
+ 	*warntype = QUOTA_NL_NOWARN;
+-	if (inodes <= 0 || test_bit(DQ_FAKE_B, &dquot->dq_flags))
++	if (test_bit(DQ_FAKE_B, &dquot->dq_flags))
+ 		return QUOTA_OK;
+ 
+ 	if (dquot->dq_dqb.dqb_ihardlimit &&
+@@ -1069,7 +1069,7 @@ static int check_idq(struct dquot *dquot
+ static int check_bdq(struct dquot *dquot, qsize_t space, int prealloc, char *warntype)
+ {
+ 	*warntype = QUOTA_NL_NOWARN;
+-	if (space <= 0 || test_bit(DQ_FAKE_B, &dquot->dq_flags))
++	if (test_bit(DQ_FAKE_B, &dquot->dq_flags))
+ 		return QUOTA_OK;
+ 
+ 	if (dquot->dq_dqb.dqb_bhardlimit &&
