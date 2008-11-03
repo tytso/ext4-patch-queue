@@ -9,9 +9,8 @@ documentation.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 6d25964..328636c 100644
+index 6d25964..627a2b2 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -100,7 +100,7 @@
@@ -23,10 +22,10 @@ index 6d25964..328636c 100644
   *
   *
   * one block each for bitmap and buddy information.  So for each group we
-@@ -330,6 +330,17 @@
-  *        object
+@@ -331,6 +331,17 @@
   *
   */
+ 
 +static struct kmem_cache *ext4_pspace_cachep;
 +static struct kmem_cache *ext4_ac_cachep;
 +static struct kmem_cache *ext4_free_ext_cachep;
@@ -36,11 +35,11 @@ index 6d25964..328636c 100644
 +static void ext4_mb_free_committed_blocks(struct super_block *);
 +static int ext4_mb_init_per_dev_proc(struct super_block *sb);
 +static int ext4_mb_destroy_per_dev_proc(struct super_block *sb);
++static void release_blocks_on_commit(journal_t *journal, transaction_t *txn);
 +
-+
- 
  static inline void *mb_correct_addr_and_bit(int *bit, void *addr)
  {
+ #if BITS_PER_LONG == 64
 @@ -716,7 +727,7 @@ static void ext4_mb_generate_buddy(struct super_block *sb,
   * stored in the inode as
   *
