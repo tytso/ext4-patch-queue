@@ -1,0 +1,24 @@
+defrag-06 patch fixup to add sparse annotation
+
+This patch hunk was added by
+aneesh-5-sparse-annotate-the-group-info-semaphore but it doesn't apply
+until the defrag patches ar applied.  It should be merged up.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+diff a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c	(rejected hunks)
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4805,8 +4821,10 @@ ext4_mb_search_free_extents(struct inode *inode,
+ 	end = EXT4_BLOCKS_PER_GROUP(sb) - 1;
+ 
+ 	err = ext4_mb_load_buddy(sb, group_no, &e4b);
+-	if (err)
++	if (err) {
++		__release(e4b->alloc_semp);
+ 		return err;
++	}
+ 
+ 	/* We consider about the boot block if bs = 1k */
+ 	if (sb->s_blocksize == 1024)

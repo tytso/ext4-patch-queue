@@ -1,0 +1,43 @@
+ext4: Fix lockdep recursive locking warning
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+Indicate that the group locks can be taken in loop.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    5 ++++-
+ 1 files changed, 4 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index c169256..5a5f9e1 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2418,6 +2418,7 @@ ext4_mb_store_history(struct ext4_allocation_context *ac)
+ #define ext4_mb_history_init(sb)
+ #endif
+ 
++static struct lock_class_key alloc_sem_key[NR_BG_LOCKS];
+ 
+ /* Create and initialize ext4_group_info data for the given group. */
+ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+@@ -2478,7 +2479,9 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+ 	}
+ 
+ 	INIT_LIST_HEAD(&meta_group_info[i]->bb_prealloc_list);
+-	init_rwsem(&meta_group_info[i]->alloc_sem);
++	__init_rwsem(&meta_group_info[i]->alloc_sem,
++			"&meta_group_info[i]->alloc_sem",
++			&alloc_sem_key[i]);
+ 	meta_group_info[i]->bb_free_root.rb_node = NULL;;
+ 
+ #ifdef DOUBLE_CHECK
+-- 
+1.6.0.3.514.g2f91b
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
