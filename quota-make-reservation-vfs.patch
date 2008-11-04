@@ -20,9 +20,9 @@ Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 
 Index: linux-2.6.28-rc2/fs/dquot.c
 ===================================================================
---- linux-2.6.28-rc2.orig/fs/dquot.c	2008-10-31 14:18:49.000000000 -0700
-+++ linux-2.6.28-rc2/fs/dquot.c	2008-10-31 14:19:07.000000000 -0700
-@@ -841,6 +841,11 @@ static inline void dquot_incr_space(stru
+--- linux-2.6.28-rc2.orig/fs/dquot.c	2008-11-03 13:52:17.000000000 -0800
++++ linux-2.6.28-rc2/fs/dquot.c	2008-11-03 13:54:23.000000000 -0800
+@@ -830,6 +830,11 @@ static inline void dquot_incr_space(stru
  	dquot->dq_dqb.dqb_curspace += number;
  }
  
@@ -31,48 +31,47 @@ Index: linux-2.6.28-rc2/fs/dquot.c
 +	dquot->dq_dqb.dqb_rsvspace += number;
 +}
 +
- static inline void dquot_decr_inodes(struct dquot *dquot, qsize_t number)
+ static inline void dquot_decr_inodes(struct dquot *dquot, unsigned long number)
  {
  	if (dquot->dq_dqb.dqb_curinodes > number)
-@@ -1069,13 +1074,18 @@ static int check_idq(struct dquot *dquot
+@@ -1057,12 +1062,17 @@ static int check_idq(struct dquot *dquot
  /* needs dq_data_lock */
  static int check_bdq(struct dquot *dquot, qsize_t space, int prealloc, char *warntype)
  {
-+	qsize_t tspace;
++	 qsize_t tspace;
 +
  	*warntype = QUOTA_NL_NOWARN;
- 	if (!sb_has_quota_limits_enabled(dquot->dq_sb, dquot->dq_type) ||
- 	    test_bit(DQ_FAKE_B, &dquot->dq_flags))
+ 	if (space <= 0 || test_bit(DQ_FAKE_B, &dquot->dq_flags))
  		return QUOTA_OK;
  
 +	tspace = dquot->dq_dqb.dqb_curspace + dquot->dq_dqb.dqb_rsvspace
 +		+ space;
 +
  	if (dquot->dq_dqb.dqb_bhardlimit &&
--	    dquot->dq_dqb.dqb_curspace + space > dquot->dq_dqb.dqb_bhardlimit &&
-+	    tspace > dquot->dq_dqb.dqb_bhardlimit &&
+-	   toqb(dquot->dq_dqb.dqb_curspace + space) > dquot->dq_dqb.dqb_bhardlimit &&
++	   toqb(tspace) > dquot->dq_dqb.dqb_bhardlimit &&
              !ignore_hardlimit(dquot)) {
  		if (!prealloc)
  			*warntype = QUOTA_NL_BHARDWARN;
-@@ -1083,7 +1093,7 @@ static int check_bdq(struct dquot *dquot
+@@ -1070,7 +1080,7 @@ static int check_bdq(struct dquot *dquot
  	}
  
  	if (dquot->dq_dqb.dqb_bsoftlimit &&
--	    dquot->dq_dqb.dqb_curspace + space > dquot->dq_dqb.dqb_bsoftlimit &&
-+	    tspace > dquot->dq_dqb.dqb_bsoftlimit &&
+-	   toqb(dquot->dq_dqb.dqb_curspace + space) > dquot->dq_dqb.dqb_bsoftlimit &&
++	   toqb(tspace) > dquot->dq_dqb.dqb_bsoftlimit &&
  	    dquot->dq_dqb.dqb_btime && get_seconds() >= dquot->dq_dqb.dqb_btime &&
              !ignore_hardlimit(dquot)) {
  		if (!prealloc)
-@@ -1092,7 +1102,7 @@ static int check_bdq(struct dquot *dquot
+@@ -1079,7 +1089,7 @@ static int check_bdq(struct dquot *dquot
  	}
  
  	if (dquot->dq_dqb.dqb_bsoftlimit &&
--	    dquot->dq_dqb.dqb_curspace + space > dquot->dq_dqb.dqb_bsoftlimit &&
-+	    tspace > dquot->dq_dqb.dqb_bsoftlimit &&
+-	   toqb(dquot->dq_dqb.dqb_curspace + space) > dquot->dq_dqb.dqb_bsoftlimit &&
++	   toqb(tspace) > dquot->dq_dqb.dqb_bsoftlimit &&
  	    dquot->dq_dqb.dqb_btime == 0) {
  		if (!prealloc) {
  			*warntype = QUOTA_NL_BSOFTWARN;
-@@ -1227,48 +1237,90 @@ void vfs_dq_drop(struct inode *inode)
+@@ -1215,48 +1225,90 @@ void vfs_dq_drop(struct inode *inode)
  /*
   * This operation can block, but only after everything is updated
   */
@@ -189,16 +188,16 @@ Index: linux-2.6.28-rc2/fs/dquot.c
  	up_read(&sb_dqopt(inode->i_sb)->dqptr_sem);
  	return ret;
  }
-@@ -1958,7 +2010,7 @@ static void do_get_dqblk(struct dquot *d
+@@ -1874,7 +1926,7 @@ static void do_get_dqblk(struct dquot *d
  	spin_lock(&dq_data_lock);
- 	di->dqb_bhardlimit = stoqb(dm->dqb_bhardlimit);
- 	di->dqb_bsoftlimit = stoqb(dm->dqb_bsoftlimit);
+ 	di->dqb_bhardlimit = dm->dqb_bhardlimit;
+ 	di->dqb_bsoftlimit = dm->dqb_bsoftlimit;
 -	di->dqb_curspace = dm->dqb_curspace;
 +	di->dqb_curspace = dm->dqb_curspace + dm->dqb_rsvspace;
  	di->dqb_ihardlimit = dm->dqb_ihardlimit;
  	di->dqb_isoftlimit = dm->dqb_isoftlimit;
  	di->dqb_curinodes = dm->dqb_curinodes;
-@@ -2297,6 +2349,7 @@ EXPORT_SYMBOL(dquot_alloc_space);
+@@ -2207,6 +2259,7 @@ EXPORT_SYMBOL(dquot_alloc_space);
  EXPORT_SYMBOL(dquot_alloc_inode);
  EXPORT_SYMBOL(dquot_free_space);
  EXPORT_SYMBOL(dquot_free_inode);
@@ -208,17 +207,17 @@ Index: linux-2.6.28-rc2/fs/dquot.c
  EXPORT_SYMBOL(vfs_dq_quota_on_remount);
 Index: linux-2.6.28-rc2/include/linux/quota.h
 ===================================================================
---- linux-2.6.28-rc2.orig/include/linux/quota.h	2008-10-31 14:18:57.000000000 -0700
-+++ linux-2.6.28-rc2/include/linux/quota.h	2008-10-31 14:19:07.000000000 -0700
-@@ -186,6 +186,7 @@ struct mem_dqblk {
- 	qsize_t dqb_bhardlimit;	/* absolute limit on disk blks alloc */
- 	qsize_t dqb_bsoftlimit;	/* preferred limit on disk blks */
+--- linux-2.6.28-rc2.orig/include/linux/quota.h	2008-11-03 13:52:17.000000000 -0800
++++ linux-2.6.28-rc2/include/linux/quota.h	2008-11-03 13:54:23.000000000 -0800
+@@ -190,6 +190,7 @@ struct mem_dqblk {
+ 	__u32 dqb_bhardlimit;	/* absolute limit on disk blks alloc */
+ 	__u32 dqb_bsoftlimit;	/* preferred limit on disk blks */
  	qsize_t dqb_curspace;	/* current used space */
 +	qsize_t dqb_rsvspace;   /* current reserved space for delalloc*/
- 	qsize_t dqb_ihardlimit;	/* absolute limit on allocated inodes */
- 	qsize_t dqb_isoftlimit;	/* preferred inode limit */
- 	qsize_t dqb_curinodes;	/* current # allocated inodes */
-@@ -291,6 +292,7 @@ struct dquot_operations {
+ 	__u32 dqb_ihardlimit;	/* absolute limit on allocated inodes */
+ 	__u32 dqb_isoftlimit;	/* preferred inode limit */
+ 	__u32 dqb_curinodes;	/* current # allocated inodes */
+@@ -296,6 +297,7 @@ struct dquot_operations {
  	int (*release_dquot) (struct dquot *);		/* Quota is going to be deleted from disk */
  	int (*mark_dirty) (struct dquot *);		/* Dquot is marked dirty */
  	int (*write_info) (struct super_block *, int);	/* Write of quota "superblock" */
@@ -228,15 +227,15 @@ Index: linux-2.6.28-rc2/include/linux/quota.h
  /* Operations handling requests from userspace */
 Index: linux-2.6.28-rc2/include/linux/quotaops.h
 ===================================================================
---- linux-2.6.28-rc2.orig/include/linux/quotaops.h	2008-10-31 14:18:46.000000000 -0700
-+++ linux-2.6.28-rc2/include/linux/quotaops.h	2008-10-31 14:19:07.000000000 -0700
-@@ -176,6 +176,16 @@ static inline int vfs_dq_alloc_space(str
+--- linux-2.6.28-rc2.orig/include/linux/quotaops.h	2008-11-03 13:52:17.000000000 -0800
++++ linux-2.6.28-rc2/include/linux/quotaops.h	2008-11-03 13:54:23.000000000 -0800
+@@ -150,6 +150,16 @@ static inline int vfs_dq_alloc_space(str
  	return ret;
  }
  
 +static inline int vfs_dq_reserve_space(struct inode *inode, qsize_t nr)
 +{
-+	if (sb_any_quota_active(inode->i_sb)) {
++	if (sb_any_quota_enabled(inode->i_sb)) {
 +		/* Used space is updated in alloc_space() */
 +		if (inode->i_sb->dq_op->reserve_space(inode, nr, 0) == NO_QUOTA)
 +			return 1;
@@ -246,8 +245,8 @@ Index: linux-2.6.28-rc2/include/linux/quotaops.h
 +
  static inline int vfs_dq_alloc_inode(struct inode *inode)
  {
- 	if (sb_any_quota_active(inode->i_sb)) {
-@@ -327,6 +337,11 @@ static inline int vfs_dq_alloc_space(str
+ 	if (sb_any_quota_enabled(inode->i_sb)) {
+@@ -285,6 +295,11 @@ static inline int vfs_dq_alloc_space(str
  	return 0;
  }
  
@@ -259,7 +258,7 @@ Index: linux-2.6.28-rc2/include/linux/quotaops.h
  static inline void vfs_dq_free_space_nodirty(struct inode *inode, qsize_t nr)
  {
  	inode_sub_bytes(inode, nr);
-@@ -358,12 +373,19 @@ static inline int vfs_dq_alloc_block_nod
+@@ -316,12 +331,19 @@ static inline int vfs_dq_alloc_block_nod
  			nr << inode->i_sb->s_blocksize_bits);
  }
  
@@ -279,7 +278,7 @@ Index: linux-2.6.28-rc2/include/linux/quotaops.h
  static inline void vfs_dq_free_block_nodirty(struct inode *inode, qsize_t nr)
  {
  	vfs_dq_free_space_nodirty(inode, nr << inode->i_sb->s_blocksize_bits);
-@@ -392,6 +414,7 @@ static inline void vfs_dq_free_block(str
+@@ -350,6 +372,7 @@ static inline void vfs_dq_free_block(str
  #define DQUOT_ALLOC_BLOCK_NODIRTY(inode, nr) \
  				vfs_dq_alloc_block_nodirty(inode, nr)
  #define DQUOT_ALLOC_BLOCK(inode, nr) vfs_dq_alloc_block(inode, nr)
