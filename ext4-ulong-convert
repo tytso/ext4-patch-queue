@@ -1,0 +1,566 @@
+ext4: Change unsigned long to unsigned int
+
+Convert the unsigned longs that are most responsible for bloating the
+stack usage on 64-bit systems.
+
+Nearly all places in the ext3/4 code which uses "unsigned long" is
+probably a bug, since on 32-bit systems a ulong a 32-bits, which means
+we are wasting stack space on 64-bit systems.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index a7e9b2c..2295f3e 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -205,8 +205,8 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block *sb,
+ 					     ext4_group_t block_group,
+ 					     struct buffer_head **bh)
+ {
+-	unsigned long group_desc;
+-	unsigned long offset;
++	unsigned int group_desc;
++	unsigned int offset;
+ 	struct ext4_group_desc *desc;
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 
+@@ -225,7 +225,7 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block *sb,
+ 	if (!sbi->s_group_desc[group_desc]) {
+ 		ext4_error(sb, "ext4_get_group_desc",
+ 			   "Group descriptor not loaded - "
+-			   "block_group = %u, group_desc = %lu, desc = %lu",
++			   "block_group = %u, group_desc = %u, desc = %u",
+ 			   block_group, group_desc, offset);
+ 		return NULL;
+ 	}
+@@ -372,8 +372,8 @@ void ext4_free_blocks_sb(handle_t *handle, struct super_block *sb,
+ 	struct buffer_head *gd_bh;
+ 	ext4_group_t block_group;
+ 	ext4_grpblk_t bit;
+-	unsigned long i;
+-	unsigned long overflow;
++	unsigned int i;
++	unsigned int overflow;
+ 	struct ext4_group_desc *desc;
+ 	struct ext4_super_block *es;
+ 	struct ext4_sb_info *sbi;
+@@ -776,7 +776,7 @@ ext4_fsblk_t ext4_count_free_blocks(struct super_block *sb)
+ #ifdef EXT4FS_DEBUG
+ 	struct ext4_super_block *es;
+ 	ext4_fsblk_t bitmap_count;
+-	unsigned long x;
++	unsigned int x;
+ 	struct buffer_head *bitmap_bh = NULL;
+ 
+ 	es = EXT4_SB(sb)->s_es;
+@@ -796,7 +796,7 @@ ext4_fsblk_t ext4_count_free_blocks(struct super_block *sb)
+ 			continue;
+ 
+ 		x = ext4_count_free(bitmap_bh, sb->s_blocksize);
+-		printk(KERN_DEBUG "group %lu: stored = %d, counted = %lu\n",
++		printk(KERN_DEBUG "group %lu: stored = %d, counted = %u\n",
+ 			i, le16_to_cpu(gdp->bg_free_blocks_count), x);
+ 		bitmap_count += x;
+ 	}
+diff --git a/fs/ext4/bitmap.c b/fs/ext4/bitmap.c
+index 0a7a666..fa3af81 100644
+--- a/fs/ext4/bitmap.c
++++ b/fs/ext4/bitmap.c
+@@ -15,10 +15,9 @@
+ 
+ static const int nibblemap[] = {4, 3, 3, 2, 3, 2, 2, 1, 3, 2, 2, 1, 2, 1, 1, 0};
+ 
+-unsigned long ext4_count_free(struct buffer_head *map, unsigned int numchars)
++unsigned int ext4_count_free(struct buffer_head *map, unsigned int numchars)
+ {
+-	unsigned int i;
+-	unsigned long sum = 0;
++	unsigned int i, sum = 0;
+ 
+ 	if (!map)
+ 		return 0;
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index fed5b61..cf3ccf4 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -64,7 +64,7 @@ static unsigned char get_dtype(struct super_block *sb, int filetype)
+ int ext4_check_dir_entry(const char *function, struct inode *dir,
+ 			 struct ext4_dir_entry_2 *de,
+ 			 struct buffer_head *bh,
+-			 unsigned long offset)
++			 unsigned int offset)
+ {
+ 	const char *error_msg = NULL;
+ 	const int rlen = ext4_rec_len_from_disk(de->rec_len);
+@@ -84,9 +84,9 @@ int ext4_check_dir_entry(const char *function, struct inode *dir,
+ 	if (error_msg != NULL)
+ 		ext4_error(dir->i_sb, function,
+ 			"bad entry in directory #%lu: %s - "
+-			"offset=%lu, inode=%lu, rec_len=%d, name_len=%d",
++			"offset=%u, inode=%u, rec_len=%d, name_len=%d",
+ 			dir->i_ino, error_msg, offset,
+-			(unsigned long) le32_to_cpu(de->inode),
++			le32_to_cpu(de->inode),
+ 			rlen, de->name_len);
+ 	return error_msg == NULL ? 1 : 0;
+ }
+@@ -95,7 +95,7 @@ static int ext4_readdir(struct file *filp,
+ 			 void *dirent, filldir_t filldir)
+ {
+ 	int error = 0;
+-	unsigned long offset;
++	unsigned int offset;
+ 	int i, stored;
+ 	struct ext4_dir_entry_2 *de;
+ 	struct super_block *sb;
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index ba3ed65..9415a1a 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -94,9 +94,9 @@ struct ext4_allocation_request {
+ 	/* phys. block for ^^^ */
+ 	ext4_fsblk_t pright;
+ 	/* how many blocks we want to allocate */
+-	unsigned long len;
++	unsigned int len;
+ 	/* flags. see above EXT4_MB_HINT_* */
+-	unsigned long flags;
++	unsigned int flags;
+ };
+ 
+ /*
+@@ -990,6 +990,9 @@ do {									\
+ # define ATTRIB_NORET	__attribute__((noreturn))
+ # define NORET_AND	noreturn,
+ 
++/* bitmap.c */
++extern unsigned int ext4_count_free(struct buffer_head *, unsigned);
++
+ /* balloc.c */
+ extern unsigned int ext4_block_group(struct super_block *sb,
+ 			ext4_fsblk_t blocknr);
+@@ -1022,7 +1025,7 @@ extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
+ /* dir.c */
+ extern int ext4_check_dir_entry(const char *, struct inode *,
+ 				struct ext4_dir_entry_2 *,
+-				struct buffer_head *, unsigned long);
++				struct buffer_head *, unsigned int);
+ extern int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
+ 				    __u32 minor_hash,
+ 				    struct ext4_dir_entry_2 *dirent);
+@@ -1042,7 +1045,6 @@ extern struct inode * ext4_orphan_get(struct super_block *, unsigned long);
+ extern unsigned long ext4_count_free_inodes(struct super_block *);
+ extern unsigned long ext4_count_dirs(struct super_block *);
+ extern void ext4_check_inodes_bitmap(struct super_block *);
+-extern unsigned long ext4_count_free(struct buffer_head *, unsigned);
+ 
+ /* mballoc.c */
+ extern long ext4_mb_stats;
+@@ -1072,10 +1074,6 @@ struct buffer_head *ext4_bread(handle_t *, struct inode *,
+ 						ext4_lblk_t, int, int *);
+ int ext4_get_block(struct inode *inode, sector_t iblock,
+ 				struct buffer_head *bh_result, int create);
+-int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+-				ext4_lblk_t iblock, unsigned long maxblocks,
+-				struct buffer_head *bh_result,
+-				int create, int extend_disksize);
+ 
+ extern struct inode *ext4_iget(struct super_block *, unsigned long);
+ extern int  ext4_write_inode(struct inode *, int);
+@@ -1274,16 +1272,16 @@ extern int ext4_ext_writepage_trans_blocks(struct inode *, int);
+ extern int ext4_ext_index_trans_blocks(struct inode *inode, int nrblocks,
+ 				       int chunk);
+ extern int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+-			ext4_lblk_t iblock,
+-			unsigned long max_blocks, struct buffer_head *bh_result,
+-			int create, int extend_disksize);
++			       ext4_lblk_t iblock, unsigned int max_blocks,
++			       struct buffer_head *bh_result,
++			       int create, int extend_disksize);
+ extern void ext4_ext_truncate(struct inode *);
+ extern void ext4_ext_init(struct super_block *);
+ extern void ext4_ext_release(struct super_block *);
+ extern long ext4_fallocate(struct inode *inode, int mode, loff_t offset,
+ 			  loff_t len);
+ extern int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode,
+-			sector_t block, unsigned long max_blocks,
++			sector_t block, unsigned int max_blocks,
+ 			struct buffer_head *bh, int create,
+ 			int extend_disksize, int flag);
+ #endif	/* __KERNEL__ */
+diff --git a/fs/ext4/ext4_i.h b/fs/ext4/ext4_i.h
+index 0a9ebe5..e69acc1 100644
+--- a/fs/ext4/ext4_i.h
++++ b/fs/ext4/ext4_i.h
+@@ -100,9 +100,6 @@ struct ext4_inode_info {
+ 	 */
+ 	loff_t	i_disksize;
+ 
+-	/* on-disk additional length */
+-	__u16 i_extra_isize;
+-
+ 	/*
+ 	 * i_data_sem is for serialising ext4_truncate() against
+ 	 * ext4_getblock().  In the 2.4 ext2 design, great chunks of inode's
+@@ -129,10 +126,14 @@ struct ext4_inode_info {
+ 	spinlock_t i_prealloc_lock;
+ 
+ 	/* allocation reservation info for delalloc */
+-	unsigned long i_reserved_data_blocks;
+-	unsigned long i_reserved_meta_blocks;
+-	unsigned long i_allocated_meta_blocks;
++	unsigned int i_reserved_data_blocks;
++	unsigned int i_reserved_meta_blocks;
++	unsigned int i_allocated_meta_blocks;
+ 	unsigned short i_delalloc_reserved_flag;
++
++	/* on-disk additional length */
++	__u16 i_extra_isize;
++
+ 	spinlock_t i_block_reservation_lock;
+ };
+ 
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 501952f..6b8c687 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2378,7 +2378,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 						struct inode *inode,
+ 						struct ext4_ext_path *path,
+ 						ext4_lblk_t iblock,
+-						unsigned long max_blocks)
++						unsigned int max_blocks)
+ {
+ 	struct ext4_extent *ex, newex, orig_ex;
+ 	struct ext4_extent *ex1 = NULL;
+@@ -2676,26 +2676,26 @@ fix_extent_len:
+  */
+ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 			ext4_lblk_t iblock,
+-			unsigned long max_blocks, struct buffer_head *bh_result,
++			unsigned int max_blocks, struct buffer_head *bh_result,
+ 			int create, int extend_disksize)
+ {
+ 	struct ext4_ext_path *path = NULL;
+ 	struct ext4_extent_header *eh;
+ 	struct ext4_extent newex, *ex;
+-	ext4_fsblk_t goal, newblock;
+-	int err = 0, depth, ret;
+-	unsigned long allocated = 0;
++	ext4_fsblk_t newblock;
++	int err = 0, depth, ret, cache_type;
++	unsigned int allocated = 0;
+ 	struct ext4_allocation_request ar;
+ 	loff_t disksize;
+ 
+ 	__clear_bit(BH_New, &bh_result->b_state);
+-	ext_debug("blocks %u/%lu requested for inode %u\n",
++	ext_debug("blocks %u/%u requested for inode %u\n",
+ 			iblock, max_blocks, inode->i_ino);
+ 
+ 	/* check in cache */
+-	goal = ext4_ext_in_cache(inode, iblock, &newex);
+-	if (goal) {
+-		if (goal == EXT4_EXT_CACHE_GAP) {
++	cache_type = ext4_ext_in_cache(inode, iblock, &newex);
++	if (cache_type) {
++		if (cache_type == EXT4_EXT_CACHE_GAP) {
+ 			if (!create) {
+ 				/*
+ 				 * block isn't allocated yet and
+@@ -2704,7 +2704,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 				goto out2;
+ 			}
+ 			/* we should allocate requested block */
+-		} else if (goal == EXT4_EXT_CACHE_EXTENT) {
++		} else if (cache_type == EXT4_EXT_CACHE_EXTENT) {
+ 			/* block is already allocated */
+ 			newblock = iblock
+ 				   - le32_to_cpu(newex.ee_block)
+@@ -2852,7 +2852,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 	if (!newblock)
+ 		goto out2;
+ 	ext_debug("allocate new block: goal %llu, found %llu/%lu\n",
+-			goal, newblock, allocated);
++		  ar.goal, newblock, allocated);
+ 
+ 	/* try to insert new extent into found leaf and return */
+ 	ext4_ext_store_pblock(&newex, newblock);
+@@ -3002,7 +3002,7 @@ long ext4_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
+ 	handle_t *handle;
+ 	ext4_lblk_t block;
+ 	loff_t new_size;
+-	unsigned long max_blocks;
++	unsigned int max_blocks;
+ 	int ret = 0;
+ 	int ret2 = 0;
+ 	int retries = 0;
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 15d191b..810a862 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -505,10 +505,10 @@ static ext4_fsblk_t ext4_find_goal(struct inode *inode, ext4_lblk_t block,
+  *	return the total number of blocks to be allocate, including the
+  *	direct and indirect blocks.
+  */
+-static int ext4_blks_to_allocate(Indirect *branch, int k, unsigned long blks,
++static int ext4_blks_to_allocate(Indirect *branch, int k, unsigned int blks,
+ 		int blocks_to_boundary)
+ {
+-	unsigned long count = 0;
++	unsigned int count = 0;
+ 
+ 	/*
+ 	 * Simple case, [t,d]Indirect block(s) has not allocated yet
+@@ -839,10 +839,10 @@ err_out:
+  * down_read(&EXT4_I(inode)->i_data_sem) if not allocating file system block
+  * (ie, create is zero). Otherwise down_write(&EXT4_I(inode)->i_data_sem)
+  */
+-int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
+-		ext4_lblk_t iblock, unsigned long maxblocks,
+-		struct buffer_head *bh_result,
+-		int create, int extend_disksize)
++static int ext4_get_blocks_handle(handle_t *handle, struct inode *inode,
++				  ext4_lblk_t iblock, unsigned int maxblocks,
++				  struct buffer_head *bh_result,
++				  int create, int extend_disksize)
+ {
+ 	int err = -EIO;
+ 	ext4_lblk_t offsets[4];
+@@ -1044,7 +1044,7 @@ static void ext4_da_update_reserve_space(struct inode *inode, int used)
+  * It returns the error in case of allocation failure.
+  */
+ int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+-			unsigned long max_blocks, struct buffer_head *bh,
++			unsigned int max_blocks, struct buffer_head *bh,
+ 			int create, int extend_disksize, int flag)
+ {
+ 	int retval;
+@@ -1624,7 +1624,7 @@ struct mpage_da_data {
+ 	get_block_t *get_block;
+ 	struct writeback_control *wbc;
+ 	int io_done;
+-	long pages_written;
++	int pages_written;
+ 	int retval;
+ };
+ 
+@@ -1834,9 +1834,9 @@ static void ext4_print_free_blocks(struct inode *inode)
+ 	printk(KERN_EMERG "dirty_blocks=%lld\n",
+ 			(long long)percpu_counter_sum(&sbi->s_dirtyblocks_counter));
+ 	printk(KERN_EMERG "Block reservation details\n");
+-	printk(KERN_EMERG "i_reserved_data_blocks=%lu\n",
++	printk(KERN_EMERG "i_reserved_data_blocks=%u\n",
+ 			EXT4_I(inode)->i_reserved_data_blocks);
+-	printk(KERN_EMERG "i_reserved_meta_blocks=%lu\n",
++	printk(KERN_EMERG "i_reserved_meta_blocks=%u\n",
+ 			EXT4_I(inode)->i_reserved_meta_blocks);
+ 	return;
+ }
+@@ -2268,7 +2268,7 @@ static int ext4_da_writepage(struct page *page,
+ {
+ 	int ret = 0;
+ 	loff_t size;
+-	unsigned long len;
++	unsigned int len;
+ 	struct buffer_head *page_bufs;
+ 	struct inode *inode = page->mapping->host;
+ 
+@@ -2375,7 +2375,8 @@ static int ext4_da_writepages(struct address_space *mapping,
+ 	struct mpage_da_data mpd;
+ 	struct inode *inode = mapping->host;
+ 	int no_nrwrite_index_update;
+-	long pages_written = 0, pages_skipped;
++	int pages_written = 0;
++	long pages_skipped;
+ 	int needed_blocks, ret = 0, nr_to_writebump = 0;
+ 	struct ext4_sb_info *sbi = EXT4_SB(mapping->host->i_sb);
+ 
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 233d59d..59151c1 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2791,7 +2791,7 @@ void exit_ext4_mballoc(void)
+  */
+ static noinline_for_stack int
+ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+-				handle_t *handle, unsigned long reserv_blks)
++				handle_t *handle, unsigned int reserv_blks)
+ {
+ 	struct buffer_head *bitmap_bh = NULL;
+ 	struct ext4_super_block *es;
+@@ -3031,7 +3031,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 	/* check we don't cross already preallocated blocks */
+ 	rcu_read_lock();
+ 	list_for_each_entry_rcu(pa, &ei->i_prealloc_list, pa_inode_list) {
+-		unsigned long pa_end;
++		ext4_lblk_t pa_end;
+ 
+ 		if (pa->pa_deleted)
+ 			continue;
+@@ -3075,7 +3075,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 	/* XXX: extra loop to check we really don't overlap preallocations */
+ 	rcu_read_lock();
+ 	list_for_each_entry_rcu(pa, &ei->i_prealloc_list, pa_inode_list) {
+-		unsigned long pa_end;
++		ext4_lblk_t pa_end;
+ 		spin_lock(&pa->pa_lock);
+ 		if (pa->pa_deleted == 0) {
+ 			pa_end = pa->pa_lstart + pa->pa_len;
+@@ -3579,8 +3579,8 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+ {
+ 	struct super_block *sb = e4b->bd_sb;
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+-	unsigned long end;
+-	unsigned long next;
++	unsigned int end;
++	unsigned int next;
+ 	ext4_group_t group;
+ 	ext4_grpblk_t bit;
+ 	sector_t start;
+@@ -4024,8 +4024,8 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 	struct ext4_super_block *es = sbi->s_es;
+ 	ext4_group_t group;
+-	unsigned long len;
+-	unsigned long goal;
++	unsigned int len;
++	ext4_fsblk_t goal;
+ 	ext4_grpblk_t block;
+ 
+ 	/* we can't allocate > group size */
+@@ -4286,8 +4286,8 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+ 	struct ext4_sb_info *sbi;
+ 	struct super_block *sb;
+ 	ext4_fsblk_t block = 0;
+-	unsigned long inquota;
+-	unsigned long reserv_blks = 0;
++	unsigned int inquota;
++	unsigned int reserv_blks = 0;
+ 
+ 	sb = ar->inode->i_sb;
+ 	sbi = EXT4_SB(sb);
+@@ -4499,7 +4499,7 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+ 	struct ext4_allocation_context *ac = NULL;
+ 	struct ext4_group_desc *gdp;
+ 	struct ext4_super_block *es;
+-	unsigned long overflow;
++	unsigned int overflow;
+ 	ext4_grpblk_t bit;
+ 	struct buffer_head *gd_bh;
+ 	ext4_group_t block_group;
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 56afe7d..506550b 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -811,7 +811,7 @@ static inline int ext4_match (int len, const char * const name,
+ static inline int search_dirblock(struct buffer_head *bh,
+ 				  struct inode *dir,
+ 				  const struct qstr *d_name,
+-				  unsigned long offset,
++				  unsigned int offset,
+ 				  struct ext4_dir_entry_2 ** res_dir)
+ {
+ 	struct ext4_dir_entry_2 * de;
+@@ -1048,11 +1048,11 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, stru
+ 	bh = ext4_find_entry(dir, &dentry->d_name, &de);
+ 	inode = NULL;
+ 	if (bh) {
+-		unsigned long ino = le32_to_cpu(de->inode);
++		__u32 ino = le32_to_cpu(de->inode);
+ 		brelse(bh);
+ 		if (!ext4_valid_inum(dir->i_sb, ino)) {
+ 			ext4_error(dir->i_sb, "ext4_lookup",
+-				   "bad inode number: %lu", ino);
++				   "bad inode number: %u", ino);
+ 			return ERR_PTR(-EIO);
+ 		}
+ 		inode = ext4_iget(dir->i_sb, ino);
+@@ -1065,7 +1065,7 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, stru
+ 
+ struct dentry *ext4_get_parent(struct dentry *child)
+ {
+-	unsigned long ino;
++	__u32 ino;
+ 	struct inode *inode;
+ 	static const struct qstr dotdot = {
+ 		.name = "..",
+@@ -1083,7 +1083,7 @@ struct dentry *ext4_get_parent(struct dentry *child)
+ 
+ 	if (!ext4_valid_inum(child->d_inode->i_sb, ino)) {
+ 		ext4_error(child->d_inode->i_sb, "ext4_get_parent",
+-			   "bad inode number: %lu", ino);
++			   "bad inode number: %u", ino);
+ 		return ERR_PTR(-EIO);
+ 	}
+ 
+@@ -1271,7 +1271,7 @@ static int add_dirent_to_buf(handle_t *handle, struct dentry *dentry,
+ 	struct inode	*dir = dentry->d_parent->d_inode;
+ 	const char	*name = dentry->d_name.name;
+ 	int		namelen = dentry->d_name.len;
+-	unsigned long	offset = 0;
++	unsigned int	offset = 0;
+ 	unsigned short	reclen;
+ 	int		nlen, rlen, err;
+ 	char		*top;
+@@ -1444,7 +1444,6 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+ 			  struct inode *inode)
+ {
+ 	struct inode *dir = dentry->d_parent->d_inode;
+-	unsigned long offset;
+ 	struct buffer_head *bh;
+ 	struct ext4_dir_entry_2 *de;
+ 	struct super_block *sb;
+@@ -1466,7 +1465,7 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+ 		ext4_mark_inode_dirty(handle, dir);
+ 	}
+ 	blocks = dir->i_size >> sb->s_blocksize_bits;
+-	for (block = 0, offset = 0; block < blocks; block++) {
++	for (block = 0; block < blocks; block++) {
+ 		bh = ext4_bread(handle, dir, block, 0, &retval);
+ 		if(!bh)
+ 			return retval;
+@@ -1857,7 +1856,7 @@ out_stop:
+  */
+ static int empty_dir(struct inode *inode)
+ {
+-	unsigned long offset;
++	unsigned int offset;
+ 	struct buffer_head *bh;
+ 	struct ext4_dir_entry_2 *de, *de1;
+ 	struct super_block *sb;
+@@ -1902,7 +1901,7 @@ static int empty_dir(struct inode *inode)
+ 				if (err)
+ 					ext4_error(sb, __func__,
+ 						   "error %d reading directory"
+-						   " #%lu offset %lu",
++						   " #%lu offset %u",
+ 						   err, inode->i_ino, offset);
+ 				offset += sb->s_blocksize;
+ 				continue;
+@@ -2002,7 +2001,7 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
+ 	struct list_head *prev;
+ 	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	struct ext4_sb_info *sbi;
+-	unsigned long ino_next;
++	__u32 ino_next;
+ 	struct ext4_iloc iloc;
+ 	int err = 0;
+ 
+@@ -2032,7 +2031,7 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
+ 		goto out_err;
+ 
+ 	if (prev == &sbi->s_orphan) {
+-		jbd_debug(4, "superblock will point to %lu\n", ino_next);
++		jbd_debug(4, "superblock will point to %u\n", ino_next);
+ 		BUFFER_TRACE(sbi->s_sbh, "get_write_access");
+ 		err = ext4_journal_get_write_access(handle, sbi->s_sbh);
+ 		if (err)
+@@ -2044,7 +2043,7 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
+ 		struct inode *i_prev =
+ 			&list_entry(prev, struct ext4_inode_info, i_orphan)->vfs_inode;
+ 
+-		jbd_debug(4, "orphan inode %lu will point to %lu\n",
++		jbd_debug(4, "orphan inode %lu will point to %u\n",
+ 			  i_prev->i_ino, ino_next);
+ 		err = ext4_reserve_inode_write(handle, i_prev, &iloc2);
+ 		if (err)

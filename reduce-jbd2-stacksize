@@ -1,0 +1,127 @@
+jbd2: Remove a large array of bh's from the stack of the checkpoint routine
+
+jbd2_log_do_checkpoint()n is one of the kernel's largest stack users.
+Move the array of buffer head's from the stack of jbd2_log_do_checkpoint()
+to the in-core journal structure.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
+index 02f9db1..6b7e06d 100644
+--- a/fs/jbd2/checkpoint.c
++++ b/fs/jbd2/checkpoint.c
+@@ -243,16 +243,14 @@ restart:
+ 	return ret;
+ }
+ 
+-#define NR_BATCH	64
+-
+ static void
+-__flush_batch(journal_t *journal, struct buffer_head **bhs, int *batch_count)
++__flush_batch(journal_t *journal, int *batch_count)
+ {
+ 	int i;
+ 
+-	ll_rw_block(SWRITE, *batch_count, bhs);
++	ll_rw_block(SWRITE, *batch_count, journal->j_chkpt_bhs);
+ 	for (i = 0; i < *batch_count; i++) {
+-		struct buffer_head *bh = bhs[i];
++		struct buffer_head *bh = journal->j_chkpt_bhs[i];
+ 		clear_buffer_jwrite(bh);
+ 		BUFFER_TRACE(bh, "brelse");
+ 		__brelse(bh);
+@@ -271,8 +269,7 @@ __flush_batch(journal_t *journal, struct buffer_head **bhs, int *batch_count)
+  * Called under jbd_lock_bh_state(jh2bh(jh)), and drops it
+  */
+ static int __process_buffer(journal_t *journal, struct journal_head *jh,
+-			struct buffer_head **bhs, int *batch_count,
+-			transaction_t *transaction)
++			    int *batch_count, transaction_t *transaction)
+ {
+ 	struct buffer_head *bh = jh2bh(jh);
+ 	int ret = 0;
+@@ -319,14 +316,14 @@ static int __process_buffer(journal_t *journal, struct journal_head *jh,
+ 		get_bh(bh);
+ 		J_ASSERT_BH(bh, !buffer_jwrite(bh));
+ 		set_buffer_jwrite(bh);
+-		bhs[*batch_count] = bh;
++		journal->j_chkpt_bhs[*batch_count] = bh;
+ 		__buffer_relink_io(jh);
+ 		jbd_unlock_bh_state(bh);
+ 		transaction->t_chp_stats.cs_written++;
+ 		(*batch_count)++;
+-		if (*batch_count == NR_BATCH) {
++		if (*batch_count == JBD2_NR_BATCH) {
+ 			spin_unlock(&journal->j_list_lock);
+-			__flush_batch(journal, bhs, batch_count);
++			__flush_batch(journal, batch_count);
+ 			ret = 1;
+ 		}
+ 	}
+@@ -382,7 +379,6 @@ restart:
+ 	if (journal->j_checkpoint_transactions == transaction &&
+ 			transaction->t_tid == this_tid) {
+ 		int batch_count = 0;
+-		struct buffer_head *bhs[NR_BATCH];
+ 		struct journal_head *jh;
+ 		int retry = 0, err;
+ 
+@@ -396,7 +392,7 @@ restart:
+ 				retry = 1;
+ 				break;
+ 			}
+-			retry = __process_buffer(journal, jh, bhs, &batch_count,
++			retry = __process_buffer(journal, jh, &batch_count,
+ 						 transaction);
+ 			if (retry < 0 && !result)
+ 				result = retry;
+@@ -413,7 +409,7 @@ restart:
+ 				spin_unlock(&journal->j_list_lock);
+ 				retry = 1;
+ 			}
+-			__flush_batch(journal, bhs, &batch_count);
++			__flush_batch(journal, &batch_count);
+ 		}
+ 
+ 		if (retry) {
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index e70d657..d91310b 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -1472,7 +1472,9 @@ int jbd2_journal_destroy(journal_t *journal)
+ 	spin_lock(&journal->j_list_lock);
+ 	while (journal->j_checkpoint_transactions != NULL) {
+ 		spin_unlock(&journal->j_list_lock);
++		mutex_lock(&journal->j_checkpoint_mutex);
+ 		jbd2_log_do_checkpoint(journal);
++		mutex_unlock(&journal->j_checkpoint_mutex);
+ 		spin_lock(&journal->j_list_lock);
+ 	}
+ 
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index b8b8744..e9dbaa6 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -686,6 +686,8 @@ jbd2_time_diff(unsigned long start, unsigned long end)
+ 	return end + (MAX_JIFFY_OFFSET - start);
+ }
+ 
++#define JBD2_NR_BATCH	64
++
+ /**
+  * struct journal_s - The journal_s type is the concrete type associated with
+  *     journal_t.
+@@ -830,6 +832,14 @@ struct journal_s
+ 	struct mutex		j_checkpoint_mutex;
+ 
+ 	/*
++	 * List of buffer heads used by the checkpoint routine.  This
++	 * was moved from jbd2_log_do_checkpoint() to reduce stack
++	 * usage.  Access to this array is controlled by the
++	 * j_checkpoint_mutex.  [j_checkpoint_mutex]
++	 */
++	struct buffer_head	*j_chkpt_bhs[JBD2_NR_BATCH];
++	
++	/*
+ 	 * Journal head: identifies the first unused block in the journal.
+ 	 * [j_state_lock]
+ 	 */
