@@ -5,7 +5,7 @@ From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index cb427aa..4148911 100644
+index 9211397..f4753bd 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -895,6 +895,7 @@ out:
@@ -81,7 +81,7 @@ index cb427aa..4148911 100644
  	err = ext4_mb_load_buddy(sb, group, &e4b);
  	if (err) {
 +		__release(e4b->alloc_semp);
- 		seq_printf(seq, "#%-5lu: I/O error\n", group);
+ 		seq_printf(seq, "#%-5u: I/O error\n", group);
  		return 0;
  	}
 @@ -3816,6 +3827,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
@@ -90,7 +90,7 @@ index cb427aa..4148911 100644
  	if (err) {
 +		__release(e4b->alloc_semp);
  		ext4_error(sb, __func__, "Error in loading buddy "
- 				"information for %lu\n", group);
+ 				"information for %u\n", group);
  		put_bh(bitmap_bh);
 @@ -3983,6 +3995,7 @@ repeat:
  
@@ -98,7 +98,7 @@ index cb427aa..4148911 100644
  		if (err) {
 +			__release(e4b->alloc_semp);
  			ext4_error(sb, __func__, "Error in loading buddy "
- 					"information for %lu\n", group);
+ 					"information for %u\n", group);
  			continue;
 @@ -4255,6 +4268,7 @@ ext4_mb_discard_lg_preallocations(struct super_block *sb,
  
@@ -106,7 +106,7 @@ index cb427aa..4148911 100644
  		if (ext4_mb_load_buddy(sb, group, &e4b)) {
 +			__release(e4b->alloc_semp);
  			ext4_error(sb, __func__, "Error in loading buddy "
- 					"information for %lu\n", group);
+ 					"information for %u\n", group);
  			continue;
 @@ -4715,8 +4729,10 @@ do_more:
  	}

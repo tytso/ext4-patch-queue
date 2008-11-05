@@ -10,16 +10,8 @@ we haven't initialized the group.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/ext4/balloc.c  |   21 +++--
- fs/ext4/ext4.h    |    2 +-
- fs/ext4/mballoc.c |  218 ++++++++++++++++++++++++++++++++++++++---------------
- fs/ext4/mballoc.h |    3 +
- fs/ext4/resize.c  |   41 +----------
- 5 files changed, 176 insertions(+), 109 deletions(-)
-
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index d598fd6..07266ec 100644
+index fa69cb3..39df492 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -381,6 +381,7 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
@@ -72,10 +64,10 @@ index d598fd6..07266ec 100644
  error_return:
  	brelse(bitmap_bh);
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 004dd25..89c7426 100644
+index dff7b50..f302a57 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1109,7 +1109,7 @@ extern int __init init_ext4_mballoc(void);
+@@ -1058,7 +1058,7 @@ extern int __init init_ext4_mballoc(void);
  extern void exit_ext4_mballoc(void);
  extern void ext4_mb_free_blocks(handle_t *, struct inode *,
  		unsigned long, unsigned long, int, unsigned long *);
@@ -85,10 +77,10 @@ index 004dd25..89c7426 100644
  extern void ext4_mb_update_group_info(struct ext4_group_info *grp,
  		ext4_grpblk_t add);
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 20c8b09..05631d1 100644
+index 9cc93af..ade9d5e 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -886,18 +886,20 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
+@@ -886,18 +886,20 @@ static noinline_for_stack int
  ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
  					struct ext4_buddy *e4b)
  {
@@ -104,7 +96,7 @@ index 20c8b09..05631d1 100644
 +	struct ext4_sb_info *sbi = EXT4_SB(sb);
 +	struct inode *inode = sbi->s_buddy_cache;
  
- 	mb_debug("load group %lu\n", group);
+ 	mb_debug("load group %u\n", group);
  
  	blocks_per_page = PAGE_CACHE_SIZE / sb->s_blocksize;
 +	grp = ext4_get_group_info(sb, group);
@@ -144,7 +136,7 @@ index 20c8b09..05631d1 100644
  		page = find_or_create_page(inode->i_mapping, pnum, GFP_NOFS);
  		if (page) {
  			BUG_ON(page->mapping != inode->i_mapping);
-@@ -985,6 +1003,9 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
+@@ -985,6 +1003,9 @@ err:
  		page_cache_release(e4b->bd_buddy_page);
  	e4b->bd_buddy = NULL;
  	e4b->bd_bitmap = NULL;
@@ -293,8 +285,8 @@ index 20c8b09..05631d1 100644
  static noinline_for_stack int
  ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
  {
-@@ -1781,7 +1927,7 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
- 				continue;
+@@ -1777,7 +1923,7 @@ repeat:
+ 				group = 0;
  
  			/* quick check to skip empty groups */
 -			grp = ext4_get_group_info(ac->ac_sb, group);
@@ -302,7 +294,7 @@ index 20c8b09..05631d1 100644
  			if (grp->bb_free == 0)
  				continue;
  
-@@ -1794,10 +1940,9 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+@@ -1790,10 +1936,9 @@ repeat:
  				 * we need full data about the group
  				 * to make a good selection
  				 */
@@ -314,7 +306,7 @@ index 20c8b09..05631d1 100644
  			}
  
  			/*
-@@ -2248,7 +2393,7 @@ ext4_mb_store_history(struct ext4_allocation_context *ac)
+@@ -2244,7 +2389,7 @@ ext4_mb_store_history(struct ext4_allocation_context *ac)
  
  
  /* Create and initialize ext4_group_info data for the given group. */
@@ -323,7 +315,7 @@ index 20c8b09..05631d1 100644
  			  struct ext4_group_desc *desc)
  {
  	int i, len;
-@@ -2306,6 +2451,7 @@ static int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+@@ -2302,6 +2447,7 @@ static int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
  	}
  
  	INIT_LIST_HEAD(&meta_group_info[i]->bb_prealloc_list);
@@ -331,7 +323,7 @@ index 20c8b09..05631d1 100644
  	meta_group_info[i]->bb_free_root.rb_node = NULL;;
  
  #ifdef DOUBLE_CHECK
-@@ -2333,54 +2479,6 @@ static int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+@@ -2329,54 +2475,6 @@ exit_meta_group_info:
  } /* ext4_mb_add_groupinfo */
  
  /*
@@ -386,7 +378,7 @@ index 20c8b09..05631d1 100644
   * Update an existing group.
   * This function is used for online resize
   */
-@@ -4588,11 +4686,6 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4583,11 +4681,6 @@ do_more:
  	err = ext4_journal_get_write_access(handle, gd_bh);
  	if (err)
  		goto error_return;
@@ -398,7 +390,7 @@ index 20c8b09..05631d1 100644
  #ifdef AGGRESSIVE_CHECK
  	{
  		int i;
-@@ -4606,6 +4699,8 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4601,6 +4694,8 @@ do_more:
  	/* We dirtied the bitmap block */
  	BUFFER_TRACE(bitmap_bh, "dirtied bitmap block");
  	err = ext4_journal_dirty_metadata(handle, bitmap_bh);
@@ -407,7 +399,7 @@ index 20c8b09..05631d1 100644
  
  	if (ac) {
  		ac->ac_b_ex.fe_group = block_group;
-@@ -4614,6 +4709,9 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4609,6 +4704,9 @@ do_more:
  		ext4_mb_store_history(ac);
  	}
  
@@ -418,7 +410,7 @@ index 20c8b09..05631d1 100644
  		/* blocks being freed are metadata. these blocks shouldn't
  		 * be used until this transaction is committed */
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
-index 557308a..7cc69c2 100644
+index b5dff1f..a931b6b 100644
 --- a/fs/ext4/mballoc.h
 +++ b/fs/ext4/mballoc.h
 @@ -20,6 +20,7 @@
@@ -437,7 +429,7 @@ index 557308a..7cc69c2 100644
  	unsigned short	bb_counters[];
  };
  
-@@ -251,6 +253,7 @@ struct ext4_buddy {
+@@ -250,6 +252,7 @@ struct ext4_buddy {
  	struct super_block *bd_sb;
  	__u16 bd_blkbits;
  	ext4_group_t bd_group;
@@ -446,7 +438,7 @@ index 557308a..7cc69c2 100644
  #define EXT4_MB_BITMAP(e4b)	((e4b)->bd_bitmap)
  #define EXT4_MB_BUDDY(e4b)	((e4b)->bd_buddy)
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index ecaacbb..94ccf24 100644
+index b6a0609..939cf26 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
 @@ -870,7 +870,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
@@ -504,7 +496,3 @@ index ecaacbb..94ccf24 100644
  	if (test_opt(sb, DEBUG))
  		printk(KERN_DEBUG "EXT4-fs: extended group to %llu blocks\n",
  		       ext4_blocks_count(es));
--- 
-1.6.0.3.514.g2f91b
-
-

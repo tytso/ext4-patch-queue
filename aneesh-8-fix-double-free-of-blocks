@@ -8,15 +8,11 @@ space. Otherwise we would double free them via mb_free_blocks
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/ext4/mballoc.c |   72 +++++++++++++++++++++++++++++++++-------------------
- 1 files changed, 46 insertions(+), 26 deletions(-)
-
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index f6d9e30..c169256 100644
+index e2ec649..ad6f8d2 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -3454,7 +3454,6 @@ static void ext4_mb_generate_from_freelist(struct super_block *sb, void *bitmap,
+@@ -3450,7 +3450,6 @@ static void ext4_mb_generate_from_freelist(struct super_block *sb, void *bitmap,
  		grp = ext4_get_group_info(sb, group);
  		n = grp->bb_free_root.rb_node;
  		entry = rb_entry(n, struct ext4_free_data, node);
@@ -24,22 +20,24 @@ index f6d9e30..c169256 100644
  	} else
  		n = &entry->node;
  
-@@ -3741,19 +3740,19 @@ static int ext4_mb_new_preallocation(struct ext4_allocation_context *ac)
+@@ -3737,19 +3736,19 @@ static int ext4_mb_new_preallocation(struct ext4_allocation_context *ac)
   * TODO: optimize the case when there are no in-core structures yet
   */
  static noinline_for_stack int
 -ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+-			struct ext4_prealloc_space *pa,
+-			struct ext4_allocation_context *ac)
 +ext4_mb_release_inode_pa(struct ext4_buddy *e4b, void *bitmap,
- 			struct ext4_prealloc_space *pa,
- 			struct ext4_allocation_context *ac)
++			 struct ext4_prealloc_space *pa,
++			 struct ext4_allocation_context *ac)
  {
 -	struct super_block *sb = e4b->bd_sb;
 -	struct ext4_sb_info *sbi = EXT4_SB(sb);
 +	int err = 0;
 +	int free = 0;
 +	sector_t start;
- 	unsigned long end;
- 	unsigned long next;
+ 	unsigned int end;
+ 	unsigned int next;
  	ext4_group_t group;
  	ext4_grpblk_t bit;
 -	sector_t start;
@@ -50,7 +48,7 @@ index f6d9e30..c169256 100644
  
  	BUG_ON(pa->pa_deleted == 0);
  	ext4_get_group_no_and_offset(sb, pa->pa_pstart, &group, &bit);
-@@ -3765,12 +3764,11 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+@@ -3761,12 +3760,11 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
  		ac->ac_inode = pa->pa_inode;
  		ac->ac_op = EXT4_MB_HISTORY_DISCARD;
  	}
@@ -65,7 +63,7 @@ index f6d9e30..c169256 100644
  		start = group * EXT4_BLOCKS_PER_GROUP(sb) + bit +
  				le32_to_cpu(sbi->s_es->s_first_data_block);
  		mb_debug("    free preallocated %u/%u in group %u\n",
-@@ -3789,18 +3787,12 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+@@ -3785,18 +3783,12 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
  		mb_free_blocks(pa->pa_inode, e4b, bit, next - bit);
  		bit = next + 1;
  	}
@@ -90,7 +88,7 @@ index f6d9e30..c169256 100644
  	atomic_add(free, &sbi->s_mb_discarded);
  
  	return err;
-@@ -3856,6 +3848,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3852,6 +3844,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  	struct ext4_allocation_context *ac;
  	struct list_head list;
  	struct ext4_buddy e4b;
@@ -98,16 +96,16 @@ index f6d9e30..c169256 100644
  	int err;
  	int busy = 0;
  	int free = 0;
-@@ -3871,12 +3864,21 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
- 				"bitmap for %lu\n", group);
+@@ -3867,12 +3860,21 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+ 				"bitmap for %u\n", group);
  		return 0;
  	}
 -
-+	/* blocks freed but not yet committed will
-+	 * be marked free in disk bitmap. We need to
-+	 * consider them as used when releasing inode
-+	 * pa. Otherwise we would double free them
-+	 * via mb_free_blocks
++	/* 
++	 * Blocks freed but not yet committed will be marked free in
++	 * disk bitmap.  We need to consider them as used when
++	 * releasing inode pa.  Otherwise we would double free them via
++	 * mb_free_blocks
 +	 */
 +	bitmap = kmalloc(sb->s_blocksize, GFP_NOFS);
 +	if (!bitmap)
@@ -116,12 +114,12 @@ index f6d9e30..c169256 100644
  	if (err) {
  		__release(e4b->alloc_semp);
  		ext4_error(sb, __func__, "Error in loading buddy "
- 				"information for %lu\n", group);
+ 				"information for %u\n", group);
 +		kfree(bitmap);
  		put_bh(bitmap_bh);
  		return 0;
  	}
-@@ -3931,6 +3933,8 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3927,6 +3929,8 @@ repeat:
  		goto out;
  	}
  
@@ -130,7 +128,7 @@ index f6d9e30..c169256 100644
  	/* now free all selected PAs */
  	list_for_each_entry_safe(pa, tmp, &list, u.pa_tmp_list) {
  
-@@ -3942,7 +3946,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3938,7 +3942,7 @@ repeat:
  		if (pa->pa_linear)
  			ext4_mb_release_group_pa(&e4b, pa, ac);
  		else
@@ -139,7 +137,7 @@ index f6d9e30..c169256 100644
  
  		list_del(&pa->u.pa_tmp_list);
  		call_rcu(&(pa)->u.pa_rcu, ext4_mb_pa_callback);
-@@ -3953,6 +3957,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3949,6 +3953,7 @@ out:
  	if (ac)
  		kmem_cache_free(ext4_ac_cachep, ac);
  	ext4_mb_release_desc(&e4b);
@@ -147,7 +145,7 @@ index f6d9e30..c169256 100644
  	put_bh(bitmap_bh);
  	return free;
  }
-@@ -3977,6 +3982,7 @@ void ext4_discard_preallocations(struct inode *inode)
+@@ -3973,6 +3978,7 @@ void ext4_discard_preallocations(struct inode *inode)
  	struct list_head list;
  	struct ext4_buddy e4b;
  	int err;
@@ -155,7 +153,7 @@ index f6d9e30..c169256 100644
  
  	if (!S_ISREG(inode->i_mode)) {
  		/*BUG_ON(!list_empty(&ei->i_prealloc_list));*/
-@@ -4055,14 +4061,28 @@ void ext4_discard_preallocations(struct inode *inode)
+@@ -4051,14 +4057,28 @@ repeat:
  			ext4_mb_release_desc(&e4b);
  			continue;
  		}
@@ -186,7 +184,3 @@ index f6d9e30..c169256 100644
  
  		list_del(&pa->u.pa_tmp_list);
  		call_rcu(&(pa)->u.pa_rcu, ext4_mb_pa_callback);
--- 
-1.6.0.3.514.g2f91b
-
-

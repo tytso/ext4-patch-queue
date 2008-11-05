@@ -8,17 +8,11 @@ quotas for metadata blocks are released back.
 
 
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
----
- fs/ext4/inode.c   |   29 ++++++++++++++++++++++++++---
- fs/ext4/mballoc.c |   42 +++++++++++++++++++++++++-----------------
- fs/ext4/super.c   |    3 +++
- 3 files changed, 54 insertions(+), 20 deletions(-)
-
-Index: linux-2.6.28-rc2/fs/ext4/inode.c
-===================================================================
---- linux-2.6.28-rc2.orig/fs/ext4/inode.c	2008-10-31 14:07:40.000000000 -0700
-+++ linux-2.6.28-rc2/fs/ext4/inode.c	2008-10-31 14:19:12.000000000 -0700
-@@ -994,7 +994,9 @@ static void ext4_da_update_reserve_space
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index b46bcb7..7d2d2ea 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -994,7 +994,9 @@ static void ext4_da_update_reserve_space(struct inode *inode, int used)
  {
  	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
  	int total, mdb, mdb_free;
@@ -28,7 +22,7 @@ Index: linux-2.6.28-rc2/fs/ext4/inode.c
  	spin_lock(&EXT4_I(inode)->i_block_reservation_lock);
  	/* recalculate the number of metablocks still need to be reserved */
  	total = EXT4_I(inode)->i_reserved_data_blocks - used;
-@@ -1007,6 +1009,8 @@ static void ext4_da_update_reserve_space
+@@ -1007,6 +1009,8 @@ static void ext4_da_update_reserve_space(struct inode *inode, int used)
  	if (mdb_free) {
  		/* Account for allocated meta_blocks */
  		mdb_free -= EXT4_I(inode)->i_allocated_meta_blocks;
@@ -37,7 +31,7 @@ Index: linux-2.6.28-rc2/fs/ext4/inode.c
  
  		/* update fs dirty blocks counter */
  		percpu_counter_sub(&sbi->s_dirtyblocks_counter, mdb_free);
-@@ -1017,8 +1021,14 @@ static void ext4_da_update_reserve_space
+@@ -1017,8 +1021,14 @@ static void ext4_da_update_reserve_space(struct inode *inode, int used)
  	/* update per-inode reservations */
  	BUG_ON(used  > EXT4_I(inode)->i_reserved_data_blocks);
  	EXT4_I(inode)->i_reserved_data_blocks -= used;
@@ -53,7 +47,7 @@ Index: linux-2.6.28-rc2/fs/ext4/inode.c
  }
  
  /*
-@@ -1514,8 +1524,8 @@ static int ext4_journalled_write_end(str
+@@ -1514,8 +1524,8 @@ static int ext4_journalled_write_end(struct file *file,
  static int ext4_da_reserve_space(struct inode *inode, int nrblocks)
  {
  	int retries = 0;
@@ -88,7 +82,7 @@ Index: linux-2.6.28-rc2/fs/ext4/inode.c
  		return -ENOSPC;
  	}
  	EXT4_I(inode)->i_reserved_data_blocks += nrblocks;
-@@ -1590,6 +1611,8 @@ static void ext4_da_release_space(struct
+@@ -1590,6 +1611,8 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
  	BUG_ON(mdb > EXT4_I(inode)->i_reserved_meta_blocks);
  	EXT4_I(inode)->i_reserved_meta_blocks = mdb;
  	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
@@ -97,25 +91,11 @@ Index: linux-2.6.28-rc2/fs/ext4/inode.c
  }
  
  static void ext4_da_page_release_reservation(struct page *page,
-Index: linux-2.6.28-rc2/fs/ext4/super.c
-===================================================================
---- linux-2.6.28-rc2.orig/fs/ext4/super.c	2008-10-31 14:18:41.000000000 -0700
-+++ linux-2.6.28-rc2/fs/ext4/super.c	2008-10-31 14:19:12.000000000 -0700
-@@ -795,6 +795,9 @@ static struct dquot_operations ext4_quot
- 	.initialize	= ext4_dquot_initialize,
- 	.drop		= ext4_dquot_drop,
- 	.alloc_space	= dquot_alloc_space,
-+	.reserve_space	= dquot_reserve_space,
-+	.claim_space	= dquot_claim_space,
-+	.release_rsv	= dquot_release_reserved_space,
- 	.alloc_inode	= dquot_alloc_inode,
- 	.free_space	= dquot_free_space,
- 	.free_inode	= dquot_free_inode,
-Index: linux-2.6.28-rc2/fs/ext4/mballoc.c
-===================================================================
---- linux-2.6.28-rc2.orig/fs/ext4/mballoc.c	2008-10-31 14:14:34.000000000 -0700
-+++ linux-2.6.28-rc2/fs/ext4/mballoc.c	2008-10-31 14:19:12.000000000 -0700
-@@ -2887,9 +2887,11 @@ ext4_mb_mark_diskspace_used(struct ext4_
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index f57656c..af10142 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -3017,9 +3017,11 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
  	if (!(ac->ac_flags & EXT4_MB_DELALLOC_RESERVED))
  		/* release all the reserved blocks if non delalloc */
  		percpu_counter_sub(&sbi->s_dirtyblocks_counter, reserv_blks);
@@ -128,13 +108,13 @@ Index: linux-2.6.28-rc2/fs/ext4/mballoc.c
  
  	if (sbi->s_log_groups_per_flex) {
  		ext4_group_t flex_group = ext4_flex_group(sbi,
-@@ -4286,15 +4288,24 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t
+@@ -4476,15 +4478,24 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  	struct ext4_sb_info *sbi;
  	struct super_block *sb;
  	ext4_fsblk_t block = 0;
--	unsigned long inquota;
-+	unsigned long inquota = 0;
- 	unsigned long reserv_blks = 0;
+-	unsigned int inquota;
++	unsigned int inquota = 0;
+ 	unsigned int reserv_blks = 0;
  
  	sb = ar->inode->i_sb;
  	sbi = EXT4_SB(sb);
@@ -156,7 +136,7 @@ Index: linux-2.6.28-rc2/fs/ext4/mballoc.c
  		 */
  		while (ar->len && ext4_claim_free_blocks(sbi, ar->len)) {
  			/* let others to free the space */
-@@ -4306,19 +4317,16 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t
+@@ -4496,19 +4507,16 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  			return 0;
  		}
  		reserv_blks = ar->len;
@@ -185,7 +165,7 @@ Index: linux-2.6.28-rc2/fs/ext4/mballoc.c
  
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
  	if (!ac) {
-@@ -4380,7 +4388,7 @@ repeat:
+@@ -4570,7 +4578,7 @@ repeat:
  out2:
  	kmem_cache_free(ext4_ac_cachep, ac);
  out1:
@@ -194,3 +174,17 @@ Index: linux-2.6.28-rc2/fs/ext4/mballoc.c
  		DQUOT_FREE_BLOCK(ar->inode, inquota - ar->len);
  
  	return block;
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 7e8dc0b..bfed074 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -795,6 +795,9 @@ static struct dquot_operations ext4_quota_operations = {
+ 	.initialize	= ext4_dquot_initialize,
+ 	.drop		= ext4_dquot_drop,
+ 	.alloc_space	= dquot_alloc_space,
++	.reserve_space	= dquot_reserve_space,
++	.claim_space	= dquot_claim_space,
++	.release_rsv	= dquot_release_reserved_space,
+ 	.alloc_inode	= dquot_alloc_inode,
+ 	.free_space	= dquot_free_space,
+ 	.free_inode	= dquot_free_inode,
