@@ -1,6 +1,6 @@
-From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
-
 jbd2: Call journal commit callback without holding j_list_lock
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
 Avoid freeing the transaction in __jbd2_journal_drop_transaction() so
 the journal commit callback can run without holding j_list_lock, to
@@ -15,10 +15,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  3 files changed, 11 insertions(+), 8 deletions(-)
 
 diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
-index 9203c33..e0c34ae 100644
+index 1c10ce5..ad1d2d9 100644
 --- a/fs/jbd2/checkpoint.c
 +++ b/fs/jbd2/checkpoint.c
-@@ -668,6 +668,7 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
+@@ -682,6 +682,7 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
  	   safely remove this transaction from the log */
  
  	__jbd2_journal_drop_transaction(journal, transaction);
@@ -26,17 +26,17 @@ index 9203c33..e0c34ae 100644
  
  	/* Just in case anybody was waiting for more transactions to be
             checkpointed... */
-@@ -742,5 +743,4 @@ void __jbd2_journal_drop_transaction(journal_t *journal, transaction_t *transact
+@@ -756,5 +757,4 @@ void __jbd2_journal_drop_transaction(journal_t *journal, transaction_t *transact
  	J_ASSERT(journal->j_running_transaction != transaction);
  
  	jbd_debug(1, "Dropping transaction %d, all done\n", transaction->t_tid);
 -	kfree(transaction);
  }
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index ebc667b..4ed9437 100644
+index b3bcb26..5befb2d 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
-@@ -338,7 +338,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -340,7 +340,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	int space_left = 0;
  	int first_tag = 0;
  	int tag_flag;
@@ -45,8 +45,8 @@ index ebc667b..4ed9437 100644
  	int tag_bytes = journal_tag_bytes(journal);
  	struct buffer_head *cbh = NULL; /* For transactional checksums */
  	__u32 crc32_sum = ~0;
-@@ -974,12 +974,10 @@ void jbd2_journal_commit_transaction(journal_t *journal)
- 	journal->j_committing_transaction = NULL;
+@@ -988,12 +988,10 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 		journal->j_average_commit_time = commit_time;
  	spin_unlock(&journal->j_state_lock);
  
 -	if (journal->j_commit_callback)
@@ -59,7 +59,7 @@ index ebc667b..4ed9437 100644
  	} else {
  		if (journal->j_checkpoint_transactions == NULL) {
  			journal->j_checkpoint_transactions = commit_transaction;
-@@ -998,11 +996,16 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -1012,11 +1010,16 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	}
  	spin_unlock(&journal->j_list_lock);
  
@@ -78,10 +78,10 @@ index ebc667b..4ed9437 100644
  	wake_up(&journal->j_wait_done_commit);
  }
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 973db89..b890ed7 100644
+index fdbd0bf..4932b34 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
-@@ -1146,8 +1146,8 @@ int jbd2_log_wait_commit(journal_t *journal, tid_t tid);
+@@ -1170,8 +1170,8 @@ int jbd2_log_wait_commit(journal_t *journal, tid_t tid);
  int jbd2_log_do_checkpoint(journal_t *journal);
  
  void __jbd2_log_wait_for_space(journal_t *journal);

@@ -5,22 +5,27 @@ From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 Blocks freed but not yet committed will be marked free in disk bitmap.
 We need to consider them as used when releasing inode prealloc
 space. Otherwise we would double free them via mb_free_blocks
+ext4_mb_release_inode_pa looks at the block bitmap and mark the
+block found free in the bitmap withing the inode prealloc space
+as unused. If we have blocks allocated out of a prealloc space
+and later freed we would have called ext4_mb_free_blocks on them
+That would mark blocks as free in bitmap and later on journal commit
+we would call mb_free_blocks on them, thus resuling in double free
+
+ext4_lock_group is used to make sure nothing gets added to the free
+list when we are doing a release_inode_pa
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |   75 ++++++++++++++++++++++++++++++++++-------------------
+ 1 files changed, 48 insertions(+), 27 deletions(-)
+
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index e2ec649..ad6f8d2 100644
+index 7293209..f58de20 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -3450,7 +3450,6 @@ static void ext4_mb_generate_from_freelist(struct super_block *sb, void *bitmap,
- 		grp = ext4_get_group_info(sb, group);
- 		n = grp->bb_free_root.rb_node;
- 		entry = rb_entry(n, struct ext4_free_data, node);
--
- 	} else
- 		n = &entry->node;
- 
-@@ -3737,19 +3736,19 @@ static int ext4_mb_new_preallocation(struct ext4_allocation_context *ac)
+@@ -3725,19 +3725,19 @@ static int ext4_mb_new_preallocation(struct ext4_allocation_context *ac)
   * TODO: optimize the case when there are no in-core structures yet
   */
  static noinline_for_stack int
@@ -48,7 +53,7 @@ index e2ec649..ad6f8d2 100644
  
  	BUG_ON(pa->pa_deleted == 0);
  	ext4_get_group_no_and_offset(sb, pa->pa_pstart, &group, &bit);
-@@ -3761,12 +3760,11 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+@@ -3749,12 +3749,11 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
  		ac->ac_inode = pa->pa_inode;
  		ac->ac_op = EXT4_MB_HISTORY_DISCARD;
  	}
@@ -63,7 +68,7 @@ index e2ec649..ad6f8d2 100644
  		start = group * EXT4_BLOCKS_PER_GROUP(sb) + bit +
  				le32_to_cpu(sbi->s_es->s_first_data_block);
  		mb_debug("    free preallocated %u/%u in group %u\n",
-@@ -3785,18 +3783,12 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+@@ -3773,18 +3772,12 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
  		mb_free_blocks(pa->pa_inode, e4b, bit, next - bit);
  		bit = next + 1;
  	}
@@ -88,7 +93,7 @@ index e2ec649..ad6f8d2 100644
  	atomic_add(free, &sbi->s_mb_discarded);
  
  	return err;
-@@ -3852,6 +3844,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3840,6 +3833,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  	struct ext4_allocation_context *ac;
  	struct list_head list;
  	struct ext4_buddy e4b;
@@ -96,12 +101,12 @@ index e2ec649..ad6f8d2 100644
  	int err;
  	int busy = 0;
  	int free = 0;
-@@ -3867,12 +3860,21 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3855,12 +3849,21 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  				"bitmap for %u\n", group);
  		return 0;
  	}
 -
-+	/* 
++	/*
 +	 * Blocks freed but not yet committed will be marked free in
 +	 * disk bitmap.  We need to consider them as used when
 +	 * releasing inode pa.  Otherwise we would double free them via
@@ -119,16 +124,16 @@ index e2ec649..ad6f8d2 100644
  		put_bh(bitmap_bh);
  		return 0;
  	}
-@@ -3927,6 +3929,8 @@ repeat:
+@@ -3915,6 +3918,8 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  		goto out;
  	}
  
 +	memcpy(bitmap, bitmap_bh->b_data, sb->s_blocksize);
-+	ext4_mb_generate_from_freelist(sb, bitmap, group, NULL);
++	ext4_mb_generate_from_freelist(sb, bitmap, group);
  	/* now free all selected PAs */
  	list_for_each_entry_safe(pa, tmp, &list, u.pa_tmp_list) {
  
-@@ -3938,7 +3942,7 @@ repeat:
+@@ -3926,7 +3931,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  		if (pa->pa_linear)
  			ext4_mb_release_group_pa(&e4b, pa, ac);
  		else
@@ -137,7 +142,7 @@ index e2ec649..ad6f8d2 100644
  
  		list_del(&pa->u.pa_tmp_list);
  		call_rcu(&(pa)->u.pa_rcu, ext4_mb_pa_callback);
-@@ -3949,6 +3953,7 @@ out:
+@@ -3937,6 +3942,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  	if (ac)
  		kmem_cache_free(ext4_ac_cachep, ac);
  	ext4_mb_release_desc(&e4b);
@@ -145,7 +150,7 @@ index e2ec649..ad6f8d2 100644
  	put_bh(bitmap_bh);
  	return free;
  }
-@@ -3973,6 +3978,7 @@ void ext4_discard_preallocations(struct inode *inode)
+@@ -3961,6 +3967,7 @@ void ext4_discard_preallocations(struct inode *inode)
  	struct list_head list;
  	struct ext4_buddy e4b;
  	int err;
@@ -153,7 +158,7 @@ index e2ec649..ad6f8d2 100644
  
  	if (!S_ISREG(inode->i_mode)) {
  		/*BUG_ON(!list_empty(&ei->i_prealloc_list));*/
-@@ -4051,14 +4057,28 @@ repeat:
+@@ -4039,14 +4046,28 @@ void ext4_discard_preallocations(struct inode *inode)
  			ext4_mb_release_desc(&e4b);
  			continue;
  		}
@@ -172,7 +177,7 @@ index e2ec649..ad6f8d2 100644
 +		}
 +		memcpy(bitmap, bitmap_bh->b_data, sb->s_blocksize);
  		ext4_lock_group(sb, group);
-+		ext4_mb_generate_from_freelist(sb, bitmap, group, NULL);
++		ext4_mb_generate_from_freelist(sb, bitmap, group);
  		list_del(&pa->pa_group_list);
 -		ext4_mb_release_inode_pa(&e4b, bitmap_bh, pa, ac);
 +		ext4_mb_release_inode_pa(&e4b, bitmap, pa, ac);
@@ -184,3 +189,11 @@ index e2ec649..ad6f8d2 100644
  
  		list_del(&pa->u.pa_tmp_list);
  		call_rcu(&(pa)->u.pa_rcu, ext4_mb_pa_callback);
+-- 
+1.6.0.3.514.g2f91b
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

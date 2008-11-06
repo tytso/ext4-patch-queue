@@ -4,11 +4,15 @@ From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |   24 ++++++++++++++++++++----
+ 1 files changed, 20 insertions(+), 4 deletions(-)
+
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
 index 9211397..f4753bd 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -895,6 +895,7 @@ out:
+@@ -895,6 +895,7 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
  static noinline_for_stack int
  ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
  					struct ext4_buddy *e4b)
@@ -24,7 +28,7 @@ index 9211397..f4753bd 100644
  
  	/*
  	 * the buddy cache inode stores the block bitmap
-@@ -1020,6 +1022,7 @@ err:
+@@ -1020,6 +1022,7 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
  }
  
  static void ext4_mb_release_desc(struct ext4_buddy *e4b)
@@ -64,7 +68,7 @@ index 9211397..f4753bd 100644
  
  	ext4_lock_group(ac->ac_sb, group);
  	max = mb_find_extent(e4b, 0, ac->ac_g_ex.fe_start,
-@@ -1959,8 +1967,10 @@ repeat:
+@@ -1959,8 +1967,10 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
  				continue;
  
  			err = ext4_mb_load_buddy(sb, group, &e4b);
@@ -92,7 +96,7 @@ index 9211397..f4753bd 100644
  		ext4_error(sb, __func__, "Error in loading buddy "
  				"information for %u\n", group);
  		put_bh(bitmap_bh);
-@@ -3983,6 +3995,7 @@ repeat:
+@@ -3983,6 +3995,7 @@ void ext4_discard_preallocations(struct inode *inode)
  
  		err = ext4_mb_load_buddy(sb, group, &e4b);
  		if (err) {
@@ -108,7 +112,7 @@ index 9211397..f4753bd 100644
  			ext4_error(sb, __func__, "Error in loading buddy "
  					"information for %u\n", group);
  			continue;
-@@ -4715,8 +4729,10 @@ do_more:
+@@ -4715,8 +4729,10 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  	}
  
  	err = ext4_mb_load_buddy(sb, block_group, &e4b);
@@ -120,3 +124,11 @@ index 9211397..f4753bd 100644
  	if (metadata) {
  		/* blocks being freed are metadata. these blocks shouldn't
  		 * be used until this transaction is committed */
+-- 
+1.6.0.3.514.g2f91b
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

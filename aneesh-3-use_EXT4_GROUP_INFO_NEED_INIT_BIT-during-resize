@@ -6,10 +6,21 @@ The new groups added during resize are flagged as
 need_init group. Make sure we properly initialize these
 groups. When we have block size < page size and we are adding
 new groups the page may still be marked uptodate even though
-we haven't initialized the group.
+we haven't initialized the group. While forcing the init
+of buddy cache we need to make sure other groups part of the
+same page of buddy cache is not using the cache.
+group_info->alloc_sem is added to ensure the same.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/balloc.c  |   21 +++--
+ fs/ext4/ext4.h    |    2 +-
+ fs/ext4/mballoc.c |  218 ++++++++++++++++++++++++++++++++++++++---------------
+ fs/ext4/mballoc.h |    3 +
+ fs/ext4/resize.c  |   41 +----------
+ 5 files changed, 176 insertions(+), 109 deletions(-)
+
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
 index fa69cb3..39df492 100644
 --- a/fs/ext4/balloc.c
@@ -64,7 +75,7 @@ index fa69cb3..39df492 100644
  error_return:
  	brelse(bitmap_bh);
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index dff7b50..f302a57 100644
+index 4514fa5..c21da63 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1058,7 +1058,7 @@ extern int __init init_ext4_mballoc(void);
@@ -80,7 +91,7 @@ diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
 index 9cc93af..ade9d5e 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -886,18 +886,20 @@ static noinline_for_stack int
+@@ -886,18 +886,20 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
  ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
  					struct ext4_buddy *e4b)
  {
@@ -136,7 +147,7 @@ index 9cc93af..ade9d5e 100644
  		page = find_or_create_page(inode->i_mapping, pnum, GFP_NOFS);
  		if (page) {
  			BUG_ON(page->mapping != inode->i_mapping);
-@@ -985,6 +1003,9 @@ err:
+@@ -985,6 +1003,9 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
  		page_cache_release(e4b->bd_buddy_page);
  	e4b->bd_buddy = NULL;
  	e4b->bd_bitmap = NULL;
@@ -285,7 +296,7 @@ index 9cc93af..ade9d5e 100644
  static noinline_for_stack int
  ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
  {
-@@ -1777,7 +1923,7 @@ repeat:
+@@ -1777,7 +1923,7 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
  				group = 0;
  
  			/* quick check to skip empty groups */
@@ -294,7 +305,7 @@ index 9cc93af..ade9d5e 100644
  			if (grp->bb_free == 0)
  				continue;
  
-@@ -1790,10 +1936,9 @@ repeat:
+@@ -1790,10 +1936,9 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
  				 * we need full data about the group
  				 * to make a good selection
  				 */
@@ -323,7 +334,7 @@ index 9cc93af..ade9d5e 100644
  	meta_group_info[i]->bb_free_root.rb_node = NULL;;
  
  #ifdef DOUBLE_CHECK
-@@ -2329,54 +2475,6 @@ exit_meta_group_info:
+@@ -2329,54 +2475,6 @@ static int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
  } /* ext4_mb_add_groupinfo */
  
  /*
@@ -378,7 +389,7 @@ index 9cc93af..ade9d5e 100644
   * Update an existing group.
   * This function is used for online resize
   */
-@@ -4583,11 +4681,6 @@ do_more:
+@@ -4583,11 +4681,6 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  	err = ext4_journal_get_write_access(handle, gd_bh);
  	if (err)
  		goto error_return;
@@ -390,7 +401,7 @@ index 9cc93af..ade9d5e 100644
  #ifdef AGGRESSIVE_CHECK
  	{
  		int i;
-@@ -4601,6 +4694,8 @@ do_more:
+@@ -4601,6 +4694,8 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  	/* We dirtied the bitmap block */
  	BUFFER_TRACE(bitmap_bh, "dirtied bitmap block");
  	err = ext4_journal_dirty_metadata(handle, bitmap_bh);
@@ -399,7 +410,7 @@ index 9cc93af..ade9d5e 100644
  
  	if (ac) {
  		ac->ac_b_ex.fe_group = block_group;
-@@ -4609,6 +4704,9 @@ do_more:
+@@ -4609,6 +4704,9 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  		ext4_mb_store_history(ac);
  	}
  
@@ -496,3 +507,11 @@ index b6a0609..939cf26 100644
  	if (test_opt(sb, DEBUG))
  		printk(KERN_DEBUG "EXT4-fs: extended group to %llu blocks\n",
  		       ext4_blocks_count(es));
+-- 
+1.6.0.3.514.g2f91b
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

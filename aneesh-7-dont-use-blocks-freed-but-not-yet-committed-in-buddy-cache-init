@@ -1,6 +1,6 @@
-From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
-
 ext4: don't use blocks freed but not yet committed in buddy cache init
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
 When we generate buddy cache (especially during resize) we need to
 make sure we don't use the blocks freed but not yet comitted.  This
@@ -11,24 +11,23 @@ consistency
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/mballoc.c |   95 ++++++++++++++++++++++++++++++++++++++++-------------
- 1 files changed, 72 insertions(+), 23 deletions(-)
+ fs/ext4/mballoc.c |   83 ++++++++++++++++++++++++++++++++++++++--------------
+ 1 files changed, 60 insertions(+), 23 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 34a365e..f6d9e30 100644
+index f4753bd..7293209 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -335,6 +335,9 @@
+@@ -335,6 +335,8 @@
  static struct kmem_cache *ext4_free_ext_cachep;
  static void ext4_mb_generate_from_pa(struct super_block *sb, void *bitmap,
  					ext4_group_t group);
 +static void ext4_mb_generate_from_freelist(struct super_block *sb, void *bitmap,
-+					ext4_group_t group,
-+					struct ext4_free_data *entry);
++						ext4_group_t group);
  static int ext4_mb_init_per_dev_proc(struct super_block *sb);
  static int ext4_mb_destroy_per_dev_proc(struct super_block *sb);
  static void release_blocks_on_commit(journal_t *journal, transaction_t *txn);
-@@ -858,7 +861,9 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
+@@ -858,7 +860,9 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
  			/*
  			 * incore got set to the group block bitmap below
  			 */
@@ -38,15 +37,15 @@ index 34a365e..f6d9e30 100644
  			incore = NULL;
  		} else {
  			/* this is block of bitmap */
-@@ -872,6 +877,7 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
+@@ -872,6 +876,7 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
  
  			/* mark all preallocated blks used in in-core bitmap */
  			ext4_mb_generate_from_pa(sb, data, group);
-+			ext4_mb_generate_from_freelist(sb, data, group, NULL);
++			ext4_mb_generate_from_freelist(sb, data, group);
  			ext4_unlock_group(sb, group);
  
  			/* set incore so that the buddy information can be
-@@ -3432,6 +3438,43 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
+@@ -3428,6 +3433,32 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
  }
  
  /*
@@ -56,33 +55,22 @@ index 34a365e..f6d9e30 100644
 + * Need to be called with ext4 group lock (ext4_lock_group)
 + */
 +static void ext4_mb_generate_from_freelist(struct super_block *sb, void *bitmap,
-+					ext4_group_t group,
-+					struct ext4_free_data *entry)
++						ext4_group_t group)
 +{
 +	struct rb_node *n;
 +	struct ext4_group_info *grp;
-+	struct ext4_free_data *new_entry;
-+	if (entry == NULL) {
-+		grp = ext4_get_group_info(sb, group);
-+		n = grp->bb_free_root.rb_node;
++	struct ext4_free_data *entry;
++
++	grp = ext4_get_group_info(sb, group);
++	n = rb_first(&(grp->bb_free_root));
++
++	while (n) {
 +		entry = rb_entry(n, struct ext4_free_data, node);
-+
-+	} else
-+		n = &entry->node;
-+
-+	if (n == NULL)
-+		return;
-+	if (n->rb_left) {
-+		new_entry = rb_entry(n->rb_left, struct ext4_free_data, node);
-+		ext4_mb_generate_from_freelist(sb, bitmap, group, new_entry);
++		mb_set_bits(sb_bgl_lock(EXT4_SB(sb), group),
++				bitmap, entry->start_blk,
++				entry->count);
++		n = rb_next(n);
 +	}
-+	if (n->rb_right) {
-+		new_entry = rb_entry(n->rb_right, struct ext4_free_data, node);
-+		ext4_mb_generate_from_freelist(sb, bitmap, group, new_entry);
-+	}
-+	mb_set_bits(sb_bgl_lock(EXT4_SB(sb), group),
-+					bitmap, entry->start_blk,
-+					entry->count);
 +	return;
 +}
 +
@@ -90,7 +78,7 @@ index 34a365e..f6d9e30 100644
   * the function goes through all preallocation in this group and marks them
   * used in in-core bitmap. buddy must be generated from this bitmap
   * Need to be called with ext4 group lock (ext4_lock_group)
-@@ -4532,27 +4575,22 @@ static int can_merge(struct ext4_free_data *entry1,
+@@ -4527,27 +4558,22 @@ static int can_merge(struct ext4_free_data *entry1,
  
  static noinline_for_stack int
  ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
@@ -122,7 +110,7 @@ index 34a365e..f6d9e30 100644
  	if (!*n) {
  		/* first free block exent. We need to
  		   protect buddy cache from being freed,
-@@ -4570,7 +4608,6 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
+@@ -4565,7 +4591,6 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  		else if (block >= (entry->start_blk + entry->count))
  			n = &(*n)->rb_right;
  		else {
@@ -130,7 +118,7 @@ index 34a365e..f6d9e30 100644
  			ext4_error(sb, __func__,
  			    "Double free of blocks %d (%d %d)\n",
  			    block, entry->start_blk, entry->count);
-@@ -4612,7 +4649,6 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
+@@ -4607,7 +4632,6 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  	spin_lock(&sbi->s_md_lock);
  	list_add(&new_entry->list, &handle->h_transaction->t_private_list);
  	spin_unlock(&sbi->s_md_lock);
@@ -138,7 +126,7 @@ index 34a365e..f6d9e30 100644
  	return 0;
  }
  
-@@ -4717,15 +4753,6 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4712,15 +4736,6 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  			BUG_ON(!mb_test_bit(bit + i, bitmap_bh->b_data));
  	}
  #endif
@@ -154,7 +142,7 @@ index 34a365e..f6d9e30 100644
  	if (ac) {
  		ac->ac_b_ex.fe_group = block_group;
  		ac->ac_b_ex.fe_start = bit;
-@@ -4739,11 +4766,29 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4734,11 +4749,29 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  		goto error_return;
  	}
  	if (metadata) {
@@ -187,7 +175,7 @@ index 34a365e..f6d9e30 100644
  		mb_free_blocks(inode, &e4b, bit, count);
  		ext4_mb_return_to_preallocation(inode, &e4b, block, count);
  		ext4_unlock_group(sb, block_group);
-@@ -4766,6 +4811,10 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4761,6 +4794,10 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  
  	*freed += count;
  
