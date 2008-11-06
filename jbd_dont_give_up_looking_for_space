@@ -18,14 +18,19 @@ http://bugzilla.kernel.org/show_bug.cgi?id=11937
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: Duane Griffin <duaneg@dghda.com>
 Cc: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
----
- fs/jbd/checkpoint.c |   27 ++++++++++++++++++++++-----
- 1 files changed, 22 insertions(+), 5 deletions(-)
-
 diff --git a/fs/jbd/checkpoint.c b/fs/jbd/checkpoint.c
-index 1bd8d4a..5e856de 100644
+index 1bd8d4a..18e5137 100644
 --- a/fs/jbd/checkpoint.c
 +++ b/fs/jbd/checkpoint.c
+@@ -115,7 +115,7 @@ static int __try_to_free_cp_buf(struct journal_head *jh)
+  */
+ void __log_wait_for_space(journal_t *journal)
+ {
+-	int nblocks;
++	int nblocks, space_left;
+ 	assert_spin_locked(&journal->j_state_lock);
+ 
+ 	nblocks = jbd_space_needed(journal);
 @@ -128,25 +128,42 @@ void __log_wait_for_space(journal_t *journal)
  		/*
  		 * Test again, another process may have checkpointed while we
@@ -43,7 +48,9 @@ index 1bd8d4a..5e856de 100644
  		spin_lock(&journal->j_state_lock);
  		spin_lock(&journal->j_list_lock);
  		nblocks = jbd_space_needed(journal);
- 		if (__log_space_left(journal) < nblocks) {
+-		if (__log_space_left(journal) < nblocks) {
++		space_left = __log_space_left(journal);
++		if (space_left < nblocks) {
  			int chkpt = journal->j_checkpoint_transactions != NULL;
 +			int tid = 0;
  
@@ -63,8 +70,7 @@ index 1bd8d4a..5e856de 100644
 -				       __func__);
 +				printk(KERN_ERR "%s: needed %d blocks and "
 +				       "only had %d space available\n",
-+				       __func__, nblocks,
-+				       __log_space_left(journal));
++				       __func__, nblocks, space_left);
 +				printk(KERN_ERR "%s: no way to get more "
 +				       "journal space\n", __func__);
 +				WARN_ON(1);
