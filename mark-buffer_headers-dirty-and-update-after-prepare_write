@@ -1,0 +1,32 @@
+ext4: Mark the buffer_heads as dirty and uptodate after prepare_write
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+We need to make sure we mark the buffer_heads as dirty and uptodate
+so that block_write_full_page write them correctly.
+
+This fixes mmap corruptions that can occur in low memory situations.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 95d0d12..d986018 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2351,6 +2351,8 @@ static int ext4_da_writepage(struct page *page,
+ 			unlock_page(page);
+ 			return 0;
+ 		}
++		/* now mark the buffer_heads as dirty and uptodate */
++		block_commit_write(page, 0, PAGE_CACHE_SIZE);
+ 	}
+ 
+ 	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
+-- 
+1.6.0.3.640.g6331a
+
+
