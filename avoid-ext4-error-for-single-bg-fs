@@ -1,0 +1,40 @@
+Subject: [PATCH] ext4: avoid ext4_error when mounting a fs with a single bg
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+Remove some completely unneeded code which which caused an ext4_error
+to be generated when mounting a file system with only a single block
+group.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c |    4 ----
+ 1 files changed, 0 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 70f6d61..ddfa29b 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1451,7 +1451,6 @@ static int ext4_fill_flex_info(struct super_block *sb)
+ 	ext4_group_t flex_group_count;
+ 	ext4_group_t flex_group;
+ 	int groups_per_flex = 0;
+-	__u64 block_bitmap = 0;
+ 	int i;
+ 
+ 	if (!sbi->s_es->s_log_groups_per_flex) {
+@@ -1474,9 +1473,6 @@ static int ext4_fill_flex_info(struct super_block *sb)
+ 		goto failed;
+ 	}
+ 
+-	gdp = ext4_get_group_desc(sb, 1, &bh);
+-	block_bitmap = ext4_block_bitmap(sb, gdp) - 1;
+-
+ 	for (i = 0; i < sbi->s_groups_count; i++) {
+ 		gdp = ext4_get_group_desc(sb, i, &bh);
+ 
+-- 
+1.6.0.4.735.gea4f
+
+
