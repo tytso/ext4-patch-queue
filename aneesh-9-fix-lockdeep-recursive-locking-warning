@@ -7,37 +7,42 @@ Indicate that the group locks can be taken in loop.
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/mballoc.c |    5 ++++-
- 1 files changed, 4 insertions(+), 1 deletions(-)
+This is the -V4 version of the patch
+
+ fs/ext4/mballoc.c |   11 ++++++++++-
+ 1 files changed, 10 insertions(+), 1 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index f58de20..34b9b7c 100644
+index 7293209..1fa311c 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -2413,6 +2413,7 @@ ext4_mb_store_history(struct ext4_allocation_context *ac)
+@@ -2413,6 +2413,9 @@ ext4_mb_store_history(struct ext4_allocation_context *ac)
  #define ext4_mb_history_init(sb)
  #endif
  
++#ifdef CONFIG_LOCKDEP
 +static struct lock_class_key alloc_sem_key[NR_BG_LOCKS];
++#endif
  
  /* Create and initialize ext4_group_info data for the given group. */
  int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
-@@ -2473,7 +2474,9 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+@@ -2473,8 +2476,14 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
  	}
  
  	INIT_LIST_HEAD(&meta_group_info[i]->bb_prealloc_list);
 -	init_rwsem(&meta_group_info[i]->alloc_sem);
++#ifdef CONFIG_LOCKDEP
 +	__init_rwsem(&meta_group_info[i]->alloc_sem,
 +			"&meta_group_info[i]->alloc_sem",
 +			&alloc_sem_key[i]);
  	meta_group_info[i]->bb_free_root.rb_node = NULL;;
++#else
++	init_rwsem(&meta_group_info[i]->alloc_sem);
++#endif
  
  #ifdef DOUBLE_CHECK
+ 	{
 -- 
-1.6.0.3.514.g2f91b
+1.6.0.4.735.gea4f
 
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
 
