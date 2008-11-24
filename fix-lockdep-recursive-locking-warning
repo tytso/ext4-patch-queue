@@ -1,0 +1,30 @@
+ext4: Fix lockdep recursive locking warning
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+In ext4_mb_init_group(), if the filesystem block size is less than
+PAGE_SIZE/2, the code tries to grab alloc_sem for multiple block
+groups in a loop.  We need to allow for this by using
+down_write_nested() and passing in the loop index as a lock subclass
+number.  This works because no other code path needs to take multiple
+alloc_sem's.  Note that lockdep will fail for filesystem blocksize
+smaller than to PAGE_SIZE/16k.  (e.g., a 1k filesystem blocksize with
+a 32k page size, or a 2k filesystem blocksize with a 64k blocksize,
+etc.)
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 1fa311c..891ce41 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -1783,7 +1783,7 @@ static int ext4_mb_init_group(struct super_block *sb, ext4_group_t group)
+ 		 * no block allocation going on in any
+ 		 * of that groups
+ 		 */
+-		down_write(&grp->alloc_sem);
++		down_write_nested(&grp->alloc_sem, i);
+ 	}
+ 	/*
+ 	 * make sure we look at only those groups
