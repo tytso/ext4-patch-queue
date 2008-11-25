@@ -1,0 +1,40 @@
+ext4: fix build warning
+
+From: Wu Fengguang <fengguang.wu@intel.com>
+
+Replace `if' with `goto' to assure gcc that ix has been initialized.
+
+Signed-off-by: Wu Fengguang <wfg@linux.intel.com>
+---
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index ea2ce3c..885645e 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -1160,15 +1160,13 @@ ext4_ext_search_right(struct inode *inode, struct ext4_ext_path *path,
+ 	while (--depth >= 0) {
+ 		ix = path[depth].p_idx;
+ 		if (ix != EXT_LAST_INDEX(path[depth].p_hdr))
+-			break;
++			goto got_index;
+ 	}
+ 
+-	if (depth < 0) {
+-		/* we've gone up to the root and
+-		 * found no index to the right */
+-		return 0;
+-	}
++	/* we've gone up to the root and found no index to the right */
++	return 0;
+ 
++got_index:
+ 	/* we've found index to the right, let's
+ 	 * follow it and find the closest allocated
+ 	 * block to the right */
+@@ -1201,7 +1200,6 @@ ext4_ext_search_right(struct inode *inode, struct ext4_ext_path *path,
+ 	*phys = ext_pblock(ex);
+ 	put_bh(bh);
+ 	return 0;
+-
+ }
+ 
+ /*
