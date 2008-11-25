@@ -16,10 +16,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/balloc.c  |   21 +++--
  fs/ext4/ext4.h    |    2 +-
- fs/ext4/mballoc.c |  218 ++++++++++++++++++++++++++++++++++++++---------------
+ fs/ext4/mballoc.c |  217 ++++++++++++++++++++++++++++++++++++++--------------
  fs/ext4/mballoc.h |    3 +
  fs/ext4/resize.c  |   41 +----------
- 5 files changed, 176 insertions(+), 109 deletions(-)
+ 5 files changed, 176 insertions(+), 108 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
 index fa69cb3..39df492 100644
@@ -75,7 +75,7 @@ index fa69cb3..39df492 100644
  error_return:
  	brelse(bitmap_bh);
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 4514fa5..c21da63 100644
+index 49b46e7..bc13445 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1058,7 +1058,7 @@ extern int __init init_ext4_mballoc(void);
@@ -88,7 +88,7 @@ index 4514fa5..c21da63 100644
  extern void ext4_mb_update_group_info(struct ext4_group_info *grp,
  		ext4_grpblk_t add);
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 9cc93af..ade9d5e 100644
+index 9cc93af..11fd4b9 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -886,18 +886,20 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
@@ -130,24 +130,22 @@ index 9cc93af..ade9d5e 100644
  
  	/*
  	 * the buddy cache inode stores the block bitmap
-@@ -919,8 +930,15 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
- 	 * what we'd like to avoid in fast path ... */
+@@ -920,6 +931,14 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
  	page = find_get_page(inode->i_mapping, pnum);
  	if (page == NULL || !PageUptodate(page)) {
--		if (page)
-+		if (page) {
-+			/* If the page is not uptodate
-+			 * that would imply nobody is using
-+			 * it. So we should be able to drop
-+			 * page_cache without being worried
-+			 * about other group allocation
+ 		if (page)
++			/*
++			 * drop the page reference and try
++			 * to get the page with lock. If we
++			 * are not uptodate that implies
++			 * somebody just created the page but
++			 * is yet to initialize the same. So
++			 * wait for it to initialize.
 +			 */
  			page_cache_release(page);
-+		}
  		page = find_or_create_page(inode->i_mapping, pnum, GFP_NOFS);
  		if (page) {
- 			BUG_ON(page->mapping != inode->i_mapping);
-@@ -985,6 +1003,9 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
+@@ -985,6 +1004,9 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
  		page_cache_release(e4b->bd_buddy_page);
  	e4b->bd_buddy = NULL;
  	e4b->bd_bitmap = NULL;
@@ -157,7 +155,7 @@ index 9cc93af..ade9d5e 100644
  	return ret;
  }
  
-@@ -994,6 +1015,8 @@ static void ext4_mb_release_desc(struct ext4_buddy *e4b)
+@@ -994,6 +1016,8 @@ static void ext4_mb_release_desc(struct ext4_buddy *e4b)
  		page_cache_release(e4b->bd_bitmap_page);
  	if (e4b->bd_buddy_page)
  		page_cache_release(e4b->bd_buddy_page);
@@ -166,7 +164,7 @@ index 9cc93af..ade9d5e 100644
  }
  
  
-@@ -1694,6 +1717,129 @@ static int ext4_mb_good_group(struct ext4_allocation_context *ac,
+@@ -1694,6 +1718,129 @@ static int ext4_mb_good_group(struct ext4_allocation_context *ac,
  	return 0;
  }
  
@@ -296,7 +294,7 @@ index 9cc93af..ade9d5e 100644
  static noinline_for_stack int
  ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
  {
-@@ -1777,7 +1923,7 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+@@ -1777,7 +1924,7 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
  				group = 0;
  
  			/* quick check to skip empty groups */
@@ -305,7 +303,7 @@ index 9cc93af..ade9d5e 100644
  			if (grp->bb_free == 0)
  				continue;
  
-@@ -1790,10 +1936,9 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+@@ -1790,10 +1937,9 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
  				 * we need full data about the group
  				 * to make a good selection
  				 */
@@ -317,7 +315,7 @@ index 9cc93af..ade9d5e 100644
  			}
  
  			/*
-@@ -2244,7 +2389,7 @@ ext4_mb_store_history(struct ext4_allocation_context *ac)
+@@ -2244,7 +2390,7 @@ ext4_mb_store_history(struct ext4_allocation_context *ac)
  
  
  /* Create and initialize ext4_group_info data for the given group. */
@@ -326,7 +324,7 @@ index 9cc93af..ade9d5e 100644
  			  struct ext4_group_desc *desc)
  {
  	int i, len;
-@@ -2302,6 +2447,7 @@ static int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+@@ -2302,6 +2448,7 @@ static int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
  	}
  
  	INIT_LIST_HEAD(&meta_group_info[i]->bb_prealloc_list);
@@ -334,7 +332,7 @@ index 9cc93af..ade9d5e 100644
  	meta_group_info[i]->bb_free_root.rb_node = NULL;;
  
  #ifdef DOUBLE_CHECK
-@@ -2329,54 +2475,6 @@ static int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+@@ -2329,54 +2476,6 @@ static int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
  } /* ext4_mb_add_groupinfo */
  
  /*
@@ -389,7 +387,7 @@ index 9cc93af..ade9d5e 100644
   * Update an existing group.
   * This function is used for online resize
   */
-@@ -4583,11 +4681,6 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4583,11 +4682,6 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  	err = ext4_journal_get_write_access(handle, gd_bh);
  	if (err)
  		goto error_return;
@@ -401,7 +399,7 @@ index 9cc93af..ade9d5e 100644
  #ifdef AGGRESSIVE_CHECK
  	{
  		int i;
-@@ -4601,6 +4694,8 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4601,6 +4695,8 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  	/* We dirtied the bitmap block */
  	BUFFER_TRACE(bitmap_bh, "dirtied bitmap block");
  	err = ext4_journal_dirty_metadata(handle, bitmap_bh);
@@ -410,7 +408,7 @@ index 9cc93af..ade9d5e 100644
  
  	if (ac) {
  		ac->ac_b_ex.fe_group = block_group;
-@@ -4609,6 +4704,9 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4609,6 +4705,9 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  		ext4_mb_store_history(ac);
  	}
  
@@ -508,7 +506,7 @@ index b6a0609..939cf26 100644
  		printk(KERN_DEBUG "EXT4-fs: extended group to %llu blocks\n",
  		       ext4_blocks_count(es));
 -- 
-1.6.0.3.514.g2f91b
+1.6.0.4.735.gea4f
 
 --
 To unsubscribe from this list: send the line "unsubscribe linux-ext4" in

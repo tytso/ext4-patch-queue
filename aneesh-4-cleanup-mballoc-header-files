@@ -1,4 +1,4 @@
-Subject: [RFC PATCH -V3 4/9] ext4: cleanup mballoc header files
+ext4: cleanup mballoc header files
 
 From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
@@ -10,12 +10,12 @@ documentation.
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/mballoc.c |   14 ++++++++++++--
+ fs/ext4/mballoc.c |   23 +++++++++++++++++++----
  fs/ext4/mballoc.h |   18 +-----------------
- 2 files changed, 13 insertions(+), 19 deletions(-)
+ 2 files changed, 20 insertions(+), 21 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index ade9d5e..9211397 100644
+index 11fd4b9..598b418 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -100,7 +100,7 @@
@@ -53,6 +53,22 @@ index ade9d5e..9211397 100644
   *
   *
   * one block each for bitmap and buddy information.
+@@ -1322,8 +1332,13 @@ static void ext4_mb_use_best_found(struct ext4_allocation_context *ac,
+ 	ac->ac_tail = ret & 0xffff;
+ 	ac->ac_buddy = ret >> 16;
+ 
+-	/* XXXXXXX: SUCH A HORRIBLE **CK */
+-	/*FIXME!! Why ? */
++	/*
++	 * take the page reference. We want the page to be pinned
++	 * so that we don't get a ext4_mb_init_cache_call for this
++	 * group until we update the bitmap. That would mean we
++	 * double allocate blocks. The reference is dropped
++	 * in ext4_mb_release_context
++	 */
+ 	ac->ac_bitmap_page = e4b->bd_bitmap_page;
+ 	get_page(ac->ac_bitmap_page);
+ 	ac->ac_buddy_page = e4b->bd_buddy_page;
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
 index a931b6b..997f78f 100644
 --- a/fs/ext4/mballoc.h
@@ -103,7 +119,7 @@ index a931b6b..997f78f 100644
  {
  	ext4_fsblk_t block;
 -- 
-1.6.0.3.514.g2f91b
+1.6.0.4.735.gea4f
 
 --
 To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
