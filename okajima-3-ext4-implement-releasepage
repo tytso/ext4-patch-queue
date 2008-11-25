@@ -1,0 +1,94 @@
+ext4: provide function to release metadata pages under memory pressure
+
+From: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
+
+Pages in the page cache belonging to ext4 data files are released via
+the ext4_releasepage() function specified in the ext4 inode's
+address_space_ops.  However, metadata blocks (such as indirect blocks,
+directory blocks, etc) are managed via the block device
+address_space_ops, and they can not be released by
+try_to_free_buffers() if they have a journal head attached to them.
+
+To address this, we supply a release_metadata function which is called
+by the block device's blkdev_releasepage() function, which calls
+journal_try_to_free_buffers() function to free the metadata.
+
+Signed-off-by: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: linux-fsdevel@vger.kernel.org
+---
+ fs/ext4/ext4.h  |    2 ++
+ fs/ext4/inode.c |   22 ++++++++++++++++++++++
+ fs/ext4/super.c |    4 ++++
+ 3 files changed, 28 insertions(+)
+
+diff -Nurp linux-2.6.28-rc4.orig/fs/ext4/ext4.h linux-2.6.28-rc4/fs/ext4/ext4.h
+--- linux-2.6.28-rc4.orig/fs/ext4/ext4.h	2008-11-10 09:36:15.000000000 +0900
++++ linux-2.6.28-rc4/fs/ext4/ext4.h	2008-11-12 10:44:25.000000000 +0900
+@@ -1095,6 +1095,8 @@ extern int ext4_chunk_trans_blocks(struc
+ extern int ext4_block_truncate_page(handle_t *handle,
+ 		struct address_space *mapping, loff_t from);
+ extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
++extern int ext4_release_metadata(void *client, struct page *page,
++		gfp_t wait);
+ 
+ /* ioctl.c */
+ extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
+diff -Nurp linux-2.6.28-rc4.orig/fs/ext4/inode.c linux-2.6.28-rc4/fs/ext4/inode.c
+--- linux-2.6.28-rc4.orig/fs/ext4/inode.c	2008-11-10 09:36:15.000000000 +0900
++++ linux-2.6.28-rc4/fs/ext4/inode.c	2008-11-12 10:42:55.000000000 +0900
+@@ -3002,6 +3002,28 @@ static int ext4_releasepage(struct page 
+ }
+ 
+ /*
++ * Try to release metadata pages (indirect blocks, directories) which are
++ * mapped via the block device.  Since these pages could have journal heads
++ * which would prevent try_to_free_buffers() from freeing them, we must use
++ * jbd2 layer's try_to_free_buffers() function to release them.
++ */
++int ext4_release_metadata(void *client, struct page *page, gfp_t wait)
++{
++	struct super_block *sb = (struct super_block*)client;
++	journal_t *journal;
++
++	WARN_ON(PageChecked(page));
++	if (!page_has_buffers(page))
++		return 0;
++	BUG_ON(EXT4_SB(sb) == NULL);
++	journal = EXT4_SB(sb)->s_journal;
++	if (journal != NULL)
++		return jbd2_journal_try_to_free_buffers(journal, page, wait);
++	else
++		return try_to_free_buffers(page);
++}
++
++/*
+  * If the O_DIRECT write will extend the file then add this inode to the
+  * orphan list.  So recovery will truncate it back to the original size
+  * if the machine crashes during the write.
+diff -Nurp linux-2.6.28-rc4.orig/fs/ext4/super.c linux-2.6.28-rc4/fs/ext4/super.c
+--- linux-2.6.28-rc4.orig/fs/ext4/super.c	2008-11-10 09:36:15.000000000 +0900
++++ linux-2.6.28-rc4/fs/ext4/super.c	2008-11-12 12:04:58.000000000 +0900
+@@ -3543,6 +3543,8 @@ static struct file_system_type ext4_fs_t
+ 	.name		= "ext4",
+ 	.get_sb		= ext4_get_sb,
+ 	.kill_sb	= kill_block_super,
++	.release_metadata
++			= ext4_release_metadata,
+ 	.fs_flags	= FS_REQUIRES_DEV,
+ };
+ 
+@@ -3562,6 +3564,8 @@ static struct file_system_type ext4dev_f
+ 	.name		= "ext4dev",
+ 	.get_sb		= ext4dev_get_sb,
+ 	.kill_sb	= kill_block_super,
++	.release_metadata
++			= ext4_release_metadata,
+ 	.fs_flags	= FS_REQUIRES_DEV,
+ };
+ MODULE_ALIAS("ext4dev");
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
