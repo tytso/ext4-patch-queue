@@ -1,0 +1,38 @@
+ext4: Use simple_strtol() instead of simple_strtoul() in ext4_ui_proc_open
+
+From: Roel Kluin <roel.kluin@gmail.com>
+
+Signed-off-by: Roel Kluin <roel.kluin@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 9b2b2bc..0ab6cb4 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3514,18 +3514,15 @@ static int ext4_ui_proc_open(struct inode *inode, struct file *file)
+ static ssize_t ext4_ui_proc_write(struct file *file, const char __user *buf,
+ 			       size_t cnt, loff_t *ppos)
+ {
+-	unsigned int *p = PDE(file->f_path.dentry->d_inode)->data;
++	unsigned long *p = PDE(file->f_path.dentry->d_inode)->data;
+ 	char str[32];
+-	unsigned long value;
+ 
+ 	if (cnt >= sizeof(str))
+ 		return -EINVAL;
+ 	if (copy_from_user(str, buf, cnt))
+ 		return -EFAULT;
+-	value = simple_strtol(str, NULL, 0);
+-	if (value < 0)
+-		return -ERANGE;
+-	*p = value;
++
++	*p = simple_strtoul(str, NULL, 0);
+ 	return cnt;
+ }
+ 
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
