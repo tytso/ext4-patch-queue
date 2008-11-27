@@ -8,18 +8,6 @@ to bg_pad as in e2fsprogs.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
-FILENAME: use-high-16-bits-of-bg-free-counts
-
- fs/ext4/balloc.c  |   13 ++++----
- fs/ext4/ext4.h    |   26 +++++++++++++---
- fs/ext4/ialloc.c  |   83 ++++++++++++++++++++++++++++-------------------------
- fs/ext4/inode.c   |    2 +-
- fs/ext4/mballoc.c |   15 +++++----
- fs/ext4/resize.c  |    4 +-
- fs/ext4/super.c   |   68 ++++++++++++++++++++++++++++++++++++++++++-
- 7 files changed, 149 insertions(+), 62 deletions(-)
-
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
 index 39df492..8dd7b0d 100644
 --- a/fs/ext4/balloc.c
@@ -66,7 +54,7 @@ index 39df492..8dd7b0d 100644
  
  	return desc_count;
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 3f0c2e1..1f03808 100644
+index 1c5d647..297e3af 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -156,12 +156,12 @@ struct ext4_group_desc
@@ -95,7 +83,7 @@ index 3f0c2e1..1f03808 100644
  	__u32	bg_reserved2[3];
  };
  
-@@ -1139,12 +1139,28 @@ extern ext4_fsblk_t ext4_inode_bitmap(struct super_block *sb,
+@@ -1146,12 +1146,28 @@ extern ext4_fsblk_t ext4_inode_bitmap(struct super_block *sb,
  				      struct ext4_group_desc *bg);
  extern ext4_fsblk_t ext4_inode_table(struct super_block *sb,
  				     struct ext4_group_desc *bg);
@@ -184,7 +172,7 @@ index 4039af6..84f060b 100644
  			*best_group = group;
  			best_desc = desc;
  			ret = 0;
-@@ -369,7 +372,7 @@ static int find_group_flex(struct super_block *sb, struct inode *parent,
+@@ -369,7 +372,7 @@ found_flexbg:
  	for (i = best_flex * flex_size; i < ngroups &&
  		     i < (best_flex + 1) * flex_size; i++) {
  		desc = ext4_get_group_desc(sb, i, &bh);
@@ -234,7 +222,7 @@ index 4039af6..84f060b 100644
  			continue;
  		return 0;
  	}
-@@ -494,8 +497,8 @@ static int find_group_orlov(struct super_block *sb, struct inode *parent,
+@@ -494,8 +497,8 @@ fallback:
  	for (i = 0; i < ngroups; i++) {
  		*group = (parent_group + i) % ngroups;
  		desc = ext4_get_group_desc(sb, *group, NULL);
@@ -285,7 +273,7 @@ index 4039af6..84f060b 100644
  	struct inode *ret;
  	ext4_group_t i;
  	int free = 0;
-@@ -717,7 +720,7 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)
+@@ -717,7 +720,7 @@ got:
  		if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
  			gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
  			free = ext4_free_blocks_after_init(sb, group, gdp);
@@ -294,7 +282,7 @@ index 4039af6..84f060b 100644
  			gdp->bg_checksum = ext4_group_desc_csum(sbi, group,
  								gdp);
  		}
-@@ -751,7 +754,7 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)
+@@ -751,7 +754,7 @@ got:
  			free = 0;
  		} else {
  			free = EXT4_INODES_PER_GROUP(sb) -
@@ -303,7 +291,7 @@ index 4039af6..84f060b 100644
  		}
  
  		/*
-@@ -761,13 +764,15 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)
+@@ -761,13 +764,15 @@ got:
  		 *
  		 */
  		if (ino > free)
@@ -360,10 +348,10 @@ index 4039af6..84f060b 100644
  	return count;
  }
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 76b1d3a..2d31597 100644
+index db65ca7..f3aeb05 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -3987,7 +3987,7 @@ static int __ext4_get_inode_loc(struct inode *inode,
+@@ -3987,7 +3987,7 @@ make_io:
  			num = EXT4_INODES_PER_GROUP(sb);
  			if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
  				       EXT4_FEATURE_RO_COMPAT_GDT_CSUM))
@@ -373,10 +361,10 @@ index 76b1d3a..2d31597 100644
  			if (end > table)
  				end = table;
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index aa03716..eb6aca6 100644
+index add1060..90618ae 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -2474,7 +2474,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+@@ -2480,7 +2480,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
  			ext4_free_blocks_after_init(sb, group, desc);
  	} else {
  		meta_group_info[i]->bb_free =
@@ -385,7 +373,7 @@ index aa03716..eb6aca6 100644
  	}
  
  	INIT_LIST_HEAD(&meta_group_info[i]->bb_prealloc_list);
-@@ -3002,12 +3002,12 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+@@ -3008,12 +3008,12 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
  				ac->ac_b_ex.fe_start, ac->ac_b_ex.fe_len);
  	if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
  		gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
@@ -403,7 +391,7 @@ index aa03716..eb6aca6 100644
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, ac->ac_b_ex.fe_group, gdp);
  	spin_unlock(sb_bgl_lock(sbi, ac->ac_b_ex.fe_group));
  	percpu_counter_sub(&sbi->s_freeblocks_counter, ac->ac_b_ex.fe_len);
-@@ -4783,7 +4783,8 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4789,7 +4789,8 @@ do_more:
  	}
  
  	spin_lock(sb_bgl_lock(sbi, block_group));
@@ -414,7 +402,7 @@ index aa03716..eb6aca6 100644
  	spin_unlock(sb_bgl_lock(sbi, block_group));
  	percpu_counter_add(&sbi->s_freeblocks_counter, count);
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 939cf26..6e61613 100644
+index 3381efe..9d3b31e 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
 @@ -862,8 +862,8 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
@@ -425,11 +413,11 @@ index 939cf26..6e61613 100644
 -	gdp->bg_free_inodes_count = cpu_to_le16(EXT4_INODES_PER_GROUP(sb));
 +	ext4_free_blks_set(sb, gdp, input->free_blocks_count);
 +	ext4_free_inodes_set(sb, gdp, EXT4_INODES_PER_GROUP(sb));
+ 	gdp->bg_flags |= cpu_to_le16(EXT4_BG_INODE_ZEROED);
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, input->group, gdp);
  
- 	/*
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index e14cd87..5acd386 100644
+index 8cc24c8..64ba967 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -93,6 +93,38 @@ ext4_fsblk_t ext4_inode_table(struct super_block *sb,
@@ -510,7 +498,7 @@ index e14cd87..5acd386 100644
  /*
   * Wrappers for jbd2_journal_start/end.
   *
-@@ -1510,9 +1574,9 @@ static int ext4_fill_flex_info(struct super_block *sb)
+@@ -1536,9 +1600,9 @@ static int ext4_fill_flex_info(struct super_block *sb)
  
  		flex_group = ext4_flex_group(sbi, i);
  		sbi->s_flex_groups[flex_group].free_inodes +=
@@ -522,11 +510,3 @@ index e14cd87..5acd386 100644
  	}
  
  	return 1;
--- 
-1.6.0.4.735.gea4f
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
