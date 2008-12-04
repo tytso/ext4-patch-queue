@@ -1,0 +1,43 @@
+ext4: Fix s_dirty_blocks_counter if block allocation failed with nodelalloc
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+With nodelalloc option we need to update the dirty block counter on
+block allocation failure. This is needed because we increment the
+dirty block counter early in the block allocation phase. Without
+the patch s_dirty_blocks_counter goes wrong so that filesystem's
+free blocks decreases incorrectly.
+
+Tested-by: Akira Fujita <a-fujita@rs.jp.nec.com>
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+ fs/ext4/mballoc.c |    9 ++++++++-
+ 1 files changed, 8 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index bacc2f4..22d31c3 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4550,7 +4550,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+ 	}
+ 	if (ar->len == 0) {
+ 		*errp = -EDQUOT;
+-		return 0;
++		goto out3;
+ 	}
+ 	inquota = ar->len;
+ 
+@@ -4623,6 +4623,13 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+ out1:
+ 	if (ar->len < inquota)
+ 		DQUOT_FREE_BLOCK(ar->inode, inquota - ar->len);
++out3:
++	if (!ar->len) {
++		if (!EXT4_I(ar->inode)->i_delalloc_reserved_flag)
++			/* release all the reserved blocks if non delalloc */
++			percpu_counter_sub(&sbi->s_dirtyblocks_counter,
++						reserv_blks);
++	}
+ 
+ 	return block;
+ }

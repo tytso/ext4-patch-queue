@@ -1,0 +1,68 @@
+ext4: mark the blocks/inode bitmap beyond end of group as used.
+
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+
+We need to mark the block/inode bitmap beyond end of grou
+with '1'
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+ fs/ext4/ialloc.c  |    2 +-
+ fs/ext4/mballoc.c |    4 ++--
+ fs/ext4/resize.c  |    6 ++----
+ 3 files changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 1627868..cd5759d 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -84,7 +84,7 @@ unsigned ext4_init_inode_bitmap(struct super_block *sb, struct buffer_head *bh,
+ 	}
+ 
+ 	memset(bh->b_data, 0, (EXT4_INODES_PER_GROUP(sb) + 7) / 8);
+-	mark_bitmap_end(EXT4_INODES_PER_GROUP(sb), EXT4_BLOCKS_PER_GROUP(sb),
++	mark_bitmap_end(EXT4_INODES_PER_GROUP(sb), sb->s_blocksize * 8,
+ 			bh->b_data);
+ 
+ 	return EXT4_INODES_PER_GROUP(sb);
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 5d4105d..24fc3ab 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -3044,8 +3044,8 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+ 	    in_range(block + len - 1, ext4_inode_table(sb, gdp),
+ 		     EXT4_SB(sb)->s_itb_per_group)) {
+ 		ext4_error(sb, __func__,
+-			   "Allocating block in system zone - block = %llu",
+-			   block);
++			   "Allocating block %llu in system zone of %d group\n",
++			   block, ac->ac_b_ex.fe_group);
+ 		/* File system mounted not to panic on error
+ 		 * Fix the bitmap and repeat the block allocation
+ 		 * We leak some of the blocks here.
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 6a62360..ef143f4 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -284,11 +284,9 @@ static int setup_new_group_blocks(struct super_block *sb,
+ 	if ((err = extend_or_restart_transaction(handle, 2, bh)))
+ 		goto exit_bh;
+ 
+-	mark_bitmap_end(input->blocks_count, EXT4_BLOCKS_PER_GROUP(sb),
+-			bh->b_data);
++	mark_bitmap_end(input->blocks_count, sb->s_blocksize * 8, bh->b_data);
+ 	ext4_journal_dirty_metadata(handle, bh);
+ 	brelse(bh);
+-
+ 	/* Mark unused entries in inode bitmap used */
+ 	ext4_debug("clear inode bitmap %#04llx (+%llu)\n",
+ 		   input->inode_bitmap, input->inode_bitmap - start);
+@@ -297,7 +295,7 @@ static int setup_new_group_blocks(struct super_block *sb,
+ 		goto exit_journal;
+ 	}
+ 
+-	mark_bitmap_end(EXT4_INODES_PER_GROUP(sb), EXT4_BLOCKS_PER_GROUP(sb),
++	mark_bitmap_end(EXT4_INODES_PER_GROUP(sb), sb->s_blocksize * 8,
+ 			bh->b_data);
+ 	ext4_journal_dirty_metadata(handle, bh);
+ exit_bh:

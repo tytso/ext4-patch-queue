@@ -1,6 +1,6 @@
 ext4: fix BUG when calling ext4_error with locked block group
 
-From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 The mballoc code likes to call ext4_error while it is holding locked
 block groups.  This can causes a scheduling in atomic context BUG.  We
@@ -8,20 +8,24 @@ can't just unlock the block group and relock it after/if ext4_error
 returns since that might result in race conditions in the case where
 the filesystem is set to continue after finding errors.
 
+-V5 changes:
+update ext4_commit_super to use the percpu free blocks and free inodes
+counter values.
+
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h    |   47 +++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/mballoc.c |   30 +++++++++++++++---------------
  fs/ext4/mballoc.h |   47 -----------------------------------------------
- fs/ext4/super.c   |   38 ++++++++++++++++++++++++++++++++++++++
- 4 files changed, 100 insertions(+), 62 deletions(-)
+ fs/ext4/super.c   |   45 +++++++++++++++++++++++++++++++++++++++++++--
+ 4 files changed, 105 insertions(+), 64 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 774762e..ca88bd1 100644
+index a5fa26e..44cd21c 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1184,6 +1184,9 @@ extern void ext4_abort(struct super_block *, const char *, const char *, ...)
+@@ -1131,6 +1131,9 @@ extern void ext4_abort(struct super_block *, const char *, const char *, ...)
  	__attribute__ ((format (printf, 3, 4)));
  extern void ext4_warning(struct super_block *, const char *, const char *, ...)
  	__attribute__ ((format (printf, 3, 4)));
@@ -31,7 +35,7 @@ index 774762e..ca88bd1 100644
  extern void ext4_update_dynamic_rev(struct super_block *sb);
  extern int ext4_update_compat_feature(handle_t *handle, struct super_block *sb,
  					__u32 compat);
-@@ -1316,6 +1319,50 @@ static inline void ext4_update_i_disksize(struct inode *inode, loff_t newsize)
+@@ -1254,6 +1257,50 @@ static inline void ext4_update_i_disksize(struct inode *inode, loff_t newsize)
  	return ;
  }
  
@@ -83,7 +87,7 @@ index 774762e..ca88bd1 100644
   * Inodes and files operations
   */
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index e648283..c5dcdf0 100644
+index abb66a8..b1c216c 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -457,8 +457,8 @@ static void mb_free_blocks_double(struct inode *inode, struct ext4_buddy *e4b,
@@ -106,7 +110,7 @@ index e648283..c5dcdf0 100644
  			"EXT4-fs: group %u: %u blocks in bitmap, %u in gd\n",
  			group, free, grp->bb_free);
  		/*
-@@ -1098,8 +1098,6 @@ static void mb_set_bits(spinlock_t *lock, void *bm, int cur, int len)
+@@ -1099,8 +1099,6 @@ static void mb_set_bits(spinlock_t *lock, void *bm, int cur, int len)
  
  static void mb_free_blocks(struct inode *inode, struct ext4_buddy *e4b,
  			  int first, int count)
@@ -115,7 +119,7 @@ index e648283..c5dcdf0 100644
  {
  	int block = 0;
  	int max = 0;
-@@ -1138,12 +1136,11 @@ __acquires(bitlock)
+@@ -1139,12 +1137,11 @@ __acquires(bitlock)
  			blocknr += block;
  			blocknr +=
  			    le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
@@ -130,7 +134,7 @@ index e648283..c5dcdf0 100644
  		}
  		mb_clear_bit(block, EXT4_MB_BITMAP(e4b));
  		e4b->bd_info->bb_counters[order]++;
-@@ -1623,7 +1620,8 @@ static void ext4_mb_complex_scan_group(struct ext4_allocation_context *ac,
+@@ -1629,7 +1626,8 @@ static void ext4_mb_complex_scan_group(struct ext4_allocation_context *ac,
  			 * free blocks even though group info says we
  			 * we have free blocks
  			 */
@@ -140,7 +144,7 @@ index e648283..c5dcdf0 100644
  					"group info. But bitmap says 0\n",
  					free);
  			break;
-@@ -1632,7 +1630,8 @@ static void ext4_mb_complex_scan_group(struct ext4_allocation_context *ac,
+@@ -1638,7 +1636,8 @@ static void ext4_mb_complex_scan_group(struct ext4_allocation_context *ac,
  		mb_find_extent(e4b, 0, i, ac->ac_g_ex.fe_len, &ex);
  		BUG_ON(ex.fe_len <= 0);
  		if (free < ex.fe_len) {
@@ -150,7 +154,7 @@ index e648283..c5dcdf0 100644
  					"group info. But got %d blocks\n",
  					free, ex.fe_len);
  			/*
-@@ -3791,8 +3790,9 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+@@ -3828,8 +3827,9 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
  			pa, (unsigned long) pa->pa_lstart,
  			(unsigned long) pa->pa_pstart,
  			(unsigned long) pa->pa_len);
@@ -162,7 +166,7 @@ index e648283..c5dcdf0 100644
  		/*
  		 * pa is already deleted so we use the value obtained
  		 * from the bitmap and continue.
-@@ -4605,9 +4605,9 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
+@@ -4641,9 +4641,9 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  		else if (block >= (entry->start_blk + entry->count))
  			n = &(*n)->rb_right;
  		else {
@@ -176,7 +180,7 @@ index e648283..c5dcdf0 100644
  		}
  	}
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
-index 407b39a..efb20b5 100644
+index 997f78f..95d4c7f 100644
 --- a/fs/ext4/mballoc.h
 +++ b/fs/ext4/mballoc.h
 @@ -118,27 +118,6 @@ struct ext4_free_data {
@@ -207,7 +211,7 @@ index 407b39a..efb20b5 100644
  struct ext4_prealloc_space {
  	struct list_head	pa_inode_list;
  	struct list_head	pa_group_list;
-@@ -265,32 +244,6 @@ static inline void ext4_mb_store_history(struct ext4_allocation_context *ac)
+@@ -264,32 +243,6 @@ static inline void ext4_mb_store_history(struct ext4_allocation_context *ac)
  #define in_range(b, first, len)	((b) >= (first) && (b) <= (first) + (len) - 1)
  
  struct buffer_head *read_block_bitmap(struct super_block *, ext4_group_t);
@@ -241,7 +245,7 @@ index 407b39a..efb20b5 100644
  					struct ext4_free_extent *fex)
  {
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index b5c7658..42597b7 100644
+index 7f188c1..8aef386 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -350,6 +350,44 @@ void ext4_warning(struct super_block *sb, const char *function,
@@ -289,11 +293,17 @@ index b5c7658..42597b7 100644
  void ext4_update_dynamic_rev(struct super_block *sb)
  {
  	struct ext4_super_block *es = EXT4_SB(sb)->s_es;
--- 
-1.6.0.4.735.gea4f
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
+@@ -2820,8 +2858,11 @@ static void ext4_commit_super(struct super_block *sb,
+ 		set_buffer_uptodate(sbh);
+ 	}
+ 	es->s_wtime = cpu_to_le32(get_seconds());
+-	ext4_free_blocks_count_set(es, ext4_count_free_blocks(sb));
+-	es->s_free_inodes_count = cpu_to_le32(ext4_count_free_inodes(sb));
++	ext4_free_blocks_count_set(es, percpu_counter_sum_positive(
++					&EXT4_SB(sb)->s_freeblocks_counter));
++	es->s_free_inodes_count = cpu_to_le32(percpu_counter_sum_positive(
++					&EXT4_SB(sb)->s_freeinodes_counter));
++
+ 	BUFFER_TRACE(sbh, "marking dirty");
+ 	mark_buffer_dirty(sbh);
+ 	if (sync) {
