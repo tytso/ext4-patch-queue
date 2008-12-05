@@ -7,14 +7,15 @@ we should ensure that we don't reinit the buddy cache untill
 the block bitmap is updated. The patch achieve this by holding
 the group_info alloc_semaphore till ext4_mb_release_context
 
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
 V4 changes:
 USe ext4_mb_release_context to drop the page reference. That
 make sure we take care of update group pa.
 v3 changes:
 drop page reference and alloc_sem if we are retrying allocation
 
-Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
----
  fs/ext4/mballoc.c |   16 +++++++++++++---
  fs/ext4/mballoc.h |    5 +++++
  2 files changed, 18 insertions(+), 3 deletions(-)
@@ -86,7 +87,7 @@ index 95d4c7f..3b598c7 100644
  	struct page *ac_bitmap_page;
  	struct page *ac_buddy_page;
 +	/*
-+	 * pointer to the held semaphore upon successfull
++	 * pointer to the held semaphore upon successful
 +	 * block allocation
 +	 */
 +	struct rw_semaphore *alloc_semp;
