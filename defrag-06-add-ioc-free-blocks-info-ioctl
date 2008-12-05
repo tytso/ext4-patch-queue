@@ -15,28 +15,22 @@ and moved into mballoc.c.  Because it uses ext4_buddy structure.
 
 Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
 Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
----
- fs/ext4/ext4.h    |   27 +++++++++++++++++
- fs/ext4/ioctl.c   |   20 +++++++++++++
- fs/ext4/mballoc.c |   81 +++++++++++++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 128 insertions(+), 0 deletions(-)
-
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 94c4186..f7b092d 100644
+index b1478c2..54c931d 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -304,6 +304,7 @@ struct ext4_new_group_data {
+@@ -305,6 +305,7 @@ struct ext4_new_group_data {
   /* note ioctl 11 reserved for filesystem-independent FIEMAP ioctl */
  #define EXT4_IOC_DEFRAG			_IOW('f', 15, struct ext4_ext_defrag_data)
  #define EXT4_IOC_SUPER_INFO		_IOR('f', 16, struct ext4_super_block)
 +#define EXT4_IOC_FREE_BLOCKS_INFO	_IOWR('f', 17, struct ext4_extents_info)
-
- /*
-  * ioctl commands in 32 bit emulation
-@@ -321,12 +322,36 @@ struct ext4_new_group_data {
+ 
+ #define EXT4_IOC_DEBUG_DELALLOC		_IO('f', 42)
+ 
+@@ -324,12 +325,36 @@ struct ext4_new_group_data {
  #define EXT4_IOC32_GETVERSION_OLD	FS_IOC32_GETVERSION
  #define EXT4_IOC32_SETVERSION_OLD	FS_IOC32_SETVERSION
-
+ 
 +/*
 + * The following four macros are used for the defrag force mode.
 + *
@@ -56,7 +50,7 @@ index 94c4186..f7b092d 100644
  	ext4_lblk_t defrag_size;	/* size of defrag in blocks */
  	ext4_fsblk_t goal;		/* block offset for allocation */
  };
-
+ 
 +struct ext4_extents_info {
 +	unsigned long long ino;		/* inode number */
 +	int max_entries;		/* maximum extents count */
@@ -68,25 +62,26 @@ index 94c4186..f7b092d 100644
 +};
 +
  #define EXT4_TRANS_META_BLOCKS 4 /* bitmap + group desc + sb + inode */
-
+ 
  /*
-@@ -1069,6 +1094,8 @@ extern int ext4_mb_add_more_groupinfo(struct super_block *sb,
- 		ext4_group_t i, struct ext4_group_desc *desc);
- extern void ext4_mb_update_group_info(struct ext4_group_info *grp,
- 		ext4_grpblk_t add);
+@@ -1085,6 +1110,9 @@ extern void ext4_mb_update_group_info(struct ext4_group_info *grp,
+ extern int ext4_mb_get_buddy_cache_lock(struct super_block *, ext4_group_t);
+ extern void ext4_mb_put_buddy_cache_lock(struct super_block *,
+ 						ext4_group_t, int);
 +extern int ext4_mb_search_free_extents(struct inode *inode,
-+					struct ext4_extents_info *ext_info);
-
-
++				       struct ext4_extents_info *ext_info);
++
  /* inode.c */
+ int ext4_forget(handle_t *handle, int is_metadata, struct inode *inode,
+ 		struct buffer_head *bh, ext4_fsblk_t blocknr);
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index f8ce89b..5709574 100644
+index 5feb9bc..81d4220 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -256,6 +256,26 @@ setversion_out:
+@@ -267,6 +267,26 @@ setversion_out:
  			return 0;
  	}
-
+ 
 +	case EXT4_IOC_FREE_BLOCKS_INFO: {
 +		struct ext4_extents_info ext_info;
 +		int err;
@@ -111,10 +106,10 @@ index f8ce89b..5709574 100644
  		struct ext4_new_group_data input;
  		struct super_block *sb = inode->i_sb;
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index dfe17a1..eebcf7c 100644
+index 22d31c3..32688f1 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -4654,3 +4654,84 @@ error_return:
+@@ -4912,3 +4912,84 @@ error_return:
  		kmem_cache_free(ext4_ac_cachep, ac);
  	return;
  }
