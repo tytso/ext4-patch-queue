@@ -1,0 +1,35 @@
+Update Documentation/filesystems/ext4.txt
+
+Fix paragraph with recommendations on how to tune ext4 for benchmarks.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
+index 845e691..19bb93f 100644
+--- a/Documentation/filesystems/ext4.txt
++++ b/Documentation/filesystems/ext4.txt
+@@ -58,13 +58,18 @@ Note: More extensive information for getting started with ext4 can be
+ 
+ 	# mount -t ext4 /dev/hda1 /wherever
+ 
+-  - When comparing performance with other filesystems, remember that
+-    ext3/4 by default offers higher data integrity guarantees than most.
+-    So when comparing with a metadata-only journalling filesystem, such
+-    as ext3, use `mount -o data=writeback'.  And you might as well use
+-    `mount -o nobh' too along with it.  Making the journal larger than
+-    the mke2fs default often helps performance with metadata-intensive
+-    workloads.
++  - When comparing performance with other filesystems, it's always
++    important to try multiple workloads; very often a subtle change in a
++    workload parameter can completely change the ranking of which
++    filesystems do well compared to others.  When comparing versus ext3,
++    note that ext4 enables write barriers by default, while ext3 does
++    not enable write barriers by default.  So it is useful to use
++    explicitly specify whether barriers are enabled or not when via the
++    '-o barriers=[0|1]' mount option.  When tuning ext3 for best
++    benchmark numbers, it is often worthwhile to try changing the data
++    journaling mode; '-o data=writeback,nobh' can be faster for some
++    workloads.  A large journal can also be helpful for
++    metadata-intensive workloads.
+ 
+ 2. Features
+ ===========
