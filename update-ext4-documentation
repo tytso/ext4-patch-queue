@@ -4,10 +4,10 @@ Fix paragraph with recommendations on how to tune ext4 for benchmarks.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
-index 845e691..19bb93f 100644
+index 174eaff..5877957 100644
 --- a/Documentation/filesystems/ext4.txt
 +++ b/Documentation/filesystems/ext4.txt
-@@ -58,13 +58,18 @@ Note: More extensive information for getting started with ext4 can be
+@@ -58,13 +58,22 @@ Note: More extensive information for getting started with ext4 can be
  
  	# mount -t ext4 /dev/hda1 /wherever
  
@@ -25,11 +25,15 @@ index 845e691..19bb93f 100644
 +    note that ext4 enables write barriers by default, while ext3 does
 +    not enable write barriers by default.  So it is useful to use
 +    explicitly specify whether barriers are enabled or not when via the
-+    '-o barriers=[0|1]' mount option.  When tuning ext3 for best
-+    benchmark numbers, it is often worthwhile to try changing the data
-+    journaling mode; '-o data=writeback,nobh' can be faster for some
-+    workloads.  A large journal can also be helpful for
-+    metadata-intensive workloads.
++    '-o barriers=[0|1]' mount option for both ext3 and ext4 filesystems
++    for a fair comparison.  When tuning ext3 for best benchmark numbers,
++    it is often worthwhile to try changing the data journaling mode; '-o
++    data=writeback,nobh' can be faster for some workloads.  (Note
++    however that running mounting with data=writeback can potentially
++    leave stale data exposed in recently written files in case of an
++    unclean shutdown, which could be a security exposure in some
++    situations.)  Configuring the filesystem with a large journal can
++    also be helpful for metadata-intensive workloads.
  
  2. Features
  ===========
