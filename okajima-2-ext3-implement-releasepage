@@ -16,16 +16,11 @@ journal_try_to_free_buffers() function to free the metadata.
 Signed-off-by: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: linux-fsdevel@vger.kernel.org
----
- fs/ext3/inode.c         |   16 ++++++++++++++++
- fs/ext3/super.c         |    2 ++
- include/linux/ext3_fs.h |    2 ++
- 3 files changed, 20 insertions(+)
-
-diff -Nurp linux-2.6.28-rc4.orig/fs/ext3/inode.c linux-2.6.28-rc4/fs/ext3/inode.c
---- linux-2.6.28-rc4.orig/fs/ext3/inode.c	2008-11-10 09:36:15.000000000 +0900
-+++ linux-2.6.28-rc4/fs/ext3/inode.c	2008-11-11 09:31:13.000000000 +0900
-@@ -1680,6 +1680,28 @@ static int ext3_releasepage(struct page 
+diff --git a/fs/ext3/inode.c b/fs/ext3/inode.c
+index f8424ad..89c065a 100644
+--- a/fs/ext3/inode.c
++++ b/fs/ext3/inode.c
+@@ -1680,6 +1680,35 @@ static int ext3_releasepage(struct page *page, gfp_t wait)
  }
  
  /*
@@ -33,6 +28,12 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/ext3/inode.c linux-2.6.28-rc4/fs/ext3/inode.
 + * mapped via the block device.  Since these pages could have journal heads
 + * which would prevent try_to_free_buffers() from freeing them, we must use
 + * jbd layer's try_to_free_buffers() function to release them.
++ *
++ * Note: we have to strip the __GFP_WAIT flag before calling
++ * journal_try_to_free_buffers because blkdev_releasepage is
++ * called while holding a spinlock (bdev_inode.client_lock).
++ * Fortunately the metadata buffers we are interested are freed right
++ * away and do not require calling journal_wait_for_transaction_sync_data().
 + */
 +int ext3_release_metadata(void *client, struct page *page, gfp_t wait)
 +{
@@ -45,7 +46,8 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/ext3/inode.c linux-2.6.28-rc4/fs/ext3/inode.
 +	BUG_ON(EXT3_SB(sb) == NULL);
 +	journal = EXT3_SB(sb)->s_journal;
 +	if (journal != NULL)
-+		return journal_try_to_free_buffers(journal, page, wait);
++		return journal_try_to_free_buffers(journal, page,
++						   wait & ~__GFP_WAIT);
 +	else
 +		return try_to_free_buffers(page);
 +}
@@ -54,10 +56,11 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/ext3/inode.c linux-2.6.28-rc4/fs/ext3/inode.
   * If the O_DIRECT write will extend the file then add this inode to the
   * orphan list.  So recovery will truncate it back to the original size
   * if the machine crashes during the write.
-diff -Nurp linux-2.6.28-rc4.orig/fs/ext3/super.c linux-2.6.28-rc4/fs/ext3/super.c
---- linux-2.6.28-rc4.orig/fs/ext3/super.c	2008-11-10 09:36:15.000000000 +0900
-+++ linux-2.6.28-rc4/fs/ext3/super.c	2008-11-11 09:01:53.000000000 +0900
-@@ -2972,6 +2972,8 @@ static struct file_system_type ext3_fs_t
+diff --git a/fs/ext3/super.c b/fs/ext3/super.c
+index 541d5e4..4428149 100644
+--- a/fs/ext3/super.c
++++ b/fs/ext3/super.c
+@@ -2981,6 +2981,8 @@ static struct file_system_type ext3_fs_type = {
  	.name		= "ext3",
  	.get_sb		= ext3_get_sb,
  	.kill_sb	= kill_block_super,
@@ -66,10 +69,11 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/ext3/super.c linux-2.6.28-rc4/fs/ext3/super.
  	.fs_flags	= FS_REQUIRES_DEV,
  };
  
-diff -Nurp linux-2.6.28-rc4.orig/include/linux/ext3_fs.h linux-2.6.28-rc4/include/linux/ext3_fs.h
---- linux-2.6.28-rc4.orig/include/linux/ext3_fs.h	2008-11-10 09:36:15.000000000 +0900
-+++ linux-2.6.28-rc4/include/linux/ext3_fs.h	2008-11-10 18:33:52.000000000 +0900
-@@ -841,6 +841,8 @@ extern void ext3_get_inode_flags(struct 
+diff --git a/include/linux/ext3_fs.h b/include/linux/ext3_fs.h
+index 9004794..3e3052f 100644
+--- a/include/linux/ext3_fs.h
++++ b/include/linux/ext3_fs.h
+@@ -867,6 +867,8 @@ extern void ext3_get_inode_flags(struct ext3_inode_info *);
  extern void ext3_set_aops(struct inode *inode);
  extern int ext3_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
  		       u64 start, u64 len);
@@ -78,8 +82,3 @@ diff -Nurp linux-2.6.28-rc4.orig/include/linux/ext3_fs.h linux-2.6.28-rc4/includ
  
  /* ioctl.c */
  extern int ext3_ioctl (struct inode *, struct file *, unsigned int,
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
