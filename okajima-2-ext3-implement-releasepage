@@ -17,10 +17,10 @@ Signed-off-by: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: linux-fsdevel@vger.kernel.org
 diff --git a/fs/ext3/inode.c b/fs/ext3/inode.c
-index f8424ad..89c065a 100644
+index f8424ad..b1fecda 100644
 --- a/fs/ext3/inode.c
 +++ b/fs/ext3/inode.c
-@@ -1680,6 +1680,35 @@ static int ext3_releasepage(struct page *page, gfp_t wait)
+@@ -1680,6 +1680,28 @@ static int ext3_releasepage(struct page *page, gfp_t wait)
  }
  
  /*
@@ -28,12 +28,6 @@ index f8424ad..89c065a 100644
 + * mapped via the block device.  Since these pages could have journal heads
 + * which would prevent try_to_free_buffers() from freeing them, we must use
 + * jbd layer's try_to_free_buffers() function to release them.
-+ *
-+ * Note: we have to strip the __GFP_WAIT flag before calling
-+ * journal_try_to_free_buffers because blkdev_releasepage is
-+ * called while holding a spinlock (bdev_inode.client_lock).
-+ * Fortunately the metadata buffers we are interested are freed right
-+ * away and do not require calling journal_wait_for_transaction_sync_data().
 + */
 +int ext3_release_metadata(void *client, struct page *page, gfp_t wait)
 +{
@@ -46,8 +40,7 @@ index f8424ad..89c065a 100644
 +	BUG_ON(EXT3_SB(sb) == NULL);
 +	journal = EXT3_SB(sb)->s_journal;
 +	if (journal != NULL)
-+		return journal_try_to_free_buffers(journal, page,
-+						   wait & ~__GFP_WAIT);
++		return journal_try_to_free_buffers(journal, page, wait);
 +	else
 +		return try_to_free_buffers(page);
 +}

@@ -13,15 +13,10 @@ private data.
 Signed-off-by: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: linux-fsdevel@vger.kernel.org
----
- fs/block_dev.c     |   62 +++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/super.c         |   22 ++++++++++++++++++
- include/linux/fs.h |    9 +++++++
- 3 files changed, 93 insertions(+)
-
-diff -Nurp linux-2.6.28-rc4.orig/fs/block_dev.c linux-2.6.28-rc4/fs/block_dev.c
---- linux-2.6.28-rc4.orig/fs/block_dev.c	2008-11-10 09:36:15.000000000 +0900
-+++ linux-2.6.28-rc4/fs/block_dev.c	2008-11-10 18:33:52.000000000 +0900
+diff --git a/fs/block_dev.c b/fs/block_dev.c
+index db831ef..bac0a38 100644
+--- a/fs/block_dev.c
++++ b/fs/block_dev.c
 @@ -29,6 +29,9 @@
  
  struct bdev_inode {
@@ -32,7 +27,7 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/block_dev.c linux-2.6.28-rc4/fs/block_dev.c
  	struct inode vfs_inode;
  };
  
-@@ -260,6 +263,9 @@ static struct inode *bdev_alloc_inode(st
+@@ -260,6 +263,9 @@ static struct inode *bdev_alloc_inode(struct super_block *sb)
  	struct bdev_inode *ei = kmem_cache_alloc(bdev_cachep, GFP_KERNEL);
  	if (!ei)
  		return NULL;
@@ -42,7 +37,7 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/block_dev.c linux-2.6.28-rc4/fs/block_dev.c
  	return &ei->vfs_inode;
  }
  
-@@ -1208,6 +1214,61 @@ static long block_ioctl(struct file *fil
+@@ -1208,6 +1214,67 @@ static long block_ioctl(struct file *file, unsigned cmd, unsigned long arg)
  	return blkdev_ioctl(bdev, mode, cmd, arg);
  }
  
@@ -61,7 +56,13 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/block_dev.c linux-2.6.28-rc4/fs/block_dev.c
 +
 +	read_lock(&ei->client_lock);
 +	if (ei->client_releasepage != NULL)
-+		ret = (*ei->client_releasepage)(ei->client, page, wait);
++		/*
++		 * Since we are holding a spinlock (ei->client_lock),
++		 * make sure the client_releasepage function
++		 * understands that it must not block.
++		 */
++		ret = (*ei->client_releasepage)(ei->client, page,
++						wait & ~__GFP_WAIT);
 +	else
 +		ret = try_to_free_buffers(page);
 +	read_unlock(&ei->client_lock);
@@ -104,7 +105,7 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/block_dev.c linux-2.6.28-rc4/fs/block_dev.c
  static const struct address_space_operations def_blk_aops = {
  	.readpage	= blkdev_readpage,
  	.writepage	= blkdev_writepage,
-@@ -1215,6 +1276,7 @@ static const struct address_space_operat
+@@ -1215,6 +1282,7 @@ static const struct address_space_operations def_blk_aops = {
  	.write_begin	= blkdev_write_begin,
  	.write_end	= blkdev_write_end,
  	.writepages	= generic_writepages,
@@ -112,10 +113,11 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/block_dev.c linux-2.6.28-rc4/fs/block_dev.c
  	.direct_IO	= blkdev_direct_IO,
  };
  
-diff -Nurp linux-2.6.28-rc4.orig/fs/super.c linux-2.6.28-rc4/fs/super.c
---- linux-2.6.28-rc4.orig/fs/super.c	2008-11-10 09:36:15.000000000 +0900
-+++ linux-2.6.28-rc4/fs/super.c	2008-11-11 09:25:04.000000000 +0900
-@@ -801,6 +801,18 @@ int get_sb_bdev(struct file_system_type 
+diff --git a/fs/super.c b/fs/super.c
+index 400a760..fd254eb 100644
+--- a/fs/super.c
++++ b/fs/super.c
+@@ -801,6 +801,18 @@ int get_sb_bdev(struct file_system_type *fs_type,
  
  		s->s_flags |= MS_ACTIVE;
  	}
@@ -134,7 +136,7 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/super.c linux-2.6.28-rc4/fs/super.c
  
  	return simple_set_mnt(mnt, s);
  
-@@ -819,6 +831,16 @@ void kill_block_super(struct super_block
+@@ -819,6 +831,16 @@ void kill_block_super(struct super_block *sb)
  	struct block_device *bdev = sb->s_bdev;
  	fmode_t mode = sb->s_mode;
  
@@ -151,9 +153,10 @@ diff -Nurp linux-2.6.28-rc4.orig/fs/super.c linux-2.6.28-rc4/fs/super.c
  	generic_shutdown_super(sb);
  	sync_blockdev(bdev);
  	close_bdev_exclusive(bdev, mode);
-diff -Nurp linux-2.6.28-rc4.orig/include/linux/fs.h linux-2.6.28-rc4/include/linux/fs.h
---- linux-2.6.28-rc4.orig/include/linux/fs.h	2008-11-10 09:36:15.000000000 +0900
-+++ linux-2.6.28-rc4/include/linux/fs.h	2008-11-11 09:01:12.000000000 +0900
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 0dcdd94..398c8ed 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
 @@ -1538,6 +1538,7 @@ struct file_system_type {
  	int (*get_sb) (struct file_system_type *, int,
  		       const char *, void *, struct vfsmount *);
@@ -162,7 +165,7 @@ diff -Nurp linux-2.6.28-rc4.orig/include/linux/fs.h linux-2.6.28-rc4/include/lin
  	struct module *owner;
  	struct file_system_type * next;
  	struct list_head fs_supers;
-@@ -1699,8 +1700,16 @@ extern void bd_set_size(struct block_dev
+@@ -1699,8 +1700,16 @@ extern void bd_set_size(struct block_device *, loff_t size);
  extern void bd_forget(struct inode *inode);
  extern void bdput(struct block_device *);
  extern struct block_device *open_by_devnum(dev_t, fmode_t);
@@ -179,8 +182,3 @@ diff -Nurp linux-2.6.28-rc4.orig/include/linux/fs.h linux-2.6.28-rc4/include/lin
  #endif
  extern const struct file_operations def_blk_fops;
  extern const struct file_operations def_chr_fops;
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
