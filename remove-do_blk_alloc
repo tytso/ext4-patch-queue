@@ -10,10 +10,10 @@ if there is an error, no blocks were allocated).
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 47cf25d..c80e0a8 100644
+index 47cf25d..d14e712 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
-@@ -666,53 +666,34 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+@@ -666,59 +666,40 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
  	return jbd2_journal_force_commit_nested(EXT4_SB(sb)->s_journal);
  }
  
@@ -81,6 +81,13 @@ index 47cf25d..c80e0a8 100644
  	/*
  	 * Account for the allocated meta blocks
  	 */
+ 	if (!(*errp) && EXT4_I(inode)->i_delalloc_reserved_flag) {
+ 		spin_lock(&EXT4_I(inode)->i_block_reservation_lock);
+-		EXT4_I(inode)->i_allocated_meta_blocks += *count;
++		EXT4_I(inode)->i_allocated_meta_blocks += ar.len;
+ 		spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
+ 	}
+ 	return ret;
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
 index e5b169b..59401d0 100644
 --- a/fs/ext4/extents.c
