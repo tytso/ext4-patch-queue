@@ -1,0 +1,61 @@
+ext4: Widen type of ext4_sb_info.s_mb_maxs[]
+
+From: Yasunori Goto <y-goto@jp.fujitsu.com>
+
+I chased the cause of following ext4 oops report which is tested on
+ia64 box.
+
+http://bugzilla.kernel.org/show_bug.cgi?id=12018
+
+The cause is the size of s_mb_maxs array that is defined as "unsigned
+short" in ext4_sb_info structure.  If the file system's block size is
+8k or greater, an unsigned short is not wide enough to contain the
+value fs->blocksize << 3.
+
+Signed-off-by: Yasunori Goto <y-goto@jp.fujitsu.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Li Zefan <lizf@cn.fujitsu.com>
+Cc: Miao Xie <miaox@cn.fujitsu.com>
+Cc: stable@kernel.org
+---
+ fs/ext4/ext4_sb.h |    3 ++-
+ fs/ext4/mballoc.c |    2 ++
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+Index: test2/fs/ext4/ext4_sb.h
+===================================================================
+--- test2.orig/fs/ext4/ext4_sb.h	2008-12-16 11:20:18.000000000 +0900
++++ test2/fs/ext4/ext4_sb.h	2008-12-16 14:17:32.000000000 +0900
+@@ -101,7 +101,8 @@ struct ext4_sb_info {
+ 	spinlock_t s_reserve_lock;
+ 	spinlock_t s_md_lock;
+ 	tid_t s_last_transaction;
+-	unsigned short *s_mb_offsets, *s_mb_maxs;
++	unsigned short *s_mb_offsets;
++	unsigned int *s_mb_maxs;
+ 
+ 	/* tunables */
+ 	unsigned long s_stripe;
+Index: test2/fs/ext4/mballoc.c
+===================================================================
+--- test2.orig/fs/ext4/mballoc.c	2008-12-16 11:20:18.000000000 +0900
++++ test2/fs/ext4/mballoc.c	2008-12-16 14:23:21.000000000 +0900
+@@ -2493,6 +2493,8 @@ int ext4_mb_init(struct super_block *sb,
+ 	if (sbi->s_mb_offsets == NULL) {
+ 		return -ENOMEM;
+ 	}
++
++	i = (sb->s_blocksize_bits + 2) * sizeof(unsigned int);
+ 	sbi->s_mb_maxs = kmalloc(i, GFP_KERNEL);
+ 	if (sbi->s_mb_maxs == NULL) {
+ 		kfree(sbi->s_mb_maxs);
+
+-- 
+Yasunori Goto 
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  httbp://vger.kernel.org/majordomo-info.html
+
