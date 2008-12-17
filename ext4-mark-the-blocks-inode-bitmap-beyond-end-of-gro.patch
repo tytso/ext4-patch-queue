@@ -14,7 +14,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  3 files changed, 5 insertions(+), 7 deletions(-)
 
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index 1627868..cd5759d 100644
+index e58299b..88ab940 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -84,7 +84,7 @@ unsigned ext4_init_inode_bitmap(struct super_block *sb, struct buffer_head *bh,
@@ -27,10 +27,10 @@ index 1627868..cd5759d 100644
  
  	return EXT4_INODES_PER_GROUP(sb);
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 5d4105d..24fc3ab 100644
+index 2d913de..8b6e829 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -3044,8 +3044,8 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+@@ -3045,8 +3045,8 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
  	    in_range(block + len - 1, ext4_inode_table(sb, gdp),
  		     EXT4_SB(sb)->s_itb_per_group)) {
  		ext4_error(sb, __func__,
@@ -42,7 +42,7 @@ index 5d4105d..24fc3ab 100644
  		 * Fix the bitmap and repeat the block allocation
  		 * We leak some of the blocks here.
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 6a62360..ef143f4 100644
+index 857e84d..86a9386 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
 @@ -284,11 +284,9 @@ static int setup_new_group_blocks(struct super_block *sb,
@@ -52,7 +52,7 @@ index 6a62360..ef143f4 100644
 -	mark_bitmap_end(input->blocks_count, EXT4_BLOCKS_PER_GROUP(sb),
 -			bh->b_data);
 +	mark_bitmap_end(input->blocks_count, sb->s_blocksize * 8, bh->b_data);
- 	ext4_journal_dirty_metadata(handle, bh);
+ 	ext4_handle_dirty_metadata(handle, NULL, bh);
  	brelse(bh);
 -
  	/* Mark unused entries in inode bitmap used */
@@ -65,5 +65,5 @@ index 6a62360..ef143f4 100644
 -	mark_bitmap_end(EXT4_INODES_PER_GROUP(sb), EXT4_BLOCKS_PER_GROUP(sb),
 +	mark_bitmap_end(EXT4_INODES_PER_GROUP(sb), sb->s_blocksize * 8,
  			bh->b_data);
- 	ext4_journal_dirty_metadata(handle, bh);
+ 	ext4_handle_dirty_metadata(handle, NULL, bh);
  exit_bh:

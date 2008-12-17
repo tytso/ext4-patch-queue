@@ -21,15 +21,15 @@ we don't have a parllel ext4_mb_init_cache happening on other groups
 which are part of the same page in buddy cache. We do that by taking
 write lock on the group_info alloc_sem semaphore.
 
- fs/ext4/balloc.c  |   21 +++-
- fs/ext4/ext4.h    |    7 +
+ fs/ext4/balloc.c  |   21 +++--
+ fs/ext4/ext4.h    |    7 +-
  fs/ext4/mballoc.c |  261 +++++++++++++++++++++++++++++++++++++++++------------
  fs/ext4/mballoc.h |    3 +
- fs/ext4/resize.c  |   49 ++--------
+ fs/ext4/resize.c  |   49 ++---------
  5 files changed, 230 insertions(+), 111 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index fa69cb3..39df492 100644
+index 88fbc08..67407cf 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -381,6 +381,7 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
@@ -82,10 +82,10 @@ index fa69cb3..39df492 100644
  error_return:
  	brelse(bitmap_bh);
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 0bbc052..a5fa26e 100644
+index 8021bf5..8152b56 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1065,12 +1065,13 @@ extern int __init init_ext4_mballoc(void);
+@@ -1060,12 +1060,13 @@ extern int __init init_ext4_mballoc(void);
  extern void exit_ext4_mballoc(void);
  extern void ext4_mb_free_blocks(handle_t *, struct inode *,
  		unsigned long, unsigned long, int, unsigned long *);
@@ -103,10 +103,10 @@ index 0bbc052..a5fa26e 100644
  int ext4_forget(handle_t *handle, int is_metadata, struct inode *inode,
  		struct buffer_head *bh, ext4_fsblk_t blocknr);
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 9cc93af..81b05cf 100644
+index 37fc8c5..34cf8a1 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -886,18 +886,20 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
+@@ -886,18 +886,20 @@ static noinline_for_stack int
  ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
  					struct ext4_buddy *e4b)
  {
@@ -160,7 +160,7 @@ index 9cc93af..81b05cf 100644
  			page_cache_release(page);
  		page = find_or_create_page(inode->i_mapping, pnum, GFP_NOFS);
  		if (page) {
-@@ -985,6 +1004,9 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
+@@ -985,6 +1004,9 @@ err:
  		page_cache_release(e4b->bd_buddy_page);
  	e4b->bd_buddy = NULL;
  	e4b->bd_bitmap = NULL;
@@ -353,7 +353,7 @@ index 9cc93af..81b05cf 100644
  static noinline_for_stack int
  ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
  {
-@@ -1777,7 +1968,7 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+@@ -1777,7 +1968,7 @@ repeat:
  				group = 0;
  
  			/* quick check to skip empty groups */
@@ -362,7 +362,7 @@ index 9cc93af..81b05cf 100644
  			if (grp->bb_free == 0)
  				continue;
  
-@@ -1790,10 +1981,9 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+@@ -1790,10 +1981,9 @@ repeat:
  				 * we need full data about the group
  				 * to make a good selection
  				 */
@@ -391,7 +391,7 @@ index 9cc93af..81b05cf 100644
  	meta_group_info[i]->bb_free_root.rb_node = NULL;;
  
  #ifdef DOUBLE_CHECK
-@@ -2329,54 +2520,6 @@ static int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+@@ -2329,54 +2520,6 @@ exit_meta_group_info:
  } /* ext4_mb_add_groupinfo */
  
  /*
@@ -446,7 +446,7 @@ index 9cc93af..81b05cf 100644
   * Update an existing group.
   * This function is used for online resize
   */
-@@ -4583,11 +4726,6 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4584,11 +4727,6 @@ do_more:
  	err = ext4_journal_get_write_access(handle, gd_bh);
  	if (err)
  		goto error_return;
@@ -458,23 +458,23 @@ index 9cc93af..81b05cf 100644
  #ifdef AGGRESSIVE_CHECK
  	{
  		int i;
-@@ -4601,6 +4739,8 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4602,6 +4740,8 @@ do_more:
  	/* We dirtied the bitmap block */
  	BUFFER_TRACE(bitmap_bh, "dirtied bitmap block");
- 	err = ext4_journal_dirty_metadata(handle, bitmap_bh);
+ 	err = ext4_handle_dirty_metadata(handle, NULL, bitmap_bh);
 +	if (err)
 +		goto error_return;
  
  	if (ac) {
  		ac->ac_b_ex.fe_group = block_group;
-@@ -4609,6 +4749,9 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4610,6 +4750,9 @@ do_more:
  		ext4_mb_store_history(ac);
  	}
  
 +	err = ext4_mb_load_buddy(sb, block_group, &e4b);
 +	if (err)
 +		goto error_return;
- 	if (metadata) {
+ 	if (metadata && ext4_handle_valid(handle)) {
  		/* blocks being freed are metadata. these blocks shouldn't
  		 * be used until this transaction is committed */
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
@@ -506,10 +506,10 @@ index b5dff1f..a931b6b 100644
  #define EXT4_MB_BITMAP(e4b)	((e4b)->bd_bitmap)
  #define EXT4_MB_BUDDY(e4b)	((e4b)->bd_buddy)
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index db03e05..90a0eaa 100644
+index 51640bb..a131a86 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -747,6 +747,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -748,6 +748,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  	struct inode *inode = NULL;
  	handle_t *handle;
  	int gdb_off, gdb_num;
@@ -517,7 +517,7 @@ index db03e05..90a0eaa 100644
  	int err, err2;
  
  	gdb_num = input->group / EXT4_DESC_PER_BLOCK(sb);
-@@ -787,6 +788,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -788,6 +789,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  		}
  	}
  
@@ -525,7 +525,7 @@ index db03e05..90a0eaa 100644
  	if ((err = verify_group_input(sb, input)))
  		goto exit_put;
  
-@@ -855,6 +857,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -856,6 +858,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
           * using the new disk blocks.
           */
  
@@ -533,7 +533,7 @@ index db03e05..90a0eaa 100644
  	/* Update group descriptor block for new group */
  	gdp = (struct ext4_group_desc *)((char *)primary->b_data +
  					 gdb_off * EXT4_DESC_SIZE(sb));
-@@ -871,9 +874,11 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -872,9 +875,11 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  	 * We can allocate memory for mb_alloc based on the new group
  	 * descriptor
  	 */
@@ -547,15 +547,15 @@ index db03e05..90a0eaa 100644
  
  	/*
  	 * Make the new blocks and inodes valid next.  We do this before
-@@ -915,6 +920,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -916,6 +921,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  
  	/* Update the global fs size fields */
  	sbi->s_groups_count++;
 +	ext4_mb_put_buddy_cache_lock(sb, input->group, num_grp_locked);
  
- 	ext4_journal_dirty_metadata(handle, primary);
+ 	ext4_handle_dirty_metadata(handle, NULL, primary);
  
-@@ -1082,45 +1088,6 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -1083,45 +1089,6 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  	if ((err = ext4_journal_stop(handle)))
  		goto exit_put;
  
