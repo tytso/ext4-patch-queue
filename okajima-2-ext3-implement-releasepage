@@ -9,69 +9,48 @@ directory blocks, etc) are managed via the block device
 address_space_ops, and they can not be released by
 try_to_free_buffers() if they have a journal head attached to them.
 
-To address this, we supply a release_metadata function which is called
-by the block device's blkdev_releasepage() function, which calls
-journal_try_to_free_buffers() function to free the metadata.
+To address this, we supply a try_to_free_pages() function which calls
+journal_try_to_free_buffers() function to free the metadata, and which
+is called by the block device's blkdev_releasepage() function.
 
 Signed-off-by: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: linux-fsdevel@vger.kernel.org
-diff --git a/fs/ext3/inode.c b/fs/ext3/inode.c
-index f8424ad..b1fecda 100644
---- a/fs/ext3/inode.c
-+++ b/fs/ext3/inode.c
-@@ -1680,6 +1680,28 @@ static int ext3_releasepage(struct page *page, gfp_t wait)
+diff --git a/fs/ext3/super.c b/fs/ext3/super.c
+index 541d5e4..93655a6 100644
+--- a/fs/ext3/super.c
++++ b/fs/ext3/super.c
+@@ -682,6 +682,25 @@ static struct dentry *ext3_fh_to_parent(struct super_block *sb, struct fid *fid,
+ 				    ext3_nfs_get_inode);
  }
  
- /*
++/*
 + * Try to release metadata pages (indirect blocks, directories) which are
 + * mapped via the block device.  Since these pages could have journal heads
 + * which would prevent try_to_free_buffers() from freeing them, we must use
 + * jbd layer's try_to_free_buffers() function to release them.
 + */
-+int ext3_release_metadata(void *client, struct page *page, gfp_t wait)
++static int bdev_try_to_free_page(struct super_block *sb, struct page *page,
++				 gfp_t wait)
 +{
-+	struct super_block *sb = (struct super_block*)client;
-+	journal_t *journal;
++	journal_t *journal = EXT3_SB(sb)->s_journal;
 +
 +	WARN_ON(PageChecked(page));
 +	if (!page_has_buffers(page))
 +		return 0;
-+	BUG_ON(EXT3_SB(sb) == NULL);
-+	journal = EXT3_SB(sb)->s_journal;
-+	if (journal != NULL)
++	if (journal)
 +		return journal_try_to_free_buffers(journal, page, wait);
-+	else
-+		return try_to_free_buffers(page);
++	return try_to_free_buffers(page);
 +}
 +
-+/*
-  * If the O_DIRECT write will extend the file then add this inode to the
-  * orphan list.  So recovery will truncate it back to the original size
-  * if the machine crashes during the write.
-diff --git a/fs/ext3/super.c b/fs/ext3/super.c
-index 541d5e4..4428149 100644
---- a/fs/ext3/super.c
-+++ b/fs/ext3/super.c
-@@ -2981,6 +2981,8 @@ static struct file_system_type ext3_fs_type = {
- 	.name		= "ext3",
- 	.get_sb		= ext3_get_sb,
- 	.kill_sb	= kill_block_super,
-+	.release_metadata 
-+			= ext3_release_metadata,
- 	.fs_flags	= FS_REQUIRES_DEV,
+ #ifdef CONFIG_QUOTA
+ #define QTYPE2NAME(t) ((t)==USRQUOTA?"user":"group")
+ #define QTYPE2MOPT(on, t) ((t)==USRQUOTA?((on)##USRJQUOTA):((on)##GRPJQUOTA))
+@@ -746,6 +765,7 @@ static const struct super_operations ext3_sops = {
+ 	.quota_read	= ext3_quota_read,
+ 	.quota_write	= ext3_quota_write,
+ #endif
++	.bdev_try_to_free_page = bdev_try_to_free_page,
  };
  
-diff --git a/include/linux/ext3_fs.h b/include/linux/ext3_fs.h
-index 9004794..3e3052f 100644
---- a/include/linux/ext3_fs.h
-+++ b/include/linux/ext3_fs.h
-@@ -867,6 +867,8 @@ extern void ext3_get_inode_flags(struct ext3_inode_info *);
- extern void ext3_set_aops(struct inode *inode);
- extern int ext3_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
- 		       u64 start, u64 len);
-+extern int ext3_release_metadata(void *client, struct page *page, 
-+			gfp_t wait);
- 
- /* ioctl.c */
- extern int ext3_ioctl (struct inode *, struct file *, unsigned int,
+ static const struct export_operations ext3_export_ops = {

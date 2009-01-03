@@ -1,111 +1,39 @@
-vfs: add releasepages hooks to block devices which can be used by file systems
+add releasepage hooks to block devices which can be used by file systems
 
-From: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
+From: "Theodore Ts'o" <tytso@mit.edu>
 
-Implement blkdev_releasepage() to release the buffer_heads and page
-after we release private data which belongs to a client of the block
-device, such as a filesystem.
+Implement blkdev_releasepage() to release the buffer_heads and pages
+after we release private data belonging to a mounted filesystem.
 
-blkdev_releasepage() call the client's releasepage() which is
-registered by blkdev_register_client_releasepage() to release its
-private data.
-
-Signed-off-by: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
-Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
 Cc: linux-fsdevel@vger.kernel.org
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/fs/block_dev.c b/fs/block_dev.c
-index db831ef..bac0a38 100644
+index 99e0ae1..ef7d795 100644
 --- a/fs/block_dev.c
 +++ b/fs/block_dev.c
-@@ -29,6 +29,9 @@
- 
- struct bdev_inode {
- 	struct block_device bdev;
-+	void *client;
-+	int (*client_releasepage)(void*, struct page*, gfp_t);
-+	rwlock_t client_lock;
- 	struct inode vfs_inode;
- };
- 
-@@ -260,6 +263,9 @@ static struct inode *bdev_alloc_inode(struct super_block *sb)
- 	struct bdev_inode *ei = kmem_cache_alloc(bdev_cachep, GFP_KERNEL);
- 	if (!ei)
- 		return NULL;
-+	ei->client = NULL;
-+	ei->client_releasepage = NULL;
-+	rwlock_init(&ei->client_lock);
- 	return &ei->vfs_inode;
- }
- 
-@@ -1208,6 +1214,67 @@ static long block_ioctl(struct file *file, unsigned cmd, unsigned long arg)
+@@ -1219,6 +1219,20 @@ static long block_ioctl(struct file *file, unsigned cmd, unsigned long arg)
  	return blkdev_ioctl(bdev, mode, cmd, arg);
  }
  
 +/*
-+ * blkdev_releasepage: execute ei->client_releasepage() if it exists.
-+ * Otherwise, execute try_to_free_buffers().
-+ * ei->client_releasepage() releases private client's page if possible.
-+ * Because a buffer_head's using counter is bigger than 0 if a client has
-+ * a page for private usage. If so, try_to_free_buffers() cannot release it.
-+ * Therefore a client must try to release a page itself.
++ * Try to release a page associated with block device when the system
++ * is under memory pressure.
 + */
 +static int blkdev_releasepage(struct page *page, gfp_t wait)
 +{
-+	struct bdev_inode *ei = BDEV_I(page->mapping->host);
-+	int ret;
++	struct super_block *super = BDEV_I(page->mapping->host)->bdev.bd_super;
 +
-+	read_lock(&ei->client_lock);
-+	if (ei->client_releasepage != NULL)
-+		/*
-+		 * Since we are holding a spinlock (ei->client_lock),
-+		 * make sure the client_releasepage function
-+		 * understands that it must not block.
-+		 */
-+		ret = (*ei->client_releasepage)(ei->client, page,
-+						wait & ~__GFP_WAIT);
-+	else
-+		ret = try_to_free_buffers(page);
-+	read_unlock(&ei->client_lock);
-+	return ret;
-+}
++	if (super && super->s_op->bdev_try_to_free_page)
++		return super->s_op->bdev_try_to_free_page(super, page, wait);
 +
-+/*
-+ * blkdev_register_client_releasepage: register client_releasepage.
-+ */
-+int blkdev_register_client_releasepage(struct block_device *bdev,
-+	void *client, int (*releasepage)(void*, struct page*, gfp_t))
-+{
-+	struct bdev_inode *ei = BDEV_I(bdev->bd_inode);
-+	int ret = 1;
-+
-+	write_lock(&ei->client_lock);
-+	if (ei->client == NULL && ei->client_releasepage == NULL) {
-+		ei->client = client;
-+		ei->client_releasepage = releasepage;
-+	} else if (ei->client != client 
-+			|| ei->client_releasepage != releasepage)
-+		ret = 0;
-+	write_unlock(&ei->client_lock);
-+	return ret;
-+}
-+
-+/*
-+ * blkdev_unregister_client_releasepage: unregister client_releasepage.
-+ */
-+void blkdev_unregister_client_releasepage(struct block_device *bdev)
-+{
-+	struct bdev_inode *ei = BDEV_I(bdev->bd_inode);
-+
-+	write_lock(&ei->client_lock);
-+	ei->client = NULL;
-+	ei->client_releasepage = NULL;
-+	write_unlock(&ei->client_lock);
++	return try_to_free_buffers(page);
 +}
 +
  static const struct address_space_operations def_blk_aops = {
  	.readpage	= blkdev_readpage,
  	.writepage	= blkdev_writepage,
-@@ -1215,6 +1282,7 @@ static const struct address_space_operations def_blk_aops = {
+@@ -1226,6 +1240,7 @@ static const struct address_space_operations def_blk_aops = {
  	.write_begin	= blkdev_write_begin,
  	.write_end	= blkdev_write_end,
  	.writepages	= generic_writepages,
@@ -114,71 +42,42 @@ index db831ef..bac0a38 100644
  };
  
 diff --git a/fs/super.c b/fs/super.c
-index 400a760..fd254eb 100644
+index 400a760..d7e200d 100644
 --- a/fs/super.c
 +++ b/fs/super.c
-@@ -801,6 +801,18 @@ int get_sb_bdev(struct file_system_type *fs_type,
+@@ -800,6 +800,7 @@ int get_sb_bdev(struct file_system_type *fs_type,
+ 		}
  
  		s->s_flags |= MS_ACTIVE;
++		bdev->bd_super = s;
  	}
-+	/*
-+	 * register a client function which releases a page whose mapping is
-+	 * block device 
-+	 */
-+	if (fs_type->release_metadata != NULL
-+		&& !blkdev_register_client_releasepage(bdev, s,
-+			fs_type->release_metadata)) {
-+		up_write(&s->s_umount);
-+		deactivate_super(s);
-+		error = -EBUSY;
-+		goto error_bdev;
-+	}
  
  	return simple_set_mnt(mnt, s);
- 
-@@ -819,6 +831,16 @@ void kill_block_super(struct super_block *sb)
+@@ -819,6 +820,7 @@ void kill_block_super(struct super_block *sb)
  	struct block_device *bdev = sb->s_bdev;
  	fmode_t mode = sb->s_mode;
  
-+	/*
-+	 * unregister a client function which releases a page whose mapping is
-+	 * block device
-+	 *
-+	 * This is sure to be unmounting here, and it releases all own data
-+	 * itself. Therefore the filesystem's function which is owned by the
-+	 * block device, which releases its data is not needed any more.
-+	 */
-+	if (sb->s_type->release_metadata != NULL)
-+		blkdev_unregister_client_releasepage(bdev);
++	bdev->bd_super = 0;
  	generic_shutdown_super(sb);
  	sync_blockdev(bdev);
  	close_bdev_exclusive(bdev, mode);
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index 0dcdd94..398c8ed 100644
+index 4a853ef..911f812 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -1538,6 +1538,7 @@ struct file_system_type {
- 	int (*get_sb) (struct file_system_type *, int,
- 		       const char *, void *, struct vfsmount *);
- 	void (*kill_sb) (struct super_block *);
-+	int (*release_metadata)(void*, struct page*, gfp_t);
- 	struct module *owner;
- 	struct file_system_type * next;
- 	struct list_head fs_supers;
-@@ -1699,8 +1700,16 @@ extern void bd_set_size(struct block_device *, loff_t size);
- extern void bd_forget(struct inode *inode);
- extern void bdput(struct block_device *);
- extern struct block_device *open_by_devnum(dev_t, fmode_t);
-+extern int blkdev_register_client_releasepage(struct block_device *,
-+	void *, int (*releasepage)(void *, struct page*, gfp_t));
-+extern void blkdev_unregister_client_releasepage(struct block_device *);
- #else
- static inline void bd_forget(struct inode *inode) {}
-+static inline int blkdev_register_client_releasepage(struct block_device *,
-+	void *, int (*releasepage)(void *, struct page*, gfp_t))
-+{ return 1; }
-+static inline void blkdev_unregister_client_releasepage(struct block_device *)
-+{}
+@@ -553,6 +553,7 @@ struct address_space {
+ struct block_device {
+ 	dev_t			bd_dev;  /* not a kdev_t - it's a search key */
+ 	struct inode *		bd_inode;	/* will die */
++	struct super_block *	bd_super;
+ 	int			bd_openers;
+ 	struct mutex		bd_mutex;	/* open/close mutex */
+ 	struct semaphore	bd_mount_sem;
+@@ -1375,6 +1376,7 @@ struct super_operations {
+ 	ssize_t (*quota_read)(struct super_block *, int, char *, size_t, loff_t);
+ 	ssize_t (*quota_write)(struct super_block *, int, const char *, size_t, loff_t);
  #endif
- extern const struct file_operations def_blk_fops;
- extern const struct file_operations def_chr_fops;
++	int (*bdev_try_to_free_page)(struct super_block*, struct page*, gfp_t);
+ };
+ 
+ /*
