@@ -21,7 +21,7 @@ index 8066e6e..3024f74 100644
  			have changed, this option allows the user to specify
  			the new journal location.  The journal device is
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index e1e0a4b..0fe4b8e 100644
+index 094b8bb..d64d1c9 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -51,8 +51,6 @@ struct proc_dir_entry *ext4_proc_root;
@@ -33,7 +33,7 @@ index e1e0a4b..0fe4b8e 100644
  static void ext4_commit_super(struct super_block *sb,
  			      struct ext4_super_block *es, int sync);
  static void ext4_mark_recovery_complete(struct super_block *sb,
-@@ -1005,7 +1003,7 @@ enum {
+@@ -1006,7 +1004,7 @@ enum {
  	Opt_user_xattr, Opt_nouser_xattr, Opt_acl, Opt_noacl,
  	Opt_reservation, Opt_noreservation, Opt_noload, Opt_nobh, Opt_bh,
  	Opt_commit, Opt_min_batch_time, Opt_max_batch_time,
@@ -42,7 +42,7 @@ index e1e0a4b..0fe4b8e 100644
  	Opt_journal_checksum, Opt_journal_async_commit,
  	Opt_abort, Opt_data_journal, Opt_data_ordered, Opt_data_writeback,
  	Opt_data_err_abort, Opt_data_err_ignore,
-@@ -1047,7 +1045,6 @@ static const match_table_t tokens = {
+@@ -1048,7 +1046,6 @@ static const match_table_t tokens = {
  	{Opt_min_batch_time, "min_batch_time=%u"},
  	{Opt_max_batch_time, "max_batch_time=%u"},
  	{Opt_journal_update, "journal=update"},
@@ -50,7 +50,7 @@ index e1e0a4b..0fe4b8e 100644
  	{Opt_journal_dev, "journal_dev=%u"},
  	{Opt_journal_checksum, "journal_checksum"},
  	{Opt_journal_async_commit, "journal_async_commit"},
-@@ -1101,7 +1098,7 @@ static ext4_fsblk_t get_sb_block(void **data)
+@@ -1102,7 +1099,7 @@ static ext4_fsblk_t get_sb_block(void **data)
  }
  
  static int parse_options(char *options, struct super_block *sb,
@@ -59,7 +59,7 @@ index e1e0a4b..0fe4b8e 100644
  			 ext4_fsblk_t *n_blocks_count, int is_remount)
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
-@@ -1225,16 +1222,6 @@ static int parse_options(char *options, struct super_block *sb,
+@@ -1226,16 +1223,6 @@ static int parse_options(char *options, struct super_block *sb,
  			}
  			set_opt(sbi->s_mount_opt, UPDATE_JOURNAL);
  			break;
@@ -76,7 +76,7 @@ index e1e0a4b..0fe4b8e 100644
  		case Opt_journal_dev:
  			if (is_remount) {
  				printk(KERN_ERR "EXT4-fs: cannot specify "
-@@ -2040,7 +2027,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2035,7 +2022,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	ext4_fsblk_t sb_block = get_sb_block(&data);
  	ext4_fsblk_t logical_sb_block;
  	unsigned long offset = 0;
@@ -84,7 +84,7 @@ index e1e0a4b..0fe4b8e 100644
  	unsigned long journal_devnum = 0;
  	unsigned long def_mount_opts;
  	struct inode *root;
-@@ -2159,8 +2145,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2155,8 +2141,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	set_opt(sbi->s_mount_opt, DELALLOC);
  
  
@@ -94,17 +94,17 @@ index e1e0a4b..0fe4b8e 100644
  		goto failed_mount;
  
  	sb->s_flags = (sb->s_flags & ~MS_POSIXACL) |
-@@ -2467,9 +2452,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
- 				goto failed_mount4;
+@@ -2459,9 +2444,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 				ext4_commit_super(sb, es, 1);
  			}
  		}
 -	} else if (journal_inum) {
 -		if (ext4_create_journal(sb, es, journal_inum))
 -			goto failed_mount3;
- 	} else {
- 		printk("ext4: Mounting filesystem %s without journal\n",
- 		       sb->s_id);
-@@ -2926,48 +2908,6 @@ static int ext4_load_journal(struct super_block *sb,
+ 	} if (test_opt(sb, NOLOAD) && !(sb->s_flags & MS_RDONLY) &&
+ 	      EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER)) {
+ 		printk(KERN_ERR "EXT4-fs: required journal recovery "
+@@ -2925,48 +2907,6 @@ static int ext4_load_journal(struct super_block *sb,
  	return 0;
  }
  
@@ -153,7 +153,7 @@ index e1e0a4b..0fe4b8e 100644
  static void ext4_commit_super(struct super_block *sb,
  			      struct ext4_super_block *es, int sync)
  {
-@@ -3206,7 +3146,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -3205,7 +3145,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  	/*
  	 * Allow the "check" option to be passed as a remount option.
  	 */

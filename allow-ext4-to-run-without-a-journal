@@ -912,7 +912,7 @@ index f2a9cf4..e7cd488 100644
  	/*
  	 * We are freeing a blocks. During this we touch
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 39c0065..36bfb7f 100644
+index 39c0065..d92944e 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -1233,10 +1233,10 @@ static struct ext4_dir_entry_2 *do_split(handle_t *handle, struct inode *dir,
@@ -1006,7 +1006,17 @@ index 39c0065..36bfb7f 100644
  	brelse(dir_block);
  	ext4_mark_inode_dirty(handle, inode);
  	err = ext4_add_entry(handle, dentry, inode);
-@@ -1968,7 +1968,7 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
+@@ -1940,6 +1940,9 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
+ 	struct ext4_iloc iloc;
+ 	int err = 0, rc;
+ 
++	if (!ext4_handle_valid(handle))
++		return 0;
++
+ 	lock_super(sb);
+ 	if (!list_empty(&EXT4_I(inode)->i_orphan))
+ 		goto out_unlock;
+@@ -1968,7 +1971,7 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
  	/* Insert this inode at the head of the on-disk orphan list... */
  	NEXT_ORPHAN(inode) = le32_to_cpu(EXT4_SB(sb)->s_es->s_last_orphan);
  	EXT4_SB(sb)->s_es->s_last_orphan = cpu_to_le32(inode->i_ino);
@@ -1015,7 +1025,17 @@ index 39c0065..36bfb7f 100644
  	rc = ext4_mark_iloc_dirty(handle, inode, &iloc);
  	if (!err)
  		err = rc;
-@@ -2024,7 +2024,7 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
+@@ -2006,6 +2009,9 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
+ 	struct ext4_iloc iloc;
+ 	int err = 0;
+ 
++	if (!ext4_handle_valid(handle))
++		return 0;
++
+ 	lock_super(inode->i_sb);
+ 	if (list_empty(&ei->i_orphan)) {
+ 		unlock_super(inode->i_sb);
+@@ -2024,7 +2030,7 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
  	 * transaction handle with which to update the orphan list on
  	 * disk, but we still need to remove the inode from the linked
  	 * list in memory. */
@@ -1024,7 +1044,7 @@ index 39c0065..36bfb7f 100644
  		goto out;
  
  	err = ext4_reserve_inode_write(handle, inode, &iloc);
-@@ -2038,7 +2038,7 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
+@@ -2038,7 +2044,7 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
  		if (err)
  			goto out_brelse;
  		sbi->s_es->s_last_orphan = cpu_to_le32(ino_next);
@@ -1033,7 +1053,7 @@ index 39c0065..36bfb7f 100644
  	} else {
  		struct ext4_iloc iloc2;
  		struct inode *i_prev =
-@@ -2089,7 +2089,7 @@ static int ext4_rmdir(struct inode *dir, struct dentry *dentry)
+@@ -2089,7 +2095,7 @@ static int ext4_rmdir(struct inode *dir, struct dentry *dentry)
  		goto end_rmdir;
  
  	if (IS_DIRSYNC(dir))
@@ -1042,7 +1062,7 @@ index 39c0065..36bfb7f 100644
  
  	inode = dentry->d_inode;
  
-@@ -2143,7 +2143,7 @@ static int ext4_unlink(struct inode *dir, struct dentry *dentry)
+@@ -2143,7 +2149,7 @@ static int ext4_unlink(struct inode *dir, struct dentry *dentry)
  		return PTR_ERR(handle);
  
  	if (IS_DIRSYNC(dir))
@@ -1051,7 +1071,7 @@ index 39c0065..36bfb7f 100644
  
  	retval = -ENOENT;
  	bh = ext4_find_entry(dir, &dentry->d_name, &de);
-@@ -2200,7 +2200,7 @@ retry:
+@@ -2200,7 +2206,7 @@ retry:
  		return PTR_ERR(handle);
  
  	if (IS_DIRSYNC(dir))
@@ -1060,7 +1080,7 @@ index 39c0065..36bfb7f 100644
  
  	inode = ext4_new_inode(handle, dir, S_IFLNK|S_IRWXUGO);
  	err = PTR_ERR(inode);
-@@ -2263,7 +2263,7 @@ retry:
+@@ -2263,7 +2269,7 @@ retry:
  		return PTR_ERR(handle);
  
  	if (IS_DIRSYNC(dir))
@@ -1069,7 +1089,7 @@ index 39c0065..36bfb7f 100644
  
  	inode->i_ctime = ext4_current_time(inode);
  	ext4_inc_count(handle, inode);
-@@ -2305,7 +2305,7 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
+@@ -2305,7 +2311,7 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
  		return PTR_ERR(handle);
  
  	if (IS_DIRSYNC(old_dir) || IS_DIRSYNC(new_dir))
@@ -1078,7 +1098,7 @@ index 39c0065..36bfb7f 100644
  
  	old_bh = ext4_find_entry(old_dir, &old_dentry->d_name, &old_de);
  	/*
-@@ -2359,8 +2359,8 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
+@@ -2359,8 +2365,8 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
  		new_dir->i_ctime = new_dir->i_mtime =
  					ext4_current_time(new_dir);
  		ext4_mark_inode_dirty(handle, new_dir);
@@ -1089,7 +1109,7 @@ index 39c0065..36bfb7f 100644
  		brelse(new_bh);
  		new_bh = NULL;
  	}
-@@ -2410,8 +2410,8 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
+@@ -2410,8 +2416,8 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
  		BUFFER_TRACE(dir_bh, "get_write_access");
  		ext4_journal_get_write_access(handle, dir_bh);
  		PARENT_INO(dir_bh->b_data) = cpu_to_le32(new_dir->i_ino);
@@ -1238,7 +1258,7 @@ index d448eb1..1665aa1 100644
  	unlock_super(sb);
  	ext4_debug("freeing blocks %llu through %llu\n", o_blocks_count,
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index ba23b48..f0d83e2 100644
+index ba23b48..bc5a5e2 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -136,13 +136,20 @@ handle_t *ext4_journal_start_sb(struct super_block *sb, int nblocks)
@@ -1333,7 +1353,22 @@ index ba23b48..f0d83e2 100644
  				       &EXT4_I(inode)->jinode);
  }
  
-@@ -1419,7 +1444,8 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+@@ -1406,20 +1431,15 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+ 		printk(KERN_WARNING
+ 		       "EXT4-fs warning: checktime reached, "
+ 		       "running e2fsck is recommended\n");
+-#if 0
+-		/* @@@ We _will_ want to clear the valid bit if we find
+-		 * inconsistencies, to force a fsck at reboot.  But for
+-		 * a plain journaled filesystem we can keep it set as
+-		 * valid forever! :)
+-		 */
+-	es->s_state &= cpu_to_le16(~EXT4_VALID_FS);
+-#endif
++	if (!sbi->s_journal) 
++		es->s_state &= cpu_to_le16(~EXT4_VALID_FS);
+ 	if (!(__s16) le16_to_cpu(es->s_max_mnt_count))
+ 		es->s_max_mnt_count = cpu_to_le16(EXT4_DFL_MAX_MNT_COUNT);
  	le16_add_cpu(&es->s_mnt_count, 1);
  	es->s_mtime = cpu_to_le32(get_seconds());
  	ext4_update_dynamic_rev(sb);
@@ -1343,7 +1378,7 @@ index ba23b48..f0d83e2 100644
  
  	ext4_commit_super(sb, es, 1);
  	if (test_opt(sb, DEBUG))
-@@ -1431,9 +1457,13 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+@@ -1431,9 +1451,13 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
  			EXT4_INODES_PER_GROUP(sb),
  			sbi->s_mount_opt);
  
@@ -1360,7 +1395,7 @@ index ba23b48..f0d83e2 100644
  	return res;
  }
  
-@@ -1867,6 +1897,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -1867,6 +1891,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	unsigned long def_mount_opts;
  	struct inode *root;
  	char *cp;
@@ -1368,9 +1403,24 @@ index ba23b48..f0d83e2 100644
  	int ret = -EINVAL;
  	int blocksize;
  	int db_count;
-@@ -2288,11 +2319,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2278,21 +2303,22 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 				EXT4_SB(sb)->s_mount_state |= EXT4_ERROR_FS;
+ 				es->s_state |= cpu_to_le16(EXT4_ERROR_FS);
+ 				ext4_commit_super(sb, es, 1);
+-				printk(KERN_CRIT
+-				       "EXT4-fs (device %s): mount failed\n",
+-				      sb->s_id);
+-				goto failed_mount4;
+ 			}
+ 		}
+ 	} else if (journal_inum) {
  		if (ext4_create_journal(sb, es, journal_inum))
  			goto failed_mount3;
++	} if (test_opt(sb, NOLOAD) && !(sb->s_flags & MS_RDONLY) &&
++	      EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER)) {
++		printk(KERN_ERR "EXT4-fs: required journal recovery "
++		       "suppressed and not mounted read-only\n");
++		goto failed_mount4;
  	} else {
 -		if (!silent)
 -			printk(KERN_ERR
@@ -1380,13 +1430,12 @@ index ba23b48..f0d83e2 100644
 +		clear_opt(sbi->s_mount_opt, DATA_FLAGS);
 +		set_opt(sbi->s_mount_opt, WRITEBACK_DATA);
 +		sbi->s_journal = NULL;
-+		es->s_state &= cpu_to_le16(~EXT4_VALID_FS);
 +		needs_recovery = 0;
 +		goto no_journal;
  	}
  
  	if (ext4_blocks_count(es) > 0xffffffffULL &&
-@@ -2344,6 +2376,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2344,6 +2370,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		break;
  	}
  
@@ -1395,14 +1444,20 @@ index ba23b48..f0d83e2 100644
  	if (test_opt(sb, NOBH)) {
  		if (!(test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_WRITEBACK_DATA)) {
  			printk(KERN_WARNING "EXT4-fs: Ignoring nobh option - "
-@@ -2431,10 +2465,18 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
- 	if (needs_recovery)
+@@ -2428,13 +2456,22 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	EXT4_SB(sb)->s_mount_state |= EXT4_ORPHAN_FS;
+ 	ext4_orphan_cleanup(sb, es);
+ 	EXT4_SB(sb)->s_mount_state &= ~EXT4_ORPHAN_FS;
+-	if (needs_recovery)
++	if (needs_recovery) {
  		printk(KERN_INFO "EXT4-fs: recovery complete.\n");
- 	ext4_mark_recovery_complete(sb, es);
+-	ext4_mark_recovery_complete(sb, es);
 -	printk(KERN_INFO "EXT4-fs: mounted filesystem with %s data mode.\n",
 -	       test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA ? "journal":
 -	       test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA ? "ordered":
 -	       "writeback");
++		ext4_mark_recovery_complete(sb, es);
++	}
 +	if (EXT4_SB(sb)->s_journal) {
 +		if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)
 +			descr = " journalled data mode";
@@ -1418,12 +1473,13 @@ index ba23b48..f0d83e2 100644
  
  	lock_kernel();
  	return 0;
-@@ -2446,8 +2488,10 @@ cantfind_ext4:
+@@ -2446,8 +2483,11 @@ cantfind_ext4:
  	goto failed_mount;
  
  failed_mount4:
 -	jbd2_journal_destroy(sbi->s_journal);
 -	sbi->s_journal = NULL;
++	printk(KERN_ERR "EXT4-fs (device %s): mount failed\n", sb->s_id);
 +	if (sbi->s_journal) {
 +		jbd2_journal_destroy(sbi->s_journal);
 +		sbi->s_journal = NULL;
@@ -1431,7 +1487,7 @@ index ba23b48..f0d83e2 100644
  failed_mount3:
  	percpu_counter_destroy(&sbi->s_freeblocks_counter);
  	percpu_counter_destroy(&sbi->s_freeinodes_counter);
-@@ -2508,6 +2552,8 @@ static journal_t *ext4_get_journal(struct super_block *sb,
+@@ -2508,6 +2548,8 @@ static journal_t *ext4_get_journal(struct super_block *sb,
  	struct inode *journal_inode;
  	journal_t *journal;
  
@@ -1440,7 +1496,7 @@ index ba23b48..f0d83e2 100644
  	/* First, test for the existence of a valid inode on disk.  Bad
  	 * things happen if we iget() an unused inode, as the subsequent
  	 * iput() will try to delete it. */
-@@ -2556,6 +2602,8 @@ static journal_t *ext4_get_dev_journal(struct super_block *sb,
+@@ -2556,6 +2598,8 @@ static journal_t *ext4_get_dev_journal(struct super_block *sb,
  	struct ext4_super_block *es;
  	struct block_device *bdev;
  
@@ -1449,7 +1505,7 @@ index ba23b48..f0d83e2 100644
  	bdev = ext4_blkdev_get(j_dev);
  	if (bdev == NULL)
  		return NULL;
-@@ -2643,6 +2691,8 @@ static int ext4_load_journal(struct super_block *sb,
+@@ -2643,6 +2687,8 @@ static int ext4_load_journal(struct super_block *sb,
  	int err = 0;
  	int really_read_only;
  
@@ -1458,7 +1514,7 @@ index ba23b48..f0d83e2 100644
  	if (journal_devnum &&
  	    journal_devnum != le32_to_cpu(es->s_journal_dev)) {
  		printk(KERN_INFO "EXT4-fs: external journal device major/minor "
-@@ -2817,6 +2867,10 @@ static void ext4_mark_recovery_complete(struct super_block *sb,
+@@ -2817,6 +2863,10 @@ static void ext4_mark_recovery_complete(struct super_block *sb,
  {
  	journal_t *journal = EXT4_SB(sb)->s_journal;
  
@@ -1469,7 +1525,7 @@ index ba23b48..f0d83e2 100644
  	jbd2_journal_lock_updates(journal);
  	if (jbd2_journal_flush(journal) < 0)
  		goto out;
-@@ -2846,6 +2900,8 @@ static void ext4_clear_journal_err(struct super_block *sb,
+@@ -2846,6 +2896,8 @@ static void ext4_clear_journal_err(struct super_block *sb,
  	int j_errno;
  	const char *errstr;
  
@@ -1478,7 +1534,7 @@ index ba23b48..f0d83e2 100644
  	journal = EXT4_SB(sb)->s_journal;
  
  	/*
-@@ -2878,14 +2934,17 @@ static void ext4_clear_journal_err(struct super_block *sb,
+@@ -2878,14 +2930,17 @@ static void ext4_clear_journal_err(struct super_block *sb,
  int ext4_force_commit(struct super_block *sb)
  {
  	journal_t *journal;
@@ -1499,7 +1555,7 @@ index ba23b48..f0d83e2 100644
  	return ret;
  }
  
-@@ -2897,9 +2956,13 @@ int ext4_force_commit(struct super_block *sb)
+@@ -2897,9 +2952,13 @@ int ext4_force_commit(struct super_block *sb)
   */
  static void ext4_write_super(struct super_block *sb)
  {
@@ -1516,7 +1572,7 @@ index ba23b48..f0d83e2 100644
  }
  
  static int ext4_sync_fs(struct super_block *sb, int wait)
-@@ -2911,7 +2974,8 @@ static int ext4_sync_fs(struct super_block *sb, int wait)
+@@ -2911,7 +2970,8 @@ static int ext4_sync_fs(struct super_block *sb, int wait)
  	if (wait)
  		ret = ext4_force_commit(sb);
  	else
@@ -1526,7 +1582,7 @@ index ba23b48..f0d83e2 100644
  	return ret;
  }
  
-@@ -2926,15 +2990,17 @@ static void ext4_write_super_lockfs(struct super_block *sb)
+@@ -2926,15 +2986,17 @@ static void ext4_write_super_lockfs(struct super_block *sb)
  	if (!(sb->s_flags & MS_RDONLY)) {
  		journal_t *journal = EXT4_SB(sb)->s_journal;
  
@@ -1552,7 +1608,7 @@ index ba23b48..f0d83e2 100644
  
  		/* Journal blocked and flushed, clear needs_recovery flag. */
  		EXT4_CLEAR_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER);
-@@ -2948,7 +3014,7 @@ static void ext4_write_super_lockfs(struct super_block *sb)
+@@ -2948,7 +3010,7 @@ static void ext4_write_super_lockfs(struct super_block *sb)
   */
  static void ext4_unlockfs(struct super_block *sb)
  {
@@ -1561,7 +1617,7 @@ index ba23b48..f0d83e2 100644
  		lock_super(sb);
  		/* Reser the needs_recovery flag before the fs is unlocked. */
  		EXT4_SET_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER);
-@@ -2999,7 +3065,8 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -2999,7 +3061,8 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  
  	es = sbi->s_es;
  
@@ -1571,7 +1627,22 @@ index ba23b48..f0d83e2 100644
  
  	if ((*flags & MS_RDONLY) != (sb->s_flags & MS_RDONLY) ||
  		n_blocks_count > ext4_blocks_count(es)) {
-@@ -3084,7 +3151,8 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -3028,9 +3091,11 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 			 * We have to unlock super so that we can wait for
+ 			 * transactions.
+ 			 */
+-			unlock_super(sb);
+-			ext4_mark_recovery_complete(sb, es);
+-			lock_super(sb);
++			if (sbi->s_journal) {
++				unlock_super(sb);
++				ext4_mark_recovery_complete(sb, es);
++				lock_super(sb);
++			}
+ 		} else {
+ 			__le32 ret;
+ 			if ((ret = EXT4_HAS_RO_COMPAT_FEATURE(sb,
+@@ -3084,7 +3149,8 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  			 * been changed by e2fsck since we originally mounted
  			 * the partition.)
  			 */
@@ -1581,7 +1652,7 @@ index ba23b48..f0d83e2 100644
  			sbi->s_mount_state = le16_to_cpu(es->s_state);
  			if ((err = ext4_group_extend(sb, es, n_blocks_count)))
  				goto restore_opts;
-@@ -3092,6 +3160,9 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -3092,6 +3158,9 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  				sb->s_flags &= ~MS_RDONLY;
  		}
  	}
@@ -1591,7 +1662,7 @@ index ba23b48..f0d83e2 100644
  #ifdef CONFIG_QUOTA
  	/* Release old quota file names */
  	for (i = 0; i < MAXQUOTAS; i++)
-@@ -3368,7 +3439,8 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
+@@ -3368,7 +3437,8 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
  	 * When we journal data on quota file, we have to flush journal to see
  	 * all updates to the file when we bypass pagecache...
  	 */
@@ -1601,7 +1672,7 @@ index ba23b48..f0d83e2 100644
  		/*
  		 * We don't need to lock updates but journal_flush() could
  		 * otherwise be livelocked...
-@@ -3442,7 +3514,7 @@ static ssize_t ext4_quota_write(struct super_block *sb, int type,
+@@ -3442,7 +3512,7 @@ static ssize_t ext4_quota_write(struct super_block *sb, int type,
  	struct buffer_head *bh;
  	handle_t *handle = journal_current_handle();
  
@@ -1610,7 +1681,7 @@ index ba23b48..f0d83e2 100644
  		printk(KERN_WARNING "EXT4-fs: Quota write (off=%llu, len=%llu)"
  			" cancelled because transaction is not started.\n",
  			(unsigned long long)off, (unsigned long long)len);
-@@ -3467,7 +3539,7 @@ static ssize_t ext4_quota_write(struct super_block *sb, int type,
+@@ -3467,7 +3537,7 @@ static ssize_t ext4_quota_write(struct super_block *sb, int type,
  		flush_dcache_page(bh->b_page);
  		unlock_buffer(bh);
  		if (journal_quota)
