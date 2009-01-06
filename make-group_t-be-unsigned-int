@@ -13,8 +13,8 @@ index 752eddc..a7e9b2c 100644
  		 * essentially implementing a per-group read-only flag. */
  		if (!ext4_group_desc_csum_verify(sbi, block_group, gdp)) {
  			ext4_error(sb, __func__,
--				  "Checksum bad for group %lu\n", block_group);
-+				  "Checksum bad for group %u\n", block_group);
+-				  "Checksum bad for group %lu", block_group);
++				  "Checksum bad for group %u", block_group);
  			gdp->bg_free_blocks_count = 0;
  			gdp->bg_free_inodes_count = 0;
  			gdp->bg_itable_unused = 0;
@@ -88,8 +88,8 @@ index c8ea50e..cfffdd2 100644
  	/* If checksum is bad mark all blocks and inodes use to prevent
  	 * allocation, essentially implementing a per-group read-only flag. */
  	if (!ext4_group_desc_csum_verify(sbi, block_group, gdp)) {
--		ext4_error(sb, __func__, "Checksum bad for group %lu\n",
-+		ext4_error(sb, __func__, "Checksum bad for group %u\n",
+-		ext4_error(sb, __func__, "Checksum bad for group %lu",
++		ext4_error(sb, __func__, "Checksum bad for group %u",
  			   block_group);
  		gdp->bg_free_blocks_count = 0;
  		gdp->bg_free_inodes_count = 0;
@@ -128,8 +128,8 @@ index 444ad99..233d59d 100644
  			    le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
  
  			ext4_error(sb, __func__, "double-free of inode"
--				   " %lu's block %llu(bit %u in group %lu)\n",
-+				   " %lu's block %llu(bit %u in group %u)\n",
+-				   " %lu's block %llu(bit %u in group %lu)",
++				   " %lu's block %llu(bit %u in group %u)",
  				   inode ? inode->i_ino : 0, blocknr,
  				   first + i, e4b->bd_group);
  		}
@@ -146,8 +146,8 @@ index 444ad99..233d59d 100644
  
  	if (free != grp->bb_free) {
  		ext4_error(sb, __func__,
--			"EXT4-fs: group %lu: %u blocks in bitmap, %u in gd\n",
-+			"EXT4-fs: group %u: %u blocks in bitmap, %u in gd\n",
+-			"EXT4-fs: group %lu: %u blocks in bitmap, %u in gd",
++			"EXT4-fs: group %u: %u blocks in bitmap, %u in gd",
  			group, free, grp->bb_free);
  		/*
  		 * If we intent to continue, we consider group descritor
@@ -173,8 +173,8 @@ index 444ad99..233d59d 100644
  			    le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
  			ext4_unlock_group(sb, e4b->bd_group);
  			ext4_error(sb, __func__, "double-free of inode"
--				   " %lu's block %llu(bit %u in group %lu)\n",
-+				   " %lu's block %llu(bit %u in group %u)\n",
+-				   " %lu's block %llu(bit %u in group %lu)",
++				   " %lu's block %llu(bit %u in group %u)",
  				   inode ? inode->i_ino : 0, blocknr, block,
  				   e4b->bd_group);
  			ext4_lock_group(sb, e4b->bd_group);
@@ -321,16 +321,16 @@ index 444ad99..233d59d 100644
  	bitmap_bh = ext4_read_block_bitmap(sb, group);
  	if (bitmap_bh == NULL) {
  		ext4_error(sb, __func__, "Error in reading block "
--				"bitmap for %lu\n", group);
-+				"bitmap for %u\n", group);
+-				"bitmap for %lu", group);
++				"bitmap for %u", group);
  		return 0;
  	}
  
  	err = ext4_mb_load_buddy(sb, group, &e4b);
  	if (err) {
  		ext4_error(sb, __func__, "Error in loading buddy "
--				"information for %lu\n", group);
-+				"information for %u\n", group);
+-				"information for %lu", group);
++				"information for %u", group);
  		put_bh(bitmap_bh);
  		return 0;
  	}
@@ -338,16 +338,16 @@ index 444ad99..233d59d 100644
  		err = ext4_mb_load_buddy(sb, group, &e4b);
  		if (err) {
  			ext4_error(sb, __func__, "Error in loading buddy "
--					"information for %lu\n", group);
-+					"information for %u\n", group);
+-					"information for %lu", group);
++					"information for %u", group);
  			continue;
  		}
  
  		bitmap_bh = ext4_read_block_bitmap(sb, group);
  		if (bitmap_bh == NULL) {
  			ext4_error(sb, __func__, "Error in reading block "
--					"bitmap for %lu\n", group);
-+					"bitmap for %u\n", group);
+-					"bitmap for %lu", group);
++					"bitmap for %u", group);
  			ext4_mb_release_desc(&e4b);
  			continue;
  		}
@@ -355,8 +355,8 @@ index 444ad99..233d59d 100644
  		ext4_get_group_no_and_offset(sb, pa->pa_pstart, &group, NULL);
  		if (ext4_mb_load_buddy(sb, group, &e4b)) {
  			ext4_error(sb, __func__, "Error in loading buddy "
--					"information for %lu\n", group);
-+					"information for %u\n", group);
+-					"information for %lu", group);
++					"information for %u", group);
  			continue;
  		}
  		ext4_lock_group(sb, group);

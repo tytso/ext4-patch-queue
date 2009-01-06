@@ -98,7 +98,7 @@ index abb66a8..b1c216c 100644
 -			ext4_error(sb, __func__, "double-free of inode"
 +			ext4_grp_locked_error(sb, e4b->bd_group,
 +				   __func__, "double-free of inode"
- 				   " %lu's block %llu(bit %u in group %u)\n",
+ 				   " %lu's block %llu(bit %u in group %u)",
  				   inode ? inode->i_ino : 0, blocknr,
  				   first + i, e4b->bd_group);
 @@ -702,7 +702,7 @@ static void ext4_mb_generate_buddy(struct super_block *sb,
@@ -107,7 +107,7 @@ index abb66a8..b1c216c 100644
  	if (free != grp->bb_free) {
 -		ext4_error(sb, __func__,
 +		ext4_grp_locked_error(sb, group,  __func__,
- 			"EXT4-fs: group %u: %u blocks in bitmap, %u in gd\n",
+ 			"EXT4-fs: group %u: %u blocks in bitmap, %u in gd",
  			group, free, grp->bb_free);
  		/*
 @@ -1099,8 +1099,6 @@ static void mb_set_bits(spinlock_t *lock, void *bm, int cur, int len)
@@ -127,7 +127,7 @@ index abb66a8..b1c216c 100644
 -			ext4_error(sb, __func__, "double-free of inode"
 +			ext4_grp_locked_error(sb, e4b->bd_group,
 +				   __func__, "double-free of inode"
- 				   " %lu's block %llu(bit %u in group %u)\n",
+ 				   " %lu's block %llu(bit %u in group %u)",
  				   inode ? inode->i_ino : 0, blocknr, block,
  				   e4b->bd_group);
 -			ext4_lock_group(sb, e4b->bd_group);
@@ -141,7 +141,7 @@ index abb66a8..b1c216c 100644
 -			ext4_error(sb, __func__, "%d free blocks as per "
 +			ext4_grp_locked_error(sb, e4b->bd_group,
 +					__func__, "%d free blocks as per "
- 					"group info. But bitmap says 0\n",
+ 					"group info. But bitmap says 0",
  					free);
  			break;
 @@ -1638,7 +1636,8 @@ static void ext4_mb_complex_scan_group(struct ext4_allocation_context *ac,
@@ -151,17 +151,17 @@ index abb66a8..b1c216c 100644
 -			ext4_error(sb, __func__, "%d free blocks as per "
 +			ext4_grp_locked_error(sb, e4b->bd_group,
 +					__func__, "%d free blocks as per "
- 					"group info. But got %d blocks\n",
+ 					"group info. But got %d blocks",
  					free, ex.fe_len);
  			/*
 @@ -3828,8 +3827,9 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
  			pa, (unsigned long) pa->pa_lstart,
  			(unsigned long) pa->pa_pstart,
  			(unsigned long) pa->pa_len);
--		ext4_error(sb, __func__, "free %u, pa_free %u\n",
+-		ext4_error(sb, __func__, "free %u, pa_free %u",
 -						free, pa->pa_free);
 +		ext4_grp_locked_error(sb, group,
-+					__func__, "free %u, pa_free %u\n",
++					__func__, "free %u, pa_free %u",
 +					free, pa->pa_free);
  		/*
  		 * pa is already deleted so we use the value obtained
@@ -171,10 +171,10 @@ index abb66a8..b1c216c 100644
  			n = &(*n)->rb_right;
  		else {
 -			ext4_error(sb, __func__,
--			    "Double free of blocks %d (%d %d)\n",
+-			    "Double free of blocks %d (%d %d)",
 -			    block, entry->start_blk, entry->count);
 +			ext4_grp_locked_error(sb, e4b->bd_group, __func__,
-+					"Double free of blocks %d (%d %d)\n",
++					"Double free of blocks %d (%d %d)",
 +					block, entry->start_blk, entry->count);
  			return 0;
  		}
