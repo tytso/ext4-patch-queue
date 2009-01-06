@@ -21,10 +21,10 @@ index 3024f74..eb7b4ae 100644
  =========
  There are 3 different data modes:
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 70c27ad..cbb7bab 100644
+index 82659aa..f69c9e6 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1013,7 +1013,7 @@ enum {
+@@ -1014,7 +1014,7 @@ enum {
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
  	Opt_grpquota, Opt_extents, Opt_noextents, Opt_i_version,
  	Opt_stripe, Opt_delalloc, Opt_nodelalloc,
@@ -33,7 +33,7 @@ index 70c27ad..cbb7bab 100644
  };
  
  static const match_table_t tokens = {
-@@ -1074,6 +1074,7 @@ static const match_table_t tokens = {
+@@ -1075,6 +1075,7 @@ static const match_table_t tokens = {
  	{Opt_delalloc, "delalloc"},
  	{Opt_nodelalloc, "nodelalloc"},
  	{Opt_inode_readahead_blks, "inode_readahead_blks=%u"},
@@ -41,7 +41,7 @@ index 70c27ad..cbb7bab 100644
  	{Opt_err, NULL},
  };
  
-@@ -1098,8 +1099,11 @@ static ext4_fsblk_t get_sb_block(void **data)
+@@ -1099,8 +1100,11 @@ static ext4_fsblk_t get_sb_block(void **data)
  	return sb_block;
  }
  
@@ -53,7 +53,7 @@ index 70c27ad..cbb7bab 100644
  			 ext4_fsblk_t *n_blocks_count, int is_remount)
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
-@@ -1492,6 +1496,14 @@ set_qf_format:
+@@ -1493,6 +1497,14 @@ set_qf_format:
  				return 0;
  			sbi->s_inode_readahead_blks = option;
  			break;
@@ -68,7 +68,7 @@ index 70c27ad..cbb7bab 100644
  		default:
  			printk(KERN_ERR
  			       "EXT4-fs: Unrecognized mount option \"%s\" "
-@@ -2041,6 +2053,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2036,6 +2048,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	int features;
  	__u64 blocks_count;
  	int err;
@@ -76,7 +76,7 @@ index 70c27ad..cbb7bab 100644
  
  	sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
  	if (!sbi)
-@@ -2147,7 +2160,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2142,7 +2155,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	set_opt(sbi->s_mount_opt, DELALLOC);
  
  
@@ -86,15 +86,15 @@ index 70c27ad..cbb7bab 100644
  		goto failed_mount;
  
  	sb->s_flags = (sb->s_flags & ~MS_POSIXACL) |
-@@ -2454,6 +2468,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
- 				goto failed_mount4;
- 			}
- 		}
-+		set_task_ioprio(sbi->s_journal->j_task, journal_ioprio);
- 	} else {
- 		clear_opt(sbi->s_mount_opt, DATA_FLAGS);
- 		set_opt(sbi->s_mount_opt, WRITEBACK_DATA);
-@@ -3127,6 +3142,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -2506,6 +2520,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	default:
+ 		break;
+ 	}
++	set_task_ioprio(sbi->s_journal->j_task, journal_ioprio);
+ 
+ no_journal:
+ 
+@@ -3124,6 +3139,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  	unsigned long old_sb_flags;
  	struct ext4_mount_options old_opts;
  	ext4_group_t g;
@@ -102,7 +102,7 @@ index 70c27ad..cbb7bab 100644
  	int err;
  #ifdef CONFIG_QUOTA
  	int i;
-@@ -3145,11 +3161,14 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -3142,11 +3158,14 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  	for (i = 0; i < MAXQUOTAS; i++)
  		old_opts.s_qf_names[i] = sbi->s_qf_names[i];
  #endif
@@ -118,7 +118,7 @@ index 70c27ad..cbb7bab 100644
  		err = -EINVAL;
  		goto restore_opts;
  	}
-@@ -3162,8 +3181,10 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -3159,8 +3178,10 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  
  	es = sbi->s_es;
  
