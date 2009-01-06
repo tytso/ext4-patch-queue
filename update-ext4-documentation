@@ -4,7 +4,7 @@ Fix paragraph with recommendations on how to tune ext4 for benchmarks.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
-index 174eaff..5877957 100644
+index 174eaff..f75ab10 100644
 --- a/Documentation/filesystems/ext4.txt
 +++ b/Documentation/filesystems/ext4.txt
 @@ -58,13 +58,22 @@ Note: More extensive information for getting started with ext4 can be
@@ -37,3 +37,52 @@ index 174eaff..5877957 100644
  
  2. Features
  ===========
+@@ -74,7 +83,7 @@ Note: More extensive information for getting started with ext4 can be
+ * ability to use filesystems > 16TB (e2fsprogs support not available yet)
+ * extent format reduces metadata overhead (RAM, IO for access, transactions)
+ * extent format more robust in face of on-disk corruption due to magics,
+-* internal redunancy in tree
++* internal redundancy in tree
+ * improved file allocation (multi-block alloc)
+ * fix 32000 subdirectory limit
+ * nsec timestamps for mtime, atime, ctime, create time
+@@ -116,6 +125,12 @@ grouping of bitmaps and inode tables.  Some test results available here:
+ When mounting an ext4 filesystem, the following option are accepted:
+ (*) == default
+ 
++ro                   	Mount filesystem read only. Note that ext4 will
++                     	replay the journal (and thus write to the
++                     	partition) even when mounted "read only". The
++                     	mount options "ro,noload" can be used to prevent
++		     	writes to the filesystem.
++
+ extents		(*)	ext4 will use extents to address file data.  The
+ 			file system will no longer be mountable by ext3.
+ 
+@@ -144,7 +159,11 @@ journal_dev=devnum	When the external journal device's major/minor numbers
+ 			identified through its new major/minor numbers encoded
+ 			in devnum.
+ 
+-noload			Don't load the journal on mounting.
++noload			Don't load the journal on mounting.  Note that
++                     	if the filesystem was not unmounted cleanly,
++                     	skipping the journal replay will lead to the
++                     	filesystem containing inconsistencies that can
++                     	lead to any number of problems.
+ 
+ data=journal		All data are committed into the journal prior to being
+ 			written into the main file system.
+@@ -219,9 +238,12 @@ minixdf			Make 'df' act like Minix.
+ 
+ debug			Extra debugging information is sent to syslog.
+ 
+-errors=remount-ro(*)	Remount the filesystem read-only on an error.
++errors=remount-ro	Remount the filesystem read-only on an error.
+ errors=continue		Keep going on a filesystem error.
+ errors=panic		Panic and halt the machine if an error occurs.
++                        (These mount options override the errors behavior
++                        specified in the superblock, which can be configured
++                        using tune2fs)
+ 
+ data_err=ignore(*)	Just print an error message if an error occurs
+ 			in a file data buffer in ordered mode.
