@@ -17,10 +17,10 @@ Signed-off-by: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: linux-fsdevel@vger.kernel.org
 diff --git a/fs/ext3/super.c b/fs/ext3/super.c
-index 541d5e4..93655a6 100644
+index 541d5e4..6900ff0 100644
 --- a/fs/ext3/super.c
 +++ b/fs/ext3/super.c
-@@ -682,6 +682,25 @@ static struct dentry *ext3_fh_to_parent(struct super_block *sb, struct fid *fid,
+@@ -682,6 +682,26 @@ static struct dentry *ext3_fh_to_parent(struct super_block *sb, struct fid *fid,
  				    ext3_nfs_get_inode);
  }
  
@@ -39,14 +39,15 @@ index 541d5e4..93655a6 100644
 +	if (!page_has_buffers(page))
 +		return 0;
 +	if (journal)
-+		return journal_try_to_free_buffers(journal, page, wait);
++		return journal_try_to_free_buffers(journal, page, 
++						   wait & ~__GFP_WAIT);
 +	return try_to_free_buffers(page);
 +}
 +
  #ifdef CONFIG_QUOTA
  #define QTYPE2NAME(t) ((t)==USRQUOTA?"user":"group")
  #define QTYPE2MOPT(on, t) ((t)==USRQUOTA?((on)##USRJQUOTA):((on)##GRPJQUOTA))
-@@ -746,6 +765,7 @@ static const struct super_operations ext3_sops = {
+@@ -746,6 +766,7 @@ static const struct super_operations ext3_sops = {
  	.quota_read	= ext3_quota_read,
  	.quota_write	= ext3_quota_write,
  #endif
