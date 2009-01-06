@@ -3,15 +3,16 @@ ext4: Init the complete page while building buddy cache
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
 We need to init the complete page during buddy cache init
-by setting the contents to '1'. This ensures that during
-resize when we increment the s_groups_count we don't hit
-the erros as below.
+by setting the contents to '1'.  Otherwise we can see the
+following errors after doing an online resize of the
+filesystem:
 
 EXT4-fs error (device sdb1): ext4_mb_mark_diskspace_used:
 	Allocating block 1040385 in system zone of 127 group
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@kernel.org
 ---
 V3 changes:
 We don't need to do a memset when updating buddy cache since

@@ -2,15 +2,16 @@ ext4: Use new buffer_head flag to check uninit group bitmaps initialization
 
 From: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 
-For uninit block group, the ondisk bitmap is not initialized. That implies
-we cannot depend on the uptodate flag on the bitmap buffer_head to
-find bitmap validity. Use a new buffer_head flag which would be set after
-we properly initialize the bitmap. This also prevent the initializing
-the uninit group bitmap initialization every time we do a
-ext4_read_block_bitmap.
+For uninit block group, the on-disk bitmap is not initialized. That
+implies we cannot depend on the uptodate flag on the bitmap
+buffer_head to find bitmap validity.  Use a new buffer_head flag which
+would be set after we properly initialize the bitmap.  This also
+prevents (re-)initializing the uninit group bitmap every time we call 
+ext4_read_block_bitmap().
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@kernel.org
 ---
  fs/ext4/balloc.c  |   25 +++++++++++++++++++++++--
  fs/ext4/ext4.h    |   18 ++++++++++++++++++
