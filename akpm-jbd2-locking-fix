@@ -10,10 +10,10 @@ buffer is modified in both the current and committing transaction.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: akpm@linux-foundation.org
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 57f9aa3..66f7856 100644
+index 0aea14c..f039c97 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -544,6 +544,7 @@ do {									       \
+@@ -543,6 +543,7 @@ do {									       \
  #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
  #define EXT4_MOUNT_DELALLOC		0x8000000 /* Delalloc support */
  #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
@@ -22,7 +22,7 @@ index 57f9aa3..66f7856 100644
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 2650053..ad8c3fd 100644
+index 22c4fde..04ab984 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -830,6 +830,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
@@ -31,19 +31,19 @@ index 2650053..ad8c3fd 100644
  		seq_puts(seq, ",nobh");
 +	if (test_opt(sb, AKPM_LOCK_HACK))
 +		seq_puts(seq, ",akpm_lock_hack");
- 	if (!test_opt(sb, EXTENTS))
- 		seq_puts(seq, ",noextents");
  	if (test_opt(sb, I_VERSION))
-@@ -1013,7 +1015,7 @@ enum {
+ 		seq_puts(seq, ",i_version");
+ 	if (!test_opt(sb, DELALLOC))
+@@ -1012,7 +1014,7 @@ enum {
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
- 	Opt_grpquota, Opt_extents, Opt_noextents, Opt_i_version,
+ 	Opt_grpquota, Opt_i_version,
  	Opt_stripe, Opt_delalloc, Opt_nodelalloc,
 -	Opt_inode_readahead_blks, Opt_journal_ioprio
 +	Opt_inode_readahead_blks, Opt_journal_ioprio, Opt_akpm_lock_hack
  };
  
  static const match_table_t tokens = {
-@@ -1075,6 +1077,7 @@ static const match_table_t tokens = {
+@@ -1072,6 +1074,7 @@ static const match_table_t tokens = {
  	{Opt_nodelalloc, "nodelalloc"},
  	{Opt_inode_readahead_blks, "inode_readahead_blks=%u"},
  	{Opt_journal_ioprio, "journal_ioprio=%u"},
@@ -51,7 +51,7 @@ index 2650053..ad8c3fd 100644
  	{Opt_err, NULL},
  };
  
-@@ -1504,6 +1507,9 @@ set_qf_format:
+@@ -1473,6 +1476,9 @@ set_qf_format:
  			*journal_ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE,
  							    option);
  			break;
@@ -61,7 +61,7 @@ index 2650053..ad8c3fd 100644
  		default:
  			printk(KERN_ERR
  			       "EXT4-fs: Unrecognized mount option \"%s\" "
-@@ -2688,6 +2694,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -2656,6 +2662,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
