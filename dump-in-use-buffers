@@ -2,10 +2,20 @@ Add a ioctl which dumps out all of the in-use buffer heads for a block device
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/block/compat_ioctl.c b/block/compat_ioctl.c
-index 3d3e7a4..5c428a8 100644
+index f87615d..8bc8784 100644
 --- a/block/compat_ioctl.c
 +++ b/block/compat_ioctl.c
-@@ -705,6 +705,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
+@@ -11,6 +11,9 @@
+ #include <linux/types.h>
+ #include <linux/uaccess.h>
+ 
++/* For debugging purposes; see block/ioctl.c */
++#define BLKDUMPUSEDBUFFERS _IO(0x12,130)
++
+ static int compat_put_ushort(unsigned long arg, unsigned short val)
+ {
+ 	return put_user(val, (unsigned short __user *)compat_ptr(arg));
+@@ -734,6 +737,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
  	switch (cmd) {
  	case HDIO_GETGEO:
  		return compat_hdio_getgeo(disk, bdev, compat_ptr(arg));
@@ -14,10 +24,21 @@ index 3d3e7a4..5c428a8 100644
  	case BLKROSET:
  	case BLKDISCARD:
 diff --git a/block/ioctl.c b/block/ioctl.c
-index c832d63..9b73953 100644
+index 0f22e62..cdf1c03 100644
 --- a/block/ioctl.c
 +++ b/block/ioctl.c
-@@ -367,6 +367,13 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
+@@ -8,6 +8,10 @@
+ #include <linux/blktrace_api.h>
+ #include <asm/uaccess.h>
+ 
++/* For debugging purposes */
++#define BLKDUMPUSEDBUFFERS _IO(0x12,130)
++extern void dump_used_buffers(struct block_device *bdev);
++
+ static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user *arg)
+ {
+ 	struct block_device *bdevp;
+@@ -364,6 +368,13 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
  		ret = blk_trace_ioctl(bdev, cmd, (char __user *) arg);
  		unlock_kernel();
  		break;
@@ -32,7 +53,7 @@ index c832d63..9b73953 100644
  		ret = __blkdev_driver_ioctl(bdev, mode, cmd, arg);
  	}
 diff --git a/fs/buffer.c b/fs/buffer.c
-index 6569fda..852e7ac 100644
+index b6e8b86..9a023bc 100644
 --- a/fs/buffer.c
 +++ b/fs/buffer.c
 @@ -33,6 +33,7 @@
@@ -43,7 +64,7 @@ index 6569fda..852e7ac 100644
  #include <linux/buffer_head.h>
  #include <linux/task_io_accounting_ops.h>
  #include <linux/bio.h>
-@@ -246,6 +247,45 @@ void thaw_bdev(struct block_device *bdev, struct super_block *sb)
+@@ -310,6 +311,45 @@ int thaw_bdev(struct block_device *bdev, struct super_block *sb)
  }
  EXPORT_SYMBOL(thaw_bdev);
  
@@ -89,28 +110,3 @@ index 6569fda..852e7ac 100644
  /*
   * Various filesystems appear to want __find_get_block to be non-blocking.
   * But it's the page lock which protects the buffers.  To get around this,
-diff --git a/include/linux/buffer_head.h b/include/linux/buffer_head.h
-index 3ce64b9..053e644 100644
---- a/include/linux/buffer_head.h
-+++ b/include/linux/buffer_head.h
-@@ -193,6 +193,7 @@ void write_boundary_block(struct block_device *bdev,
- 			sector_t bblock, unsigned blocksize);
- int bh_uptodate_or_lock(struct buffer_head *bh);
- int bh_submit_read(struct buffer_head *bh);
-+void dump_used_buffers(struct block_device *bdev);
- 
- extern int buffer_heads_over_limit;
- 
-diff --git a/include/linux/fs.h b/include/linux/fs.h
-index 5b248d6..a08e4d0 100644
---- a/include/linux/fs.h
-+++ b/include/linux/fs.h
-@@ -231,6 +231,8 @@ extern int dir_notify_enable;
- #define BLKTRACETEARDOWN _IO(0x12,118)
- #define BLKDISCARD _IO(0x12,119)
- 
-+#define BLKDUMPUSEDBUFFERS _IO(0x12,130)
-+
- #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
- #define FIBMAP	   _IO(0x00,1)	/* bmap access */
- #define FIGETBSZ   _IO(0x00,2)	/* get the block size used for bmap */
