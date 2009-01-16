@@ -1,0 +1,21 @@
+jbd2: On a __journal_expect() assertion failure printk "JBD2", not "EXT3-fs"
+
+Otherwise it can be very confusing to find a "EXT3-fs: " failure in
+the middle of EXT4-fs failures, and it makes it harder to track the
+source of the failure.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index b45109c..b28b37e 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -308,7 +308,8 @@ void buffer_assertion_failure(struct buffer_head *bh);
+ 		int val = (expr);					     \
+ 		if (!val) {						     \
+ 			printk(KERN_ERR					     \
+-				"EXT3-fs unexpected failure: %s;\n",# expr); \
++			       "JBD2 unexpected failure: %s: %s;\n",	     \
++			       __func__, #expr);			     \
+ 			printk(KERN_ERR why "\n");			     \
+ 		}							     \
+ 		val;							     \
