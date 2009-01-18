@@ -1,9 +1,9 @@
-ext4: ignore i_size_high for directories
+ext4: only use i_size_high for regular files
 
-Directories are not allowed to be bigger than 2TB, so don't use
-i_size_high when reading the inode.  E2fsck should complain about
-these inodes, but the simplest thing to do for the kernel is simply to
-not consult i_size_high for directory inodes.
+Directories are not allowed to be bigger than 2GB, so don't use
+i_size_high for anything other than regular files.  E2fsck should
+complain about these inodes, but the simplest thing to do for the
+kernel is to only use i_size_high for regular files.
 
 This prevents an intentially corrupted filesystem from causing the
 kernel to burn a huge amount of CPU and issuing error messages such
@@ -19,7 +19,7 @@ http://bugzilla.kernel.org/show_bug.cgi?id=12375
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: stable@kernel.org
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index c668e43..42396a6 100644
+index c668e43..aafc9eb 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1206,8 +1206,11 @@ static inline void ext4_r_blocks_count_set(struct ext4_super_block *es,
@@ -28,11 +28,11 @@ index c668e43..42396a6 100644
  {
 -	return ((loff_t)le32_to_cpu(raw_inode->i_size_high) << 32) |
 -		le32_to_cpu(raw_inode->i_size_lo);
-+	if (S_ISDIR(le16_to_cpu(raw_inode->i_mode)))
-+		return (loff_t) le32_to_cpu(raw_inode->i_size_lo);
-+	else
++	if (S_ISREG(le16_to_cpu(raw_inode->i_mode)))
 +		return ((loff_t)le32_to_cpu(raw_inode->i_size_high) << 32) |
 +			le32_to_cpu(raw_inode->i_size_lo);
++	else
++		return (loff_t) le32_to_cpu(raw_inode->i_size_lo);
  }
  
  static inline void ext4_isize_set(struct ext4_inode *raw_inode, loff_t i_size)
