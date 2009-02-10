@@ -3,11 +3,12 @@ jbd2: Avoid possible NULL dereference in jbd2_journal_begin_ordered_truncate()
 From: Jan Kara <jack@suse.cz>
 
 If we race with commit code setting i_transaction to NULL, we could
-possibly dereference it.  Proper locking requires journal pointer
-(journal->j_list_lock) we don't have.  So we have to change the
-prototype of the function so that filesystem passes us the journal
-pointer.  Also add a more detailed comment about why function does
-what it does and how it should be used.
+possibly dereference it.  Proper locking requires the journal pointer
+(to access journal->j_list_lock), which we don't have.  So we have to
+change the prototype of the function so that filesystem passes us the
+journal pointer.  Also add a more detailed comment about why the
+function jbd2_journal_begin_ordered_truncate() does what it does and
+how it should be used.
 
 Thanks to Dan Carpenter <error27@gmail.com> for pointing to the
 suspitious code.
