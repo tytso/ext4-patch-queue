@@ -1,0 +1,48 @@
+ext4: Fix to read empty directory blocks correctly in 64k
+
+From: Wei Yongjun <yjwei@cn.fujitsu.com>
+
+The rec_len field in the directory entry is 16 bits, so there was a
+problem representing rec_len for filesystems with a 64k block size in
+the case where the directory entry takes the entire 64k block.
+Unfortunately, there were two schemes that were proposed; one where
+all zeros meant 65536 and one where all ones (65535) meant 65536.
+E2fsprogs used 0, whereas the kernel used 65535.  Oops.  Fortunately
+this case happens extremely rarely, with the most common case being
+the lost+found directory, created by mke2fs.
+
+So we will be liberal in what we accept, and accept both encodings,
+but we will continue to encode 65536 as 65535.  This will require a
+change in e2fsprogs, but with fortunately ext4 filesystems normally
+have the dir_index feature enabled, which precludes having a
+completely empty directory block.
+
+Signed-off-by: Wei Yongjun <yjwei@cn.fujitsu.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index aafc9eb..b0c87dc 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -868,7 +868,7 @@ static inline unsigned ext4_rec_len_from_disk(__le16 dlen)
+ {
+ 	unsigned len = le16_to_cpu(dlen);
+ 
+-	if (len == EXT4_MAX_REC_LEN)
++	if (len == EXT4_MAX_REC_LEN || len == 0)
+ 		return 1 << 16;
+ 	return len;
+ }
+-- 
+1.5.3.8
+
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
