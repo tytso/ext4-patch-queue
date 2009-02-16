@@ -1,0 +1,47 @@
+ext4: Fix NULL dereference in ext4_ext_migrate()'s error handling
+
+From: Dan Carpenter <error27@gmail.com>
+
+This was found through a code checker (http://repo.or.cz/w/smatch.git/). 
+It looks like you might be able to trigger the error by trying to migrate 
+a readonly file system.
+
+Signed-off-by: Dan Carpenter <error27@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/migrate.c |    8 +++-----
+ 1 files changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
+index 734abca..fe64d9f 100644
+--- a/fs/ext4/migrate.c
++++ b/fs/ext4/migrate.c
+@@ -481,7 +481,7 @@ int ext4_ext_migrate(struct inode *inode)
+ 					+ 1);
+ 	if (IS_ERR(handle)) {
+ 		retval = PTR_ERR(handle);
+-		goto err_out;
++		return retval;
+ 	}
+ 	tmp_inode = ext4_new_inode(handle,
+ 				inode->i_sb->s_root->d_inode,
+@@ -489,8 +489,7 @@ int ext4_ext_migrate(struct inode *inode)
+ 	if (IS_ERR(tmp_inode)) {
+ 		retval = -ENOMEM;
+ 		ext4_journal_stop(handle);
+-		tmp_inode = NULL;
+-		goto err_out;
++		return retval;
+ 	}
+ 	i_size_write(tmp_inode, i_size_read(inode));
+ 	/*
+@@ -618,8 +617,7 @@ err_out:
+ 
+ 	ext4_journal_stop(handle);
+ 
+-	if (tmp_inode)
+-		iput(tmp_inode);
++	iput(tmp_inode);
+ 
+ 	return retval;
+ }
