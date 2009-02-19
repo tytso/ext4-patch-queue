@@ -1,0 +1,34 @@
+ext4: Add fallback for find_group_flex
+
+This is a workaround for find_group_flex() which badly needs to be
+replaced.  One of its problems (besides ignoring the Orlov algorithm)
+is that it is a bit hyperactive about returning failure under
+suspicious circumstances.  This can lead to spurious ENOSPC failures.
+Work around this for now by retrying the search using
+find_group_other() if find_group_flex() returns -1.  If
+find_group_other() succeeds when find_group_flex(), log a warning
+message.  I can't quite find the motivation to spend effort working on
+fixing find_group_flex() given that I want to replace it all anyway
+(and in fact work on the replacement code is underway), so we may
+leave the workaround for as long as find_group_flex() stays in the
+kernel...
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index a200059..21080ab 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -715,6 +715,13 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)
+ 
+ 	if (sbi->s_log_groups_per_flex) {
+ 		ret2 = find_group_flex(sb, dir, &group);
++		if (ret2 == -1) {
++			ret2 = find_group_other(sb, dir, &group);
++			if (ret2 == 0)
++				printk(KERN_NOTICE "ext4: find_group_flex "
++				       "failed, fallback succeeded dir %lu\n",
++				       dir->i_ino);
++		}
+ 		goto got_group;
+ 	}
+ 
