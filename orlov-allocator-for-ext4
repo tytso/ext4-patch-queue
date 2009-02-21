@@ -84,7 +84,7 @@ index e2eab19..0aeb8c2 100644
  		colour = (current->pid % 16) *
  			(EXT4_BLOCKS_PER_GROUP(inode->i_sb) / 16);
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index 21080ab..212e5be 100644
+index f524d9b..380ae30 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -409,6 +409,42 @@ out:
@@ -363,7 +363,7 @@ index 21080ab..212e5be 100644
  		if (ret2 == -1) {
 -			ret2 = find_group_other(sb, dir, &group);
 +			ret2 = find_group_other(sb, dir, &group, mode);
- 			if (ret2 == 0)
+ 			if (ret2 == 0 && printk_ratelimit())
  				printk(KERN_NOTICE "ext4: find_group_flex "
  				       "failed, fallback succeeded dir %lu\n",
 @@ -729,9 +829,9 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)

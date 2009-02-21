@@ -15,7 +15,7 @@ kernel...
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index a200059..21080ab 100644
+index a200059..f524d9b 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -715,6 +715,13 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)
@@ -24,7 +24,7 @@ index a200059..21080ab 100644
  		ret2 = find_group_flex(sb, dir, &group);
 +		if (ret2 == -1) {
 +			ret2 = find_group_other(sb, dir, &group);
-+			if (ret2 == 0)
++			if (ret2 == 0 && printk_ratelimit())
 +				printk(KERN_NOTICE "ext4: find_group_flex "
 +				       "failed, fallback succeeded dir %lu\n",
 +				       dir->i_ino);
