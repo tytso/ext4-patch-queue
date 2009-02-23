@@ -1,0 +1,115 @@
+ext4: Validate extent details only when read from the disk
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+Make sure we validate extent details only when read from the disk.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4_extents.h |    1 +
+ fs/ext4/extents.c      |   24 +++++++++++++++++-------
+ fs/ext4/inode.c        |   10 ++++++++++
+ 3 files changed, 28 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ext4/ext4_extents.h b/fs/ext4/ext4_extents.h
+index 18cb67b..f0c3ec8 100644
+--- a/fs/ext4/ext4_extents.h
++++ b/fs/ext4/ext4_extents.h
+@@ -241,5 +241,6 @@ extern int ext4_ext_search_left(struct inode *, struct ext4_ext_path *,
+ extern int ext4_ext_search_right(struct inode *, struct ext4_ext_path *,
+ 						ext4_lblk_t *, ext4_fsblk_t *);
+ extern void ext4_ext_drop_refs(struct ext4_ext_path *);
++extern int ext4_ext_check_inode(struct inode *inode);
+ #endif /* _EXT4_EXTENTS */
+ 
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 503c97c..16acada 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -406,6 +406,11 @@ corrupted:
+ #define ext4_ext_check(inode, eh, depth)	\
+ 	__ext4_ext_check(__func__, inode, eh, depth)
+ 
++int ext4_ext_check_inode(struct inode *inode)
++{
++	return ext4_ext_check(inode, ext_inode_hdr(inode), ext_depth(inode));
++}
++
+ #ifdef EXT_DEBUG
+ static void ext4_ext_show_path(struct inode *inode, struct ext4_ext_path *path)
+ {
+@@ -602,15 +607,13 @@ struct ext4_ext_path *
+ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+ 					struct ext4_ext_path *path)
+ {
++	int need_to_validate = 0;
+ 	struct ext4_extent_header *eh;
+ 	struct buffer_head *bh;
+ 	short int depth, i, ppos = 0, alloc = 0;
+ 
+ 	eh = ext_inode_hdr(inode);
+ 	depth = ext_depth(inode);
+-	if (ext4_ext_check(inode, eh, depth))
+-		return ERR_PTR(-EIO);
+-
+ 
+ 	/* account possible depth increase */
+ 	if (!path) {
+@@ -634,10 +637,17 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+ 		path[ppos].p_depth = i;
+ 		path[ppos].p_ext = NULL;
+ 
+-		bh = sb_bread(inode->i_sb, path[ppos].p_block);
+-		if (!bh)
++		bh = sb_getblk(inode->i_sb, path[ppos].p_block);
++		if (unlikely(!bh))
+ 			goto err;
+-
++		if (!bh_uptodate_or_lock(bh)) {
++			if (bh_submit_read(bh) < 0) {
++				put_bh(bh);
++				goto err;
++			}
++			/* validate the extent entries */
++			need_to_validate = 1;
++		}
+ 		eh = ext_block_hdr(bh);
+ 		ppos++;
+ 		BUG_ON(ppos > depth);
+@@ -645,7 +655,7 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+ 		path[ppos].p_hdr = eh;
+ 		i--;
+ 
+-		if (ext4_ext_check(inode, eh, i))
++		if (need_to_validate && ext4_ext_check(inode, eh, i))
+ 			goto err;
+ 	}
+ 
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 03ba20b..61e8fc0 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4273,6 +4273,16 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+ 			(__u64)(le32_to_cpu(raw_inode->i_version_hi)) << 32;
+ 	}
+ 
++	if (ei->i_flags & EXT4_EXTENTS_FL) {
++		/* Validate extent which is part of inode */
++		ret = ext4_ext_check_inode(inode);
++		if (ret) {
++			brelse(bh);
++			goto bad_inode;
++		}
++
++	}
++
+ 	if (S_ISREG(inode->i_mode)) {
+ 		inode->i_op = &ext4_file_inode_operations;
+ 		inode->i_fop = &ext4_file_operations;
+-- 
+tg: (b76c986..) extent_validate2 (depends on: extent_validate)
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
