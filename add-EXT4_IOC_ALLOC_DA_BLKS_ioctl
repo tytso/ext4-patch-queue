@@ -7,18 +7,20 @@ allocated to preserve application-expected ext3 behaviour.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 9840cad..626bda7 100644
+index 9840cad..226f0ad 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -316,6 +316,7 @@ struct ext4_new_group_data {
+@@ -316,7 +316,9 @@ struct ext4_new_group_data {
  #define EXT4_IOC_GROUP_EXTEND		_IOW('f', 7, unsigned long)
  #define EXT4_IOC_GROUP_ADD		_IOW('f', 8, struct ext4_new_group_input)
  #define EXT4_IOC_MIGRATE		_IO('f', 9)
-+#define EXT4_IOC_ALLOC_DA_BLKS		_IO('f', 10)
++ /* note ioctl 10 reserved for an early version of the FIEMAP ioctl */
   /* note ioctl 11 reserved for filesystem-independent FIEMAP ioctl */
++#define EXT4_IOC_ALLOC_DA_BLKS		_IO('f', 12)
  
  /*
-@@ -1094,6 +1095,7 @@ extern int ext4_chunk_trans_blocks(struct inode *, int nrblocks);
+  * ioctl commands in 32 bit emulation
+@@ -1094,6 +1096,7 @@ extern int ext4_chunk_trans_blocks(struct inode *, int nrblocks);
  extern int ext4_block_truncate_page(handle_t *handle,
  		struct address_space *mapping, loff_t from);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct page *page);
@@ -80,10 +82,10 @@ index 1216fb9..c66af1c 100644
  /*
   * bmap() is special.  It gets used by applications such as lilo and by
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 22dd29f..0d59f5f 100644
+index 22dd29f..91e75f7 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -262,6 +262,19 @@ setversion_out:
+@@ -262,6 +262,20 @@ setversion_out:
  		return err;
  	}
  
@@ -97,6 +99,7 @@ index 22dd29f..0d59f5f 100644
 +		if (err)
 +			return err;
 +		err = ext4_alloc_da_blocks(inode);
++		mnt_drop_write(filp->f_path.mnt);
 +		return err;
 +	}
 +
