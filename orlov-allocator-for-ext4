@@ -31,6 +31,13 @@ BLOCKS:
 TOTAL: 259
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4_i.h  |    3 +
+ fs/ext4/extents.c |   24 ++++++-
+ fs/ext4/ialloc.c  |  212 +++++++++++++++++++++++++++++++++++++++--------------
+ fs/ext4/inode.c   |   18 ++++-
+ 4 files changed, 199 insertions(+), 58 deletions(-)
+
 diff --git a/fs/ext4/ext4_i.h b/fs/ext4/ext4_i.h
 index 2d516c0..4ce2187 100644
 --- a/fs/ext4/ext4_i.h
@@ -46,7 +53,7 @@ index 2d516c0..4ce2187 100644
  	unsigned int i_reserved_data_blocks;
  	unsigned int i_reserved_meta_blocks;
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index e2eab19..0aeb8c2 100644
+index e2eab19..f5ff193 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -152,6 +152,8 @@ static ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
@@ -58,13 +65,20 @@ index e2eab19..0aeb8c2 100644
  	int depth;
  
  	if (path) {
-@@ -170,10 +172,23 @@ static ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
+@@ -170,10 +172,30 @@ static ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
  	}
  
  	/* OK. use inode's group */
 -	bg_start = (ei->i_block_group * EXT4_BLOCKS_PER_GROUP(inode->i_sb)) +
 +	block_group = ei->i_block_group;
 +	if (flex_size >= 4) {
++		/*
++		 * If there are at least 4 block groups per flexgroup,
++		 * reserve the first block group for directories and
++		 * special files.  Regular files will start at the
++		 * second block group.  This tends to speed up
++		 * directory access and improves fsck times.
++		 */
 +		block_group &= ~(flex_size-1);
 +		if (S_ISREG(inode->i_mode))
 +			block_group++;
@@ -84,22 +98,24 @@ index e2eab19..0aeb8c2 100644
  		colour = (current->pid % 16) *
  			(EXT4_BLOCKS_PER_GROUP(inode->i_sb) / 16);
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index f524d9b..33cb388 100644
+index f524d9b..8963274 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
-@@ -409,6 +409,42 @@ out:
+@@ -408,6 +408,43 @@ out:
+ 	return 0;
  }
  
- /*
-+ * Helper function for Orlov's allocator; returns critical information 
-+ * for a particular block group or flex_bg
-+ */
 +struct orlov_stats {
 +	__u32 free_inodes;
 +	__u32 free_blocks;
 +	__u32 used_dirs;  
 +};
 +
++/*
++ * Helper function for Orlov's allocator; returns critical information
++ * for a particular block group or flex_bg.  If flex_size is 1, then g
++ * is a block group number; otherwise it is flex_bg number.
++ */
 +void get_orlov_stats(struct super_block *sb, ext4_group_t g, 
 +		       int flex_size, struct orlov_stats *stats)
 +{
@@ -126,11 +142,10 @@ index f524d9b..33cb388 100644
 +	}
 +}
 +
-+/*
+ /*
   * Orlov's allocator for directories.
   *
-  * We always try to spread first-level directories.
-@@ -423,7 +459,6 @@ out:
+@@ -423,35 +460,34 @@ out:
   * it has too many directories already (max_dirs) or
   * it has too few free inodes left (min_inodes) or
   * it has too few free blocks left (min_blocks) or
@@ -138,9 +153,15 @@ index f524d9b..33cb388 100644
   * Parent's group is preferred, if it doesn't satisfy these
   * conditions we search cyclically through the rest. If none
   * of the groups look good we just look for a group with more
-@@ -437,21 +472,29 @@ out:
- #define BLOCK_COST 256
+  * free inodes than average (starting at parent's group).
+- *
+- * Debt is incremented each time we allocate a directory and decremented
+- * when we allocate an inode, within 0--255.
+  */
  
+-#define INODE_COST 64
+-#define BLOCK_COST 256
+-
  static int find_group_orlov(struct super_block *sb, struct inode *parent,
 -				ext4_group_t *group)
 +			    ext4_group_t *group, int mode)
@@ -163,9 +184,7 @@ index f524d9b..33cb388 100644
 +	struct orlov_stats stats;
 +	int flex_size = ext4_flex_bg_size(sbi);
 +
-+	if (flex_size < 4)
-+		flex_size = 1;
-+	else {
++	if (flex_size > 1) {
 +		ngroups = (ngroups + flex_size - 1) >>
 +			sbi->s_log_groups_per_flex;
 +		parent_group >>= sbi->s_log_groups_per_flex;
@@ -173,7 +192,7 @@ index f524d9b..33cb388 100644
  
  	freei = percpu_counter_read_positive(&sbi->s_freeinodes_counter);
  	avefreei = freei / ngroups;
-@@ -460,71 +503,85 @@ static int find_group_orlov(struct super_block *sb, struct inode *parent,
+@@ -460,71 +496,92 @@ static int find_group_orlov(struct super_block *sb, struct inode *parent,
  	do_div(avefreeb, ngroups);
  	ndirs = percpu_counter_read_positive(&sbi->s_dirs_counter);
  
@@ -219,8 +238,15 @@ index f524d9b..33cb388 100644
 +			return 0;
 +		}
 +
++		/*
++		 * We pack inodes at the beginning of the flexgroup's
++		 * inode tables.  Block allocation decisions will do
++		 * something similar, although regular files will
++		 * start at 2nd block group of the flexgroup.  See
++		 * ext4_ext_find_goal() and ext4_find_near().
++		 */
 +		grp *= flex_size;
-+		for (i = 1; i < flex_size; i++) {
++		for (i = 0; i < flex_size; i++) {
 +			if (grp+i >= sbi->s_groups_count)
 +				break;
 +			desc = ext4_get_group_desc(sb, grp+i, NULL);
@@ -263,18 +289,18 @@ index f524d9b..33cb388 100644
 -		*group = (parent_group + i) % ngroups;
 -		desc = ext4_get_group_desc(sb, *group, NULL);
 -		if (!desc || !ext4_free_inodes_count(sb, desc))
+-			continue;
+-		if (ext4_used_dirs_count(sb, desc) >= max_dirs)
 +		grp = (parent_group + i) % ngroups;
 +		get_orlov_stats(sb, grp, flex_size, &stats);
 +		if (stats.used_dirs >= max_dirs)
  			continue;
--		if (ext4_used_dirs_count(sb, desc) >= max_dirs)
+-		if (ext4_free_inodes_count(sb, desc) < min_inodes)
 +		if (stats.free_inodes < min_inodes)
  			continue;
--		if (ext4_free_inodes_count(sb, desc) < min_inodes)
+-		if (ext4_free_blks_count(sb, desc) < min_blocks)
 +		if (stats.free_blocks < min_blocks)
  			continue;
--		if (ext4_free_blks_count(sb, desc) < min_blocks)
--			continue;
 -		return 0;
 +		goto found_flex_bg;
  	}
@@ -312,11 +338,13 @@ index f524d9b..33cb388 100644
 +	int flex_size = ext4_flex_bg_size(EXT4_SB(sb));
 +
 +	/*
-+	 * If we are doing flex_bg style allocation, try to put
-+	 * special inodes in the first block group; start files and
-+	 * directories at the 2nd block group in the flex_bg.
++	 * Try to place the inode is the same flex group as its
++	 * parent.  If we can't find space, use the Orlov algorithm to
++	 * find another flex group, and store that information in the
++	 * parent directory's inode information so that use that flex
++	 * group for future allocations.
 +	 */
-+	if (flex_size >= 4) {
++	if (flex_size > 1) {
 +		int ret, retry = 0;
 +
 +	try_again:
@@ -324,8 +352,6 @@ index f524d9b..33cb388 100644
 +		last = i+flex_size;
 +		if (last > ngroups)
 +			last = ngroups;
-+		if (S_ISDIR(mode) || S_ISREG(mode))
-+			i++;
 +		while (i < last) {
 +			desc = ext4_get_group_desc(sb, i, NULL);
 +			if (desc && ext4_free_inodes_count(sb, desc)) {
@@ -388,7 +414,7 @@ index f524d9b..33cb388 100644
  	ext4_set_inode_flags(inode);
  	if (IS_DIRSYNC(inode))
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index cbd2ca9..12f1374 100644
+index 51cdd13..15dbe2d 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -459,6 +459,8 @@ static ext4_fsblk_t ext4_find_near(struct inode *inode, Indirect *ind)
@@ -424,7 +450,7 @@ index cbd2ca9..12f1374 100644
  	if (bg_start + EXT4_BLOCKS_PER_GROUP(inode->i_sb) <= last_block)
  		colour = (current->pid % 16) *
  			(EXT4_BLOCKS_PER_GROUP(inode->i_sb) / 16);
-@@ -4250,6 +4265,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+@@ -4257,6 +4272,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
  	ei->i_disksize = inode->i_size;
  	inode->i_generation = le32_to_cpu(raw_inode->i_generation);
  	ei->i_block_group = iloc.block_group;
