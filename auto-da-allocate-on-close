@@ -8,9 +8,8 @@ this, so we do this to avoid zero length files if the system crashes
 unexpectedly.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-----
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 270d7c2..02491d7 100644
+index 226f0ad..09626d3 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -269,6 +269,7 @@ static inline __u32 ext4_mask_flags(umode_t mode, __u32 flags)
@@ -37,14 +36,15 @@ index f731cb5..06df827 100644
  	if ((filp->f_mode & FMODE_WRITE) &&
  			(atomic_read(&inode->i_writecount) == 1))
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 465be54..b585597 100644
+index c66af1c..f8a718c 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -3907,6 +3907,8 @@ void ext4_truncate(struct inode *inode)
+@@ -3871,6 +3871,9 @@ void ext4_truncate(struct inode *inode)
  	if (!ext4_can_truncate(inode))
  		return;
  
-+	ei->i_state |= EXT4_STATE_DA_ALLOC_CLOSE;
++	if (inode->i_size == 0)
++		ei->i_state |= EXT4_STATE_DA_ALLOC_CLOSE;
 +
  	if (EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL) {
  		ext4_ext_truncate(inode);
