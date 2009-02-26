@@ -1,0 +1,50 @@
+ext4: Fix discard of inode prealloc space with delayed allocation.
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+With delayed allocation we should not/cannot discard inode prealloc
+space during file close. We would still have dirty pages for which we
+haven't allocated blocks yet. With this fix after each get_blocks
+request we check whether we have zero reserved blocks and if yes and
+we don't have any writers on the file we discard inode prealloc space.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/file.c  |    3 ++-
+ fs/ext4/inode.c |    8 ++++++++
+ 2 files changed, 10 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 06df827..588af8c 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -39,7 +39,8 @@ static int ext4_release_file(struct inode *inode, struct file *filp)
+ 	}
+ 	/* if we are the last writer on the inode, drop the block reservation */
+ 	if ((filp->f_mode & FMODE_WRITE) &&
+-			(atomic_read(&inode->i_writecount) == 1))
++			(atomic_read(&inode->i_writecount) == 1) &&
++		        !EXT4_I(inode)->i_reserved_data_blocks)
+ 	{
+ 		down_write(&EXT4_I(inode)->i_data_sem);
+ 		ext4_discard_preallocations(inode);
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 6f5b424..b55fe0f 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1053,6 +1053,14 @@ static void ext4_da_update_reserve_space(struct inode *inode, int used)
+ 	EXT4_I(inode)->i_reserved_data_blocks -= used;
+ 
+ 	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
++
++	/*
++	 * If have done all the pending block allocation and if the we
++	 * don't have any writer on the inode, we can discard the
++	 * inode's preallocations.
++	 */
++	if (!total && (atomic_read(&inode->i_writecount) == 0))
++		ext4_discard_preallocations(inode);
+ }
+ 
+ /*
