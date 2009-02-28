@@ -1,0 +1,22 @@
+ext4: Remove duplicate call to ext4_commit_super() in ext4_freeze()
+
+Commit c4be0c1d added error checking to ext4_freeze() when calling
+ext4_commit_super().  Unfortunately the patch failed to remove the
+original call to ext4_commit_super(), with the net result that when
+freezing the filesystem, the superblock gets written twice, the first
+time without error checking.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index a5732c5..39d1993 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3091,7 +3091,6 @@ static int ext4_freeze(struct super_block *sb)
+ 
+ 		/* Journal blocked and flushed, clear needs_recovery flag. */
+ 		EXT4_CLEAR_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER);
+-		ext4_commit_super(sb, EXT4_SB(sb)->s_es, 1);
+ 		error = ext4_commit_super(sb, EXT4_SB(sb)->s_es, 1);
+ 		if (error)
+ 			goto out;
