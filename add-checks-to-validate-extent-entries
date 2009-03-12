@@ -7,15 +7,11 @@ headers, to avoid crashes caused by corrupt filesystems.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/ext4/extents.c |   81 ++++++++++++++++++++++++++++++++++++++++++++++------
- 1 files changed, 71 insertions(+), 10 deletions(-)
-
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index e2eab19..503c97c 100644
+index aa34318..ee40b7c 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -301,7 +301,64 @@ ext4_ext_max_entries(struct inode *inode, int depth)
+@@ -324,7 +324,64 @@ ext4_ext_max_entries(struct inode *inode, int depth)
  	return max;
  }
  
@@ -81,7 +77,7 @@ index e2eab19..503c97c 100644
  					struct ext4_extent_header *eh,
  					int depth)
  {
-@@ -329,11 +386,15 @@ static int __ext4_ext_check_header(const char *function, struct inode *inode,
+@@ -352,11 +409,15 @@ static int __ext4_ext_check_header(const char *function, struct inode *inode,
  		error_msg = "invalid eh_entries";
  		goto corrupted;
  	}
@@ -98,7 +94,7 @@ index e2eab19..503c97c 100644
  			"entries %u, max %u(%u), depth %u(%u)",
  			inode->i_ino, error_msg, le16_to_cpu(eh->eh_magic),
  			le16_to_cpu(eh->eh_entries), le16_to_cpu(eh->eh_max),
-@@ -342,8 +403,8 @@ corrupted:
+@@ -365,8 +426,8 @@ corrupted:
  	return -EIO;
  }
  
@@ -109,7 +105,7 @@ index e2eab19..503c97c 100644
  
  #ifdef EXT_DEBUG
  static void ext4_ext_show_path(struct inode *inode, struct ext4_ext_path *path)
-@@ -547,7 +608,7 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+@@ -570,7 +631,7 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
  
  	eh = ext_inode_hdr(inode);
  	depth = ext_depth(inode);
@@ -118,7 +114,7 @@ index e2eab19..503c97c 100644
  		return ERR_PTR(-EIO);
  
  
-@@ -584,7 +645,7 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+@@ -607,7 +668,7 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
  		path[ppos].p_hdr = eh;
  		i--;
  
@@ -127,16 +123,16 @@ index e2eab19..503c97c 100644
  			goto err;
  	}
  
-@@ -1179,7 +1240,7 @@ got_index:
- 		if (bh == NULL)
+@@ -1204,7 +1265,7 @@ got_index:
  			return -EIO;
  		eh = ext_block_hdr(bh);
--		if (ext4_ext_check_header(inode, eh, depth)) {
-+		if (ext4_ext_check(inode, eh, depth)) {
+ 		/* subtract from p_depth to get proper eh_depth */
+-		if (ext4_ext_check_header(inode, eh, path->p_depth - depth)) {
++		if (ext4_ext_check(inode, eh, path->p_depth - depth)) {
  			put_bh(bh);
  			return -EIO;
  		}
-@@ -1192,7 +1253,7 @@ got_index:
+@@ -1217,7 +1278,7 @@ got_index:
  	if (bh == NULL)
  		return -EIO;
  	eh = ext_block_hdr(bh);
@@ -145,7 +141,7 @@ index e2eab19..503c97c 100644
  		put_bh(bh);
  		return -EIO;
  	}
-@@ -2135,7 +2196,7 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
+@@ -2160,7 +2221,7 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
  		return -ENOMEM;
  	}
  	path[0].p_hdr = ext_inode_hdr(inode);
@@ -154,7 +150,7 @@ index e2eab19..503c97c 100644
  		err = -EIO;
  		goto out;
  	}
-@@ -2189,7 +2250,7 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
+@@ -2214,7 +2275,7 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
  				err = -EIO;
  				break;
  			}
@@ -163,9 +159,3 @@ index e2eab19..503c97c 100644
  							depth - i - 1)) {
  				err = -EIO;
  				break;
--- 
-tg: (d2f8d7e..) extent_validate (depends on: master)
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html

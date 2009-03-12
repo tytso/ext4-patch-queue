@@ -10,10 +10,10 @@ buffer is modified in both the current and committing transaction.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: akpm@linux-foundation.org
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 0aea14c..f039c97 100644
+index fc66596..2127314 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -543,6 +543,7 @@ do {									       \
+@@ -561,6 +561,7 @@ do {									       \
  #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
  #define EXT4_MOUNT_DELALLOC		0x8000000 /* Delalloc support */
  #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
@@ -22,10 +22,10 @@ index 0aea14c..f039c97 100644
  /* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
  #ifndef _LINUX_EXT2_FS_H
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 22c4fde..04ab984 100644
+index 3f32fb2..31a568d 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -830,6 +830,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+@@ -831,6 +831,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
  		seq_puts(seq, ",journal_async_commit");
  	if (test_opt(sb, NOBH))
  		seq_puts(seq, ",nobh");
@@ -34,7 +34,7 @@ index 22c4fde..04ab984 100644
  	if (test_opt(sb, I_VERSION))
  		seq_puts(seq, ",i_version");
  	if (!test_opt(sb, DELALLOC))
-@@ -1012,7 +1014,7 @@ enum {
+@@ -1018,7 +1020,7 @@ enum {
  	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
  	Opt_grpquota, Opt_i_version,
  	Opt_stripe, Opt_delalloc, Opt_nodelalloc,
@@ -44,16 +44,16 @@ index 22c4fde..04ab984 100644
  
  static const match_table_t tokens = {
 @@ -1072,6 +1074,7 @@ static const match_table_t tokens = {
+ 	{Opt_i_version, "i_version"},
+ 	{Opt_stripe, "stripe=%u"},
+ 	{Opt_resize, "resize"},
++	{Opt_akpm_lock_hack, "akpm_lock_hack"},
+ 	{Opt_delalloc, "delalloc"},
  	{Opt_nodelalloc, "nodelalloc"},
  	{Opt_inode_readahead_blks, "inode_readahead_blks=%u"},
- 	{Opt_journal_ioprio, "journal_ioprio=%u"},
-+	{Opt_akpm_lock_hack, "akpm_lock_hack"},
- 	{Opt_err, NULL},
- };
- 
-@@ -1473,6 +1476,9 @@ set_qf_format:
- 			*journal_ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE,
- 							    option);
+@@ -1482,6 +1485,9 @@ set_qf_format:
+ 			else
+ 				set_opt(sbi->s_mount_opt,NO_AUTO_DA_ALLOC);
  			break;
 +		case Opt_akpm_lock_hack:
 +			set_opt(sbi->s_mount_opt, AKPM_LOCK_HACK);
@@ -61,7 +61,7 @@ index 22c4fde..04ab984 100644
  		default:
  			printk(KERN_ERR
  			       "EXT4-fs: Unrecognized mount option \"%s\" "
-@@ -2656,6 +2662,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -2855,6 +2861,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
@@ -73,7 +73,7 @@ index 22c4fde..04ab984 100644
  }
  
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index 48c21ba..add3be0 100644
+index 28ce21d..054037f 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
 @@ -549,6 +549,7 @@ do_get_write_access(handle_t *handle, struct journal_head *jh,
@@ -110,10 +110,10 @@ index 48c21ba..add3be0 100644
  	error = -EROFS;
  	if (is_handle_aborted(handle)) {
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index adef1c9..4748e5e 100644
+index 4d248b3..30233ef 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
-@@ -1013,6 +1013,7 @@ struct journal_s
+@@ -1014,6 +1014,7 @@ struct journal_s
  #define JBD2_ABORT_ON_SYNCDATA_ERR	0x040	/* Abort the journal on file
  						 * data write error in ordered
  						 * mode */
