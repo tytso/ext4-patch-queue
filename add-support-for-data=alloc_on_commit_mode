@@ -1,0 +1,228 @@
+ext4: Add support for data=alloc_on_commit mode
+
+From: Theodore Ts'o <tytso@mit.edu>
+
+Add an ext3 bug-for-bug compatible analogue for data=ordered mode.  In
+this mode, we force all delayed allocation blocks involved with the
+to-be-commited transaction to be allocated, and then flushed out to
+disk before the transaction is commited.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index ebd1a50..b15b03e 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -541,8 +541,9 @@ do {									       \
+ #define EXT4_MOUNT_NOLOAD		0x00100	/* Don't use existing journal*/
+ #define EXT4_MOUNT_ABORT		0x00200	/* Fatal error detected */
+ #define EXT4_MOUNT_DATA_FLAGS		0x00C00	/* Mode for data writes: */
++#define EXT4_MOUNT_ORDERED_DATA		0x00000	/* Flush data before commit */
+ #define EXT4_MOUNT_JOURNAL_DATA		0x00400	/* Write data to journal */
+-#define EXT4_MOUNT_ORDERED_DATA		0x00800	/* Flush data before commit */
++#define EXT4_MOUNT_ALLOC_COMMIT_DATA	0x00800	/* Alloc data on commit */
+ #define EXT4_MOUNT_WRITEBACK_DATA	0x00C00	/* No data ordering */
+ #define EXT4_MOUNT_UPDATE_JOURNAL	0x01000	/* Update the journal format */
+ #define EXT4_MOUNT_NO_UID32		0x02000  /* Disable 32-bit UIDs */
+@@ -820,10 +821,11 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
+ #define EXT4_DEFM_XATTR_USER	0x0004
+ #define EXT4_DEFM_ACL		0x0008
+ #define EXT4_DEFM_UID16		0x0010
+-#define EXT4_DEFM_JMODE		0x0060
++#define EXT4_DEFM_JMODE		0x00E0
+ #define EXT4_DEFM_JMODE_DATA	0x0020
+ #define EXT4_DEFM_JMODE_ORDERED	0x0040
+ #define EXT4_DEFM_JMODE_WBACK	0x0060
++#define EXT4_DEFM_JMODE_ALLOC_COMMIT	0x00C0
+ 
+ /*
+  * Default journal batch times
+diff --git a/fs/ext4/ext4_jbd2.h b/fs/ext4/ext4_jbd2.h
+index be2f426..0453671 100644
+--- a/fs/ext4/ext4_jbd2.h
++++ b/fs/ext4/ext4_jbd2.h
+@@ -274,7 +274,8 @@ static inline int ext4_should_order_data(struct inode *inode)
+ 		return 0;
+ 	if (EXT4_I(inode)->i_flags & EXT4_JOURNAL_DATA_FL)
+ 		return 0;
+-	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA)
++	if ((test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA) ||
++	    (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_ALLOC_COMMIT_DATA))
+ 		return 1;
+ 	return 0;
+ }
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index b58e7e2..ba0112b 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2754,6 +2754,17 @@ static int ext4_da_write_end(struct file *file,
+ 		   "dev %s ino %lu pos %llu len %u copied %u",
+ 		   inode->i_sb->s_id, inode->i_ino,
+ 		   (unsigned long long) pos, len, copied);
++
++	if (test_opt(inode->i_sb, DATA_FLAGS) ==
++	    EXT4_MOUNT_ALLOC_COMMIT_DATA) {
++		ret = ext4_jbd2_file_inode(handle, inode);
++		if (ret)
++			goto errout;
++		ret = ext4_mark_inode_dirty(handle, inode);
++		if (ret)
++			goto errout;
++	}
++
+ 	start = pos & (PAGE_CACHE_SIZE - 1);
+ 	end = start + copied - 1;
+ 
+@@ -2791,6 +2802,7 @@ static int ext4_da_write_end(struct file *file,
+ 	copied = ret2;
+ 	if (ret2 < 0)
+ 		ret = ret2;
++errout:
+ 	ret2 = ext4_journal_stop(handle);
+ 	if (!ret)
+ 		ret = ret2;
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 3f32fb2..93e1bf9 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -67,7 +67,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf);
+ static int ext4_unfreeze(struct super_block *sb);
+ static void ext4_write_super(struct super_block *sb);
+ static int ext4_freeze(struct super_block *sb);
+-
++static void alloc_on_commit_callback(journal_t *journal);
+ 
+ ext4_fsblk_t ext4_block_bitmap(struct super_block *sb,
+ 			       struct ext4_group_desc *bg)
+@@ -849,6 +849,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+ 		seq_puts(seq, ",data=ordered");
+ 	else if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_WRITEBACK_DATA)
+ 		seq_puts(seq, ",data=writeback");
++	else if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_ALLOC_COMMIT_DATA)
++		seq_puts(seq, ",data=alloc_on_commit");
+ 
+ 	if (sbi->s_inode_readahead_blks != EXT4_DEF_INODE_READAHEAD_BLKS)
+ 		seq_printf(seq, ",inode_readahead_blks=%u",
+@@ -1012,7 +1014,7 @@ enum {
+ 	Opt_journal_update, Opt_journal_dev,
+ 	Opt_journal_checksum, Opt_journal_async_commit,
+ 	Opt_abort, Opt_data_journal, Opt_data_ordered, Opt_data_writeback,
+-	Opt_data_err_abort, Opt_data_err_ignore,
++	Opt_data_alloc_on_commit, Opt_data_err_abort, Opt_data_err_ignore,
+ 	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
+ 	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
+ 	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
+@@ -1056,6 +1058,7 @@ static const match_table_t tokens = {
+ 	{Opt_data_journal, "data=journal"},
+ 	{Opt_data_ordered, "data=ordered"},
+ 	{Opt_data_writeback, "data=writeback"},
++	{Opt_data_alloc_on_commit, "data=alloc_on_commit"},
+ 	{Opt_data_err_abort, "data_err=abort"},
+ 	{Opt_data_err_ignore, "data_err=ignore"},
+ 	{Opt_offusrjquota, "usrjquota="},
+@@ -1273,6 +1276,9 @@ static int parse_options(char *options, struct super_block *sb,
+ 		case Opt_data_ordered:
+ 			data_opt = EXT4_MOUNT_ORDERED_DATA;
+ 			goto datacheck;
++		case Opt_data_alloc_on_commit:
++			data_opt = EXT4_MOUNT_ALLOC_COMMIT_DATA;
++			goto datacheck;
+ 		case Opt_data_writeback:
+ 			data_opt = EXT4_MOUNT_WRITEBACK_DATA;
+ 		datacheck:
+@@ -1852,6 +1858,26 @@ static void ext4_orphan_cleanup(struct super_block *sb,
+ #endif
+ 	sb->s_flags = s_flags; /* Restore MS_RDONLY status */
+ }
++
++/*
++ * This callback is called before each commit when we are using
++ * alloc-on-commit mode.
++ */
++static void alloc_on_commit_callback(journal_t *journal)
++{
++	struct jbd2_inode *jinode, *next_i;
++	transaction_t *transaction = journal->j_running_transaction;
++
++	spin_lock(&journal->j_list_lock);
++	list_for_each_entry_safe(jinode, next_i,
++				 &transaction->t_inode_list, i_list) {
++		spin_unlock(&journal->j_list_lock);
++		ext4_alloc_da_blocks(jinode->i_vfs_inode);
++		spin_lock(&journal->j_list_lock);
++	}
++	spin_unlock(&journal->j_list_lock);
++}
++
+ /*
+  * Maximal extent format file size.
+  * Resulting logical blkno at s_maxbytes must fit in our on-disk
+@@ -2283,6 +2309,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		sbi->s_mount_opt |= EXT4_MOUNT_ORDERED_DATA;
+ 	else if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_WBACK)
+ 		sbi->s_mount_opt |= EXT4_MOUNT_WRITEBACK_DATA;
++	else if ((def_mount_opts & EXT4_DEFM_JMODE) ==
++		 EXT4_DEFM_JMODE_ALLOC_COMMIT)
++		sbi->s_mount_opt |= EXT4_MOUNT_ALLOC_COMMIT_DATA;
+ 
+ 	if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_PANIC)
+ 		set_opt(sbi->s_mount_opt, ERRORS_PANIC);
+@@ -2654,18 +2683,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	/* We have now updated the journal if required, so we can
+ 	 * validate the data journaling mode. */
+ 	switch (test_opt(sb, DATA_FLAGS)) {
+-	case 0:
+-		/* No mode set, assume a default based on the journal
+-		 * capabilities: ORDERED_DATA if the journal can
+-		 * cope, else JOURNAL_DATA
+-		 */
+-		if (jbd2_journal_check_available_features
+-		    (sbi->s_journal, 0, 0, JBD2_FEATURE_INCOMPAT_REVOKE))
+-			set_opt(sbi->s_mount_opt, ORDERED_DATA);
+-		else
+-			set_opt(sbi->s_mount_opt, JOURNAL_DATA);
+-		break;
+-
++	case EXT4_MOUNT_ALLOC_COMMIT_DATA:
++		sbi->s_journal->j_pre_commit_callback =
++			alloc_on_commit_callback;
+ 	case EXT4_MOUNT_ORDERED_DATA:
+ 	case EXT4_MOUNT_WRITEBACK_DATA:
+ 		if (!jbd2_journal_check_available_features
+@@ -2784,6 +2804,9 @@ no_journal:
+ 			descr = " journalled data mode";
+ 		else if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA)
+ 			descr = " ordered data mode";
++		else if (test_opt(sb, DATA_FLAGS) ==
++			 EXT4_MOUNT_ALLOC_COMMIT_DATA)
++			descr = " alloc on commit data mode";
+ 		else
+ 			descr = " writeback data mode";
+ 	} else
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index 62804e5..e8a96e7 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -379,6 +379,9 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 	spin_unlock(&journal->j_list_lock);
+ #endif
+ 
++	if (journal->j_pre_commit_callback)
++		journal->j_pre_commit_callback(journal);
++
+ 	/* Do we need to erase the effects of a prior jbd2_journal_flush? */
+ 	if (journal->j_flags & JBD2_FLUSHED) {
+ 		jbd_debug(3, "super block updated\n");
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 4d248b3..43b1689 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -975,6 +975,8 @@ struct journal_s
+ 	u32			j_min_batch_time;
+ 	u32			j_max_batch_time;
+ 
++	/* This function is called before a transaction is closed */
++	void			(*j_pre_commit_callback)(journal_t *);
+ 	/* This function is called when a transaction is closed */
+ 	void			(*j_commit_callback)(journal_t *,
+ 						     transaction_t *);
