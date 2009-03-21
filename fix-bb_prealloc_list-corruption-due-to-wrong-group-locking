@@ -1,0 +1,79 @@
+ext4: fix bb_prealloc_list corruption due to wrong group locking
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+This is for Red Hat bug 490026: EXT4 panic, list corruption in
+ext4_mb_new_inode_pa
+
+ext4_lock_group(sb, group) is supposed to protect this list for
+each group, and a common code flow to remove an album is like
+this:
+
+    ext4_get_group_no_and_offset(sb, pa->pa_pstart, &grp, NULL);
+    ext4_lock_group(sb, grp);
+    list_del(&pa->pa_group_list);
+    ext4_unlock_group(sb, grp);
+
+so it's critical that we get the right group number back for
+this prealloc context, to lock the right group (the one 
+associated with this pa) and prevent concurrent list manipulation.
+
+however, ext4_mb_put_pa() passes in (pa->pa_pstart - 1) with a 
+comment, "-1 is to protect from crossing allocation group".
+
+This makes sense for the group_pa, where pa_pstart is advanced
+by the length which has been used (in ext4_mb_release_context()),
+and when the entire length has been used, pa_pstart has been
+advanced to the first block of the next group.
+
+However, for inode_pa, pa_pstart is never advanced; it's just
+set once to the first block in the group and not moved after
+that.  So in this case, if we subtract one in ext4_mb_put_pa(),
+we are actually locking the *previous* group, and opening the
+race with the other threads which do not subtract off the extra
+block.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+(fixed up comment per Aneesh's suggestion)
+
+Index: linux-2.6/fs/ext4/mballoc.c
+===================================================================
+--- linux-2.6.orig/fs/ext4/mballoc.c
++++ linux-2.6/fs/ext4/mballoc.c
+@@ -3589,6 +3589,7 @@ static void ext4_mb_put_pa(struct ext4_a
+ 			struct super_block *sb, struct ext4_prealloc_space *pa)
+ {
+ 	ext4_group_t grp;
++	ext4_fsblk_t grp_blk;
+ 
+ 	if (!atomic_dec_and_test(&pa->pa_count) || pa->pa_free != 0)
+ 		return;
+@@ -3603,8 +3604,12 @@ static void ext4_mb_put_pa(struct ext4_a
+ 	pa->pa_deleted = 1;
+ 	spin_unlock(&pa->pa_lock);
+ 
+-	/* -1 is to protect from crossing allocation group */
+-	ext4_get_group_no_and_offset(sb, pa->pa_pstart - 1, &grp, NULL);
++	grp_blk = pa->pa_pstart;
++	/* If linear, pa_pstart may be in the next group when pa is used up */
++	if (pa->pa_linear)
++		grp_blk--;
++
++	ext4_get_group_no_and_offset(sb, grp_blk, &grp, NULL);
+ 
+ 	/*
+ 	 * possible race:
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
