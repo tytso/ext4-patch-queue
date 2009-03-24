@@ -5,11 +5,6 @@ filesystem and various tuning parameters can be accessed via
 /sys/fs/ext4/<dev>/*.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/ext4/ext4_sb.h |    2 +
- fs/ext4/super.c   |  198 +++++++++++++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 200 insertions(+), 0 deletions(-)
-
 diff --git a/fs/ext4/ext4_sb.h b/fs/ext4/ext4_sb.h
 index 50ab116..57b71fe 100644
 --- a/fs/ext4/ext4_sb.h
@@ -24,7 +19,7 @@ index 50ab116..57b71fe 100644
  	/* Journaling */
  	struct inode *s_journal_inode;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 0ff8644..b1314a1 100644
+index c61b6a6..dfec6e3 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -35,6 +35,7 @@
@@ -43,16 +38,32 @@ index 0ff8644..b1314a1 100644
  
  static int ext4_load_journal(struct super_block *, struct ext4_super_block *,
  			     unsigned long journal_devnum);
-@@ -580,6 +582,8 @@ static void ext4_put_super(struct super_block *sb)
+@@ -580,6 +582,7 @@ static void ext4_put_super(struct super_block *sb)
  		remove_proc_entry("inode_readahead_blks", sbi->s_proc);
  		remove_proc_entry(sb->s_id, ext4_proc_root);
  	}
-+	kobject_put(&sbi->s_kobj);
-+	wait_for_completion(&sbi->s_kobj_unregister);
++	kobject_del(&sbi->s_kobj);
  
  	for (i = 0; i < sbi->s_gdb_count; i++)
  		brelse(sbi->s_group_desc[i]);
-@@ -1465,6 +1469,11 @@ set_qf_format:
+@@ -615,6 +618,16 @@ static void ext4_put_super(struct super_block *sb)
+ 		ext4_blkdev_remove(sbi);
+ 	}
+ 	sb->s_fs_info = NULL;
++	/*
++	 * Now that we are completely done shutting down the
++	 * superblock, we need to actually destroy the kobject.
++	 */
++	unlock_kernel();
++	unlock_super(sb);
++	kobject_put(&sbi->s_kobj);
++	wait_for_completion(&sbi->s_kobj_unregister);
++	lock_super(sb);
++	lock_kernel();
+ 	kfree(sbi->s_blockgroup_lock);
+ 	kfree(sbi);
+ 	return;
+@@ -1462,6 +1475,11 @@ set_qf_format:
  				return 0;
  			if (option < 0 || option > (1 << 30))
  				return 0;
@@ -64,7 +75,7 @@ index 0ff8644..b1314a1 100644
  			sbi->s_inode_readahead_blks = option;
  			break;
  		case Opt_journal_ioprio:
-@@ -1996,6 +2005,181 @@ static unsigned long ext4_get_stripe_size(struct ext4_sb_info *sbi)
+@@ -1990,6 +2008,181 @@ static unsigned long ext4_get_stripe_size(struct ext4_sb_info *sbi)
  	return 0;
  }
  
@@ -246,7 +257,7 @@ index 0ff8644..b1314a1 100644
  static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  				__releases(kernel_lock)
  				__acquires(kernel_lock)
-@@ -2579,6 +2763,16 @@ no_journal:
+@@ -2573,6 +2766,16 @@ no_journal:
  		goto failed_mount4;
  	}
  
@@ -263,7 +274,7 @@ index 0ff8644..b1314a1 100644
  	/*
  	 * akpm: core read_super() calls in here with the superblock locked.
  	 * That deadlocks, because orphan cleanup needs to lock the superblock
-@@ -3780,6 +3974,9 @@ static int __init init_ext4_fs(void)
+@@ -3770,6 +3973,9 @@ static int __init init_ext4_fs(void)
  {
  	int err;
  
@@ -273,7 +284,7 @@ index 0ff8644..b1314a1 100644
  	ext4_proc_root = proc_mkdir("fs/ext4", NULL);
  	err = init_ext4_mballoc();
  	if (err)
-@@ -3821,6 +4018,7 @@ static void __exit exit_ext4_fs(void)
+@@ -3811,6 +4017,7 @@ static void __exit exit_ext4_fs(void)
  	exit_ext4_xattr();
  	exit_ext4_mballoc();
  	remove_proc_entry("fs/ext4", NULL);
