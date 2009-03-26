@@ -1,0 +1,46 @@
+block_write_full_page: Use synchronous writes for WBC_SYNC_ALL writebacks
+
+From: Theodore Ts'o <tytso@mit.edu>
+
+When doing synchronous writes because wbc->sync_mode is set to
+WBC_SYNC_ALL, send the write request using WRITE_SYNC, so that we
+don't unduly block system calls such as fsync().
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/buffer.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/buffer.c b/fs/buffer.c
+index 3cc3a7d..4ea1bbb 100644
+--- a/fs/buffer.c
++++ b/fs/buffer.c
+@@ -1755,6 +1755,7 @@ static int __block_write_full_page(struct inode *inode, struct page *page,
+ 	struct buffer_head *bh, *head;
+ 	const unsigned blocksize = 1 << inode->i_blkbits;
+ 	int nr_underway = 0;
++	int write_op = (wbc->sync_mode == WB_SYNC_ALL ? WRITE_SYNC : WRITE);
+ 
+ 	BUG_ON(!PageLocked(page));
+ 
+@@ -1846,7 +1847,7 @@ static int __block_write_full_page(struct inode *inode, struct page *page,
+ 	do {
+ 		struct buffer_head *next = bh->b_this_page;
+ 		if (buffer_async_write(bh)) {
+-			submit_bh(WRITE, bh);
++			submit_bh(write_op, bh);
+ 			nr_underway++;
+ 		}
+ 		bh = next;
+@@ -1900,7 +1901,7 @@ recover:
+ 		struct buffer_head *next = bh->b_this_page;
+ 		if (buffer_async_write(bh)) {
+ 			clear_buffer_dirty(bh);
+-			submit_bh(WRITE, bh);
++			submit_bh(write_op, bh);
+ 			nr_underway++;
+ 		}
+ 		bh = next;
+-- 
+1.5.6.3
+

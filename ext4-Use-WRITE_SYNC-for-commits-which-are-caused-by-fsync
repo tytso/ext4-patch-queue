@@ -1,0 +1,78 @@
+From: Theodore Ts'o <tytso@mit.edu>
+
+ext4: Use WRITE_SYNC for commits which are caused by fsync()
+
+If a commit is triggered by fsync(), set a flag indicating the journal
+blocks associated with the transaction should be flushed out using
+WRITE_SYNC.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/commit.c      |    5 ++++-
+ fs/jbd2/transaction.c |    2 ++
+ include/linux/jbd2.h  |    6 ++++++
+ 3 files changed, 12 insertions(+), 1 deletions(-)
+
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index e8a96e7..9f9a1cb 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -367,6 +367,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 	int tag_bytes = journal_tag_bytes(journal);
+ 	struct buffer_head *cbh = NULL; /* For transactional checksums */
+ 	__u32 crc32_sum = ~0;
++	int write_op = WRITE;
+ 
+ 	/*
+ 	 * First job: lock down the current transaction and wait for
+@@ -404,6 +405,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 	spin_lock(&journal->j_state_lock);
+ 	commit_transaction->t_state = T_LOCKED;
+ 
++	if (commit_transaction->t_synchronous_commit)
++		write_op = WRITE_SYNC;
+ 	stats.u.run.rs_wait = commit_transaction->t_max_wait;
+ 	stats.u.run.rs_locked = jiffies;
+ 	stats.u.run.rs_running = jbd2_time_diff(commit_transaction->t_start,
+@@ -683,7 +686,7 @@ start_journal_io:
+ 				clear_buffer_dirty(bh);
+ 				set_buffer_uptodate(bh);
+ 				bh->b_end_io = journal_end_buffer_io_sync;
+-				submit_bh(WRITE, bh);
++				submit_bh(write_op, bh);
+ 			}
+ 			cond_resched();
+ 			stats.u.run.rs_blocks_logged += bufs;
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index 054037f..f322805 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -1323,6 +1323,8 @@ int jbd2_journal_stop(handle_t *handle)
+ 		}
+ 	}
+ 
++	if (handle->h_sync)
++		transaction->t_synchronous_commit = 1;
+ 	current->journal_info = NULL;
+ 	spin_lock(&journal->j_state_lock);
+ 	spin_lock(&transaction->t_handle_lock);
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index ceed668..c14dcad 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -649,6 +649,12 @@ struct transaction_s
+ 	int t_handle_count;
+ 
+ 	/*
++	 * This transaction is being forced and some process is
++	 * waiting for it to finish.
++	 */
++	int t_synchronous_commit:1;
++
++	/*
+ 	 * For use by the filesystem to store fs-specific data
+ 	 * structures associated with the transaction
+ 	 */
+-- 
+1.5.6.3
+
