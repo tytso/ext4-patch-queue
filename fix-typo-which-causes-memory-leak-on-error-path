@@ -1,0 +1,21 @@
+ext4: fix typo which causes a memory leak on error path
+
+From: Dan Carpenter <error27@gmail.com>
+
+This was found by smatch (http://repo.or.cz/w/smatch.git/)
+
+Signed-off-by: Dan Carpenter <error27@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+--- orig/fs/ext4/mballoc.c	2009-03-26 18:22:30.000000000 +0300
++++ devel/fs/ext4/mballoc.c	2009-03-26 18:22:56.000000000 +0300
+@@ -2693,7 +2693,7 @@
+ 	i = (sb->s_blocksize_bits + 2) * sizeof(unsigned int);
+ 	sbi->s_mb_maxs = kmalloc(i, GFP_KERNEL);
+ 	if (sbi->s_mb_maxs == NULL) {
+-		kfree(sbi->s_mb_maxs);
++		kfree(sbi->s_mb_offsets);
+ 		return -ENOMEM;
+ 	}
+ 
