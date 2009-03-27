@@ -5,12 +5,13 @@ From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 Make sure we validate extent details only when read from the disk.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Thiemo Nagel <thiemo.nagel@ph.tum.de>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4_extents.h |    1 +
- fs/ext4/extents.c      |   24 +++++++++++++++++-------
+ fs/ext4/extents.c      |   25 ++++++++++++++++++-------
  fs/ext4/inode.c        |   10 ++++++++++
- 3 files changed, 28 insertions(+), 7 deletions(-)
+ 3 files changed, 29 insertions(+), 7 deletions(-)
 
 diff --git a/fs/ext4/ext4_extents.h b/fs/ext4/ext4_extents.h
 index 18cb67b..f0c3ec8 100644
@@ -24,10 +25,10 @@ index 18cb67b..f0c3ec8 100644
  #endif /* _EXT4_EXTENTS */
  
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 503c97c..16acada 100644
+index ee40b7c..ac77d8b 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -406,6 +406,11 @@ corrupted:
+@@ -429,6 +429,11 @@ corrupted:
  #define ext4_ext_check(inode, eh, depth)	\
  	__ext4_ext_check(__func__, inode, eh, depth)
  
@@ -39,14 +40,7 @@ index 503c97c..16acada 100644
  #ifdef EXT_DEBUG
  static void ext4_ext_show_path(struct inode *inode, struct ext4_ext_path *path)
  {
-@@ -602,15 +607,13 @@ struct ext4_ext_path *
- ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
- 					struct ext4_ext_path *path)
- {
-+	int need_to_validate = 0;
- 	struct ext4_extent_header *eh;
- 	struct buffer_head *bh;
- 	short int depth, i, ppos = 0, alloc = 0;
+@@ -631,9 +636,6 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
  
  	eh = ext_inode_hdr(inode);
  	depth = ext_depth(inode);
@@ -56,7 +50,16 @@ index 503c97c..16acada 100644
  
  	/* account possible depth increase */
  	if (!path) {
-@@ -634,10 +637,17 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+@@ -649,6 +651,8 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+ 	i = depth;
+ 	/* walk through the tree */
+ 	while (i) {
++		int need_to_validate = 0;
++
+ 		ext_debug("depth %d: num %d, max %d\n",
+ 			  ppos, le16_to_cpu(eh->eh_entries), le16_to_cpu(eh->eh_max));
+ 
+@@ -657,10 +661,17 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
  		path[ppos].p_depth = i;
  		path[ppos].p_ext = NULL;
  
@@ -77,7 +80,7 @@ index 503c97c..16acada 100644
  		eh = ext_block_hdr(bh);
  		ppos++;
  		BUG_ON(ppos > depth);
-@@ -645,7 +655,7 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+@@ -668,7 +679,7 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
  		path[ppos].p_hdr = eh;
  		i--;
  
@@ -87,10 +90,10 @@ index 503c97c..16acada 100644
  	}
  
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 03ba20b..61e8fc0 100644
+index ec5f85b..7a3670b 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -4273,6 +4273,16 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+@@ -4315,6 +4315,16 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
  			(__u64)(le32_to_cpu(raw_inode->i_version_hi)) << 32;
  	}
  
@@ -107,9 +110,3 @@ index 03ba20b..61e8fc0 100644
  	if (S_ISREG(inode->i_mode)) {
  		inode->i_op = &ext4_file_inode_operations;
  		inode->i_fop = &ext4_file_operations;
--- 
-tg: (b76c986..) extent_validate2 (depends on: extent_validate)
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
