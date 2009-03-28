@@ -12,8 +12,8 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/file.c  |    3 ++-
- fs/ext4/inode.c |    8 ++++++++
- 2 files changed, 10 insertions(+), 1 deletions(-)
+ fs/ext4/inode.c |    9 ++++++++-
+ 2 files changed, 10 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
 index 06df827..588af8c 100644
@@ -30,17 +30,20 @@ index 06df827..588af8c 100644
  		down_write(&EXT4_I(inode)->i_data_sem);
  		ext4_discard_preallocations(inode);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 6f5b424..b55fe0f 100644
+index 80ed6dc..7dcac9d 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1053,6 +1053,14 @@ static void ext4_da_update_reserve_space(struct inode *inode, int used)
- 	EXT4_I(inode)->i_reserved_data_blocks -= used;
- 
- 	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
+@@ -1067,9 +1067,16 @@ static void ext4_da_update_reserve_space(struct inode *inode, int used)
+ 	/*
+ 	 * free those over-booking quota for metadata blocks
+ 	 */
+-
+ 	if (mdb_free)
+ 		vfs_dq_release_reservation_block(inode, mdb_free);
 +
 +	/*
-+	 * If have done all the pending block allocation and if the we
-+	 * don't have any writer on the inode, we can discard the
++	 * If we have done all the pending block allocations and if
++	 * there aren't any writers on the inode, we can discard the
 +	 * inode's preallocations.
 +	 */
 +	if (!total && (atomic_read(&inode->i_writecount) == 0))
