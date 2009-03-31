@@ -5,17 +5,50 @@ replaced by knobs in sysfs at /sys/fs/ext4/<dev>/*.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h    |   16 -------
- fs/ext4/inode.c   |    7 +---
- fs/ext4/mballoc.c |  117 +++++++++++++----------------------------------------
- fs/ext4/super.c   |   46 ---------------------
- 4 files changed, 30 insertions(+), 156 deletions(-)
+ Documentation/filesystems/proc.txt |   21 -------
+ fs/ext4/ext4.h                     |   16 -----
+ fs/ext4/inode.c                    |    7 +--
+ fs/ext4/mballoc.c                  |  117 +++++++++---------------------------
+ fs/ext4/super.c                    |   46 --------------
+ 5 files changed, 30 insertions(+), 177 deletions(-)
 
+diff --git a/Documentation/filesystems/proc.txt b/Documentation/filesystems/proc.txt
+index 830bad7..efc4fd9 100644
+--- a/Documentation/filesystems/proc.txt
++++ b/Documentation/filesystems/proc.txt
+@@ -940,27 +940,6 @@ Table 1-10: Files in /proc/fs/ext4/<devname>
+  File            Content                                        
+  mb_groups       details of multiblock allocator buddy cache of free blocks
+  mb_history      multiblock allocation history
+- stats           controls whether the multiblock allocator should start
+-                 collecting statistics, which are shown during the unmount
+- group_prealloc  the multiblock allocator will round up allocation
+-                 requests to a multiple of this tuning parameter if the
+-                 stripe size is not set in the ext4 superblock
+- max_to_scan     The maximum number of extents the multiblock allocator
+-                 will search to find the best extent
+- min_to_scan     The minimum number of extents the multiblock allocator
+-                 will search to find the best extent
+- order2_req      Tuning parameter which controls the minimum size for 
+-                 requests (as a power of 2) where the buddy cache is
+-                 used
+- stream_req      Files which have fewer blocks than this tunable
+-                 parameter will have their blocks allocated out of a
+-                 block group specific preallocation pool, so that small
+-                 files are packed closely together.  Each large file
+-                 will have its blocks allocated out of its own unique
+-                 preallocation pool.
+-inode_readahead  Tuning parameter which controls the maximum number of
+-                 inode table blocks that ext4's inode table readahead
+-                 algorithm will pre-read into the buffer cache
+ ..............................................................................
+ 
+ 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index f9a3bc3..dfe1b6e 100644
+index 0bd3918..e5c273f 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -978,22 +978,6 @@ void ext4_get_group_no_and_offset(struct super_block *sb, ext4_fsblk_t blocknr,
+@@ -976,22 +976,6 @@ void ext4_get_group_no_and_offset(struct super_block *sb, ext4_fsblk_t blocknr,
  
  extern struct proc_dir_entry *ext4_proc_root;
  
@@ -39,10 +72,10 @@ index f9a3bc3..dfe1b6e 100644
   * Function prototypes
   */
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 8815b9c..b8e3412 100644
+index 7dcac9d..d3118d1 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -4124,12 +4124,7 @@ make_io:
+@@ -4153,12 +4153,7 @@ make_io:
  			unsigned num;
  
  			table = ext4_inode_table(sb, gdp);
@@ -57,7 +90,7 @@ index 8815b9c..b8e3412 100644
  			if (table > b)
  				b = table;
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 0430143..7e729cb 100644
+index b0d6022..c4c4309 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -46,22 +46,23 @@
@@ -236,7 +269,7 @@ index 0430143..7e729cb 100644
  int __init init_ext4_mballoc(void)
  {
  	ext4_pspace_cachep =
-@@ -3120,7 +3061,7 @@ out_err:
+@@ -3123,7 +3064,7 @@ out_err:
   * here we normalize request for locality group
   * Group request are normalized to s_strip size if we set the same via mount
   * option. If not we set it to s_mb_group_prealloc which can be configured via
@@ -245,7 +278,7 @@ index 0430143..7e729cb 100644
   *
   * XXX: should we try to preallocate more than the group has now?
   */
-@@ -4231,7 +4172,7 @@ static inline void ext4_mb_show_ac(struct ext4_allocation_context *ac)
+@@ -4239,7 +4180,7 @@ static inline void ext4_mb_show_ac(struct ext4_allocation_context *ac)
   * file is determined by the current size or the resulting size after
   * allocation which ever is larger
   *
@@ -255,7 +288,7 @@ index 0430143..7e729cb 100644
  static void ext4_mb_group_or_file(struct ext4_allocation_context *ac)
  {
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index b1314a1..feac99c 100644
+index 2883d43..1ec554c 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -579,7 +579,6 @@ static void ext4_put_super(struct super_block *sb)
@@ -265,8 +298,8 @@ index b1314a1..feac99c 100644
 -		remove_proc_entry("inode_readahead_blks", sbi->s_proc);
  		remove_proc_entry(sb->s_id, ext4_proc_root);
  	}
- 	kobject_put(&sbi->s_kobj);
-@@ -2524,11 +2523,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	kobject_del(&sbi->s_kobj);
+@@ -2529,11 +2528,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  #ifdef CONFIG_PROC_FS
  	if (ext4_proc_root)
  		sbi->s_proc = proc_mkdir(sb->s_id, ext4_proc_root);
@@ -278,7 +311,7 @@ index b1314a1..feac99c 100644
  #endif
  
  	bgl_lock_init(sbi->s_blockgroup_lock);
-@@ -2827,7 +2821,6 @@ failed_mount2:
+@@ -2832,7 +2826,6 @@ failed_mount2:
  	kfree(sbi->s_group_desc);
  failed_mount:
  	if (sbi->s_proc) {
@@ -286,7 +319,7 @@ index b1314a1..feac99c 100644
  		remove_proc_entry(sb->s_id, ext4_proc_root);
  	}
  #ifdef CONFIG_QUOTA
-@@ -3902,45 +3895,6 @@ static int ext4_get_sb(struct file_system_type *fs_type,
+@@ -3865,45 +3858,6 @@ static int ext4_get_sb(struct file_system_type *fs_type,
  	return get_sb_bdev(fs_type, flags, dev_name, data, ext4_fill_super, mnt);
  }
  
