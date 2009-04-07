@@ -1,5 +1,7 @@
 ext4: Fix big-endian problem in __ext4_check_blockref()
 
+From: Thiemo Nagel <thiemo.nagel@ph.tum.de>
+
 Commit fe2c8191 introduced a regression on big-endian system, because
 the checks to make sure block references in non-extent inodes are
 valid failed to use le32_to_cpu().
@@ -10,11 +12,11 @@ Tested-by: Alexander Beregalov <a.beregalov@gmail.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: stable@kernel.org
 ---
- fs/ext4/inode.c |   10 +++++-----
- 1 files changed, 5 insertions(+), 5 deletions(-)
+ fs/ext4/inode.c |   12 ++++++------
+ 1 files changed, 6 insertions(+), 6 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index a2e7952..3aaef30 100644
+index a2e7952..3e7da64 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -372,16 +372,16 @@ static int ext4_block_to_path(struct inode *inode,
@@ -38,12 +40,14 @@ index a2e7952..3aaef30 100644
  				   inode->i_ino, (int)(bref-p));
   			return -EIO;
   		}
-@@ -392,7 +392,7 @@ static int __ext4_check_blockref(const char *function, struct inode *inode,
+@@ -392,8 +392,8 @@ static int __ext4_check_blockref(const char *function, struct inode *inode,
  
  
  #define ext4_check_indirect_blockref(inode, bh)                         \
 -        __ext4_check_blockref(__func__, inode, (__le32 *)(bh)->b_data,  \
+-			      EXT4_ADDR_PER_BLOCK((inode)->i_sb))
 +        __ext4_check_blockref(__func__, inode, (bh)->b_data,            \
- 			      EXT4_ADDR_PER_BLOCK((inode)->i_sb))
++			(unsigned int) EXT4_ADDR_PER_BLOCK((inode)->i_sb))
  
  #define ext4_check_inode_blockref(inode)                                \
+         __ext4_check_blockref(__func__, inode, EXT4_I(inode)->i_data,   \
