@@ -1,0 +1,30 @@
+block_write_full_page: switch synchronous writes to use WRITE_SYNC_PLUG
+
+Now that we have a distinction between WRITE_SYNC and WRITE_SYNC_PLUG,
+use WRITE_SYNC_PLUG in __block_write_full_page() to avoid unplugging
+the block device I/O queue between each page that gets flushed out.
+
+The upstream callers of block_write_full_page() which wait for the
+writes to finish call wait_on_buffer(), wait_on_writeback_range()
+(which ultimately calls sync_page(), which calls
+blk_run_backing_dev(), which will unplug the device queue), and so on.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/buffer.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/buffer.c b/fs/buffer.c
+index 977e12a..95b5390 100644
+--- a/fs/buffer.c
++++ b/fs/buffer.c
+@@ -1646,7 +1646,8 @@ static int __block_write_full_page(struct inode *inode, struct page *page,
+ 	struct buffer_head *bh, *head;
+ 	const unsigned blocksize = 1 << inode->i_blkbits;
+ 	int nr_underway = 0;
+-	int write_op = (wbc->sync_mode == WB_SYNC_ALL ? WRITE_SYNC : WRITE);
++	int write_op = (wbc->sync_mode == WB_SYNC_ALL ?
++			WRITE_SYNC_PLUG : WRITE);
+ 
+ 	BUG_ON(!PageLocked(page));
+ 
