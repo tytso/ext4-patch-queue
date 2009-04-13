@@ -9,11 +9,20 @@ disk before the transaction is commited.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
+---
+ fs/ext4/ext4.h       |    6 +++-
+ fs/ext4/ext4_jbd2.h  |    3 +-
+ fs/ext4/inode.c      |   11 ++++++++++
+ fs/ext4/super.c      |   51 ++++++++++++++++++++++++++++++++++++-------------
+ fs/jbd2/commit.c     |    3 ++
+ include/linux/jbd2.h |    2 +
+ 6 files changed, 59 insertions(+), 17 deletions(-)
+
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index ebd1a50..b15b03e 100644
+index 791da89..76a2aea 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -541,8 +541,9 @@ do {									       \
+@@ -522,8 +522,9 @@ do {									       \
  #define EXT4_MOUNT_NOLOAD		0x00100	/* Don't use existing journal*/
  #define EXT4_MOUNT_ABORT		0x00200	/* Fatal error detected */
  #define EXT4_MOUNT_DATA_FLAGS		0x00C00	/* Mode for data writes: */
@@ -24,7 +33,7 @@ index ebd1a50..b15b03e 100644
  #define EXT4_MOUNT_WRITEBACK_DATA	0x00C00	/* No data ordering */
  #define EXT4_MOUNT_UPDATE_JOURNAL	0x01000	/* Update the journal format */
  #define EXT4_MOUNT_NO_UID32		0x02000  /* Disable 32-bit UIDs */
-@@ -820,10 +821,11 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
+@@ -801,10 +802,11 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  #define EXT4_DEFM_XATTR_USER	0x0004
  #define EXT4_DEFM_ACL		0x0008
  #define EXT4_DEFM_UID16		0x0010
@@ -52,13 +61,13 @@ index be2f426..0453671 100644
  	return 0;
  }
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index b58e7e2..ba0112b 100644
+index 3866f44..0e53456 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -2754,6 +2754,17 @@ static int ext4_da_write_end(struct file *file,
- 		   "dev %s ino %lu pos %llu len %u copied %u",
- 		   inode->i_sb->s_id, inode->i_ino,
- 		   (unsigned long long) pos, len, copied);
+@@ -2797,6 +2797,16 @@ static int ext4_da_write_end(struct file *file,
+ 	}
+ 
+ 	trace_ext4_da_write_end(inode, pos, len, copied);
 +
 +	if (test_opt(inode->i_sb, DATA_FLAGS) ==
 +	    EXT4_MOUNT_ALLOC_COMMIT_DATA) {
@@ -69,11 +78,10 @@ index b58e7e2..ba0112b 100644
 +		if (ret)
 +			goto errout;
 +	}
-+
  	start = pos & (PAGE_CACHE_SIZE - 1);
  	end = start + copied - 1;
  
-@@ -2791,6 +2802,7 @@ static int ext4_da_write_end(struct file *file,
+@@ -2834,6 +2844,7 @@ static int ext4_da_write_end(struct file *file,
  	copied = ret2;
  	if (ret2 < 0)
  		ret = ret2;
@@ -82,10 +90,10 @@ index b58e7e2..ba0112b 100644
  	if (!ret)
  		ret = ret2;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 3f32fb2..93e1bf9 100644
+index 9b77dd1..4bb104f 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -67,7 +67,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf);
+@@ -69,7 +69,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf);
  static int ext4_unfreeze(struct super_block *sb);
  static void ext4_write_super(struct super_block *sb);
  static int ext4_freeze(struct super_block *sb);
@@ -94,7 +102,7 @@ index 3f32fb2..93e1bf9 100644
  
  ext4_fsblk_t ext4_block_bitmap(struct super_block *sb,
  			       struct ext4_group_desc *bg)
-@@ -849,6 +849,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+@@ -860,6 +860,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
  		seq_puts(seq, ",data=ordered");
  	else if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_WRITEBACK_DATA)
  		seq_puts(seq, ",data=writeback");
@@ -103,7 +111,7 @@ index 3f32fb2..93e1bf9 100644
  
  	if (sbi->s_inode_readahead_blks != EXT4_DEF_INODE_READAHEAD_BLKS)
  		seq_printf(seq, ",inode_readahead_blks=%u",
-@@ -1012,7 +1014,7 @@ enum {
+@@ -1025,7 +1027,7 @@ enum {
  	Opt_journal_update, Opt_journal_dev,
  	Opt_journal_checksum, Opt_journal_async_commit,
  	Opt_abort, Opt_data_journal, Opt_data_ordered, Opt_data_writeback,
@@ -111,8 +119,8 @@ index 3f32fb2..93e1bf9 100644
 +	Opt_data_alloc_on_commit, Opt_data_err_abort, Opt_data_err_ignore,
  	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
- 	Opt_ignore, Opt_barrier, Opt_err, Opt_resize, Opt_usrquota,
-@@ -1056,6 +1058,7 @@ static const match_table_t tokens = {
+ 	Opt_ignore, Opt_barrier, Opt_nobarrier, Opt_err, Opt_resize,
+@@ -1069,6 +1071,7 @@ static const match_table_t tokens = {
  	{Opt_data_journal, "data=journal"},
  	{Opt_data_ordered, "data=ordered"},
  	{Opt_data_writeback, "data=writeback"},
@@ -120,7 +128,7 @@ index 3f32fb2..93e1bf9 100644
  	{Opt_data_err_abort, "data_err=abort"},
  	{Opt_data_err_ignore, "data_err=ignore"},
  	{Opt_offusrjquota, "usrjquota="},
-@@ -1273,6 +1276,9 @@ static int parse_options(char *options, struct super_block *sb,
+@@ -1290,6 +1293,9 @@ static int parse_options(char *options, struct super_block *sb,
  		case Opt_data_ordered:
  			data_opt = EXT4_MOUNT_ORDERED_DATA;
  			goto datacheck;
@@ -130,7 +138,7 @@ index 3f32fb2..93e1bf9 100644
  		case Opt_data_writeback:
  			data_opt = EXT4_MOUNT_WRITEBACK_DATA;
  		datacheck:
-@@ -1852,6 +1858,26 @@ static void ext4_orphan_cleanup(struct super_block *sb,
+@@ -1879,6 +1885,26 @@ static void ext4_orphan_cleanup(struct super_block *sb,
  #endif
  	sb->s_flags = s_flags; /* Restore MS_RDONLY status */
  }
@@ -157,7 +165,7 @@ index 3f32fb2..93e1bf9 100644
  /*
   * Maximal extent format file size.
   * Resulting logical blkno at s_maxbytes must fit in our on-disk
-@@ -2283,6 +2309,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2310,6 +2336,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		sbi->s_mount_opt |= EXT4_MOUNT_ORDERED_DATA;
  	else if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_WBACK)
  		sbi->s_mount_opt |= EXT4_MOUNT_WRITEBACK_DATA;
@@ -167,7 +175,7 @@ index 3f32fb2..93e1bf9 100644
  
  	if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_PANIC)
  		set_opt(sbi->s_mount_opt, ERRORS_PANIC);
-@@ -2654,18 +2683,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2690,18 +2719,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	/* We have now updated the journal if required, so we can
  	 * validate the data journaling mode. */
  	switch (test_opt(sb, DATA_FLAGS)) {
@@ -189,7 +197,7 @@ index 3f32fb2..93e1bf9 100644
  	case EXT4_MOUNT_ORDERED_DATA:
  	case EXT4_MOUNT_WRITEBACK_DATA:
  		if (!jbd2_journal_check_available_features
-@@ -2784,6 +2804,9 @@ no_journal:
+@@ -2820,6 +2840,9 @@ no_journal:
  			descr = " journalled data mode";
  		else if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA)
  			descr = " ordered data mode";
@@ -200,10 +208,10 @@ index 3f32fb2..93e1bf9 100644
  			descr = " writeback data mode";
  	} else
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index 62804e5..e8a96e7 100644
+index 21462a8..ff596d1 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
-@@ -379,6 +379,9 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -385,6 +385,9 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	spin_unlock(&journal->j_list_lock);
  #endif
  
@@ -214,10 +222,10 @@ index 62804e5..e8a96e7 100644
  	if (journal->j_flags & JBD2_FLUSHED) {
  		jbd_debug(3, "super block updated\n");
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 4d248b3..43b1689 100644
+index 8815a34..8b48e96 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
-@@ -975,6 +975,8 @@ struct journal_s
+@@ -981,6 +981,8 @@ struct journal_s
  	u32			j_min_batch_time;
  	u32			j_max_batch_time;
  
