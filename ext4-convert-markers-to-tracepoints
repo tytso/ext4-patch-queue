@@ -2,84 +2,18 @@ ext4: Convert instrumentation from markers to tracepoints
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h                    |   22 +--
- fs/ext4/ext4_i.h                  |   12 -
  fs/ext4/fsync.c                   |    8 +-
  fs/ext4/ialloc.c                  |   17 +-
  fs/ext4/inode.c                   |   79 ++---
- fs/ext4/mballoc.c                 |   84 ++---
- fs/ext4/mballoc.h                 |   68 +----
+ fs/ext4/mballoc.c                 |   86 ++---
+ fs/ext4/mballoc.h                 |    1 -
  fs/ext4/super.c                   |    6 +-
- include/linux/ext4_trace_types.h  |  108 ++++++
  include/trace/ext4.h              |    8 +
- include/trace/ext4_event_types.h  |  691 +++++++++++++++++++++++++++++++++++++
+ include/trace/ext4_event_types.h  |  693 +++++++++++++++++++++++++++++++++++++
  include/trace/trace_event_types.h |    1 +
  include/trace/trace_events.h      |    1 +
- 13 files changed, 887 insertions(+), 218 deletions(-)
+ 10 files changed, 781 insertions(+), 119 deletions(-)
 
-diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index d0f15ef..791da89 100644
---- a/fs/ext4/ext4.h
-+++ b/fs/ext4/ext4.h
-@@ -21,6 +21,7 @@
- #include <linux/magic.h>
- #include <linux/jbd2.h>
- #include <linux/quota.h>
-+#include <linux/ext4_trace_types.h>
- #include "ext4_i.h"
- 
- /*
-@@ -70,27 +71,6 @@
- #define EXT4_MB_DELALLOC_RESERVED      1024
- 
- 
--struct ext4_allocation_request {
--	/* target inode for block we're allocating */
--	struct inode *inode;
--	/* logical block in target inode */
--	ext4_lblk_t logical;
--	/* phys. target (a hint) */
--	ext4_fsblk_t goal;
--	/* the closest logical allocated block to the left */
--	ext4_lblk_t lleft;
--	/* phys. block for ^^^ */
--	ext4_fsblk_t pleft;
--	/* the closest logical allocated block to the right */
--	ext4_lblk_t lright;
--	/* phys. block for ^^^ */
--	ext4_fsblk_t pright;
--	/* how many blocks we want to allocate */
--	unsigned int len;
--	/* flags. see above EXT4_MB_HINT_* */
--	unsigned int flags;
--};
--
- /*
-  * Special inodes numbers
-  */
-diff --git a/fs/ext4/ext4_i.h b/fs/ext4/ext4_i.h
-index 4ce2187..48bf4bd 100644
---- a/fs/ext4/ext4_i.h
-+++ b/fs/ext4/ext4_i.h
-@@ -21,18 +21,6 @@
- #include <linux/seqlock.h>
- #include <linux/mutex.h>
- 
--/* data type for block offset of block group */
--typedef int ext4_grpblk_t;
--
--/* data type for filesystem-wide blocks number */
--typedef unsigned long long ext4_fsblk_t;
--
--/* data type for file logical block number */
--typedef __u32 ext4_lblk_t;
--
--/* data type for block group number */
--typedef unsigned int ext4_group_t;
--
- /*
-  * storage for cached extent
-  */
 diff --git a/fs/ext4/fsync.c b/fs/ext4/fsync.c
 index 5afe437..783efcb 100644
 --- a/fs/ext4/fsync.c
@@ -338,10 +272,19 @@ index c6bd6ce..3866f44 100644
  	if (page->index == size >> PAGE_CACHE_SHIFT)
  		len = size & ~PAGE_CACHE_MASK;
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index f871677..73a4866 100644
+index f871677..0844faa 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -342,6 +342,17 @@ static void release_blocks_on_commit(journal_t *journal, transaction_t *txn);
+@@ -22,6 +22,8 @@
+  */
+ 
+ #include "mballoc.h"
++#include <trace/ext4.h>
++
+ /*
+  * MUSTDO:
+  *   - test ext4_ext_search_left() and ext4_ext_search_right()
+@@ -342,6 +344,17 @@ static void release_blocks_on_commit(journal_t *journal, transaction_t *txn);
  
  
  
@@ -359,7 +302,7 @@ index f871677..73a4866 100644
  static inline void *mb_correct_addr_and_bit(int *bit, void *addr)
  {
  #if BITS_PER_LONG == 64
-@@ -2882,9 +2893,8 @@ static void release_blocks_on_commit(journal_t *journal, transaction_t *txn)
+@@ -2882,9 +2895,8 @@ static void release_blocks_on_commit(journal_t *journal, transaction_t *txn)
  		discard_block = (ext4_fsblk_t) entry->group * EXT4_BLOCKS_PER_GROUP(sb)
  			+ entry->start_blk
  			+ le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
@@ -371,7 +314,7 @@ index f871677..73a4866 100644
  		sb_issue_discard(sb, discard_block, entry->count);
  
  		kmem_cache_free(ext4_free_ext_cachep, entry);
-@@ -3658,10 +3668,7 @@ ext4_mb_new_inode_pa(struct ext4_allocation_context *ac)
+@@ -3658,10 +3670,7 @@ ext4_mb_new_inode_pa(struct ext4_allocation_context *ac)
  
  	mb_debug("new inode pa %p: %llu/%u for %u\n", pa,
  			pa->pa_pstart, pa->pa_len, pa->pa_lstart);
@@ -383,7 +326,7 @@ index f871677..73a4866 100644
  
  	ext4_mb_use_inode_pa(ac, pa);
  	atomic_add(pa->pa_free, &EXT4_SB(sb)->s_mb_preallocated);
-@@ -3720,9 +3727,8 @@ ext4_mb_new_group_pa(struct ext4_allocation_context *ac)
+@@ -3720,9 +3729,8 @@ ext4_mb_new_group_pa(struct ext4_allocation_context *ac)
  	pa->pa_type = MB_GROUP_PA;
  
  	mb_debug("new group pa %p: %llu/%u for %u\n", pa,
@@ -395,7 +338,7 @@ index f871677..73a4866 100644
  
  	ext4_mb_use_group_pa(ac, pa);
  	atomic_add(pa->pa_free, &EXT4_SB(sb)->s_mb_preallocated);
-@@ -3812,10 +3818,8 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+@@ -3812,10 +3820,8 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
  			ext4_mb_store_history(ac);
  		}
  
@@ -408,7 +351,7 @@ index f871677..73a4866 100644
  		mb_free_blocks(pa->pa_inode, e4b, bit, next - bit);
  		bit = next + 1;
  	}
-@@ -3849,8 +3853,7 @@ ext4_mb_release_group_pa(struct ext4_buddy *e4b,
+@@ -3849,8 +3855,7 @@ ext4_mb_release_group_pa(struct ext4_buddy *e4b,
  	if (ac)
  		ac->ac_op = EXT4_MB_HISTORY_DISCARD;
  
@@ -418,7 +361,7 @@ index f871677..73a4866 100644
  	BUG_ON(pa->pa_deleted == 0);
  	ext4_get_group_no_and_offset(sb, pa->pa_pstart, &group, &bit);
  	BUG_ON(group != e4b->bd_group && pa->pa_len != 0);
-@@ -3918,6 +3921,8 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3918,6 +3923,8 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  
  	INIT_LIST_HEAD(&list);
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
@@ -427,7 +370,7 @@ index f871677..73a4866 100644
  repeat:
  	ext4_lock_group(sb, group);
  	list_for_each_entry_safe(pa, tmp,
-@@ -4016,12 +4021,15 @@ void ext4_discard_preallocations(struct inode *inode)
+@@ -4016,12 +4023,15 @@ void ext4_discard_preallocations(struct inode *inode)
  	}
  
  	mb_debug("discard preallocation for inode %lu\n", inode->i_ino);
@@ -445,7 +388,7 @@ index f871677..73a4866 100644
  repeat:
  	/* first, collect all pa's in the inode */
  	spin_lock(&ei->i_prealloc_lock);
-@@ -4304,6 +4312,8 @@ ext4_mb_discard_lg_preallocations(struct super_block *sb,
+@@ -4304,6 +4314,8 @@ ext4_mb_discard_lg_preallocations(struct super_block *sb,
  
  	INIT_LIST_HEAD(&discard_list);
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
@@ -454,7 +397,7 @@ index f871677..73a4866 100644
  
  	spin_lock(&lg->lg_prealloc_lock);
  	list_for_each_entry_rcu(pa, &lg->lg_prealloc_list[order],
-@@ -4473,8 +4483,7 @@ static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
+@@ -4473,8 +4485,7 @@ static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
  	int ret;
  	int freed = 0;
  
@@ -464,7 +407,7 @@ index f871677..73a4866 100644
  	for (i = 0; i < EXT4_SB(sb)->s_groups_count && needed > 0; i++) {
  		ret = ext4_mb_discard_group_preallocations(sb, i, needed);
  		freed += ret;
-@@ -4503,17 +4512,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+@@ -4503,17 +4514,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  	sb = ar->inode->i_sb;
  	sbi = EXT4_SB(sb);
  
@@ -483,7 +426,7 @@ index f871677..73a4866 100644
  
  	/*
  	 * For delayed allocation, we could skip the ENOSPC and
-@@ -4549,7 +4548,10 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+@@ -4549,7 +4550,10 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  	}
  
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
@@ -495,7 +438,7 @@ index f871677..73a4866 100644
  		ar->len = 0;
  		*errp = -ENOMEM;
  		goto out1;
-@@ -4622,18 +4624,7 @@ out3:
+@@ -4622,18 +4626,7 @@ out3:
  						reserv_blks);
  	}
  
@@ -515,7 +458,7 @@ index f871677..73a4866 100644
  
  	return block;
  }
-@@ -4768,10 +4759,7 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4768,10 +4761,7 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  	}
  
  	ext4_debug("freeing block %lu\n", block);
@@ -528,104 +471,17 @@ index f871677..73a4866 100644
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
  	if (ac) {
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
-index dd9e6cd..61829a2 100644
+index dd9e6cd..f4b2b58 100644
 --- a/fs/ext4/mballoc.h
 +++ b/fs/ext4/mballoc.h
-@@ -19,8 +19,8 @@
+@@ -19,7 +19,6 @@
  #include <linux/seq_file.h>
  #include <linux/version.h>
  #include <linux/blkdev.h>
 -#include <linux/marker.h>
  #include <linux/mutex.h>
-+#include <trace/ext4.h>
  #include "ext4_jbd2.h"
  #include "ext4.h"
- #include "group.h"
-@@ -118,37 +118,11 @@ struct ext4_free_data {
- 	tid_t	t_tid;
- };
- 
--struct ext4_prealloc_space {
--	struct list_head	pa_inode_list;
--	struct list_head	pa_group_list;
--	union {
--		struct list_head pa_tmp_list;
--		struct rcu_head	pa_rcu;
--	} u;
--	spinlock_t		pa_lock;
--	atomic_t		pa_count;
--	unsigned		pa_deleted;
--	ext4_fsblk_t		pa_pstart;	/* phys. block */
--	ext4_lblk_t		pa_lstart;	/* log. block */
--	unsigned short		pa_len;		/* len of preallocated chunk */
--	unsigned short		pa_free;	/* how many blocks are free */
--	unsigned short		pa_type;	/* pa type. inode or group */
--	spinlock_t		*pa_obj_lock;
--	struct inode		*pa_inode;	/* hack, for history only */
--};
--
- enum {
- 	MB_INODE_PA = 0,
- 	MB_GROUP_PA = 1
- };
- 
--struct ext4_free_extent {
--	ext4_lblk_t fe_logical;
--	ext4_grpblk_t fe_start;
--	ext4_group_t fe_group;
--	int fe_len;
--};
--
- /*
-  * Locality group:
-  *   we try to group all related changes together
-@@ -167,46 +141,6 @@ struct ext4_locality_group {
- 	spinlock_t		lg_prealloc_lock;
- };
- 
--struct ext4_allocation_context {
--	struct inode *ac_inode;
--	struct super_block *ac_sb;
--
--	/* original request */
--	struct ext4_free_extent ac_o_ex;
--
--	/* goal request (after normalization) */
--	struct ext4_free_extent ac_g_ex;
--
--	/* the best found extent */
--	struct ext4_free_extent ac_b_ex;
--
--	/* copy of the bext found extent taken before preallocation efforts */
--	struct ext4_free_extent ac_f_ex;
--
--	/* number of iterations done. we have to track to limit searching */
--	unsigned long ac_ex_scanned;
--	__u16 ac_groups_scanned;
--	__u16 ac_found;
--	__u16 ac_tail;
--	__u16 ac_buddy;
--	__u16 ac_flags;		/* allocation hints */
--	__u8 ac_status;
--	__u8 ac_criteria;
--	__u8 ac_repeats;
--	__u8 ac_2order;		/* if request is to allocate 2^N blocks and
--				 * N > 0, the field stores N, otherwise 0 */
--	__u8 ac_op;		/* operation, for history only */
--	struct page *ac_bitmap_page;
--	struct page *ac_buddy_page;
--	/*
--	 * pointer to the held semaphore upon successful
--	 * block allocation
--	 */
--	struct rw_semaphore *alloc_semp;
--	struct ext4_prealloc_space *ac_pa;
--	struct ext4_locality_group *ac_lg;
--};
--
- #define AC_STATUS_CONTINUE	1
- #define AC_STATUS_FOUND		2
- #define AC_STATUS_BREAK		3
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
 index 2958f4e..9b77dd1 100644
 --- a/fs/ext4/super.c
@@ -659,120 +515,6 @@ index 2958f4e..9b77dd1 100644
  	sb->s_dirt = 0;
  	if (EXT4_SB(sb)->s_journal) {
  		if (jbd2_journal_start_commit(EXT4_SB(sb)->s_journal,
-diff --git a/include/linux/ext4_trace_types.h b/include/linux/ext4_trace_types.h
-new file mode 100644
-index 0000000..229a2dd
---- /dev/null
-+++ b/include/linux/ext4_trace_types.h
-@@ -0,0 +1,108 @@
-+/*
-+ * ext4_trace_types.h -- these data structures are needed by the
-+ *	tracing infrastructure
-+ */
-+
-+#ifndef _EXT4_TRACE_TYPES_H
-+#define _EXT4_TRACE_TYPES_H
-+
-+/* data type for block offset of block group */
-+typedef int ext4_grpblk_t;
-+
-+/* data type for filesystem-wide blocks number */
-+typedef unsigned long long ext4_fsblk_t;
-+
-+/* data type for file logical block number */
-+typedef __u32 ext4_lblk_t;
-+
-+/* data type for block group number */
-+typedef unsigned int ext4_group_t;
-+
-+struct ext4_allocation_request {
-+	/* target inode for block we're allocating */
-+	struct inode *inode;
-+	/* logical block in target inode */
-+	ext4_lblk_t logical;
-+	/* phys. target (a hint) */
-+	ext4_fsblk_t goal;
-+	/* the closest logical allocated block to the left */
-+	ext4_lblk_t lleft;
-+	/* phys. block for ^^^ */
-+	ext4_fsblk_t pleft;
-+	/* the closest logical allocated block to the right */
-+	ext4_lblk_t lright;
-+	/* phys. block for ^^^ */
-+	ext4_fsblk_t pright;
-+	/* how many blocks we want to allocate */
-+	unsigned int len;
-+	/* flags. see above EXT4_MB_HINT_* */
-+	unsigned int flags;
-+};
-+
-+struct ext4_free_extent {
-+	ext4_lblk_t fe_logical;
-+	ext4_grpblk_t fe_start;
-+	ext4_group_t fe_group;
-+	int fe_len;
-+};
-+
-+struct ext4_allocation_context {
-+	struct inode *ac_inode;
-+	struct super_block *ac_sb;
-+
-+	/* original request */
-+	struct ext4_free_extent ac_o_ex;
-+
-+	/* goal request (after normalization) */
-+	struct ext4_free_extent ac_g_ex;
-+
-+	/* the best found extent */
-+	struct ext4_free_extent ac_b_ex;
-+
-+	/* copy of the bext found extent taken before preallocation efforts */
-+	struct ext4_free_extent ac_f_ex;
-+
-+	/* number of iterations done. we have to track to limit searching */
-+	unsigned long ac_ex_scanned;
-+	__u16 ac_groups_scanned;
-+	__u16 ac_found;
-+	__u16 ac_tail;
-+	__u16 ac_buddy;
-+	__u16 ac_flags;		/* allocation hints */
-+	__u8 ac_status;
-+	__u8 ac_criteria;
-+	__u8 ac_repeats;
-+	__u8 ac_2order;		/* if request is to allocate 2^N blocks and
-+				 * N > 0, the field stores N, otherwise 0 */
-+	__u8 ac_op;		/* operation, for history only */
-+	struct page *ac_bitmap_page;
-+	struct page *ac_buddy_page;
-+	/*
-+	 * pointer to the held semaphore upon successful
-+	 * block allocation
-+	 */
-+	struct rw_semaphore *alloc_semp;
-+	struct ext4_prealloc_space *ac_pa;
-+	struct ext4_locality_group *ac_lg;
-+};
-+
-+struct ext4_prealloc_space {
-+	struct list_head	pa_inode_list;
-+	struct list_head	pa_group_list;
-+	union {
-+		struct list_head pa_tmp_list;
-+		struct rcu_head	pa_rcu;
-+	} u;
-+	spinlock_t		pa_lock;
-+	atomic_t		pa_count;
-+	unsigned		pa_deleted;
-+	ext4_fsblk_t		pa_pstart;	/* phys. block */
-+	ext4_lblk_t		pa_lstart;	/* log. block */
-+	unsigned short		pa_len;		/* len of preallocated chunk */
-+	unsigned short		pa_free;	/* how many blocks are free */
-+	unsigned short		pa_type;	/* pa type. inode or group */
-+	spinlock_t		*pa_obj_lock;
-+	struct inode		*pa_inode;	/* hack, for history only */
-+};
-+
-+#endif /* _EXT4_TRACE_TYPES_H */
 diff --git a/include/trace/ext4.h b/include/trace/ext4.h
 new file mode 100644
 index 0000000..e8d647a
@@ -789,10 +531,10 @@ index 0000000..e8d647a
 +#endif
 diff --git a/include/trace/ext4_event_types.h b/include/trace/ext4_event_types.h
 new file mode 100644
-index 0000000..861f9dc
+index 0000000..81abe3d
 --- /dev/null
 +++ b/include/trace/ext4_event_types.h
-@@ -0,0 +1,691 @@
+@@ -0,0 +1,693 @@
 +
 +/* use <trace/ext4.h> instead */
 +#ifndef TRACE_EVENT
@@ -804,7 +546,9 @@ index 0000000..861f9dc
 +#define TRACE_SYSTEM ext4
 +
 +#include <linux/writeback.h>
-+#include <linux/ext4_trace_types.h>
++#include "../../fs/ext4/ext4.h"
++#include "../../fs/ext4/mballoc.h"
++
 +
 +TRACE_EVENT(ext4_free_inode,
 +	TP_PROTO(struct inode *inode),
