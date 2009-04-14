@@ -1,0 +1,30 @@
+ext4: really print the find_group_flex fallback warning only once
+
+From: Chuck Ebbert <cebbert@redhat.com>
+
+Missing braces caused the warning to print more than once.
+
+Signed-Off-By: Chuck Ebbert <cebbert@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ialloc.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 47b84e8..cbce5aa 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -831,11 +831,12 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)
+ 		ret2 = find_group_flex(sb, dir, &group);
+ 		if (ret2 == -1) {
+ 			ret2 = find_group_other(sb, dir, &group, mode);
+-			if (ret2 == 0 && once)
++			if (ret2 == 0 && once) {
+ 				once = 0;
+ 				printk(KERN_NOTICE "ext4: find_group_flex "
+ 				       "failed, fallback succeeded dir %lu\n",
+ 				       dir->i_ino);
++			}
+ 		}
+ 		goto got_group;
+ 	}
