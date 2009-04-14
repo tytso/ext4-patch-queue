@@ -1,0 +1,129 @@
+jbd2: use SWRITE_SYNC_PLUG when writing synchronous revoke records
+
+The revoke records must be written using the same way as the rest of
+the blocks during the commit process; that is, either marked as
+synchronous writes or as asynchornous writes.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+---
+ fs/jbd2/commit.c     |    3 ++-
+ fs/jbd2/revoke.c     |   21 ++++++++++++---------
+ include/linux/jbd2.h |    3 ++-
+ 3 files changed, 16 insertions(+), 11 deletions(-)
+
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index 073c8c3..0b7d3b8 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -506,7 +506,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 	if (err)
+ 		jbd2_journal_abort(journal, err);
+ 
+-	jbd2_journal_write_revoke_records(journal, commit_transaction);
++	jbd2_journal_write_revoke_records(journal, commit_transaction,
++					  write_op);
+ 
+ 	jbd_debug(3, "JBD: commit phase 2\n");
+ 
+diff --git a/fs/jbd2/revoke.c b/fs/jbd2/revoke.c
+index bbe6d59..a360b06 100644
+--- a/fs/jbd2/revoke.c
++++ b/fs/jbd2/revoke.c
+@@ -86,6 +86,7 @@
+ #include <linux/slab.h>
+ #include <linux/list.h>
+ #include <linux/init.h>
++#include <linux/bio.h>
+ #endif
+ #include <linux/log2.h>
+ 
+@@ -118,8 +119,8 @@ struct jbd2_revoke_table_s
+ #ifdef __KERNEL__
+ static void write_one_revoke_record(journal_t *, transaction_t *,
+ 				    struct journal_head **, int *,
+-				    struct jbd2_revoke_record_s *);
+-static void flush_descriptor(journal_t *, struct journal_head *, int);
++				    struct jbd2_revoke_record_s *, int);
++static void flush_descriptor(journal_t *, struct journal_head *, int, int);
+ #endif
+ 
+ /* Utility functions to maintain the revoke table */
+@@ -499,7 +500,8 @@ void jbd2_journal_switch_revoke_table(journal_t *journal)
+  * revoke hash, deleting the entries as we go.
+  */
+ void jbd2_journal_write_revoke_records(journal_t *journal,
+-				  transaction_t *transaction)
++				       transaction_t *transaction,
++				       int write_op)
+ {
+ 	struct journal_head *descriptor;
+ 	struct jbd2_revoke_record_s *record;
+@@ -523,14 +525,14 @@ void jbd2_journal_write_revoke_records(journal_t *journal,
+ 				hash_list->next;
+ 			write_one_revoke_record(journal, transaction,
+ 						&descriptor, &offset,
+-						record);
++						record, write_op);
+ 			count++;
+ 			list_del(&record->hash);
+ 			kmem_cache_free(jbd2_revoke_record_cache, record);
+ 		}
+ 	}
+ 	if (descriptor)
+-		flush_descriptor(journal, descriptor, offset);
++		flush_descriptor(journal, descriptor, offset, write_op);
+ 	jbd_debug(1, "Wrote %d revoke records\n", count);
+ }
+ 
+@@ -543,7 +545,8 @@ static void write_one_revoke_record(journal_t *journal,
+ 				    transaction_t *transaction,
+ 				    struct journal_head **descriptorp,
+ 				    int *offsetp,
+-				    struct jbd2_revoke_record_s *record)
++				    struct jbd2_revoke_record_s *record,
++				    int write_op)
+ {
+ 	struct journal_head *descriptor;
+ 	int offset;
+@@ -562,7 +565,7 @@ static void write_one_revoke_record(journal_t *journal,
+ 	/* Make sure we have a descriptor with space left for the record */
+ 	if (descriptor) {
+ 		if (offset == journal->j_blocksize) {
+-			flush_descriptor(journal, descriptor, offset);
++			flush_descriptor(journal, descriptor, offset, write_op);
+ 			descriptor = NULL;
+ 		}
+ 	}
+@@ -607,7 +610,7 @@ static void write_one_revoke_record(journal_t *journal,
+ 
+ static void flush_descriptor(journal_t *journal,
+ 			     struct journal_head *descriptor,
+-			     int offset)
++			     int offset, int write_op)
+ {
+ 	jbd2_journal_revoke_header_t *header;
+ 	struct buffer_head *bh = jh2bh(descriptor);
+@@ -622,7 +625,7 @@ static void flush_descriptor(journal_t *journal,
+ 	set_buffer_jwrite(bh);
+ 	BUFFER_TRACE(bh, "write");
+ 	set_buffer_dirty(bh);
+-	ll_rw_block(SWRITE, 1, &bh);
++	ll_rw_block((write_op == WRITE) ? SWRITE : SWRITE_SYNC_PLUG, 1, &bh);
+ }
+ #endif
+ 
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 8815a34..cc02393 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -1193,7 +1193,8 @@ extern int	   jbd2_journal_init_revoke_caches(void);
+ extern void	   jbd2_journal_destroy_revoke(journal_t *);
+ extern int	   jbd2_journal_revoke (handle_t *, unsigned long long, struct buffer_head *);
+ extern int	   jbd2_journal_cancel_revoke(handle_t *, struct journal_head *);
+-extern void	   jbd2_journal_write_revoke_records(journal_t *, transaction_t *);
++extern void	   jbd2_journal_write_revoke_records(journal_t *,
++						     transaction_t *, int);
+ 
+ /* Recovery revoke support */
+ extern int	jbd2_journal_set_revoke(journal_t *, unsigned long long, tid_t);
