@@ -4,13 +4,13 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/jbd2/checkpoint.c              |    7 +-
  fs/jbd2/commit.c                  |   20 +++--
- fs/jbd2/journal.c                 |   63 ++++++++++++++
+ fs/jbd2/journal.c                 |   66 +++++++++++++++
  include/linux/jbd2.h              |    6 ++
  include/trace/jbd2.h              |    9 ++
  include/trace/jbd2_event_types.h  |  168 +++++++++++++++++++++++++++++++++++++
  include/trace/trace_event_types.h |    1 +
  include/trace/trace_events.h      |    1 +
- 8 files changed, 266 insertions(+), 9 deletions(-)
+ 8 files changed, 269 insertions(+), 9 deletions(-)
 
 diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
 index 17159ca..2b794d9 100644
@@ -120,81 +120,91 @@ index 0b7d3b8..394fae9 100644
  		  journal->j_commit_sequence, journal->j_tail_sequence);
  	if (to_free)
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 5814410..0529c86 100644
+index 5814410..7435ff4 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
-@@ -2377,6 +2377,69 @@ static void __exit journal_exit(void)
+@@ -38,6 +38,7 @@
+ #include <linux/debugfs.h>
+ #include <linux/seq_file.h>
+ #include <linux/math64.h>
++#include <linux/hash.h>
+ 
+ #include <asm/uaccess.h>
+ #include <asm/page.h>
+@@ -2377,6 +2378,71 @@ static void __exit journal_exit(void)
  	jbd2_journal_destroy_caches();
  }
  
 +/* 
 + * jbd2_dev_to_name is a utility function used by the jbd2 and ext4 
 + * tracing infrastructure to map a dev_t to a device name.
++ *
++ * The caller should use rcu_read_lock() in order to make sure the
++ * device name stays valid until its done with it.  We use
++ * rcu_read_lock() as well to make sure we're safe in case the caller
++ * gets sloppy, and because rcu_read_lock() is cheap and can be safely
++ * nested.
 + */
 +struct devname_cache {
-+	dev_t	device;
-+	char	devname[BDEVNAME_SIZE];
-+	unsigned long last_used; /* jiffies last used */
++	struct rcu_head	rcu;
++	dev_t		device;
++	char		devname[BDEVNAME_SIZE];
 +};
-+#define MAX_DEV_CACHE 16
-+static struct devname_cache devcache[MAX_DEV_CACHE];
-+static DEFINE_RWLOCK(devname_cache_lock);
++#define CACHE_SIZE_BITS 6
++static struct devname_cache *devcache[1 << CACHE_SIZE_BITS];
++static DEFINE_SPINLOCK(devname_cache_lock);
 +
-+char *jbd2_dev_to_name(dev_t device)
++static void free_devcache(struct rcu_head *rcu)
 +{
-+	int	i, new;
-+	unsigned long	lru_time;
++	kfree(rcu);
++}
++
++const char *jbd2_dev_to_name(dev_t device)
++{
++	int	i = hash_32(device, CACHE_SIZE_BITS);
++	char	*ret;
 +	struct block_device *bd;
 +
-+	read_lock(&devname_cache_lock);
-+	for (i=0; i < MAX_DEV_CACHE; i++) {
-+		if (device == devcache[i].device) {
-+			devcache[i].last_used = jiffies;
-+			read_unlock(&devname_cache_lock);
-+			return devcache[i].devname;
-+		}
-+		if (devcache[i].device == 0)
-+			break;
++	rcu_read_lock();
++	if (devcache[i] && devcache[i]->device == device) {
++		ret = devcache[i]->devname;
++		rcu_read_unlock();
++		return ret;
 +	}
-+	read_unlock(&devname_cache_lock);
++	rcu_read_unlock();
 +
-+	write_lock(&devname_cache_lock);
-+	lru_time = ~0;
-+	new = 0;
-+	for (i=0; i < MAX_DEV_CACHE; i++) {
-+		if (device == devcache[i].device) {
-+			/* Someone might have created the device for us */
-+			devcache[i].last_used = jiffies;
-+			write_unlock(&devname_cache_lock);
-+			return devcache[i].devname;
++	spin_lock(&devname_cache_lock);
++	if (devcache[i]) {
++		if (devcache[i]->device == device) {
++			ret = devcache[i]->devname;
++			spin_unlock(&devname_cache_lock);
++			return ret;
 +		}
-+		if (devcache[i].device == 0) {
-+			new = i;
-+			lru_time = 0;
-+		}
-+		if (devcache[i].last_used < lru_time) {
-+			new = i;
-+			lru_time = devcache[i].last_used;
-+		}
++		call_rcu(&devcache[i]->rcu, free_devcache);
 +	}
-+	devcache[new].device = device;
-+	devcache[new].last_used = jiffies;
++	devcache[i] = kmalloc(sizeof(struct devname_cache), GFP_KERNEL);
++	if (!devcache[i]) {
++		spin_unlock(&devname_cache_lock);
++		return "NODEV-ALLOCFAILURE"; /* Something non-NULL */
++	}
++	devcache[i]->device = device;
 +	bd = bdget(device);
 +	if (bd) {
-+		bdevname(bd, devcache[new].devname);
++		bdevname(bd, devcache[i]->devname);
 +		bdput(bd);
 +	} else
-+		__bdevname(device, devcache[new].devname);
-+	write_unlock(&devname_cache_lock);
-+	return devcache[new].devname;
-+}	
++		__bdevname(device, devcache[i]->devname);
++	ret = devcache[i]->devname;
++	spin_unlock(&devname_cache_lock);
++	return ret;
++}
 +EXPORT_SYMBOL(jbd2_dev_to_name);
 +
  MODULE_LICENSE("GPL");
  module_init(journal_init);
  module_exit(journal_exit);
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index cc02393..8bb6261 100644
+index cc02393..d97eb65 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
 @@ -1315,6 +1315,12 @@ extern int jbd_blocks_per_page(struct inode *inode);
@@ -205,7 +215,7 @@ index cc02393..8bb6261 100644
 + * jbd2_dev_to_name is a utility function used by the jbd2 and ext4 
 + * tracing infrastructure to map a dev_t to a device name.
 + */
-+extern char *jbd2_dev_to_name(dev_t device);
++extern const char *jbd2_dev_to_name(dev_t device);
 +
  #endif	/* __KERNEL__ */
  
