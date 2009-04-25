@@ -1,0 +1,40 @@
+ext4: Fix softlockup caused by illegal i_file_acl value in on-disk inode
+
+If the block containing external extended attributes (which is stored
+in i_file_acl and i_file_acl_high) is larger than the on-disk
+filesystem, the process which tried to access the extended attributes
+will endlessly issue kernel printks complaining that
+"__find_get_block_slow() failed", locking up that CPU until the system
+is forcibly rebooted.
+
+So when we read in the inode, make sure the i_file_acl value is legal,
+and if not, flag the filesystem as being corrupted.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |   12 +++++++++++-
+ 1 files changed, 11 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index c6bd6ce..cab75bb 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4409,7 +4409,17 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+ 			(__u64)(le32_to_cpu(raw_inode->i_version_hi)) << 32;
+ 	}
+ 
+-	if (ei->i_flags & EXT4_EXTENTS_FL) {
++	if (ei->i_file_acl &&
++	    ((ei->i_file_acl < 
++	      (le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block) +
++	       EXT4_SB(sb)->s_gdb_count)) ||
++	     (ei->i_file_acl >= ext4_blocks_count(EXT4_SB(sb)->s_es)))) {
++		ext4_error(sb, __func__,
++			   "bad extended attribute block %llu in inode #%lu",
++			   ei->i_file_acl, inode->i_ino);
++		ret = -EIO;
++		goto bad_inode;
++	} else if (ei->i_flags & EXT4_EXTENTS_FL) {
+ 		/* Validate extent which is part of inode */
+ 		ret = ext4_ext_check_inode(inode);
+  	} else if (S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
