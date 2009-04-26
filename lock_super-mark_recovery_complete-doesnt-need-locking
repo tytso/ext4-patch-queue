@@ -1,0 +1,51 @@
+ext4: ext4_mark_recovery_complete() doesn't need to use lock_super
+
+The function ext4_mark_recovery_complete() is called from two call
+paths: either (a) while mounting the filesystem, in which case there's
+no danger of any other CPU calling write_super() until the mount is
+completed, and (b) while remounting the filesystem read-write, in
+which case the fs core has already locked the superblock.  This also
+allows us to take out a very vile unlock_super()/lock_super() pair in
+ext4_remount().
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c |   11 +----------
+ 1 files changed, 1 insertions(+), 10 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index e0b0c9f..176d43f 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3198,14 +3198,12 @@ static void ext4_mark_recovery_complete(struct super_block *sb,
+ 	if (jbd2_journal_flush(journal) < 0)
+ 		goto out;
+ 
+-	lock_super(sb);
+ 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER) &&
+ 	    sb->s_flags & MS_RDONLY) {
+ 		EXT4_CLEAR_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER);
+ 		sb->s_dirt = 0;
+ 		ext4_commit_super(sb, es, 1);
+ 	}
+-	unlock_super(sb);
+ 
+ out:
+ 	jbd2_journal_unlock_updates(journal);
+@@ -3438,15 +3436,8 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 			    (sbi->s_mount_state & EXT4_VALID_FS))
+ 				es->s_state = cpu_to_le16(sbi->s_mount_state);
+ 
+-			/*
+-			 * We have to unlock super so that we can wait for
+-			 * transactions.
+-			 */
+-			if (sbi->s_journal) {
+-				unlock_super(sb);
++			if (sbi->s_journal)
+ 				ext4_mark_recovery_complete(sb, es);
+-				lock_super(sb);
+-			}
+ 		} else {
+ 			int ret;
+ 			if ((ret = EXT4_HAS_RO_COMPAT_FEATURE(sb,
