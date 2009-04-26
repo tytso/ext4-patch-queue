@@ -1,10 +1,11 @@
 ext4: Fallback to vmalloc if kmalloc can't allocate s_flex_groups array
 
 For very large filesystems, the s_flex_groups array can get quite big.
-For example, a 16TB filesystem will have 8192 flex groups by default,
-so the array is 96k, which is *very* marginal for kmalloc().  On the
-other hand, a 160GB filesystem will have 80 flex groups, so the array
-will be 960 bytes.  So we try to allocate the array first using
+For example, a filesystem that can be resized up to 16TB will have
+8192 flex groups (assuming the default flex_bg size of 16), so the
+array is 96k, which is *very* marginal for kmalloc().  On the other
+hand, a 160GB filesystem without the resize_inode feature will only
+require 960 bytes.  So we try to allocate the array first using
 kmalloc(), and if that fails, we'll try to use vmalloc() instead.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
