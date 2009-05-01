@@ -5,13 +5,14 @@ defined in one place.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/balloc.c |    1 -
- fs/ext4/ext4.h   |   17 +++++++++++++++++
- fs/ext4/group.h  |   29 -----------------------------
- fs/ext4/ialloc.c |    1 -
- fs/ext4/resize.c |    1 -
- fs/ext4/super.c  |    1 -
- 6 files changed, 17 insertions(+), 33 deletions(-)
+ fs/ext4/balloc.c  |    1 -
+ fs/ext4/ext4.h    |   17 +++++++++++++++++
+ fs/ext4/group.h   |   29 -----------------------------
+ fs/ext4/ialloc.c  |    1 -
+ fs/ext4/mballoc.h |    1 -
+ fs/ext4/resize.c  |    1 -
+ fs/ext4/super.c   |    1 -
+ 7 files changed, 17 insertions(+), 34 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
 index a5ba039..92f557d 100644
@@ -114,6 +115,18 @@ index 55ba419..916d05c 100644
  
  /*
   * ialloc.c contains the inodes allocation and deallocation routines
+diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
+index dd9e6cd..75e34f6 100644
+--- a/fs/ext4/mballoc.h
++++ b/fs/ext4/mballoc.h
+@@ -23,7 +23,6 @@
+ #include <linux/mutex.h>
+ #include "ext4_jbd2.h"
+ #include "ext4.h"
+-#include "group.h"
+ 
+ /*
+  * with AGGRESSIVE_CHECK allocator runs consistency checks over
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
 index e8ded13..27eb289 100644
 --- a/fs/ext4/resize.c
