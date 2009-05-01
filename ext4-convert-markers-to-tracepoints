@@ -44,7 +44,7 @@ index 5afe437..783efcb 100644
  	/*
  	 * data=writeback:
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index ebf0e70..7fa56b0 100644
+index 55ba419..ad9572d 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -22,6 +22,7 @@
@@ -79,17 +79,17 @@ index ebf0e70..7fa56b0 100644
  
  	/*
  	 * Note: we must free any quota before locking the superblock,
-@@ -821,8 +822,7 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)
- 		return ERR_PTR(-EPERM);
+@@ -818,8 +819,7 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)
  
  	sb = dir->i_sb;
+ 	ngroups = ext4_get_groups_count(sb);
 -	trace_mark(ext4_request_inode, "dev %s dir %lu mode %d", sb->s_id,
 -		   dir->i_ino, mode);
 +	trace_ext4_request_inode(dir, mode);
  	inode = new_inode(sb);
  	if (!inode)
  		return ERR_PTR(-ENOMEM);
-@@ -1057,8 +1057,7 @@ got:
+@@ -1050,8 +1050,7 @@ got:
  	}
  
  	ext4_debug("allocating inode %lu\n", inode->i_ino);
@@ -100,7 +100,7 @@ index ebf0e70..7fa56b0 100644
  fail:
  	ext4_std_error(sb, err);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index b891045..1c023ce 100644
+index 3e90965..2c6fd7a 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -37,11 +37,24 @@
@@ -272,7 +272,7 @@ index b891045..1c023ce 100644
  	if (page->index == size >> PAGE_CACHE_SHIFT)
  		len = size & ~PAGE_CACHE_MASK;
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 389037d..1685ee5 100644
+index 6ba27f5..f69ebc0 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -22,6 +22,8 @@
@@ -302,7 +302,7 @@ index 389037d..1685ee5 100644
  static inline void *mb_correct_addr_and_bit(int *bit, void *addr)
  {
  #if BITS_PER_LONG == 64
-@@ -2888,9 +2901,8 @@ static void release_blocks_on_commit(journal_t *journal, transaction_t *txn)
+@@ -2878,9 +2891,8 @@ static void release_blocks_on_commit(journal_t *journal, transaction_t *txn)
  		discard_block = (ext4_fsblk_t) entry->group * EXT4_BLOCKS_PER_GROUP(sb)
  			+ entry->start_blk
  			+ le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
@@ -314,7 +314,7 @@ index 389037d..1685ee5 100644
  		sb_issue_discard(sb, discard_block, entry->count);
  
  		kmem_cache_free(ext4_free_ext_cachep, entry);
-@@ -3664,10 +3676,7 @@ ext4_mb_new_inode_pa(struct ext4_allocation_context *ac)
+@@ -3654,10 +3666,7 @@ ext4_mb_new_inode_pa(struct ext4_allocation_context *ac)
  
  	mb_debug("new inode pa %p: %llu/%u for %u\n", pa,
  			pa->pa_pstart, pa->pa_len, pa->pa_lstart);
@@ -326,7 +326,7 @@ index 389037d..1685ee5 100644
  
  	ext4_mb_use_inode_pa(ac, pa);
  	atomic_add(pa->pa_free, &EXT4_SB(sb)->s_mb_preallocated);
-@@ -3726,9 +3735,8 @@ ext4_mb_new_group_pa(struct ext4_allocation_context *ac)
+@@ -3716,9 +3725,8 @@ ext4_mb_new_group_pa(struct ext4_allocation_context *ac)
  	pa->pa_type = MB_GROUP_PA;
  
  	mb_debug("new group pa %p: %llu/%u for %u\n", pa,
@@ -338,7 +338,7 @@ index 389037d..1685ee5 100644
  
  	ext4_mb_use_group_pa(ac, pa);
  	atomic_add(pa->pa_free, &EXT4_SB(sb)->s_mb_preallocated);
-@@ -3818,10 +3826,8 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+@@ -3808,10 +3816,8 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
  			ext4_mb_store_history(ac);
  		}
  
@@ -351,7 +351,7 @@ index 389037d..1685ee5 100644
  		mb_free_blocks(pa->pa_inode, e4b, bit, next - bit);
  		bit = next + 1;
  	}
-@@ -3855,8 +3861,7 @@ ext4_mb_release_group_pa(struct ext4_buddy *e4b,
+@@ -3845,8 +3851,7 @@ ext4_mb_release_group_pa(struct ext4_buddy *e4b,
  	if (ac)
  		ac->ac_op = EXT4_MB_HISTORY_DISCARD;
  
@@ -361,7 +361,7 @@ index 389037d..1685ee5 100644
  	BUG_ON(pa->pa_deleted == 0);
  	ext4_get_group_no_and_offset(sb, pa->pa_pstart, &group, &bit);
  	BUG_ON(group != e4b->bd_group && pa->pa_len != 0);
-@@ -3924,6 +3929,8 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3914,6 +3919,8 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  
  	INIT_LIST_HEAD(&list);
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
@@ -370,7 +370,7 @@ index 389037d..1685ee5 100644
  repeat:
  	ext4_lock_group(sb, group);
  	list_for_each_entry_safe(pa, tmp,
-@@ -4022,12 +4029,15 @@ void ext4_discard_preallocations(struct inode *inode)
+@@ -4012,12 +4019,15 @@ void ext4_discard_preallocations(struct inode *inode)
  	}
  
  	mb_debug("discard preallocation for inode %lu\n", inode->i_ino);
@@ -388,7 +388,7 @@ index 389037d..1685ee5 100644
  repeat:
  	/* first, collect all pa's in the inode */
  	spin_lock(&ei->i_prealloc_lock);
-@@ -4312,6 +4322,8 @@ ext4_mb_discard_lg_preallocations(struct super_block *sb,
+@@ -4301,6 +4311,8 @@ ext4_mb_discard_lg_preallocations(struct super_block *sb,
  
  	INIT_LIST_HEAD(&discard_list);
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
@@ -397,17 +397,17 @@ index 389037d..1685ee5 100644
  
  	spin_lock(&lg->lg_prealloc_lock);
  	list_for_each_entry_rcu(pa, &lg->lg_prealloc_list[order],
-@@ -4482,8 +4494,7 @@ static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
+@@ -4470,8 +4482,7 @@ static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
+ 	int ret;
  	int freed = 0;
  
- 	smp_rmb();		/* after reading s_groups_count */
 -	trace_mark(ext4_mb_discard_preallocations, "dev %s needed %d",
 -		   sb->s_id, needed);
 +	trace_ext4_mb_discard_preallocations(sb, needed);
  	for (i = 0; i < ngroups && needed > 0; i++) {
  		ret = ext4_mb_discard_group_preallocations(sb, i, needed);
  		freed += ret;
-@@ -4512,17 +4523,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+@@ -4500,17 +4511,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  	sb = ar->inode->i_sb;
  	sbi = EXT4_SB(sb);
  
@@ -426,7 +426,7 @@ index 389037d..1685ee5 100644
  
  	/*
  	 * For delayed allocation, we could skip the ENOSPC and
-@@ -4558,7 +4559,10 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+@@ -4546,7 +4547,10 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  	}
  
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
@@ -438,7 +438,7 @@ index 389037d..1685ee5 100644
  		ar->len = 0;
  		*errp = -ENOMEM;
  		goto out1;
-@@ -4631,18 +4635,7 @@ out3:
+@@ -4619,18 +4623,7 @@ out3:
  						reserv_blks);
  	}
  
@@ -458,7 +458,7 @@ index 389037d..1685ee5 100644
  
  	return block;
  }
-@@ -4777,10 +4770,7 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4765,10 +4758,7 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  	}
  
  	ext4_debug("freeing block %lu\n", block);
@@ -483,7 +483,7 @@ index dd9e6cd..f4b2b58 100644
  #include "ext4_jbd2.h"
  #include "ext4.h"
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 92afdab..d914120 100644
+index 8399700..4492cd9 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -37,9 +37,9 @@
