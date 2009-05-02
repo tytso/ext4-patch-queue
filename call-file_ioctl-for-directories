@@ -1,0 +1,29 @@
+vfs: call file_ioctl call for directories.
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+Most of the ioctl callback in file_ioctl should be done even for
+directories. For ext4 fiemap should work even for directories.
+Similarly FIGETBSZ should work for directories.  For bmap filefrag
+command doesn't do the ioctl if the type is not a regular file.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ioctl.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ioctl.c b/fs/ioctl.c
+index ac2d47e..328b533 100644
+--- a/fs/ioctl.c
++++ b/fs/ioctl.c
+@@ -523,7 +523,8 @@ int do_vfs_ioctl(struct file *filp, unsigned int fd, unsigned int cmd,
+ 		break;
+ 
+ 	default:
+-		if (S_ISREG(filp->f_path.dentry->d_inode->i_mode))
++		if (S_ISDIR(filp->f_path.dentry->d_inode->i_mode) ||
++		    S_ISREG(filp->f_path.dentry->d_inode->i_mode))
+ 			error = file_ioctl(filp, cmd, arg);
+ 		else
+ 			error = vfs_ioctl(filp, cmd, arg);
