@@ -7,27 +7,26 @@ compiles slightly, too.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h    |  145 +++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/ext4.h    |  144 +++++++++++++++++++++++++++++++++++++++++++++-
  fs/ext4/ext4_sb.h |  163 -----------------------------------------------------
- 2 files changed, 141 insertions(+), 167 deletions(-)
+ 2 files changed, 140 insertions(+), 167 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index ba57d66..3b7223d 100644
+index ba57d66..af3c906 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -25,6 +25,11 @@
+@@ -25,6 +25,10 @@
  #include <linux/rbtree.h>
  #include <linux/seqlock.h>
  #include <linux/mutex.h>
 +#include <linux/timer.h>
 +#include <linux/wait.h>
-+#include <linux/rbtree.h>
 +#include <linux/blockgroup_lock.h>
 +#include <linux/percpu_counter.h>
  
  /*
   * The fourth extended filesystem constants/structures
-@@ -195,9 +200,6 @@ struct flex_groups {
+@@ -195,9 +199,6 @@ struct flex_groups {
  #define EXT4_BG_BLOCK_UNINIT	0x0002 /* Block bitmap not in use */
  #define EXT4_BG_INODE_ZEROED	0x0004 /* On-disk itable initialized to zero */
  
@@ -37,7 +36,7 @@ index ba57d66..3b7223d 100644
  /*
   * Macro-instructions used to manage group descriptors
   */
-@@ -809,6 +811,136 @@ struct ext4_super_block {
+@@ -809,6 +810,136 @@ struct ext4_super_block {
  };
  
  #ifdef __KERNEL__
@@ -174,7 +173,7 @@ index ba57d66..3b7223d 100644
  static inline struct ext4_sb_info *EXT4_SB(struct super_block *sb)
  {
  	return sb->s_fs_info;
-@@ -824,7 +956,6 @@ static inline struct timespec ext4_current_time(struct inode *inode)
+@@ -824,7 +955,6 @@ static inline struct timespec ext4_current_time(struct inode *inode)
  		current_fs_time(inode->i_sb) : CURRENT_TIME_SEC;
  }
  
@@ -182,7 +181,7 @@ index ba57d66..3b7223d 100644
  static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  {
  	return ino == EXT4_ROOT_INO ||
-@@ -833,6 +964,12 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
+@@ -833,6 +963,12 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  		(ino >= EXT4_FIRST_INO(sb) &&
  		 ino <= le32_to_cpu(EXT4_SB(sb)->s_es->s_inodes_count));
  }
