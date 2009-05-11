@@ -1,10 +1,10 @@
-ext4: Use ~0 as the fake block number for delayed new buffer_head
+ext4: Use a fake block number for delayed new buffer_head
 
 From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-Block number '0' should not be used as the fake block number for the
-delayed new buffer. This will result in vfs calling
-umap_underlying_metadata for block number '0'. So use ~0 instead.
+Use a very large unsigned number (~0xffff) as as the fake block number
+for the delayed new buffer. The VFS should never try to write out this
+number, but if it does, this will make it obvious.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
@@ -13,22 +13,15 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 1 insertions(+), 1 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 12dcfab..c7c2156 100644
+index e30e873..5a3e79c 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -2318,7 +2318,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+@@ -2322,7 +2322,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  			/* not enough space to reserve */
  			return ret;
  
 -		map_bh(bh_result, inode->i_sb, 0);
-+		map_bh(bh_result, inode->i_sb, ~0);
++		map_bh(bh_result, inode->i_sb, invalid_block);
  		set_buffer_new(bh_result);
  		set_buffer_delay(bh_result);
  	} else if (ret > 0) {
--- 
-tg: (15262e5..) proper_mappingblock_for_delay (depends on: preallocate_corruption_quickfix)
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-

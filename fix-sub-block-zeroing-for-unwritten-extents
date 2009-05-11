@@ -7,20 +7,33 @@ during write_begin. Otherwise we don't zero out the page cache content
 properly for a partial write. This will cause file corruption with
 preallocation.
 
-Also use block number ~0 as the fake block number so that
-unmap_underlying_metadata() doesn't drop the wrong buffer_head.
+Also use a very large unsigned number (~0xffff) as as the fake block
+number to make sure that unmap_underlying_metadata() doesn't drop the
+wrong buffer_head.  The VFS should never try to write out this number,
+but if it does, this will make it obvious.
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |   10 ++++++++++
- 1 files changed, 10 insertions(+), 0 deletions(-)
+ fs/ext4/inode.c |   14 ++++++++++++++
+ 1 files changed, 14 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index e91f978..12dcfab 100644
+index e91f978..e30e873 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -2323,6 +2323,16 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+@@ -2297,6 +2297,10 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+ 				  struct buffer_head *bh_result, int create)
+ {
+ 	int ret = 0;
++	sector_t invalid_block = ~((sector_t) 0xffff);
++
++	if (invalid_block < ext4_blocks_count(EXT4_SB(inode->i_sb)->s_es))
++		invalid_block = ~0;
+ 
+ 	BUG_ON(create == 0);
+ 	BUG_ON(bh_result->b_size != inode->i_sb->s_blocksize);
+@@ -2323,6 +2327,16 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  		set_buffer_delay(bh_result);
  	} else if (ret > 0) {
  		bh_result->b_size = (ret << inode->i_blkbits);
@@ -32,15 +45,8 @@ index e91f978..12dcfab 100644
 +		if (buffer_unwritten(bh_result)) {
 +			bh_result->b_bdev = inode->i_sb->s_bdev;
 +			set_buffer_new(bh_result);
-+			bh_result->b_blocknr = ~0;
++			bh_result->b_blocknr = invalid_block;
 +		}
  		ret = 0;
  	}
  
--- 
-tg: (56a50ad..) preallocate_corruption_quickfix (depends on: master)
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
