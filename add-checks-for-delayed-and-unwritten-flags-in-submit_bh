@@ -1,16 +1,18 @@
 From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-vfs: Add BUG_ON for delayed and unwritten flags in submit_bh
+vfs: Add BUG_ON for delayed and unwritten flags in submit_bh()
 
 The BH_Delay and BH_Unwritten flags should never leak out to
-submit_bh().  If this happens flag a BUG so we can get a stack trace
-and determine how and why this happened.
+submit_bh().  So add some BUG_ON() checks to submit_bh so we can get a
+stack trace and determine how and why this might have happened.
 
-(n.b.: Only XFS and ext4 use these buffer head flags currently.)
+(Note that only XFS and ext4 use these buffer head flags, and XFS does
+not use submit_bh().  So this patch should only modify behavior for
+ext4.)
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-Cc: xfs@oss.sgi.com
+Cc: linux-fsdevel@vger.kernel.org
 ---
  fs/buffer.c |    2 ++
  1 files changed, 2 insertions(+), 0 deletions(-)

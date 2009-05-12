@@ -10,8 +10,10 @@ function is looking up a inode's logical to physical block mapping.
 When ext4_get_blocks_wrap() is called with create=1, the uninitialized
 extent is converted into an initialized one, so the BH_Unwritten flag
 is no longer appropriate.  Hence, we need to make sure the
-BH_Unwritten is not left set, to avoid the ensuing confusion and
-hilarty.
+BH_Unwritten is not left set, since the combination of BH_Mapped and
+BH_Unwritten is not allowed; among other things, it will result ext4's
+get_block() to be called over and over again during the write_begin
+phase of write(2).
 
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
@@ -20,7 +22,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 7 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index c3cd00f..f6d7e9b 100644
+index 0ac31a0..8d0ff73 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -1149,6 +1149,7 @@ int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
@@ -44,7 +46,3 @@ index c3cd00f..f6d7e9b 100644
  	 * New blocks allocate and/or writing to uninitialized extent
  	 * will possibly result in updating i_data, so we take
  	 * the write lock of i_data_sem, and call get_blocks()
--- 
-1.6.3.rc4
-
-

@@ -9,14 +9,25 @@ number, but if it does, this will make it obvious.
 Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |    2 +-
- 1 files changed, 1 insertions(+), 1 deletions(-)
+ fs/ext4/inode.c |    6 +++++-
+ 1 files changed, 5 insertions(+), 1 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index e30e873..5a3e79c 100644
+index 498cf8b..4b1478c 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -2322,7 +2322,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+@@ -2297,6 +2297,10 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+ 				  struct buffer_head *bh_result, int create)
+ {
+ 	int ret = 0;
++	sector_t invalid_block = ~((sector_t) 0xffff);
++
++	if (invalid_block < ext4_blocks_count(EXT4_SB(inode->i_sb)->s_es))
++		invalid_block = ~0;
+ 
+ 	BUG_ON(create == 0);
+ 	BUG_ON(bh_result->b_size != inode->i_sb->s_blocksize);
+@@ -2318,7 +2322,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  			/* not enough space to reserve */
  			return ret;
  
@@ -25,3 +36,4 @@ index e30e873..5a3e79c 100644
  		set_buffer_new(bh_result);
  		set_buffer_delay(bh_result);
  	} else if (ret > 0) {
+
