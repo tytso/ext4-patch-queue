@@ -1,0 +1,42 @@
+ext4: Simplify function signature for ext4_da_get_block_write() 
+
+The function ext4_da_get_block_write() is called in exactly one write,
+and the last argument, create, is always 1.  Remove it to simplify the
+code slightly.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 5b23d58..83720bc 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1994,7 +1994,7 @@ static void ext4_print_free_blocks(struct inode *inode)
+ 
+ #define		EXT4_DELALLOC_RSVED	1
+ static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
+-				   struct buffer_head *bh_result, int create)
++				   struct buffer_head *bh_result)
+ {
+ 	int ret;
+ 	unsigned max_blocks = bh_result->b_size >> inode->i_blkbits;
+@@ -2004,7 +2004,7 @@ static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
+ 	handle = ext4_journal_current_handle();
+ 	BUG_ON(!handle);
+ 	ret = ext4_get_blocks_wrap(handle, inode, iblock, max_blocks,
+-				   bh_result, create, 0, EXT4_DELALLOC_RSVED);
++				   bh_result, 1, 0, EXT4_DELALLOC_RSVED);
+ 	if (ret <= 0)
+ 		return ret;
+ 
+@@ -2069,7 +2069,7 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
+ 	if (!new.b_size)
+ 		return 0;
+ 
+-	err = ext4_da_get_block_write(mpd->inode, next, &new, 1);
++	err = ext4_da_get_block_write(mpd->inode, next, &new);
+ 	if (err) {
+ 		/*
+ 		 * If get block returns with error we simply

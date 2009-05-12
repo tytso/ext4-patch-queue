@@ -1,0 +1,31 @@
+ext4: Add BUG_ON debugging checks to noalloc_get_block_write()
+
+Enforce that noalloc_get_block_write() is only called to map one block
+at a time, and that it always is successful in finding a mapping for
+given an inode's logical block block number if it is called with
+create == 1.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index a03854b..0018cc2 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2413,11 +2413,14 @@ static int noalloc_get_block_write(struct inode *inode, sector_t iblock,
+ 	int ret = 0;
+ 	unsigned max_blocks = bh_result->b_size >> inode->i_blkbits;
+ 
++	BUG_ON(bh_result->b_size != inode->i_sb->s_blocksize);
++
+ 	/*
+ 	 * we don't want to do block allocation in writepage
+ 	 * so call get_block_wrap with create = 0
+ 	 */
+ 	ret = ext4_get_blocks(NULL, inode, iblock, max_blocks, bh_result, 0);
++	BUG_ON(create && ret == 0);
+ 	if (ret > 0) {
+ 		bh_result->b_size = (ret << inode->i_blkbits);
+ 		ret = 0;
