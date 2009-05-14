@@ -9,10 +9,10 @@ the call stack, and it also makes the code a bit more understandable.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/dir.c     |    2 +-
- fs/ext4/ext4.h    |   22 +++++++++++++++-------
- fs/ext4/extents.c |   22 +++++++++++-----------
- fs/ext4/inode.c   |   44 +++++++++++++++++++++++---------------------
- 4 files changed, 50 insertions(+), 40 deletions(-)
+ fs/ext4/ext4.h    |   22 ++++++++++++++------
+ fs/ext4/extents.c |   22 ++++++++++----------
+ fs/ext4/inode.c   |   57 +++++++++++++++++++++++++++-------------------------
+ 4 files changed, 57 insertions(+), 46 deletions(-)
 
 diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
 index 052d637..9dc9316 100644
@@ -168,7 +168,7 @@ index bc54bb1..e041248 100644
  #ifdef EXT4FS_DEBUG
  			WARN_ON(ret <= 0);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 90f16c4..625d9cb 100644
+index 45317f3..267a415 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -917,7 +917,7 @@ err_out:
@@ -319,7 +319,31 @@ index 90f16c4..625d9cb 100644
  	if (ret <= 0)
  		return ret;
  
-@@ -2404,7 +2407,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+@@ -2107,16 +2110,17 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
+ 		return 0;
+ 	/*
+ 	 * We need to make sure the BH_Delay flag is passed down to
+-	 * ext4_da_get_block_write(), since it calls
+-	 * ext4_get_blocks() with the EXT4_DELALLOC_RSVED flag.
+-	 * This flag causes ext4_get_blocks() to call
++	 * ext4_da_get_block_write(), since it calls ext4_get_blocks()
++	 * with the EXT4_GET_BLOCKS_DELALLOC_RESERVE flag.  This flag
++	 * causes ext4_get_blocks() to call
+ 	 * ext4_da_update_reserve_space() if the passed buffer head
+ 	 * has the BH_Delay flag set.  In the future, once we clean up
+-	 * the interfaces to ext4_get_blocks(), we should pass in
+-	 * a separate flag which requests that the delayed allocation
++	 * the interfaces to ext4_get_blocks(), we should pass in a
++	 * separate flag which requests that the delayed allocation
+ 	 * statistics should be updated, instead of depending on the
+ 	 * state information getting passed down via the map_bh's
+-	 * state bitmasks plus the magic EXT4_DELALLOC_RSVED flag.
++	 * state bitmasks plus the magic
++	 * EXT4_GET_BLOCKS_DELALLOC_RESERVE flag.
+ 	 */
+ 	new.b_state = mpd->b_state & (1 << BH_Delay);
+ 	new.b_blocknr = 0;
+@@ -2404,7 +2408,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  	 * preallocated blocks are unmapped but should treated
  	 * the same as allocated blocks.
  	 */
@@ -328,7 +352,7 @@ index 90f16c4..625d9cb 100644
  	if ((ret == 0) && !buffer_delay(bh_result)) {
  		/* the block isn't (pre)allocated yet, let's reserve space */
  		/*
-@@ -2448,8 +2451,7 @@ static int ext4_normal_get_block_write(struct inode *inode, sector_t iblock,
+@@ -2448,8 +2452,7 @@ static int ext4_normal_get_block_write(struct inode *inode, sector_t iblock,
  	 * we don't want to do block allocation in writepage
  	 * so call get_block_wrap with create = 0
  	 */

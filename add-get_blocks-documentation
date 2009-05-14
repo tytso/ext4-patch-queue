@@ -14,11 +14,11 @@ function, since the way it is used is amazingly fragile.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |   73 ++++++++++++++++++++++++++++++++++++-------------------
- 1 files changed, 48 insertions(+), 25 deletions(-)
+ fs/ext4/inode.c |   86 +++++++++++++++++++++++++++++++++++--------------------
+ 1 files changed, 55 insertions(+), 31 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 1bd0f55..a03854b 100644
+index 0a64217..b23d4ea 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -892,6 +892,10 @@ err_out:
@@ -48,7 +48,18 @@ index 1bd0f55..a03854b 100644
   */
  static int ext4_ind_get_blocks(handle_t *handle, struct inode *inode,
  				  ext4_lblk_t iblock, unsigned int maxblocks,
-@@ -1994,6 +1999,12 @@ static void ext4_print_free_blocks(struct inode *inode)
+@@ -1181,8 +1186,8 @@ int ext4_get_blocks(handle_t *handle, struct inode *inode, sector_t block,
+ 	clear_buffer_unwritten(bh);
+ 
+ 	/*
+-	 * Try to see if we can get  the block without requesting
+-	 * for new file system block.
++	 * Try to see if we can get the block without requesting a new
++	 * file system block.
+ 	 */
+ 	down_read((&EXT4_I(inode)->i_data_sem));
+ 	if (EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL) {
+@@ -2042,6 +2047,12 @@ static void ext4_print_free_blocks(struct inode *inode)
  	return;
  }
  
@@ -61,7 +72,7 @@ index 1bd0f55..a03854b 100644
  static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
  				   struct buffer_head *bh_result)
  {
-@@ -2025,8 +2036,8 @@ static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
+@@ -2073,8 +2084,8 @@ static int ext4_da_get_block_write(struct inode *inode, sector_t iblock,
  
  	/*
  	 * Update on-disk size along with block allocation we don't
@@ -72,7 +83,7 @@ index 1bd0f55..a03854b 100644
  	 */
  	disksize = ((loff_t) iblock + ret) << inode->i_blkbits;
  	if (disksize > i_size_read(inode))
-@@ -2318,8 +2329,9 @@ static int __mpage_da_writepage(struct page *page,
+@@ -2380,8 +2391,9 @@ static int __mpage_da_writepage(struct page *page,
  }
  
  /*
@@ -84,7 +95,7 @@ index 1bd0f55..a03854b 100644
   *
   * For delayed buffer_head we have BH_Mapped, BH_New, BH_Delay set.
   * We also have b_blocknr = -1 and b_bdev initialized properly
-@@ -2327,7 +2339,6 @@ static int __mpage_da_writepage(struct page *page,
+@@ -2389,7 +2401,6 @@ static int __mpage_da_writepage(struct page *page,
   * For unwritten buffer_head we have BH_Mapped, BH_New, BH_Unwritten set.
   * We also have b_blocknr = physicalblock mapping unwritten extent and b_bdev
   * initialized properly.
@@ -92,7 +103,7 @@ index 1bd0f55..a03854b 100644
   */
  static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  				  struct buffer_head *bh_result, int create)
-@@ -2380,7 +2391,23 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+@@ -2442,7 +2453,23 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  	return ret;
  }
  
@@ -117,7 +128,23 @@ index 1bd0f55..a03854b 100644
  				   struct buffer_head *bh_result, int create)
  {
  	int ret = 0;
-@@ -2453,7 +2480,7 @@ static int ext4_da_writepage(struct page *page,
+@@ -2461,10 +2488,11 @@ static int ext4_normal_get_block_write(struct inode *inode, sector_t iblock,
+ }
+ 
+ /*
+- * get called vi ext4_da_writepages after taking page lock (have journal handle)
+- * get called via journal_submit_inode_data_buffers (no journal handle)
+- * get called via shrink_page_list via pdflush (no journal handle)
+- * or grab_page_cache when doing write_begin (have journal handle)
++ * This function can get called via...
++ *   - ext4_da_writepages after taking page lock (have journal handle)
++ *   - journal_submit_inode_data_buffers (no journal handle)
++ *   - shrink_page_list via pdflush (no journal handle)
++ *   - grab_page_cache when doing write_begin (have journal handle)
+  */
+ static int ext4_da_writepage(struct page *page,
+ 				struct writeback_control *wbc)
+@@ -2515,7 +2543,7 @@ static int ext4_da_writepage(struct page *page,
  		 * do block allocation here.
  		 */
  		ret = block_prepare_write(page, 0, PAGE_CACHE_SIZE,
@@ -126,7 +153,7 @@ index 1bd0f55..a03854b 100644
  		if (!ret) {
  			page_bufs = page_buffers(page);
  			/* check whether all are mapped and non delay */
-@@ -2478,11 +2505,10 @@ static int ext4_da_writepage(struct page *page,
+@@ -2540,11 +2568,10 @@ static int ext4_da_writepage(struct page *page,
  	}
  
  	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
@@ -141,7 +168,7 @@ index 1bd0f55..a03854b 100644
  
  	return ret;
  }
-@@ -2794,7 +2820,7 @@ retry:
+@@ -2856,7 +2883,7 @@ retry:
  	*pagep = page;
  
  	ret = block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
@@ -150,7 +177,7 @@ index 1bd0f55..a03854b 100644
  	if (ret < 0) {
  		unlock_page(page);
  		ext4_journal_stop(handle);
-@@ -3102,12 +3128,10 @@ static int __ext4_normal_writepage(struct page *page,
+@@ -3164,12 +3191,10 @@ static int __ext4_normal_writepage(struct page *page,
  	struct inode *inode = page->mapping->host;
  
  	if (test_opt(inode->i_sb, NOBH))
@@ -166,7 +193,7 @@ index 1bd0f55..a03854b 100644
  }
  
  static int ext4_normal_writepage(struct page *page,
-@@ -3159,7 +3183,7 @@ static int __ext4_journalled_writepage(struct page *page,
+@@ -3221,7 +3246,7 @@ static int __ext4_journalled_writepage(struct page *page,
  	int err;
  
  	ret = block_prepare_write(page, 0, PAGE_CACHE_SIZE,
@@ -175,7 +202,7 @@ index 1bd0f55..a03854b 100644
  	if (ret != 0)
  		goto out_unlock;
  
-@@ -3244,9 +3268,8 @@ static int ext4_journalled_writepage(struct page *page,
+@@ -3306,9 +3331,8 @@ static int ext4_journalled_writepage(struct page *page,
  		 * really know unless we go poke around in the buffer_heads.
  		 * But block_write_full_page will do the right thing.
  		 */
