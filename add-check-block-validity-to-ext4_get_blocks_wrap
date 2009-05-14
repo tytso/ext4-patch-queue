@@ -1,0 +1,82 @@
+ext4: Add a block validity check to ext4_get_blocks_wrap()
+
+A few users with very large disks have been reporting low block number
+filesystem corruptions, potentially zapping the block group
+descriptors or inodes in the first inode table block.  It's not clear
+what is causing this, but most recently, it appears that whatever is
+trashing the filesystem metadata appears to be file data.  So let's
+try to set a trap for the corruption in ext4_get_blocks_wrap(), which
+is where logical blocks in an inode are mapped to physical blocks.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |   42 ++++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 42 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 4e7f363..4fad4fa 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1120,6 +1120,35 @@ static void ext4_da_update_reserve_space(struct inode *inode, int used)
+ 		ext4_discard_preallocations(inode);
+ }
+ 
++static int check_block_validity(struct inode *inode, sector_t logical,
++				sector_t phys, int len)
++{
++	ext4_fsblk_t valid_block, itable_block;
++	struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
++	struct ext4_group_desc *gdp = ext4_get_group_desc(inode->i_sb, 0, 0);
++	unsigned int itable_len = EXT4_SB(inode->i_sb)->s_itb_per_group;
++
++	valid_block = le32_to_cpu(es->s_first_data_block) +
++		EXT4_SB(inode->i_sb)->s_gdb_count;
++	itable_block = ext4_inode_table(inode->i_sb, gdp);
++
++	if (unlikely((phys <= valid_block) ||
++		     ((phys + len - 1) > ext4_blocks_count(es)) ||
++		     ((phys >= itable_block) &&
++		      (phys <= itable_block + itable_len)) ||
++		     ((phys + len - 1 >= itable_block) &&
++		      (phys + len - 1 <= itable_block + itable_len)))) {
++		ext4_error(inode->i_sb, "check_block_validity",
++			   "inode #%lu logical block %llu mapped to %llu "
++			   "(size %d)", inode->i_ino,
++			   (unsigned long long) logical,
++			   (unsigned long long) phys, len);
++		WARN_ON(1);
++		return -EIO;
++	}
++	return 0;
++}
++
+ /*
+  * The ext4_get_blocks_wrap() function try to look up the requested blocks,
+  * and returns if the blocks are already mapped.
+@@ -1165,6 +1194,13 @@ int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+ 	}
+ 	up_read((&EXT4_I(inode)->i_data_sem));
+ 
++	if (retval > 0 && buffer_mapped(bh)) {
++		int ret = check_block_validity(inode, block, 
++					       bh->b_blocknr, retval);
++		if (ret != 0)
++			return ret;
++	}
++
+ 	/* If it is only a block(s) look up */
+ 	if (!create)
+ 		return retval;
+@@ -1241,6 +1277,12 @@ int ext4_get_blocks_wrap(handle_t *handle, struct inode *inode, sector_t block,
+ 	}
+ 
+ 	up_write((&EXT4_I(inode)->i_data_sem));
++	if (retval > 0 && buffer_mapped(bh)) {
++		int ret = check_block_validity(inode, block, 
++					       bh->b_blocknr, retval);
++		if (ret != 0)
++			return ret;
++	}
+ 	return retval;
+ }
+ 
