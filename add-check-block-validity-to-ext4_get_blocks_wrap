@@ -14,7 +14,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 42 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 4e7f363..4fad4fa 100644
+index 4e7f363..9ddd9a5 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -1120,6 +1120,35 @@ static void ext4_da_update_reserve_space(struct inode *inode, int used)
@@ -36,9 +36,9 @@ index 4e7f363..4fad4fa 100644
 +	if (unlikely((phys <= valid_block) ||
 +		     ((phys + len - 1) > ext4_blocks_count(es)) ||
 +		     ((phys >= itable_block) &&
-+		      (phys <= itable_block + itable_len)) ||
++		      (phys < itable_block + itable_len)) ||
 +		     ((phys + len - 1 >= itable_block) &&
-+		      (phys + len - 1 <= itable_block + itable_len)))) {
++		      (phys + len - 1 < itable_block + itable_len)))) {
 +		ext4_error(inode->i_sb, "check_block_validity",
 +			   "inode #%lu logical block %llu mapped to %llu "
 +			   "(size %d)", inode->i_ino,
