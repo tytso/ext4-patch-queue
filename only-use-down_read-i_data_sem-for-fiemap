@@ -1,0 +1,34 @@
+ext4: down i_data_sem only for read when walking tree for fiemap
+
+Not sure why I put this in as down_write originally; all we are
+doing is walking the tree, nothing will change under us and
+concurrent reads should be no problem.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+Index: linux-2.6/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.orig/fs/ext4/extents.c
++++ linux-2.6/fs/ext4/extents.c
+@@ -3309,10 +3309,10 @@ int ext4_fiemap(struct inode *inode, str
+ 		 * Walk the extent tree gathering extent information.
+ 		 * ext4_ext_fiemap_cb will push extents back to user.
+ 		 */
+-		down_write(&EXT4_I(inode)->i_data_sem);
++		down_read(&EXT4_I(inode)->i_data_sem);
+ 		error = ext4_ext_walk_space(inode, start_blk, len_blks,
+ 					  ext4_ext_fiemap_cb, fieinfo);
+-		up_write(&EXT4_I(inode)->i_data_sem);
++		up_read(&EXT4_I(inode)->i_data_sem);
+ 	}
+ 
+ 	return error;
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
