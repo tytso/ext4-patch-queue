@@ -1,0 +1,34 @@
+ext3: Fix memory leak in ext3_fill_super() in case of a failed mount
+
+From: Manish Katiyar <mkatiyar@gmail.com>
+
+Signed-off-by: Manish Katiyar <mkatiyar@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext3/super.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext3/super.c b/fs/ext3/super.c
+index 599dbfe..d8b73d4 100644
+--- a/fs/ext3/super.c
++++ b/fs/ext3/super.c
+@@ -2021,6 +2021,7 @@ failed_mount:
+ 	brelse(bh);
+ out_fail:
+ 	sb->s_fs_info = NULL;
++	kfree(sbi->s_blockgroup_lock);
+ 	kfree(sbi);
+ 	lock_kernel();
+ 	return ret;
+-- 
+1.5.4.3
+
+
+-- 
+Thanks -
+Manish
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
