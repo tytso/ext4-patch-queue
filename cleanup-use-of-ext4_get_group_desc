@@ -1,0 +1,54 @@
+ext4: Clean up calls to ext4_get_group_desc()
+
+If the caller isn't planning on modifying the block group descriptors,
+there's no need to pass in a pointer to a struct buffer_head.  Nuking
+this saves a tiny amount of CPU time and stack space usage.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ialloc.c |    3 +--
+ fs/ext4/super.c  |    3 +--
+ 2 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 82f7d1d..3743bd8 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -347,7 +347,6 @@ static int find_group_flex(struct super_block *sb, struct inode *parent,
+ {
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 	struct ext4_group_desc *desc;
+-	struct buffer_head *bh;
+ 	struct flex_groups *flex_group = sbi->s_flex_groups;
+ 	ext4_group_t parent_group = EXT4_I(parent)->i_block_group;
+ 	ext4_group_t parent_fbg_group = ext4_flex_group(sbi, parent_group);
+@@ -402,7 +401,7 @@ find_close_to_parent:
+ found_flexbg:
+ 	for (i = best_flex * flex_size; i < ngroups &&
+ 		     i < (best_flex + 1) * flex_size; i++) {
+-		desc = ext4_get_group_desc(sb, i, &bh);
++		desc = ext4_get_group_desc(sb, i, NULL);
+ 		if (ext4_free_inodes_count(sb, desc)) {
+ 			*best_group = i;
+ 			goto out;
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index eca6c05..91b98b5 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1660,7 +1660,6 @@ static int ext4_fill_flex_info(struct super_block *sb)
+ {
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 	struct ext4_group_desc *gdp = NULL;
+-	struct buffer_head *bh;
+ 	ext4_group_t flex_group_count;
+ 	ext4_group_t flex_group;
+ 	int groups_per_flex = 0;
+@@ -1693,7 +1692,7 @@ static int ext4_fill_flex_info(struct super_block *sb)
+ 	}
+ 
+ 	for (i = 0; i < sbi->s_groups_count; i++) {
+-		gdp = ext4_get_group_desc(sb, i, &bh);
++		gdp = ext4_get_group_desc(sb, i, NULL);
+ 
+ 		flex_group = ext4_flex_group(sbi, i);
+ 		atomic_set(&sbi->s_flex_groups[flex_group].free_inodes,
