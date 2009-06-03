@@ -10,19 +10,19 @@ disk before the transaction is commited.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
- fs/ext4/ext4.h       |    6 +++-
- fs/ext4/ext4_jbd2.h  |    3 +-
- fs/ext4/inode.c      |   11 ++++++++++
- fs/ext4/super.c      |   51 ++++++++++++++++++++++++++++++++++++-------------
- fs/jbd2/commit.c     |    3 ++
- include/linux/jbd2.h |    2 +
- 6 files changed, 59 insertions(+), 17 deletions(-)
+ fs/ext4/ext4.h       |    6 ++++--
+ fs/ext4/ext4_jbd2.h  |    3 ++-
+ fs/ext4/inode.c      |   11 +++++++++++
+ fs/ext4/super.c      |   50 ++++++++++++++++++++++++++++++++++++--------------
+ fs/jbd2/commit.c     |    3 +++
+ include/linux/jbd2.h |    2 ++
+ 6 files changed, 58 insertions(+), 17 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 05a6860..5839cbb 100644
+index 4311cc8..1e53c49 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -664,8 +664,9 @@ struct ext4_inode_info {
+@@ -678,8 +678,9 @@ struct ext4_inode_info {
  #define EXT4_MOUNT_NOLOAD		0x00100	/* Don't use existing journal*/
  #define EXT4_MOUNT_ABORT		0x00200	/* Fatal error detected */
  #define EXT4_MOUNT_DATA_FLAGS		0x00C00	/* Mode for data writes: */
@@ -33,7 +33,7 @@ index 05a6860..5839cbb 100644
  #define EXT4_MOUNT_WRITEBACK_DATA	0x00C00	/* No data ordering */
  #define EXT4_MOUNT_UPDATE_JOURNAL	0x01000	/* Update the journal format */
  #define EXT4_MOUNT_NO_UID32		0x02000  /* Disable 32-bit UIDs */
-@@ -1078,10 +1079,11 @@ sb_bgl_lock(struct ext4_sb_info *sbi, unsigned int block_group)
+@@ -1088,10 +1089,11 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
  #define EXT4_DEFM_XATTR_USER	0x0004
  #define EXT4_DEFM_ACL		0x0008
  #define EXT4_DEFM_UID16		0x0010
@@ -61,10 +61,10 @@ index be2f426..0453671 100644
  	return 0;
  }
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 2c6fd7a..b0c4793 100644
+index 6b65e1d..ef73ad0 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -2807,6 +2807,16 @@ static int ext4_da_write_end(struct file *file,
+@@ -2899,6 +2899,16 @@ static int ext4_da_write_end(struct file *file,
  	}
  
  	trace_ext4_da_write_end(inode, pos, len, copied);
@@ -81,7 +81,7 @@ index 2c6fd7a..b0c4793 100644
  	start = pos & (PAGE_CACHE_SIZE - 1);
  	end = start + copied - 1;
  
-@@ -2844,6 +2854,7 @@ static int ext4_da_write_end(struct file *file,
+@@ -2936,6 +2946,7 @@ static int ext4_da_write_end(struct file *file,
  	copied = ret2;
  	if (ret2 < 0)
  		ret = ret2;
@@ -90,7 +90,7 @@ index 2c6fd7a..b0c4793 100644
  	if (!ret)
  		ret = ret2;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 4d91cbf..5f27761 100644
+index 3b47981..17c5492 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -74,7 +74,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf);
@@ -111,16 +111,16 @@ index 4d91cbf..5f27761 100644
  
  	if (sbi->s_inode_readahead_blks != EXT4_DEF_INODE_READAHEAD_BLKS)
  		seq_printf(seq, ",inode_readahead_blks=%u",
-@@ -1055,7 +1057,7 @@ enum {
+@@ -1056,7 +1058,7 @@ enum {
  	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
  	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_quota, Opt_noquota,
  	Opt_ignore, Opt_barrier, Opt_nobarrier, Opt_err, Opt_resize,
 -	Opt_usrquota, Opt_grpquota, Opt_i_version,
 +	Opt_usrquota, Opt_grpquota, Opt_i_version, Opt_data_alloc_on_commit,
  	Opt_stripe, Opt_delalloc, Opt_nodelalloc,
+ 	Opt_block_validity, Opt_noblock_validity,
  	Opt_inode_readahead_blks, Opt_journal_ioprio
- };
-@@ -1095,6 +1097,7 @@ static const match_table_t tokens = {
+@@ -1097,6 +1099,7 @@ static const match_table_t tokens = {
  	{Opt_data_journal, "data=journal"},
  	{Opt_data_ordered, "data=ordered"},
  	{Opt_data_writeback, "data=writeback"},
@@ -128,7 +128,7 @@ index 4d91cbf..5f27761 100644
  	{Opt_data_err_abort, "data_err=abort"},
  	{Opt_data_err_ignore, "data_err=ignore"},
  	{Opt_mb_history_length, "mb_history_length=%u"},
-@@ -1317,6 +1320,9 @@ static int parse_options(char *options, struct super_block *sb,
+@@ -1323,6 +1326,9 @@ static int parse_options(char *options, struct super_block *sb,
  		case Opt_data_ordered:
  			data_opt = EXT4_MOUNT_ORDERED_DATA;
  			goto datacheck;
@@ -138,12 +138,10 @@ index 4d91cbf..5f27761 100644
  		case Opt_data_writeback:
  			data_opt = EXT4_MOUNT_WRITEBACK_DATA;
  		datacheck:
-@@ -1919,6 +1925,26 @@ static void ext4_orphan_cleanup(struct super_block *sb,
- #endif
- 	sb->s_flags = s_flags; /* Restore MS_RDONLY status */
+@@ -1932,6 +1938,25 @@ static void ext4_orphan_cleanup(struct super_block *sb,
  }
-+
-+/*
+ 
+ /*
 + * This callback is called before each commit when we are using
 + * alloc-on-commit mode.
 + */
@@ -162,10 +160,11 @@ index 4d91cbf..5f27761 100644
 +	spin_unlock(&journal->j_list_lock);
 +}
 +
- /*
++/*
   * Maximal extent format file size.
   * Resulting logical blkno at s_maxbytes must fit in our on-disk
-@@ -2349,6 +2375,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+  * extent format containers, within a sector_t, and within i_blocks
+@@ -2361,6 +2386,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		sbi->s_mount_opt |= EXT4_MOUNT_ORDERED_DATA;
  	else if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_WBACK)
  		sbi->s_mount_opt |= EXT4_MOUNT_WRITEBACK_DATA;
@@ -175,7 +174,7 @@ index 4d91cbf..5f27761 100644
  
  	if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_PANIC)
  		set_opt(sbi->s_mount_opt, ERRORS_PANIC);
-@@ -2736,18 +2765,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2750,18 +2778,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	/* We have now updated the journal if required, so we can
  	 * validate the data journaling mode. */
  	switch (test_opt(sb, DATA_FLAGS)) {
@@ -197,7 +196,7 @@ index 4d91cbf..5f27761 100644
  	case EXT4_MOUNT_ORDERED_DATA:
  	case EXT4_MOUNT_WRITEBACK_DATA:
  		if (!jbd2_journal_check_available_features
-@@ -2858,6 +2878,9 @@ no_journal:
+@@ -2879,6 +2898,9 @@ no_journal:
  			descr = " journalled data mode";
  		else if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA)
  			descr = " ordered data mode";
