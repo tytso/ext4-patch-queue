@@ -1,0 +1,70 @@
+ext4: Add WARN_ON on unmapped dirty buffer_heads in writepage
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+Now that block_lock_hole_extend() clears the dirty flag of
+buffer_heads outside i_size we should not find buffer_heads which are
+unmapped and dirty in writepage. If we find do a WARN_ON.  We can
+still continue because block_write_full page look at the mapped flag
+only.
+
+Following sequence of events would result in the above condition.
+1) truncate(f, 1024)
+2) mmap(f, 0, 4096)
+3) a[0] = 'a'
+4) truncate(f, 4096)
+5) writepage(...)
+
+After step 3 we would have unmapped buffer_heads outside i_size.
+After step 4 we would have unmapped buffer_heads within i_size.
+
+Now that truncate is calling block_lock_hole_extend which in turn
+is clearing the dirty flag, we can safely assume that we won't
+find unmapped dirty buffer_heads in write page. If we did find one
+we should find out why.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Acked-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |   12 ++++++++++++
+ 1 files changed, 12 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 2219daa..9bba474 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2488,6 +2488,10 @@ static int __ext4_journalled_writepage(struct page *page,
+ 	return ret;
+ }
+ 
++static int ext4_bh_unmapped_and_dirty(handle_t *handle, struct buffer_head *bh)
++{
++	return !buffer_mapped(bh) && buffer_dirty(bh);
++}
+ 
+ /*
+  * Note that we don't need to start a transaction unless we're journaling data
+@@ -2602,6 +2606,14 @@ static int ext4_writepage(struct page *page,
+ 		/* now mark the buffer_heads as dirty and uptodate */
+ 		block_commit_write(page, 0, len);
+ 	}
++	/*
++	 * There should not be any unmapped and dirty
++	 * buffer_heads at this point. Look at block_lock_hole_extend
++	 * for more info. If we find one print more info
++	 */
++	 WARN(walk_page_buffers(NULL, page_bufs, 0, len, NULL,
++				 ext4_bh_unmapped_and_dirty),
++		 "Unmapped dirty buffer_heads found in %s\n", __func__);
+ 
+ 	if (PageChecked(page) && ext4_should_journal_data(inode)) {
+ 		/*
+-- 
+1.6.3.1.244.gf9275
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
