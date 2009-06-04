@@ -1,6 +1,19 @@
 ext4: Convert instrumentation from markers to tracepoints
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/fsync.c                   |    8 +-
+ fs/ext4/ialloc.c                  |   17 +-
+ fs/ext4/inode.c                   |   79 ++---
+ fs/ext4/mballoc.c                 |   86 ++---
+ fs/ext4/mballoc.h                 |    1 -
+ fs/ext4/super.c                   |    6 +-
+ include/trace/ext4.h              |    8 +
+ include/trace/ext4_event_types.h  |  693 +++++++++++++++++++++++++++++++++++++
+ include/trace/trace_event_types.h |    1 +
+ include/trace/trace_events.h      |    1 +
+ 10 files changed, 781 insertions(+), 119 deletions(-)
+
 diff --git a/fs/ext4/fsync.c b/fs/ext4/fsync.c
 index 5afe437..783efcb 100644
 --- a/fs/ext4/fsync.c
@@ -31,10 +44,10 @@ index 5afe437..783efcb 100644
  	/*
  	 * data=writeback:
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index 3743bd8..4a452b9 100644
+index 55ba419..ad9572d 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
-@@ -22,12 +22,17 @@
+@@ -22,6 +22,7 @@
  #include <linux/random.h>
  #include <linux/bitops.h>
  #include <linux/blkdev.h>
@@ -42,8 +55,9 @@ index 3743bd8..4a452b9 100644
  #include <asm/byteorder.h>
  #include "ext4.h"
  #include "ext4_jbd2.h"
- #include "xattr.h"
+@@ -29,6 +30,10 @@
  #include "acl.h"
+ #include "group.h"
  
 +DEFINE_TRACE(ext4_free_inode);
 +DEFINE_TRACE(ext4_request_inode);
@@ -52,7 +66,7 @@ index 3743bd8..4a452b9 100644
  /*
   * ialloc.c contains the inodes allocation and deallocation routines
   */
-@@ -208,11 +213,7 @@ void ext4_free_inode(handle_t *handle, struct inode *inode)
+@@ -209,11 +214,7 @@ void ext4_free_inode(handle_t *handle, struct inode *inode)
  
  	ino = inode->i_ino;
  	ext4_debug("freeing inode %lu\n", ino);
@@ -65,7 +79,7 @@ index 3743bd8..4a452b9 100644
  
  	/*
  	 * Note: we must free any quota before locking the superblock,
-@@ -815,8 +816,7 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)
+@@ -818,8 +819,7 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode)
  
  	sb = dir->i_sb;
  	ngroups = ext4_get_groups_count(sb);
@@ -75,7 +89,7 @@ index 3743bd8..4a452b9 100644
  	inode = new_inode(sb);
  	if (!inode)
  		return ERR_PTR(-ENOMEM);
-@@ -1047,8 +1047,7 @@ got:
+@@ -1050,8 +1050,7 @@ got:
  	}
  
  	ext4_debug("allocating inode %lu\n", inode->i_ino);
@@ -86,10 +100,10 @@ index 3743bd8..4a452b9 100644
  fail:
  	ext4_std_error(sb, err);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index f72ff20..2729935 100644
+index 3e90965..2c6fd7a 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -37,11 +37,22 @@
+@@ -37,11 +37,24 @@
  #include <linux/namei.h>
  #include <linux/uio.h>
  #include <linux/bio.h>
@@ -103,16 +117,18 @@ index f72ff20..2729935 100644
 +DEFINE_TRACE(ext4_ordered_write_end);
 +DEFINE_TRACE(ext4_writeback_write_end);
 +DEFINE_TRACE(ext4_journalled_write_end);
-+DEFINE_TRACE(ext4_writepage);
++DEFINE_TRACE(ext4_da_writepage);
 +DEFINE_TRACE(ext4_da_writepages);
 +DEFINE_TRACE(ext4_da_writepages_result);
 +DEFINE_TRACE(ext4_da_write_begin);
 +DEFINE_TRACE(ext4_da_write_end);
++DEFINE_TRACE(ext4_normal_writepage);
++DEFINE_TRACE(ext4_journalled_writepage);
 +
  #define MPAGE_DA_EXTENT_TAIL 0x01
  
  static inline int ext4_begin_ordered_truncate(struct inode *inode,
-@@ -1466,10 +1477,7 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
+@@ -1433,10 +1446,7 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
   	pgoff_t index;
  	unsigned from, to;
  
@@ -124,7 +140,7 @@ index f72ff20..2729935 100644
   	index = pos >> PAGE_CACHE_SHIFT;
  	from = pos & (PAGE_CACHE_SIZE - 1);
  	to = from + len;
-@@ -1545,10 +1553,7 @@ static int ext4_ordered_write_end(struct file *file,
+@@ -1512,10 +1522,7 @@ static int ext4_ordered_write_end(struct file *file,
  	struct inode *inode = mapping->host;
  	int ret = 0, ret2;
  
@@ -136,7 +152,7 @@ index f72ff20..2729935 100644
  	ret = ext4_jbd2_file_inode(handle, inode);
  
  	if (ret == 0) {
-@@ -1587,10 +1592,7 @@ static int ext4_writeback_write_end(struct file *file,
+@@ -1554,10 +1561,7 @@ static int ext4_writeback_write_end(struct file *file,
  	int ret = 0, ret2;
  	loff_t new_i_size;
  
@@ -148,7 +164,7 @@ index f72ff20..2729935 100644
  	new_i_size = pos + copied;
  	if (new_i_size > EXT4_I(inode)->i_disksize) {
  		ext4_update_i_disksize(inode, new_i_size);
-@@ -1626,10 +1628,7 @@ static int ext4_journalled_write_end(struct file *file,
+@@ -1593,10 +1597,7 @@ static int ext4_journalled_write_end(struct file *file,
  	unsigned from, to;
  	loff_t new_i_size;
  
@@ -160,18 +176,18 @@ index f72ff20..2729935 100644
  	from = pos & (PAGE_CACHE_SIZE - 1);
  	to = from + len;
  
-@@ -2538,9 +2537,7 @@ static int ext4_writepage(struct page *page,
+@@ -2382,9 +2383,7 @@ static int ext4_da_writepage(struct page *page,
  	struct buffer_head *page_bufs;
  	struct inode *inode = page->mapping->host;
  
--	trace_mark(ext4_writepage,
+-	trace_mark(ext4_da_writepage,
 -		   "dev %s ino %lu page_index %lu",
 -		   inode->i_sb->s_id, inode->i_ino, page->index);
-+	trace_ext4_writepage(inode, page);
++	trace_ext4_da_writepage(inode, page);
  	size = i_size_read(inode);
  	if (page->index == size >> PAGE_CACHE_SHIFT)
  		len = size & ~PAGE_CACHE_MASK;
-@@ -2660,19 +2657,7 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -2496,19 +2495,7 @@ static int ext4_da_writepages(struct address_space *mapping,
  	int needed_blocks, ret = 0, nr_to_writebump = 0;
  	struct ext4_sb_info *sbi = EXT4_SB(mapping->host->i_sb);
  
@@ -192,7 +208,7 @@ index f72ff20..2729935 100644
  
  	/*
  	 * No pages to write? This is mainly a kludge to avoid starting
-@@ -2838,14 +2823,7 @@ out_writepages:
+@@ -2674,14 +2661,7 @@ out_writepages:
  	if (!no_nrwrite_index_update)
  		wbc->no_nrwrite_index_update = 0;
  	wbc->nr_to_write -= nr_to_writebump;
@@ -208,7 +224,7 @@ index f72ff20..2729935 100644
  	return ret;
  }
  
-@@ -2897,11 +2875,7 @@ static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
+@@ -2733,11 +2713,7 @@ static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
  					len, flags, pagep, fsdata);
  	}
  	*fsdata = (void *)0;
@@ -221,7 +237,7 @@ index f72ff20..2729935 100644
  retry:
  	/*
  	 * With delayed allocation, we don't log the i_disksize update
-@@ -2994,10 +2968,7 @@ static int ext4_da_write_end(struct file *file,
+@@ -2830,10 +2806,7 @@ static int ext4_da_write_end(struct file *file,
  		}
  	}
  
@@ -233,8 +249,30 @@ index f72ff20..2729935 100644
  	start = pos & (PAGE_CACHE_SIZE - 1);
  	end = start + copied - 1;
  
+@@ -3086,9 +3059,7 @@ static int ext4_normal_writepage(struct page *page,
+ 	loff_t size = i_size_read(inode);
+ 	loff_t len;
+ 
+-	trace_mark(ext4_normal_writepage,
+-		   "dev %s ino %lu page_index %lu",
+-		   inode->i_sb->s_id, inode->i_ino, page->index);
++	trace_ext4_normal_writepage(inode, page);
+ 	J_ASSERT(PageLocked(page));
+ 	if (page->index == size >> PAGE_CACHE_SHIFT)
+ 		len = size & ~PAGE_CACHE_MASK;
+@@ -3174,9 +3145,7 @@ static int ext4_journalled_writepage(struct page *page,
+ 	loff_t size = i_size_read(inode);
+ 	loff_t len;
+ 
+-	trace_mark(ext4_journalled_writepage,
+-		   "dev %s ino %lu page_index %lu",
+-		   inode->i_sb->s_id, inode->i_ino, page->index);
++	trace_ext4_journalled_writepage(inode, page);
+ 	J_ASSERT(PageLocked(page));
+ 	if (page->index == size >> PAGE_CACHE_SHIFT)
+ 		len = size & ~PAGE_CACHE_MASK;
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index ed8482e..ad555cc 100644
+index 6ba27f5..f69ebc0 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -22,6 +22,8 @@
@@ -264,7 +302,7 @@ index ed8482e..ad555cc 100644
  static inline void *mb_correct_addr_and_bit(int *bit, void *addr)
  {
  #if BITS_PER_LONG == 64
-@@ -2859,9 +2872,8 @@ static void release_blocks_on_commit(journal_t *journal, transaction_t *txn)
+@@ -2878,9 +2891,8 @@ static void release_blocks_on_commit(journal_t *journal, transaction_t *txn)
  		discard_block = (ext4_fsblk_t) entry->group * EXT4_BLOCKS_PER_GROUP(sb)
  			+ entry->start_blk
  			+ le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
@@ -276,7 +314,7 @@ index ed8482e..ad555cc 100644
  		sb_issue_discard(sb, discard_block, entry->count);
  
  		kmem_cache_free(ext4_free_ext_cachep, entry);
-@@ -3629,10 +3641,7 @@ ext4_mb_new_inode_pa(struct ext4_allocation_context *ac)
+@@ -3654,10 +3666,7 @@ ext4_mb_new_inode_pa(struct ext4_allocation_context *ac)
  
  	mb_debug("new inode pa %p: %llu/%u for %u\n", pa,
  			pa->pa_pstart, pa->pa_len, pa->pa_lstart);
@@ -288,7 +326,7 @@ index ed8482e..ad555cc 100644
  
  	ext4_mb_use_inode_pa(ac, pa);
  	atomic_add(pa->pa_free, &EXT4_SB(sb)->s_mb_preallocated);
-@@ -3691,9 +3700,8 @@ ext4_mb_new_group_pa(struct ext4_allocation_context *ac)
+@@ -3716,9 +3725,8 @@ ext4_mb_new_group_pa(struct ext4_allocation_context *ac)
  	pa->pa_type = MB_GROUP_PA;
  
  	mb_debug("new group pa %p: %llu/%u for %u\n", pa,
@@ -300,7 +338,7 @@ index ed8482e..ad555cc 100644
  
  	ext4_mb_use_group_pa(ac, pa);
  	atomic_add(pa->pa_free, &EXT4_SB(sb)->s_mb_preallocated);
-@@ -3783,10 +3791,8 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+@@ -3808,10 +3816,8 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
  			ext4_mb_store_history(ac);
  		}
  
@@ -313,7 +351,7 @@ index ed8482e..ad555cc 100644
  		mb_free_blocks(pa->pa_inode, e4b, bit, next - bit);
  		bit = next + 1;
  	}
-@@ -3820,8 +3826,7 @@ ext4_mb_release_group_pa(struct ext4_buddy *e4b,
+@@ -3845,8 +3851,7 @@ ext4_mb_release_group_pa(struct ext4_buddy *e4b,
  	if (ac)
  		ac->ac_op = EXT4_MB_HISTORY_DISCARD;
  
@@ -323,7 +361,7 @@ index ed8482e..ad555cc 100644
  	BUG_ON(pa->pa_deleted == 0);
  	ext4_get_group_no_and_offset(sb, pa->pa_pstart, &group, &bit);
  	BUG_ON(group != e4b->bd_group && pa->pa_len != 0);
-@@ -3889,6 +3894,8 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3914,6 +3919,8 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  
  	INIT_LIST_HEAD(&list);
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
@@ -332,7 +370,7 @@ index ed8482e..ad555cc 100644
  repeat:
  	ext4_lock_group(sb, group);
  	list_for_each_entry_safe(pa, tmp,
-@@ -3987,12 +3994,15 @@ void ext4_discard_preallocations(struct inode *inode)
+@@ -4012,12 +4019,15 @@ void ext4_discard_preallocations(struct inode *inode)
  	}
  
  	mb_debug("discard preallocation for inode %lu\n", inode->i_ino);
@@ -350,7 +388,7 @@ index ed8482e..ad555cc 100644
  repeat:
  	/* first, collect all pa's in the inode */
  	spin_lock(&ei->i_prealloc_lock);
-@@ -4276,6 +4286,8 @@ ext4_mb_discard_lg_preallocations(struct super_block *sb,
+@@ -4301,6 +4311,8 @@ ext4_mb_discard_lg_preallocations(struct super_block *sb,
  
  	INIT_LIST_HEAD(&discard_list);
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
@@ -359,7 +397,7 @@ index ed8482e..ad555cc 100644
  
  	spin_lock(&lg->lg_prealloc_lock);
  	list_for_each_entry_rcu(pa, &lg->lg_prealloc_list[order],
-@@ -4445,8 +4457,7 @@ static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
+@@ -4470,8 +4482,7 @@ static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
  	int ret;
  	int freed = 0;
  
@@ -369,7 +407,7 @@ index ed8482e..ad555cc 100644
  	for (i = 0; i < ngroups && needed > 0; i++) {
  		ret = ext4_mb_discard_group_preallocations(sb, i, needed);
  		freed += ret;
-@@ -4475,17 +4486,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+@@ -4500,17 +4511,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  	sb = ar->inode->i_sb;
  	sbi = EXT4_SB(sb);
  
@@ -388,7 +426,7 @@ index ed8482e..ad555cc 100644
  
  	/*
  	 * For delayed allocation, we could skip the ENOSPC and
-@@ -4521,7 +4522,10 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+@@ -4546,7 +4547,10 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  	}
  
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
@@ -400,7 +438,7 @@ index ed8482e..ad555cc 100644
  		ar->len = 0;
  		*errp = -ENOMEM;
  		goto out1;
-@@ -4594,18 +4598,7 @@ out3:
+@@ -4619,18 +4623,7 @@ out3:
  						reserv_blks);
  	}
  
@@ -420,7 +458,7 @@ index ed8482e..ad555cc 100644
  
  	return block;
  }
-@@ -4740,10 +4733,7 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
+@@ -4765,10 +4758,7 @@ void ext4_mb_free_blocks(handle_t *handle, struct inode *inode,
  	}
  
  	ext4_debug("freeing block %lu\n", block);
@@ -433,7 +471,7 @@ index ed8482e..ad555cc 100644
  	ac = kmem_cache_alloc(ext4_ac_cachep, GFP_NOFS);
  	if (ac) {
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
-index 75e34f6..c96bb19 100644
+index dd9e6cd..f4b2b58 100644
 --- a/fs/ext4/mballoc.h
 +++ b/fs/ext4/mballoc.h
 @@ -19,7 +19,6 @@
@@ -445,7 +483,7 @@ index 75e34f6..c96bb19 100644
  #include "ext4_jbd2.h"
  #include "ext4.h"
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 0a97b1a..3b47981 100644
+index 8399700..4492cd9 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -37,9 +37,9 @@
@@ -459,16 +497,16 @@ index 0a97b1a..3b47981 100644
  #include <asm/uaccess.h>
  
  #include "ext4.h"
-@@ -54,6 +54,8 @@ module_param_named(default_mb_history_length, default_mb_history_length,
- MODULE_PARM_DESC(default_mb_history_length,
- 		 "Default number of entries saved for mb_history");
+@@ -49,6 +49,8 @@
+ #include "namei.h"
+ #include "group.h"
  
 +DEFINE_TRACE(ext4_sync_fs);
 +
  struct proc_dir_entry *ext4_proc_root;
  static struct kset *ext4_kset;
  
-@@ -3335,7 +3337,7 @@ static int ext4_sync_fs(struct super_block *sb, int wait)
+@@ -3281,7 +3283,7 @@ static int ext4_sync_fs(struct super_block *sb, int wait)
  	int ret = 0;
  	tid_t target;
  
@@ -477,6 +515,719 @@ index 0a97b1a..3b47981 100644
  	if (jbd2_journal_start_commit(EXT4_SB(sb)->s_journal, &target)) {
  		if (wait)
  			jbd2_log_wait_commit(EXT4_SB(sb)->s_journal, target);
+diff --git a/include/trace/ext4.h b/include/trace/ext4.h
+new file mode 100644
+index 0000000..e8d647a
+--- /dev/null
++++ b/include/trace/ext4.h
+@@ -0,0 +1,8 @@
++#ifndef _TRACE_EXT4_H
++#define _TRACE_EXT4_H
++
++#include <linux/tracepoint.h>
++
++#include <trace/ext4_event_types.h>
++
++#endif
+diff --git a/include/trace/ext4_event_types.h b/include/trace/ext4_event_types.h
+new file mode 100644
+index 0000000..81abe3d
+--- /dev/null
++++ b/include/trace/ext4_event_types.h
+@@ -0,0 +1,693 @@
++
++/* use <trace/ext4.h> instead */
++#ifndef TRACE_EVENT
++# error Do not include this file directly.
++# error Unless you know what you are doing.
++#endif
++
++#undef TRACE_SYSTEM
++#define TRACE_SYSTEM ext4
++
++#include <linux/writeback.h>
++#include "../../fs/ext4/ext4.h"
++#include "../../fs/ext4/mballoc.h"
++
++
++TRACE_EVENT(ext4_free_inode,
++	TP_PROTO(struct inode *inode),
++
++	TP_ARGS(inode),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	umode_t, mode			)
++		__field(	uid_t,	uid			)
++		__field(	gid_t,	gid			)
++		__field(	blkcnt_t, blocks		)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->mode	= inode->i_mode;
++		__entry->uid	= inode->i_uid;
++		__entry->gid	= inode->i_gid;
++		__entry->blocks	= inode->i_blocks;
++	),
++
++	TP_printk("dev %s ino %lu mode %d uid %u gid %u blocks %llu",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->mode,
++		  __entry->uid, __entry->gid, __entry->blocks)
++);
++
++TRACE_EVENT(ext4_request_inode,
++	TP_PROTO(struct inode *dir, int mode),
++
++	TP_ARGS(dir, mode),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	dir			)
++		__field(	umode_t, mode			)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= dir->i_sb->s_dev;
++		__entry->dir	= dir->i_ino;
++		__entry->mode	= mode;
++	),
++
++	TP_printk("dev %s dir %lu mode %d",
++		  jbd2_dev_to_name(__entry->dev), __entry->dir, __entry->mode)
++);
++
++TRACE_EVENT(ext4_allocate_inode,
++	TP_PROTO(struct inode *inode, struct inode *dir, int mode),
++
++	TP_ARGS(inode, dir, mode),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	ino_t,	dir			)
++		__field(	umode_t, mode			)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->dir	= dir->i_ino;
++		__entry->mode	= mode;
++	),
++
++	TP_printk("dev %s ino %lu dir %lu mode %d",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->dir, __entry->mode)
++);
++
++TRACE_EVENT(ext4_write_begin,
++
++	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,
++		 unsigned int flags),
++
++	TP_ARGS(inode, pos, len, flags),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	loff_t,	pos			)
++		__field(	unsigned int, len		)
++		__field(	unsigned int, flags		)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->pos	= pos;
++		__entry->len	= len;
++		__entry->flags	= flags;
++	),
++
++	TP_printk("dev %s ino %lu pos %llu len %u flags %u",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->pos, __entry->len,
++		  __entry->flags)
++);
++
++TRACE_EVENT(ext4_ordered_write_end,
++	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,
++			unsigned int copied),
++
++	TP_ARGS(inode, pos, len, copied),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	loff_t,	pos			)
++		__field(	unsigned int, len		)
++		__field(	unsigned int, copied		)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->pos	= pos;
++		__entry->len	= len;
++		__entry->copied	= copied;
++	),
++
++	TP_printk("dev %s ino %lu pos %llu len %u copied %u",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->pos, __entry->len,
++		  __entry->copied)
++);
++
++TRACE_EVENT(ext4_writeback_write_end,
++	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,
++		 unsigned int copied),
++
++	TP_ARGS(inode, pos, len, copied),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	loff_t,	pos			)
++		__field(	unsigned int, len		)
++		__field(	unsigned int, copied		)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->pos	= pos;
++		__entry->len	= len;
++		__entry->copied	= copied;
++	),
++
++	TP_printk("dev %s ino %lu pos %llu len %u copied %u",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->pos, __entry->len,
++		  __entry->copied)
++);
++
++TRACE_EVENT(ext4_journalled_write_end,
++	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,
++		 unsigned int copied),
++	TP_ARGS(inode, pos, len, copied),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	loff_t,	pos			)
++		__field(	unsigned int, len		)
++		__field(	unsigned int, copied		)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->pos	= pos;
++		__entry->len	= len;
++		__entry->copied	= copied;
++	),
++
++	TP_printk("dev %s ino %lu pos %llu len %u copied %u",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->pos, __entry->len,
++		  __entry->copied)
++);
++
++TRACE_EVENT(ext4_da_writepage,
++	TP_PROTO(struct inode *inode, struct page *page),
++
++	TP_ARGS(inode, page),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	pgoff_t, index			)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->index	= page->index;
++	),
++
++	TP_printk("dev %s ino %lu page_index %lu",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->index)
++);
++
++TRACE_EVENT(ext4_da_writepages,
++	TP_PROTO(struct inode *inode, struct writeback_control *wbc),
++
++	TP_ARGS(inode, wbc),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	long,	nr_to_write		)
++		__field(	long,	pages_skipped		)
++		__field(	loff_t,	range_start		)
++		__field(	loff_t,	range_end		)
++		__field(	char,	nonblocking		)
++		__field(	char,	for_kupdate		)
++		__field(	char,	for_reclaim		)
++		__field(	char,	for_writepages		)
++		__field(	char,	range_cyclic		)
++	),
++
++	TP_fast_assign(
++		__entry->dev		= inode->i_sb->s_dev;
++		__entry->ino		= inode->i_ino;
++		__entry->nr_to_write	= wbc->nr_to_write;
++		__entry->pages_skipped	= wbc->pages_skipped;
++		__entry->range_start	= wbc->range_start;
++		__entry->range_end	= wbc->range_end;
++		__entry->nonblocking	= wbc->nonblocking;
++		__entry->for_kupdate	= wbc->for_kupdate;
++		__entry->for_reclaim	= wbc->for_reclaim;
++		__entry->for_writepages	= wbc->for_writepages;
++		__entry->range_cyclic	= wbc->range_cyclic;
++	),
++
++	TP_printk("dev %s ino %lu nr_t_write %ld pages_skipped %ld range_start %llu range_end %llu nonblocking %d for_kupdate %d for_reclaim %d for_writepages %d range_cyclic %d",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->nr_to_write,
++		  __entry->pages_skipped, __entry->range_start,
++		  __entry->range_end, __entry->nonblocking,
++		  __entry->for_kupdate, __entry->for_reclaim,
++		  __entry->for_writepages, __entry->range_cyclic)
++);
++
++TRACE_EVENT(ext4_da_writepages_result,
++	TP_PROTO(struct inode *inode, struct writeback_control *wbc,
++			int ret, int pages_written),
++
++	TP_ARGS(inode, wbc, ret, pages_written),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	int,	ret			)
++		__field(	int,	pages_written		)
++		__field(	long,	pages_skipped		)
++		__field(	char,	encountered_congestion	)
++		__field(	char,	more_io			)	
++		__field(	char,	no_nrwrite_index_update )
++	),
++
++	TP_fast_assign(
++		__entry->dev		= inode->i_sb->s_dev;
++		__entry->ino		= inode->i_ino;
++		__entry->ret		= ret;
++		__entry->pages_written	= pages_written;
++		__entry->pages_skipped	= wbc->pages_skipped;
++		__entry->encountered_congestion	= wbc->encountered_congestion;
++		__entry->more_io	= wbc->more_io;
++		__entry->no_nrwrite_index_update = wbc->no_nrwrite_index_update;
++	),
++
++	TP_printk("dev %s ino %lu ret %d pages_written %d pages_skipped %ld congestion %d more_io %d no_nrwrite_index_update %d",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->ret,
++		  __entry->pages_written, __entry->pages_skipped,
++		  __entry->encountered_congestion, __entry->more_io,
++		  __entry->no_nrwrite_index_update)
++);
++
++TRACE_EVENT(ext4_da_write_begin,
++	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,
++			unsigned int flags),
++
++	TP_ARGS(inode, pos, len, flags),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	loff_t,	pos			)
++		__field(	unsigned int, len		)
++		__field(	unsigned int, flags		)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->pos	= pos;
++		__entry->len	= len;
++		__entry->flags	= flags;
++	),
++
++	TP_printk("dev %s ino %lu pos %llu len %u flags %u",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->pos, __entry->len,
++		  __entry->flags)
++);
++
++TRACE_EVENT(ext4_da_write_end,
++	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,
++			unsigned int copied),
++
++	TP_ARGS(inode, pos, len, copied),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	loff_t,	pos			)
++		__field(	unsigned int, len		)
++		__field(	unsigned int, copied		)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->pos	= pos;
++		__entry->len	= len;
++		__entry->copied	= copied;
++	),
++
++	TP_printk("dev %s ino %lu pos %llu len %u copied %u",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->pos, __entry->len,
++		  __entry->copied)
++);
++
++TRACE_EVENT(ext4_normal_writepage,
++	TP_PROTO(struct inode *inode, struct page *page),
++
++	TP_ARGS(inode, page),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	pgoff_t, index			)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->index	= page->index;
++	),
++
++	TP_printk("dev %s ino %lu page_index %lu",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->index)
++);
++
++TRACE_EVENT(ext4_journalled_writepage,
++	TP_PROTO(struct inode *inode, struct page *page),
++
++	TP_ARGS(inode, page),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	pgoff_t, index			)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->index	= page->index;
++	),
++
++	TP_printk("dev %s ino %lu page_index %lu",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->index)
++);
++
++TRACE_EVENT(ext4_discard_blocks,
++	TP_PROTO(struct super_block *sb, unsigned long long blk,
++			unsigned long long count),
++
++	TP_ARGS(sb, blk, count),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	__u64,	blk			)
++		__field(	__u64,	count			)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev	= sb->s_dev;
++		__entry->blk	= blk;
++		__entry->count	= count;
++	),
++
++	TP_printk("dev %s blk %llu count %llu",
++		  jbd2_dev_to_name(__entry->dev), __entry->blk, __entry->count)
++);
++
++TRACE_EVENT(ext4_mb_new_inode_pa,
++	TP_PROTO(struct ext4_allocation_context *ac,
++		 struct ext4_prealloc_space *pa),
++
++	TP_ARGS(ac, pa),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	__u64,	pa_pstart		)
++		__field(	__u32,	pa_len			)
++		__field(	__u64,	pa_lstart		)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev		= ac->ac_sb->s_dev;
++		__entry->ino		= ac->ac_inode->i_ino;
++		__entry->pa_pstart	= pa->pa_pstart;
++		__entry->pa_len		= pa->pa_len;
++		__entry->pa_lstart	= pa->pa_lstart;
++	),
++
++	TP_printk("dev %s ino %lu pstart %llu len %u lstart %llu",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->pa_pstart,
++		  __entry->pa_len, __entry->pa_lstart)
++);
++
++TRACE_EVENT(ext4_mb_new_group_pa,
++	TP_PROTO(struct ext4_allocation_context *ac,
++		 struct ext4_prealloc_space *pa),
++
++	TP_ARGS(ac, pa),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	__u64,	pa_pstart		)
++		__field(	__u32,	pa_len			)
++		__field(	__u64,	pa_lstart		)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev		= ac->ac_sb->s_dev;
++		__entry->ino		= ac->ac_inode->i_ino;
++		__entry->pa_pstart	= pa->pa_pstart;
++		__entry->pa_len		= pa->pa_len;
++		__entry->pa_lstart	= pa->pa_lstart;
++	),
++
++	TP_printk("dev %s ino %lu pstart %llu len %u lstart %llu",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->pa_pstart,
++		  __entry->pa_len, __entry->pa_lstart)
++);
++
++TRACE_EVENT(ext4_mb_release_inode_pa,
++	TP_PROTO(struct ext4_allocation_context *ac,
++		 struct ext4_prealloc_space *pa,
++		 unsigned long long block, unsigned int count),
++
++	TP_ARGS(ac, pa, block, count),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	__u64,	block			)
++		__field(	__u32,	count			)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev		= ac->ac_sb->s_dev;
++		__entry->ino		= ac->ac_inode->i_ino;
++		__entry->block		= block;
++		__entry->count		= count;
++	),
++
++	TP_printk("dev %s ino %lu block %llu count %u",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->block,
++		  __entry->count)
++);
++
++TRACE_EVENT(ext4_mb_release_group_pa,
++	TP_PROTO(struct ext4_allocation_context *ac,
++		 struct ext4_prealloc_space *pa),
++
++	TP_ARGS(ac, pa),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	__u64,	pa_pstart		)
++		__field(	__u32,	pa_len			)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev		= ac->ac_sb->s_dev;
++		__entry->ino		= ac->ac_inode->i_ino;
++		__entry->pa_pstart	= pa->pa_pstart;
++		__entry->pa_len		= pa->pa_len;
++	),
++
++	TP_printk("dev %s pstart %llu len %u",
++		  jbd2_dev_to_name(__entry->dev), __entry->pa_pstart, __entry->pa_len)
++);
++
++TRACE_EVENT(ext4_discard_preallocations,
++	TP_PROTO(struct inode *inode),
++
++	TP_ARGS(inode),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++	),
++
++	TP_printk("dev %s ino %lu",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino)
++);
++
++TRACE_EVENT(ext4_mb_discard_preallocations,
++	TP_PROTO(struct super_block *sb, int needed),
++
++	TP_ARGS(sb, needed),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	int,	needed			)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev	= sb->s_dev;
++		__entry->needed	= needed;
++	),
++
++	TP_printk("dev %s needed %d",
++		  jbd2_dev_to_name(__entry->dev), __entry->needed)
++);
++
++TRACE_EVENT(ext4_request_blocks,
++	TP_PROTO(struct ext4_allocation_request *ar),
++
++	TP_ARGS(ar),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	struct ext4_allocation_request, ar )
++	),
++
++	TP_fast_assign(
++		__entry->dev	= ar->inode->i_sb->s_dev;
++		__entry->ino	= ar->inode->i_ino;
++		__entry->ar	= *ar;
++	),
++
++	TP_printk("dev %s ino %lu flags %u len %u lblk %llu goal %llu lleft %llu lright %llu pleft %llu pright %llu ",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->ar.flags,
++		  __entry->ar.len,
++		  (unsigned long long) __entry->ar.logical,
++		  (unsigned long long) __entry->ar.goal,
++		  (unsigned long long) __entry->ar.lleft,
++		  (unsigned long long) __entry->ar.lright,
++		  (unsigned long long) __entry->ar.pleft,
++		  (unsigned long long) __entry->ar.pright)
++);
++
++TRACE_EVENT(ext4_allocate_blocks,
++	TP_PROTO(struct ext4_allocation_request *ar, unsigned long long block),
++
++	TP_ARGS(ar, block),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	__u64,	block			)
++		__field(	struct ext4_allocation_request, ar )
++	),
++
++	TP_fast_assign(
++		__entry->dev	= ar->inode->i_sb->s_dev;
++		__entry->ino	= ar->inode->i_ino;
++		__entry->block	= block;
++		__entry->ar	= *ar;
++	),
++
++	TP_printk("dev %s ino %lu flags %u len %u block %llu lblk %llu goal %llu lleft %llu lright %llu pleft %llu pright %llu ",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->ar.flags,
++		  __entry->ar.len, __entry->block,
++		  (unsigned long long) __entry->ar.logical,
++		  (unsigned long long) __entry->ar.goal,
++		  (unsigned long long) __entry->ar.lleft,
++		  (unsigned long long) __entry->ar.lright,
++		  (unsigned long long) __entry->ar.pleft,
++		  (unsigned long long) __entry->ar.pright)
++);
++
++TRACE_EVENT(ext4_free_blocks,
++	TP_PROTO(struct inode *inode, __u64 block, unsigned long count,
++			int metadata),
++
++	TP_ARGS(inode, block, count, metadata),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	__u64,	block			)
++		__field(	unsigned long,	count		)
++		__field(	int,	metadata		)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev		= inode->i_sb->s_dev;
++		__entry->ino		= inode->i_ino;
++		__entry->block		= block;
++		__entry->count		= count;
++		__entry->metadata	= metadata;
++	),
++
++	TP_printk("dev %s ino %lu block %llu count %lu metadata %d",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->block,
++		  __entry->count, __entry->metadata)
++);
++
++TRACE_EVENT(ext4_sync_file,
++	TP_PROTO(struct file *file, struct dentry *dentry, int datasync),
++
++	TP_ARGS(file, dentry, datasync),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	ino_t,	parent			)
++		__field(	int,	datasync		)
++	),
++
++	TP_fast_assign(
++		__entry->dev		= dentry->d_inode->i_sb->s_dev;
++		__entry->ino		= dentry->d_inode->i_ino;
++		__entry->datasync	= datasync;
++		__entry->parent		= dentry->d_parent->d_inode->i_ino;
++	),
++
++	TP_printk("dev %s ino %ld parent %ld datasync %d ",
++		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->parent,
++		  __entry->datasync)
++);
++
++TRACE_EVENT(ext4_sync_fs,
++	TP_PROTO(struct super_block *sb, int wait),
++
++	TP_ARGS(sb, wait),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	int,	wait			)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev	= sb->s_dev;
++		__entry->wait	= wait;
++	),
++
++	TP_printk("dev %s wait %d", jbd2_dev_to_name(__entry->dev),
++		  __entry->wait)
++);
++
++
++#undef TRACE_SYSTEM
 diff --git a/include/trace/trace_event_types.h b/include/trace/trace_event_types.h
 index bd26f4d..26d7aee 100644
 --- a/include/trace/trace_event_types.h

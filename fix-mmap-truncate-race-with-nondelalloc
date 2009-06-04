@@ -10,14 +10,26 @@ Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Acked-by: Jan Kara <jack@suse.cz>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |  238 +++++++++++++------------------------------------------
- 1 files changed, 57 insertions(+), 181 deletions(-)
+ fs/ext4/inode.c                  |  238 +++++++++----------------------------
+ include/trace/ext4_event_types.h |   45 +-------
+ 2 files changed, 59 insertions(+), 224 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 5d88027..24c8634 100644
+index e54f62b..3d9fba7 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -44,6 +44,10 @@
+@@ -47,16 +47,18 @@ DEFINE_TRACE(ext4_write_begin);
+ DEFINE_TRACE(ext4_ordered_write_end);
+ DEFINE_TRACE(ext4_writeback_write_end);
+ DEFINE_TRACE(ext4_journalled_write_end);
+-DEFINE_TRACE(ext4_da_writepage);
++DEFINE_TRACE(ext4_writepage);
+ DEFINE_TRACE(ext4_da_writepages);
+ DEFINE_TRACE(ext4_da_writepages_result);
+ DEFINE_TRACE(ext4_da_write_begin);
+ DEFINE_TRACE(ext4_da_write_end);
+-DEFINE_TRACE(ext4_normal_writepage);
+-DEFINE_TRACE(ext4_journalled_writepage);
  
  #define MPAGE_DA_EXTENT_TAIL 0x01
  
@@ -28,7 +40,7 @@ index 5d88027..24c8634 100644
  static inline int ext4_begin_ordered_truncate(struct inode *inode,
  					      loff_t new_size)
  {
-@@ -2312,7 +2316,7 @@ static int __mpage_da_writepage(struct page *page,
+@@ -2316,7 +2318,7 @@ static int __mpage_da_writepage(struct page *page,
  			 * We need to try to allocate
  			 * unmapped blocks in the same page.
  			 * Otherwise we won't make progress
@@ -37,7 +49,7 @@ index 5d88027..24c8634 100644
  			 */
  			if (ext4_bh_delay_or_unwritten(NULL, bh)) {
  				mpage_add_bh_to_extent(mpd, logical,
-@@ -2439,13 +2443,47 @@ static int noalloc_get_block_write(struct inode *inode, sector_t iblock,
+@@ -2443,13 +2445,47 @@ static int noalloc_get_block_write(struct inode *inode, sector_t iblock,
  }
  
  /*
@@ -86,16 +98,16 @@ index 5d88027..24c8634 100644
  				struct writeback_control *wbc)
  {
  	int ret = 0;
-@@ -2454,7 +2492,7 @@ static int ext4_da_writepage(struct page *page,
+@@ -2458,7 +2494,7 @@ static int ext4_da_writepage(struct page *page,
  	struct buffer_head *page_bufs;
  	struct inode *inode = page->mapping->host;
  
--	trace_mark(ext4_da_writepage,
-+	trace_mark(ext4_writepage,
- 		   "dev %s ino %lu page_index %lu",
- 		   inode->i_sb->s_id, inode->i_ino, page->index);
+-	trace_ext4_da_writepage(inode, page);
++	trace_ext4_writepage(inode, page);
  	size = i_size_read(inode);
-@@ -2518,6 +2556,15 @@ static int ext4_da_writepage(struct page *page,
+ 	if (page->index == size >> PAGE_CACHE_SHIFT)
+ 		len = size & ~PAGE_CACHE_MASK;
+@@ -2520,6 +2556,15 @@ static int ext4_da_writepage(struct page *page,
  		block_commit_write(page, 0, len);
  	}
  
@@ -111,7 +123,7 @@ index 5d88027..24c8634 100644
  	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
  		ret = nobh_writepage(page, noalloc_get_block_write, wbc);
  	else
-@@ -3083,114 +3130,10 @@ static int bput_one(handle_t *handle, struct buffer_head *bh)
+@@ -3062,112 +3107,10 @@ static int bput_one(handle_t *handle, struct buffer_head *bh)
  	return 0;
  }
  
@@ -187,9 +199,7 @@ index 5d88027..24c8634 100644
 -	loff_t size = i_size_read(inode);
 -	loff_t len;
 -
--	trace_mark(ext4_normal_writepage,
--		   "dev %s ino %lu page_index %lu",
--		   inode->i_sb->s_id, inode->i_ino, page->index);
+-	trace_ext4_normal_writepage(inode, page);
 -	J_ASSERT(PageLocked(page));
 -	if (page->index == size >> PAGE_CACHE_SHIFT)
 -		len = size & ~PAGE_CACHE_MASK;
@@ -220,15 +230,15 @@ index 5d88027..24c8634 100644
 -
  static int __ext4_journalled_writepage(struct page *page,
 -				struct writeback_control *wbc)
-+					struct writeback_control *wbc,
-+					unsigned int len)
++				       struct writeback_control *wbc,
++				       unsigned int len)
  {
 -	loff_t size;
 -	unsigned int len;
  	struct address_space *mapping = page->mapping;
  	struct inode *inode = mapping->host;
  	struct buffer_head *page_bufs;
-@@ -3198,16 +3141,8 @@ static int __ext4_journalled_writepage(struct page *page,
+@@ -3175,16 +3118,8 @@ static int __ext4_journalled_writepage(struct page *page,
  	int ret = 0;
  	int err;
  
@@ -246,7 +256,7 @@ index 5d88027..24c8634 100644
  	walk_page_buffers(handle, page_bufs, 0, len, NULL, bget_one);
  	/* As soon as we unlock the page, it can go away, but we have
  	 * references to buffers so we are safe */
-@@ -3232,69 +3167,10 @@ static int __ext4_journalled_writepage(struct page *page,
+@@ -3209,67 +3144,10 @@ static int __ext4_journalled_writepage(struct page *page,
  
  	walk_page_buffers(handle, page_bufs, 0, len, NULL, bput_one);
  	EXT4_I(inode)->i_state |= EXT4_STATE_JDATA;
@@ -265,9 +275,7 @@ index 5d88027..24c8634 100644
 -	loff_t size = i_size_read(inode);
 -	loff_t len;
 -
--	trace_mark(ext4_journalled_writepage,
--		   "dev %s ino %lu page_index %lu",
--		   inode->i_sb->s_id, inode->i_ino, page->index);
+-	trace_ext4_journalled_writepage(inode, page);
 -	J_ASSERT(PageLocked(page));
 -	if (page->index == size >> PAGE_CACHE_SHIFT)
 -		len = size & ~PAGE_CACHE_MASK;
@@ -316,7 +324,7 @@ index 5d88027..24c8634 100644
  static int ext4_readpage(struct file *file, struct page *page)
  {
  	return mpage_readpage(page, ext4_get_block);
-@@ -3441,7 +3317,7 @@ static int ext4_journalled_set_page_dirty(struct page *page)
+@@ -3416,7 +3294,7 @@ static int ext4_journalled_set_page_dirty(struct page *page)
  static const struct address_space_operations ext4_ordered_aops = {
  	.readpage		= ext4_readpage,
  	.readpages		= ext4_readpages,
@@ -325,7 +333,7 @@ index 5d88027..24c8634 100644
  	.sync_page		= block_sync_page,
  	.write_begin		= ext4_write_begin,
  	.write_end		= ext4_ordered_write_end,
-@@ -3456,7 +3332,7 @@ static const struct address_space_operations ext4_ordered_aops = {
+@@ -3432,7 +3310,7 @@ static const struct address_space_operations ext4_ordered_aops = {
  static const struct address_space_operations ext4_writeback_aops = {
  	.readpage		= ext4_readpage,
  	.readpages		= ext4_readpages,
@@ -334,7 +342,7 @@ index 5d88027..24c8634 100644
  	.sync_page		= block_sync_page,
  	.write_begin		= ext4_write_begin,
  	.write_end		= ext4_writeback_write_end,
-@@ -3471,7 +3347,7 @@ static const struct address_space_operations ext4_writeback_aops = {
+@@ -3448,7 +3326,7 @@ static const struct address_space_operations ext4_writeback_aops = {
  static const struct address_space_operations ext4_journalled_aops = {
  	.readpage		= ext4_readpage,
  	.readpages		= ext4_readpages,
@@ -343,7 +351,7 @@ index 5d88027..24c8634 100644
  	.sync_page		= block_sync_page,
  	.write_begin		= ext4_write_begin,
  	.write_end		= ext4_journalled_write_end,
-@@ -3485,7 +3361,7 @@ static const struct address_space_operations ext4_journalled_aops = {
+@@ -3463,7 +3341,7 @@ static const struct address_space_operations ext4_journalled_aops = {
  static const struct address_space_operations ext4_da_aops = {
  	.readpage		= ext4_readpage,
  	.readpages		= ext4_readpages,
@@ -352,3 +360,66 @@ index 5d88027..24c8634 100644
  	.writepages		= ext4_da_writepages,
  	.sync_page		= block_sync_page,
  	.write_begin		= ext4_da_write_begin,
+diff --git a/include/trace/ext4_event_types.h b/include/trace/ext4_event_types.h
+index 81abe3d..c7fca60 100644
+--- a/include/trace/ext4_event_types.h
++++ b/include/trace/ext4_event_types.h
+@@ -193,7 +193,7 @@ TRACE_EVENT(ext4_journalled_write_end,
+ 		  __entry->copied)
+ );
+ 
+-TRACE_EVENT(ext4_da_writepage,
++TRACE_EVENT(ext4_writepage,
+ 	TP_PROTO(struct inode *inode, struct page *page),
+ 
+ 	TP_ARGS(inode, page),
+@@ -345,49 +345,6 @@ TRACE_EVENT(ext4_da_write_end,
+ 		  __entry->copied)
+ );
+ 
+-TRACE_EVENT(ext4_normal_writepage,
+-	TP_PROTO(struct inode *inode, struct page *page),
+-
+-	TP_ARGS(inode, page),
+-
+-	TP_STRUCT__entry(
+-		__field(	dev_t,	dev			)
+-		__field(	ino_t,	ino			)
+-		__field(	pgoff_t, index			)
+-	),
+-
+-	TP_fast_assign(
+-		__entry->dev	= inode->i_sb->s_dev;
+-		__entry->ino	= inode->i_ino;
+-		__entry->index	= page->index;
+-	),
+-
+-	TP_printk("dev %s ino %lu page_index %lu",
+-		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->index)
+-);
+-
+-TRACE_EVENT(ext4_journalled_writepage,
+-	TP_PROTO(struct inode *inode, struct page *page),
+-
+-	TP_ARGS(inode, page),
+-
+-	TP_STRUCT__entry(
+-		__field(	dev_t,	dev			)
+-		__field(	ino_t,	ino			)
+-		__field(	pgoff_t, index			)
+-
+-	),
+-
+-	TP_fast_assign(
+-		__entry->dev	= inode->i_sb->s_dev;
+-		__entry->ino	= inode->i_ino;
+-		__entry->index	= page->index;
+-	),
+-
+-	TP_printk("dev %s ino %lu page_index %lu",
+-		  jbd2_dev_to_name(__entry->dev), __entry->ino, __entry->index)
+-);
+-
+ TRACE_EVENT(ext4_discard_blocks,
+ 	TP_PROTO(struct super_block *sb, unsigned long long blk,
+ 			unsigned long long count),
