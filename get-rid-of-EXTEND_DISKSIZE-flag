@@ -13,12 +13,6 @@ disksize themselves.
 
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/ext4/ext4.h    |    6 ++----
- fs/ext4/extents.c |    9 ---------
- fs/ext4/inode.c   |   20 +++-----------------
- 3 files changed, 5 insertions(+), 30 deletions(-)
-
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 4311cc8..59657ff 100644
 --- a/fs/ext4/ext4.h
@@ -69,10 +63,22 @@ index d4e99e9..9c35a7b 100644
  
  	/* Cache only when it is _not_ an uninitialized extent */
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 7492e7e..1f23c26 100644
+index 14c00ff..17ed0d2 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1003,19 +1003,7 @@ static int ext4_ind_get_blocks(handle_t *handle, struct inode *inode,
+@@ -933,11 +933,8 @@ static int ext4_ind_get_blocks(handle_t *handle, struct inode *inode,
+ 	int indirect_blks;
+ 	int blocks_to_boundary = 0;
+ 	int depth;
+-	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	int count = 0;
+ 	ext4_fsblk_t first_block = 0;
+-	loff_t disksize;
+-
+ 
+ 	J_ASSERT(!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL));
+ 	J_ASSERT(handle != NULL || (flags & EXT4_GET_BLOCKS_CREATE) == 0);
+@@ -1003,19 +1000,7 @@ static int ext4_ind_get_blocks(handle_t *handle, struct inode *inode,
  	if (!err)
  		err = ext4_splice_branch(handle, inode, iblock,
  					partial, indirect_blks, count);
@@ -93,7 +99,7 @@ index 7492e7e..1f23c26 100644
  		goto cleanup;
  
  	set_buffer_new(bh_result);
-@@ -1321,7 +1309,7 @@ struct buffer_head *ext4_getblk(handle_t *handle, struct inode *inode,
+@@ -1321,7 +1306,7 @@ struct buffer_head *ext4_getblk(handle_t *handle, struct inode *inode,
  {
  	struct buffer_head dummy;
  	int fatal = 0, err;
@@ -102,7 +108,7 @@ index 7492e7e..1f23c26 100644
  
  	J_ASSERT(handle != NULL || create == 0);
  
-@@ -2153,9 +2141,7 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
+@@ -2153,9 +2138,7 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
  	}
  
  	/*
