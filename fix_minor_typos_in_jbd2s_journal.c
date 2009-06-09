@@ -14,7 +14,7 @@ index 5814410..85af8ea 100644
   * for journal abort.
   *
 - * Two internal function, which provide abort to te jbd layer
-+ * Two internal function, which provide abort to the jbd layer
++ * Two internal functions, which provide abort to the jbd layer
   * itself are here.
   */
  
