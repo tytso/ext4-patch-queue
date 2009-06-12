@@ -2,34 +2,29 @@ jbd2: Convert instrumentation from markers to tracepoints
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/jbd2/checkpoint.c              |    7 +-
- fs/jbd2/commit.c                  |   20 +++--
- fs/jbd2/journal.c                 |   66 +++++++++++++++
- include/linux/jbd2.h              |    6 ++
- include/trace/jbd2.h              |    9 ++
- include/trace/jbd2_event_types.h  |  168 +++++++++++++++++++++++++++++++++++++
- include/trace/trace_event_types.h |    1 +
- include/trace/trace_events.h      |    1 +
- 8 files changed, 269 insertions(+), 9 deletions(-)
+ fs/jbd2/checkpoint.c        |    5 +-
+ fs/jbd2/commit.c            |   13 ++--
+ fs/jbd2/journal.c           |   69 ++++++++++++++++++
+ include/linux/jbd2.h        |    6 ++
+ include/trace/events/jbd2.h |  167 +++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 251 insertions(+), 9 deletions(-)
 
 diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
-index 17159ca..2b794d9 100644
+index 17159ca..5d70b3e 100644
 --- a/fs/jbd2/checkpoint.c
 +++ b/fs/jbd2/checkpoint.c
-@@ -20,9 +20,11 @@
+@@ -20,9 +20,9 @@
  #include <linux/time.h>
  #include <linux/fs.h>
  #include <linux/jbd2.h>
 -#include <linux/marker.h>
  #include <linux/errno.h>
  #include <linux/slab.h>
-+#include <trace/jbd2.h>
-+
-+DEFINE_TRACE(jbd2_checkpoint);
++#include <trace/events/jbd2.h>
  
  /*
   * Unlink a buffer from a transaction checkpoint list.
-@@ -358,8 +360,7 @@ int jbd2_log_do_checkpoint(journal_t *journal)
+@@ -358,8 +358,7 @@ int jbd2_log_do_checkpoint(journal_t *journal)
  	 * journal straight away.
  	 */
  	result = jbd2_cleanup_journal_tail(journal);
@@ -40,7 +35,7 @@ index 17159ca..2b794d9 100644
  	if (result <= 0)
  		return result;
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index 0b7d3b8..394fae9 100644
+index 0b7d3b8..7b4088b 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
 @@ -16,7 +16,6 @@
@@ -51,22 +46,15 @@ index 0b7d3b8..394fae9 100644
  #include <linux/errno.h>
  #include <linux/slab.h>
  #include <linux/mm.h>
-@@ -26,6 +25,14 @@
+@@ -26,6 +25,7 @@
  #include <linux/writeback.h>
  #include <linux/backing-dev.h>
  #include <linux/bio.h>
-+#include <trace/jbd2.h>
-+
-+DEFINE_TRACE(jbd2_start_commit);
-+DEFINE_TRACE(jbd2_commit_locking);
-+DEFINE_TRACE(jbd2_commit_flushing);
-+DEFINE_TRACE(jbd2_commit_logging);
-+DEFINE_TRACE(jbd2_end_commit);
-+DEFINE_TRACE(jbd2_submit_inode_data);
++#include <trace/events/jbd2.h>
  
  /*
   * Default IO end handler for temporary BJ_IO buffer_heads.
-@@ -253,6 +260,7 @@ static int journal_submit_data_buffers(journal_t *journal,
+@@ -253,6 +253,7 @@ static int journal_submit_data_buffers(journal_t *journal,
  		 * block allocation  with delalloc. We need to write
  		 * only allocated blocks here.
  		 */
@@ -74,7 +62,7 @@ index 0b7d3b8..394fae9 100644
  		err = journal_submit_inode_data_buffers(mapping);
  		if (!ret)
  			ret = err;
-@@ -394,8 +402,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -394,8 +395,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	commit_transaction = journal->j_running_transaction;
  	J_ASSERT(commit_transaction->t_state == T_RUNNING);
  
@@ -84,7 +72,7 @@ index 0b7d3b8..394fae9 100644
  	jbd_debug(1, "JBD: starting commit of transaction %d\n",
  			commit_transaction->t_tid);
  
-@@ -409,6 +416,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -409,6 +409,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	 */
  	if (commit_transaction->t_synchronous_commit)
  		write_op = WRITE_SYNC_PLUG;
@@ -92,7 +80,7 @@ index 0b7d3b8..394fae9 100644
  	stats.u.run.rs_wait = commit_transaction->t_max_wait;
  	stats.u.run.rs_locked = jiffies;
  	stats.u.run.rs_running = jbd2_time_diff(commit_transaction->t_start,
-@@ -484,6 +492,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -484,6 +485,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	 */
  	jbd2_journal_switch_revoke_table(journal);
  
@@ -100,7 +88,7 @@ index 0b7d3b8..394fae9 100644
  	stats.u.run.rs_flushing = jiffies;
  	stats.u.run.rs_locked = jbd2_time_diff(stats.u.run.rs_locked,
  					       stats.u.run.rs_flushing);
-@@ -520,6 +529,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -520,6 +522,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	commit_transaction->t_state = T_COMMIT;
  	spin_unlock(&journal->j_state_lock);
  
@@ -108,7 +96,7 @@ index 0b7d3b8..394fae9 100644
  	stats.u.run.rs_logging = jiffies;
  	stats.u.run.rs_flushing = jbd2_time_diff(stats.u.run.rs_flushing,
  						 stats.u.run.rs_logging);
-@@ -1054,9 +1064,7 @@ restart_loop:
+@@ -1054,9 +1057,7 @@ restart_loop:
  	if (journal->j_commit_callback)
  		journal->j_commit_callback(journal, commit_transaction);
  
@@ -120,18 +108,21 @@ index 0b7d3b8..394fae9 100644
  		  journal->j_commit_sequence, journal->j_tail_sequence);
  	if (to_free)
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 5814410..7435ff4 100644
+index 62be7d2..18bfd5d 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
-@@ -38,6 +38,7 @@
+@@ -38,6 +38,10 @@
  #include <linux/debugfs.h>
  #include <linux/seq_file.h>
  #include <linux/math64.h>
 +#include <linux/hash.h>
++
++#define CREATE_TRACE_POINTS
++#include <trace/events/jbd2.h>
  
  #include <asm/uaccess.h>
  #include <asm/page.h>
-@@ -2377,6 +2378,71 @@ static void __exit journal_exit(void)
+@@ -2377,6 +2381,71 @@ static void __exit journal_exit(void)
  	jbd2_journal_destroy_caches();
  }
  
@@ -220,38 +211,19 @@ index cc02393..d97eb65 100644
  #endif	/* __KERNEL__ */
  
  #endif	/* _LINUX_JBD2_H */
-diff --git a/include/trace/jbd2.h b/include/trace/jbd2.h
+diff --git a/include/trace/events/jbd2.h b/include/trace/events/jbd2.h
 new file mode 100644
-index 0000000..68a93a5
+index 0000000..bd4a872
 --- /dev/null
-+++ b/include/trace/jbd2.h
-@@ -0,0 +1,9 @@
-+#ifndef _TRACE_JBD2_H
++++ b/include/trace/events/jbd2.h
+@@ -0,0 +1,167 @@
++#if !defined(_TRACE_JBD2_H) || defined(TRACE_HEADER_MULTI_READ)
 +#define _TRACE_JBD2_H
 +
 +#include <linux/jbd2.h>
-+#include <linux/tracepoint.h>
-+
-+#include <trace/jbd2_event_types.h>
-+
-+#endif
-diff --git a/include/trace/jbd2_event_types.h b/include/trace/jbd2_event_types.h
-new file mode 100644
-index 0000000..9dab666
---- /dev/null
-+++ b/include/trace/jbd2_event_types.h
-@@ -0,0 +1,168 @@
-+
-+/* use <trace/jbd2.h> instead */
-+#ifndef TRACE_EVENT
-+# error Do not include this file directly.
-+# error Unless you know what you are doing.
-+#endif
 +
 +#undef TRACE_SYSTEM
 +#define TRACE_SYSTEM jbd2
-+
-+#include <linux/jbd2.h>
 +
 +TRACE_EVENT(jbd2_checkpoint,
 +
@@ -408,22 +380,7 @@ index 0000000..9dab666
 +		  jbd2_dev_to_name(__entry->dev), __entry->ino)
 +);
 +
-+#undef TRACE_SYSTEM
-diff --git a/include/trace/trace_event_types.h b/include/trace/trace_event_types.h
-index df56f56..bd26f4d 100644
---- a/include/trace/trace_event_types.h
-+++ b/include/trace/trace_event_types.h
-@@ -3,3 +3,4 @@
- #include <trace/sched_event_types.h>
- #include <trace/irq_event_types.h>
- #include <trace/lockdep_event_types.h>
-+#include <trace/jbd2_event_types.h>
-diff --git a/include/trace/trace_events.h b/include/trace/trace_events.h
-index fd13750..2a9b970 100644
---- a/include/trace/trace_events.h
-+++ b/include/trace/trace_events.h
-@@ -3,3 +3,4 @@
- #include <trace/sched.h>
- #include <trace/irq.h>
- #include <trace/lockdep.h>
-+#include <trace/jbd2.h>
++#endif /* _TRACE_JBD2_H */
++
++/* This part must be outside protection */
++#include <trace/define_trace.h>
