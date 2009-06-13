@@ -1,4 +1,4 @@
-ext4: Update the s_last_mounted filed in the superblock
+ext4: update the s_last_mounted field in the superblock
 
 This field can be very helpful when a system administrator is trying
 to sort through large numbers of block devices or filesystem images.
@@ -9,17 +9,17 @@ filesystem.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h  |    9 ++++++++-
+ fs/ext4/ext4.h  |    7 +++++++
  fs/ext4/file.c  |   36 +++++++++++++++++++++++++++++++++++-
  fs/ext4/inode.c |    2 +-
  fs/ext4/super.c |    2 +-
- 4 files changed, 45 insertions(+), 4 deletions(-)
+ 4 files changed, 44 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index cc7d5ed..0887fca 100644
+index 569f527..9e268c9 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -824,6 +824,12 @@ struct ext4_super_block {
+@@ -834,6 +834,12 @@ struct ext4_super_block {
  };
  
  #ifdef __KERNEL__
@@ -32,12 +32,10 @@ index cc7d5ed..0887fca 100644
  /*
   * fourth extended-fs super-block data in memory
   */
-@@ -842,7 +848,8 @@ struct ext4_sb_info {
- 	struct buffer_head * s_sbh;	/* Buffer containing the super block */
+@@ -853,6 +859,7 @@ struct ext4_sb_info {
  	struct ext4_super_block *s_es;	/* Pointer to the super block in the buffer */
  	struct buffer_head **s_group_desc;
--	unsigned long  s_mount_opt;
-+	unsigned int s_mount_opt;
+ 	unsigned int s_mount_opt;
 +	unsigned int s_mount_flags;
  	ext4_fsblk_t s_sb_block;
  	uid_t s_resuid;
@@ -103,29 +101,4 @@ index 588af8c..3f1873f 100644
  	.release	= ext4_release_file,
  	.fsync		= ext4_sync_file,
  	.splice_read	= generic_file_splice_read,
-diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 2418ad3..f8325a2 100644
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -93,7 +93,7 @@ int ext4_forget(handle_t *handle, int is_metadata, struct inode *inode,
- 	BUFFER_TRACE(bh, "enter");
  
- 	jbd_debug(4, "forgetting bh %p: is_metadata = %d, mode %o, "
--		  "data mode %lx\n",
-+		  "data mode %x\n",
- 		  bh, is_metadata, inode->i_mode,
- 		  test_opt(inode->i_sb, DATA_FLAGS));
- 
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index e8f0b2a..4c364ae 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -1655,7 +1655,7 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
- 	ext4_commit_super(sb, 1);
- 	if (test_opt(sb, DEBUG))
- 		printk(KERN_INFO "[EXT4 FS bs=%lu, gc=%u, "
--				"bpg=%lu, ipg=%lu, mo=%04lx]\n",
-+				"bpg=%lu, ipg=%lu, mo=%04x]\n",
- 			sb->s_blocksize,
- 			sbi->s_groups_count,
- 			EXT4_BLOCKS_PER_GROUP(sb),

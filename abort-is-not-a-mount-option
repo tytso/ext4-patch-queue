@@ -1,0 +1,127 @@
+ext4: move the abort flag from s_mount_opts to s_mount_flags
+
+We're running out of space in the mount options word, and
+EXT4_MOUNT_ABORT isn't really a mount option, but a run-time flag.  So
+move it to become EXT4_MF_FS_ABORTED in s_mount_flags.
+
+Also remove bogus ext2_fs.h / ext4.h simultaneous #include protection,
+which can never happen.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h  |   11 ++---------
+ fs/ext4/inode.c |    4 ++--
+ fs/ext4/super.c |   10 +++++-----
+ 3 files changed, 9 insertions(+), 16 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 9e268c9..06ee5a5 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -684,7 +684,6 @@ struct ext4_inode_info {
+ #define EXT4_MOUNT_ERRORS_PANIC		0x00040	/* Panic on errors */
+ #define EXT4_MOUNT_MINIX_DF		0x00080	/* Mimics the Minix statfs */
+ #define EXT4_MOUNT_NOLOAD		0x00100	/* Don't use existing journal*/
+-#define EXT4_MOUNT_ABORT		0x00200	/* Fatal error detected */
+ #define EXT4_MOUNT_DATA_FLAGS		0x00C00	/* Mode for data writes: */
+ #define EXT4_MOUNT_JOURNAL_DATA		0x00400	/* Write data to journal */
+ #define EXT4_MOUNT_ORDERED_DATA		0x00800	/* Flush data before commit */
+@@ -706,17 +705,10 @@ struct ext4_inode_info {
+ #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
+ #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
+ 
+-/* Compatibility, for having both ext2_fs.h and ext4_fs.h included at once */
+-#ifndef _LINUX_EXT2_FS_H
+ #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
+ #define set_opt(o, opt)			o |= EXT4_MOUNT_##opt
+ #define test_opt(sb, opt)		(EXT4_SB(sb)->s_mount_opt & \
+ 					 EXT4_MOUNT_##opt)
+-#else
+-#define EXT2_MOUNT_NOLOAD		EXT4_MOUNT_NOLOAD
+-#define EXT2_MOUNT_ABORT		EXT4_MOUNT_ABORT
+-#define EXT2_MOUNT_DATA_FLAGS		EXT4_MOUNT_DATA_FLAGS
+-#endif
+ 
+ #define ext4_set_bit			ext2_set_bit
+ #define ext4_set_bit_atomic		ext2_set_bit_atomic
+@@ -836,9 +828,10 @@ struct ext4_super_block {
+ #ifdef __KERNEL__
+ 
+ /*
+- * Mount flags
++ * run-time mount flags
+  */
+ #define EXT4_MF_MNTDIR_SAMPLED	0x0001
++#define EXT4_MF_FS_ABORTED	0x0002	/* Fatal error detected */
+ 
+ /*
+  * fourth extended-fs super-block data in memory
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index f8325a2..5f927f6 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2670,13 +2670,13 @@ static int ext4_da_writepages(struct address_space *mapping,
+ 	 * If the filesystem has aborted, it is read-only, so return
+ 	 * right away instead of dumping stack traces later on that
+ 	 * will obscure the real source of the problem.  We test
+-	 * EXT4_MOUNT_ABORT instead of sb->s_flag's MS_RDONLY because
++	 * EXT4_MF_FS_ABORTED instead of sb->s_flag's MS_RDONLY because
+ 	 * the latter could be true if the filesystem is mounted
+ 	 * read-only, and in that case, ext4_da_writepages should
+ 	 * *never* be called, so if that ever happens, we would want
+ 	 * the stack trace.
+ 	 */
+-	if (unlikely(sbi->s_mount_opt & EXT4_MOUNT_ABORT))
++	if (unlikely(sbi->s_mount_flags & EXT4_MF_FS_ABORTED))
+ 		return -EROFS;
+ 
+ 	/*
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 4c364ae..04486a5 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -303,7 +303,7 @@ static void ext4_handle_error(struct super_block *sb)
+ 	if (!test_opt(sb, ERRORS_CONT)) {
+ 		journal_t *journal = EXT4_SB(sb)->s_journal;
+ 
+-		EXT4_SB(sb)->s_mount_opt |= EXT4_MOUNT_ABORT;
++		EXT4_SB(sb)->s_mount_flags |= EXT4_MF_FS_ABORTED;
+ 		if (journal)
+ 			jbd2_journal_abort(journal, -EIO);
+ 	}
+@@ -416,7 +416,7 @@ void ext4_abort(struct super_block *sb, const char *function,
+ 	ext4_msg(sb, KERN_CRIT, "Remounting filesystem read-only");
+ 	EXT4_SB(sb)->s_mount_state |= EXT4_ERROR_FS;
+ 	sb->s_flags |= MS_RDONLY;
+-	EXT4_SB(sb)->s_mount_opt |= EXT4_MOUNT_ABORT;
++	EXT4_SB(sb)->s_mount_flags |= EXT4_MF_FS_ABORTED;
+ 	if (EXT4_SB(sb)->s_journal)
+ 		jbd2_journal_abort(EXT4_SB(sb)->s_journal, -EIO);
+ }
+@@ -1476,7 +1476,7 @@ set_qf_format:
+ 			break;
+ #endif
+ 		case Opt_abort:
+-			set_opt(sbi->s_mount_opt, ABORT);
++			sbi->s_mount_flags |= EXT4_MF_FS_ABORTED;
+ 			break;
+ 		case Opt_nobarrier:
+ 			clear_opt(sbi->s_mount_opt, BARRIER);
+@@ -3452,7 +3452,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 		goto restore_opts;
+ 	}
+ 
+-	if (sbi->s_mount_opt & EXT4_MOUNT_ABORT)
++	if (sbi->s_mount_flags & EXT4_MF_FS_ABORTED)
+ 		ext4_abort(sb, __func__, "Abort forced by user");
+ 
+ 	sb->s_flags = (sb->s_flags & ~MS_POSIXACL) |
+@@ -3467,7 +3467,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 
+ 	if ((*flags & MS_RDONLY) != (sb->s_flags & MS_RDONLY) ||
+ 		n_blocks_count > ext4_blocks_count(es)) {
+-		if (sbi->s_mount_opt & EXT4_MOUNT_ABORT) {
++		if (sbi->s_mount_flags & EXT4_MF_FS_ABORTED) {
+ 			err = -EROFS;
+ 			goto restore_opts;
+ 		}
