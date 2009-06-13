@@ -12,42 +12,43 @@ Signed-off-by: Takashi Sato <t-sato@yk.jp.nec.com>
 Signed-off-by: Kazuya Mio <k-mio@sx.jp.nec.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- Makefile       |    2
- ext4.h         |   15
- ext4_extents.h |    4
- extents.c      |    4
- ioctl.c        |   36 +
- move_extent.c  | 1296 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- 6 files changed, 1354 insertions(+), 3 deletions(-)
+ fs/ext4/Makefile       |    2 +-
+ fs/ext4/ext4.h         |   15 +
+ fs/ext4/ext4_extents.h |    4 +
+ fs/ext4/extents.c      |    4 +-
+ fs/ext4/ioctl.c        |   36 ++
+ fs/ext4/move_extent.c  | 1308 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 1366 insertions(+), 3 deletions(-)
+
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index 8a34710..8867b2a 100644
 --- a/fs/ext4/Makefile
 +++ b/fs/ext4/Makefile
 @@ -6,7 +6,7 @@ obj-$(CONFIG_EXT4_FS) += ext4.o
-
+ 
  ext4-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o \
  		ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
 -		ext4_jbd2.o migrate.o mballoc.o block_validity.o
 +		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o
-
+ 
  ext4-$(CONFIG_EXT4_FS_XATTR)		+= xattr.o xattr_user.o xattr_trusted.o
  ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 9f0e482..ff55657 100644
+index cc7d5ed..276a26f 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -354,6 +354,7 @@ struct ext4_new_group_data {
+@@ -352,6 +352,7 @@ struct ext4_new_group_data {
   /* note ioctl 10 reserved for an early version of the FIEMAP ioctl */
   /* note ioctl 11 reserved for filesystem-independent FIEMAP ioctl */
  #define EXT4_IOC_ALLOC_DA_BLKS		_IO('f', 12)
 +#define EXT4_IOC_MOVE_EXT		_IOWR('f', 15, struct move_extent)
-
+ 
  /*
   * ioctl commands in 32 bit emulation
-@@ -451,6 +452,15 @@ struct ext4_inode {
+@@ -447,6 +448,15 @@ struct ext4_inode {
  	__le32  i_version_hi;	/* high 32 bits for 64-bit version */
  };
-
+ 
 +struct move_extent {
 +	__u32 reserved;		/* should be zero */
 +	__u32 donor_fd;		/* donor file descriptor */
@@ -57,19 +58,19 @@ index 9f0e482..ff55657 100644
 +	__u64 moved_len;	/* moved block length */
 +};
 +#define MAX_DEFRAG_SIZE         ((1UL<<31) - 1)
-
+ 
  #define EXT4_EPOCH_BITS 2
  #define EXT4_EPOCH_MASK ((1 << EXT4_EPOCH_BITS) - 1)
-@@ -1652,6 +1662,11 @@ extern int ext4_get_blocks(handle_t *handle, struct inode *inode,
+@@ -1647,6 +1657,11 @@ extern int ext4_get_blocks(handle_t *handle, struct inode *inode,
  			   struct buffer_head *bh, int flags);
  extern int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
  			__u64 start, __u64 len);
-+/* defrag.c */
-+extern int ext4_mext_move_extent(struct file *o_filp, struct file *d_filp,
-+				__u64 start_orig, __u64 start_donor,
-+				__u64 len, __u64 *moved_len);
++/* move_extent.c */
++extern int ext4_move_extents(struct file *o_filp, struct file *d_filp,
++			     __u64 start_orig, __u64 start_donor,
++			     __u64 len, __u64 *moved_len);
 +
-
+ 
  /*
   * Add new method to test wether block and inode bitmaps are properly
 diff --git a/fs/ext4/ext4_extents.h b/fs/ext4/ext4_extents.h
@@ -78,7 +79,7 @@ index f0c3ec8..20a8410 100644
 +++ b/fs/ext4/ext4_extents.h
 @@ -221,12 +221,16 @@ static inline int ext4_ext_get_actual_len(struct ext4_extent *ext)
  }
-
+ 
  extern int ext4_ext_calc_metadata_amount(struct inode *inode, int blocks);
 +extern ext4_fsblk_t ext_pblock(struct ext4_extent *ex);
  extern ext4_fsblk_t idx_pblock(struct ext4_extent_idx *);
@@ -94,7 +95,7 @@ index f0c3ec8..20a8410 100644
  				 struct ext4_ext_path *path,
  				 struct ext4_extent *);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index d4e99e9..1903d9b 100644
+index 2593f74..50322a0 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -49,7 +49,7 @@
@@ -105,18 +106,18 @@ index d4e99e9..1903d9b 100644
 +ext4_fsblk_t ext_pblock(struct ext4_extent *ex)
  {
  	ext4_fsblk_t block;
-
+ 
 @@ -1417,7 +1417,7 @@ static int ext4_ext_correct_indexes(handle_t *handle, struct inode *inode,
  	return err;
  }
-
+ 
 -static int
 +int
  ext4_can_extents_be_merged(struct inode *inode, struct ext4_extent *ex1,
  				struct ext4_extent *ex2)
  {
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 3b7faeb..68a7ddf 100644
+index 91e75f7..bb41540 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
 @@ -14,6 +14,7 @@
@@ -127,8 +128,8 @@ index 3b7faeb..68a7ddf 100644
  #include <asm/uaccess.h>
  #include "ext4_jbd2.h"
  #include "ext4.h"
-@@ -224,6 +225,41 @@ setversion_out:
-
+@@ -213,6 +214,41 @@ setversion_out:
+ 
  		return err;
  	}
 +
@@ -155,8 +156,8 @@ index 3b7faeb..68a7ddf 100644
 +			}
 +		}
 +
-+		err = ext4_mext_move_extent(filp, donor_filp, me.orig_start,
-+			me.donor_start, me.len, &me.moved_len);
++		err = ext4_move_extents(filp, donor_filp, me.orig_start,
++					me.donor_start, me.len, &me.moved_len);
 +		fput(donor_filp);
 +
 +		if (!err)
@@ -171,10 +172,10 @@ index 3b7faeb..68a7ddf 100644
  		struct super_block *sb = inode->i_sb;
 diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
 new file mode 100644
-index 0000000..5b563f2 100644
+index 0000000..cc62a9b
 --- /dev/null
 +++ b/fs/ext4/move_extent.c
-@@ -0,0 +1,1296 @@
+@@ -0,0 +1,1308 @@
 +/*
 + * Copyright (c) 2008,2009 NEC Software Tohoku, Ltd.
 + * Written by Takashi Sato <t-sato@yk.jp.nec.com>
@@ -235,7 +236,7 @@ index 0000000..5b563f2 100644
 + */
 +static int
 +ext4_mext_next_extent(struct inode *inode, struct ext4_ext_path *path,
-+			struct ext4_extent **extent)
++		      struct ext4_extent **extent)
 +{
 +	int ppos, leaf_ppos = path->p_depth;
 +
@@ -298,7 +299,7 @@ index 0000000..5b563f2 100644
 + */
 +static void
 +ext4_mext_double_down_read(struct inode *orig_inode,
-+				struct inode *donor_inode)
++			   struct inode *donor_inode)
 +{
 +	struct inode *first = orig_inode, *second = donor_inode;
 +
@@ -327,7 +328,7 @@ index 0000000..5b563f2 100644
 + */
 +static void
 +ext4_mext_double_down_write(struct inode *orig_inode,
-+				struct inode *donor_inode)
++			    struct inode *donor_inode)
 +{
 +	struct inode *first = orig_inode, *second = donor_inode;
 +
@@ -428,7 +429,7 @@ index 0000000..5b563f2 100644
 +		new_flag = 1;
 +
 +	} else if (start_ext->ee_len && new_ext->ee_len &&
-+				!end_ext->ee_len && o_start == o_end) {
++		   !end_ext->ee_len && o_start == o_end) {
 +
 +		/*	 start_ext	new_ext
 +		 * donor |--------------|---------------|
@@ -438,7 +439,7 @@ index 0000000..5b563f2 100644
 +		new_flag = 1;
 +
 +	} else if (!start_ext->ee_len && new_ext->ee_len &&
-+					end_ext->ee_len && o_start == o_end) {
++		   end_ext->ee_len && o_start == o_end) {
 +
 +		/*	  new_ext	end_ext
 +		 * donor |--------------|---------------|
@@ -473,12 +474,12 @@ index 0000000..5b563f2 100644
 +
 +	if (end_flag) {
 +		ext4_mext_get_extpath(orig_path, orig_inode,
-+				le32_to_cpu(end_ext->ee_block) - 1, err);
++				      le32_to_cpu(end_ext->ee_block) - 1, err);
 +		if (orig_path == NULL)
 +			goto out;
 +
 +		if (ext4_ext_insert_extent(handle, orig_inode,
-+					orig_path, end_ext))
++					   orig_path, end_ext))
 +			goto out;
 +	}
 +out:
@@ -507,9 +508,12 @@ index 0000000..5b563f2 100644
 + */
 +static void
 +ext4_mext_insert_inside_block(struct ext4_extent *o_start,
-+		struct ext4_extent *o_end, struct ext4_extent *start_ext,
-+		struct ext4_extent *new_ext, struct ext4_extent *end_ext,
-+		struct ext4_extent_header *eh, int range_to_move)
++			      struct ext4_extent *o_end,
++			      struct ext4_extent *start_ext,
++			      struct ext4_extent *new_ext,
++			      struct ext4_extent *end_ext,
++			      struct ext4_extent_header *eh,
++			      int range_to_move)
 +{
 +	int i = 0;
 +	unsigned long len;
@@ -558,9 +562,12 @@ index 0000000..5b563f2 100644
 + */
 +static int
 +ext4_mext_insert_extents(handle_t *handle, struct inode *orig_inode,
-+		struct ext4_ext_path *orig_path, struct ext4_extent *o_start,
-+		struct ext4_extent *o_end, struct ext4_extent *start_ext,
-+		struct ext4_extent *new_ext, struct ext4_extent *end_ext)
++			 struct ext4_ext_path *orig_path,
++			 struct ext4_extent *o_start,
++			 struct ext4_extent *o_end,
++			 struct ext4_extent *start_ext,
++			 struct ext4_extent *new_ext,
++			 struct ext4_extent *end_ext)
 +{
 +	struct  ext4_extent_header *eh;
 +	unsigned long need_slots, slots_range;
@@ -571,11 +578,11 @@ index 0000000..5b563f2 100644
 +	 * start_extent + new_extent + end_extent.
 +	 */
 +	need_slots = (start_ext->ee_len ? 1 : 0) + (end_ext->ee_len ? 1 : 0) +
-+					(new_ext->ee_len ? 1 : 0);
++		(new_ext->ee_len ? 1 : 0);
 +
 +	/* The number of slots between start and end */
 +	slots_range = ((unsigned long)(o_end + 1) - (unsigned long)o_start + 1)
-+					/ sizeof(struct ext4_extent);
++		/ sizeof(struct ext4_extent);
 +
 +	/* Range to move the end of extent */
 +	range_to_move = need_slots - slots_range;
@@ -596,16 +603,18 @@ index 0000000..5b563f2 100644
 +			- le16_to_cpu(eh->eh_entries))) {
 +
 +		ret = ext4_mext_insert_across_blocks(handle, orig_inode,
-+				o_start, o_end, start_ext, new_ext, end_ext);
++						     o_start, o_end, start_ext,
++						     new_ext, end_ext);
 +		if (ret < 0)
 +			return ret;
 +	} else
 +		ext4_mext_insert_inside_block(o_start, o_end, start_ext,
-+					new_ext, end_ext, eh, range_to_move);
++					      new_ext, end_ext, eh,
++					      range_to_move);
 +
 +	if (depth) {
 +		ret = ext4_handle_dirty_metadata(handle, orig_inode,
-+							orig_path->p_bh);
++						 orig_path->p_bh);
 +		if (ret)
 +			return ret;
 +	} else {
@@ -636,8 +645,8 @@ index 0000000..5b563f2 100644
 + */
 +static int
 +ext4_mext_leaf_block(handle_t *handle, struct inode *orig_inode,
-+		struct ext4_ext_path *orig_path, struct ext4_extent *dext,
-+		ext4_lblk_t *from)
++		     struct ext4_ext_path *orig_path, struct ext4_extent *dext,
++		     ext4_lblk_t *from)
 +{
 +	struct ext4_extent *oext, *o_start, *o_end, *prev_ext;
 +	struct ext4_extent new_ext, start_ext, end_ext;
@@ -668,7 +677,7 @@ index 0000000..5b563f2 100644
 +		le32_to_cpu(new_ext.ee_block) <
 +		le32_to_cpu(oext->ee_block) + oext_alen) {
 +		start_ext.ee_len = cpu_to_le16(le32_to_cpu(new_ext.ee_block) -
-+					le32_to_cpu(oext->ee_block));
++					       le32_to_cpu(oext->ee_block));
 +		ext4_mext_copy_extent_status(oext, &start_ext);
 +	} else if (oext > EXT_FIRST_EXTENT(orig_path[depth].p_hdr)) {
 +		prev_ext = oext - 1;
@@ -677,7 +686,7 @@ index 0000000..5b563f2 100644
 +		 * if these are contiguous and same extent type.
 +		 */
 +		if (ext4_can_extents_be_merged(orig_inode, prev_ext,
-+							&new_ext)) {
++					       &new_ext)) {
 +			o_start = prev_ext;
 +			start_ext.ee_len = cpu_to_le16(
 +				ext4_ext_get_actual_len(prev_ext) +
@@ -715,8 +724,8 @@ index 0000000..5b563f2 100644
 +	}
 +
 +	ret = ext4_mext_insert_extents(handle, orig_inode,
-+			orig_path, o_start, o_end, &start_ext,
-+			&new_ext, &end_ext);
++				       orig_path, o_start, o_end, &start_ext,
++				       &new_ext, &end_ext);
 +	return ret;
 +}
 +
@@ -731,9 +740,9 @@ index 0000000..5b563f2 100644
 + */
 +static void
 +ext4_mext_get_replaced_extent(struct ext4_extent *tmp_dext,
-+				struct ext4_extent *tmp_oext,
-+				ext4_lblk_t orig_off, ext4_lblk_t donor_off,
-+				ext4_lblk_t max_count)
++			      struct ext4_extent *tmp_oext,
++			      ext4_lblk_t orig_off, ext4_lblk_t donor_off,
++			      ext4_lblk_t max_count)
 +{
 +	ext4_lblk_t diff, orig_diff;
 +	struct ext4_extent dext_old, oext_old;
@@ -789,8 +798,8 @@ index 0000000..5b563f2 100644
 + */
 +static int
 +ext4_mext_replace_branches(handle_t *handle, struct inode *orig_inode,
-+			struct inode *donor_inode, ext4_lblk_t from,
-+			ext4_lblk_t count)
++			   struct inode *donor_inode, ext4_lblk_t from,
++			   ext4_lblk_t count)
 +{
 +	struct ext4_ext_path *orig_path = NULL;
 +	struct ext4_ext_path *donor_path = NULL;
@@ -822,7 +831,7 @@ index 0000000..5b563f2 100644
 +	tmp_dext = *dext;
 +
 +	ext4_mext_get_replaced_extent(&tmp_dext, &tmp_oext, orig_off,
-+					donor_off, count);
++				      donor_off, count);
 +
 +	/* Loop for the donor extents */
 +	while (1) {
@@ -831,13 +840,13 @@ index 0000000..5b563f2 100644
 +
 +		/* Set donor extent to orig extent */
 +		err = ext4_mext_leaf_block(handle, orig_inode,
-+					orig_path, &tmp_dext, &orig_off);
++					   orig_path, &tmp_dext, &orig_off);
 +		if (err < 0)
 +			goto out;
 +
 +		/* Set orig extent to donor extent */
 +		err = ext4_mext_leaf_block(handle, donor_inode,
-+					donor_path, &tmp_oext, &donor_off);
++					   donor_path, &tmp_oext, &donor_off);
 +		if (err < 0)
 +			goto out;
 +
@@ -867,7 +876,7 @@ index 0000000..5b563f2 100644
 +		if (donor_path)
 +			ext4_ext_drop_refs(donor_path);
 +		ext4_mext_get_extpath(donor_path, donor_inode,
-+							donor_off, err);
++				      donor_off, err);
 +		if (donor_path == NULL)
 +			goto out;
 +		depth = ext_depth(donor_inode);
@@ -880,7 +889,8 @@ index 0000000..5b563f2 100644
 +		tmp_dext = *dext;
 +
 +		ext4_mext_get_replaced_extent(&tmp_dext, &tmp_oext, orig_off,
-+					donor_off, count - replaced_count);
++					      donor_off,
++					      count - replaced_count);
 +	}
 +
 +out:
@@ -914,8 +924,8 @@ index 0000000..5b563f2 100644
 + */
 +static int
 +ext4_mext_partial(struct file *o_filp, struct inode *donor_inode,
-+			pgoff_t orig_page_offset, int data_offset_in_page,
-+			int block_len_in_page, int uninit)
++		  pgoff_t orig_page_offset, int data_offset_in_page,
++		  int block_len_in_page, int uninit)
 +{
 +	struct inode *orig_inode = o_filp->f_dentry->d_inode;
 +	struct address_space *mapping = orig_inode->i_mapping;
@@ -947,7 +957,7 @@ index 0000000..5b563f2 100644
 +		w_flags |= AOP_FLAG_UNINTERRUPTIBLE;
 +
 +	orig_blk_offset = orig_page_offset * blocks_per_page +
-+						data_offset_in_page;
++		data_offset_in_page;
 +
 +	/*
 +	 * If orig extent is uninitialized one,
@@ -957,8 +967,8 @@ index 0000000..5b563f2 100644
 +	 */
 +	if (uninit) {
 +		ret = ext4_mext_replace_branches(handle, orig_inode,
-+					donor_inode, orig_blk_offset,
-+					block_len_in_page);
++						 donor_inode, orig_blk_offset,
++						 block_len_in_page);
 +
 +		/* Clear the inode cache not to refer to the old data */
 +		ext4_ext_invalidate_cache(orig_inode);
@@ -970,7 +980,7 @@ index 0000000..5b563f2 100644
 +
 +	/* Calculate data_len */
 +	if ((orig_blk_offset + block_len_in_page - 1) ==
-+			((orig_inode->i_size - 1) >> orig_inode->i_blkbits)) {
++	    ((orig_inode->i_size - 1) >> orig_inode->i_blkbits)) {
 +		/* Replace the last block */
 +		tmp_data_len = orig_inode->i_size & (blocksize - 1);
 +		/*
@@ -987,7 +997,7 @@ index 0000000..5b563f2 100644
 +	}
 +
 +	ret = a_ops->write_begin(o_filp, mapping, offs, data_len, w_flags,
-+							&page, &fsdata);
++				 &page, &fsdata);
 +	if (unlikely(ret < 0))
 +		goto out;
 +
@@ -1010,7 +1020,7 @@ index 0000000..5b563f2 100644
 +	try_to_release_page(page, 0);
 +
 +	ret = ext4_mext_replace_branches(handle, orig_inode, donor_inode,
-+					orig_blk_offset, block_len_in_page);
++					 orig_blk_offset, block_len_in_page);
 +	if (ret < 0)
 +		goto out;
 +
@@ -1035,8 +1045,8 @@ index 0000000..5b563f2 100644
 +			bh = bh->b_this_page;
 +	}
 +
-+	ret = a_ops->write_end(o_filp, mapping, offs, data_len, data_len, page,
-+									fsdata);
++	ret = a_ops->write_end(o_filp, mapping, offs, data_len, data_len,
++			       page, fsdata);
 +	page = NULL;
 +
 +out:
@@ -1061,14 +1071,14 @@ index 0000000..5b563f2 100644
 + * @len:		the number of blocks to be moved
 + * @moved_len:		moved block length
 + *
-+ * Check the arguments of ext4_mext_move_extent() whether the files can be
-+ * exchanged each other.
++ * Check the arguments of ext4_move_extents() whether the files can be
++ * exchanged with each other.
 + * Return 0 on success, or a negative error value on failure.
 + */
 +static int
 +ext4_mext_check_arguments(struct inode *orig_inode,
-+			struct inode *donor_inode, __u64 orig_start,
-+			__u64 donor_start, __u64 len, __u64 moved_len)
++			  struct inode *donor_inode, __u64 orig_start,
++			  __u64 donor_start, __u64 len, __u64 moved_len)
 +{
 +	/* Regular file check */
 +	if (!S_ISREG(orig_inode->i_mode) || !S_ISREG(donor_inode->i_mode)) {
@@ -1129,9 +1139,9 @@ index 0000000..5b563f2 100644
 +	}
 +
 +	if ((orig_start > MAX_DEFRAG_SIZE) ||
-+		(donor_start > MAX_DEFRAG_SIZE) ||
-+		(len > MAX_DEFRAG_SIZE) ||
-+		(orig_start + len > MAX_DEFRAG_SIZE))  {
++	    (donor_start > MAX_DEFRAG_SIZE) ||
++	    (len > MAX_DEFRAG_SIZE) ||
++	    (orig_start + len > MAX_DEFRAG_SIZE))  {
 +		ext4_debug("ext4 move extent: Can't handle over [%lu] blocks "
 +			"[ino:orig %lu, donor %lu]\n", MAX_DEFRAG_SIZE,
 +			orig_inode->i_ino, donor_inode->i_ino);
@@ -1229,7 +1239,7 @@ index 0000000..5b563f2 100644
 +}
 +
 +/**
-+ * ext4_mext_move_extent - Exchange the specified range of a file
++ * ext4_move_extents - Exchange the specified range of a file
 + *
 + * @o_filp:		file structure of the original file
 + * @d_filp:		file structure of the donor file
@@ -1241,8 +1251,8 @@ index 0000000..5b563f2 100644
 + * This function returns 0 and moved block length is set in moved_len
 + * if succeed, otherwise returns error value.
 + *
-+ * Note: ext4_mext_move_extent() proceeds the following order.
-+ * 1:ext4_mext_move_extent() calculates the last block number of moving extent
++ * Note: ext4_move_extents() proceeds the following order.
++ * 1:ext4_move_extents() calculates the last block number of moving extent
 + *   function by the start block number (orig_start) and the number of blocks
 + *   to be moved (len) specified as arguments.
 + *   If the {orig, donor}_start points a hole, the extent's start offset
@@ -1270,8 +1280,9 @@ index 0000000..5b563f2 100644
 + * 7:Return 0 on success, or a negative error value on failure.
 + */
 +int
-+ext4_mext_move_extent(struct file *o_filp, struct file *d_filp,
-+	__u64 orig_start, __u64 donor_start, __u64 len, __u64 *moved_len)
++ext4_move_extents(struct file *o_filp, struct file *d_filp,
++		 __u64 orig_start, __u64 donor_start, __u64 len,
++		 __u64 *moved_len)
 +{
 +	struct inode *orig_inode = o_filp->f_dentry->d_inode;
 +	struct inode *donor_inode = d_filp->f_dentry->d_inode;
@@ -1293,7 +1304,8 @@ index 0000000..5b563f2 100644
 +	ext4_mext_double_down_read(orig_inode, donor_inode);
 +	/* Check the filesystem environment whether move_extent can be done */
 +	ret = ext4_mext_check_arguments(orig_inode, donor_inode,
-+				orig_start, donor_start, len, *moved_len);
++					orig_start, donor_start, len,
++					*moved_len);
 +	ext4_mext_double_up_read(orig_inode, donor_inode);
 +	if (ret)
 +		goto out2;
@@ -1359,7 +1371,7 @@ index 0000000..5b563f2 100644
 +
 +		ext_prev = ext_cur;
 +		last_extent = ext4_mext_next_extent(orig_inode,
-+					holecheck_path, &ext_cur);
++						    holecheck_path, &ext_cur);
 +		if (last_extent < 0) {
 +			ret = last_extent;
 +			break;
@@ -1371,9 +1383,9 @@ index 0000000..5b563f2 100644
 +		 * if extents are contiguous.
 +		 */
 +		if (ext4_can_extents_be_merged(orig_inode,
-+				ext_prev, ext_cur) &&
-+				block_end >= le32_to_cpu(ext_cur->ee_block) &&
-+				!last_extent)
++					       ext_prev, ext_cur) &&
++		    block_end >= le32_to_cpu(ext_cur->ee_block) &&
++		    !last_extent)
 +			continue;
 +
 +		/* Is original extent is uninitialized */
@@ -1414,8 +1426,9 @@ index 0000000..5b563f2 100644
 +
 +			/* Swap original branches with new branches */
 +			ret = ext4_mext_partial(o_filp, donor_inode,
-+				orig_page_offset, data_offset_in_page,
-+				block_len_in_page, uninit);
++						orig_page_offset,
++						data_offset_in_page,
++						block_len_in_page, uninit);
 +			if (ret < 0)
 +				goto out;
 +			orig_page_offset++;
@@ -1432,7 +1445,7 @@ index 0000000..5b563f2 100644
 +		if (holecheck_path)
 +			ext4_ext_drop_refs(holecheck_path);
 +		ext4_mext_get_extpath(holecheck_path, orig_inode,
-+							seq_start, ret);
++				      seq_start, ret);
 +		if (holecheck_path == NULL)
 +			break;
 +		depth = holecheck_path->p_depth;
@@ -1471,4 +1484,3 @@ index 0000000..5b563f2 100644
 +
 +	return 0;
 +}
-
