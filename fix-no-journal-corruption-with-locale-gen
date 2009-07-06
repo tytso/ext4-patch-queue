@@ -1,0 +1,31 @@
+ext4: fix no journal corruption with locale-gen
+
+If there is no journal, ext4_should_writeback_data() should return
+TRUE.  This will fix ext4_set_aops() to set ext4_da_ops in the case of
+delayed allocation; otherwise ext4_journaled_aops gets used by
+default, which doesn't handle delayed allocation properly.
+
+The advantage of using ext4_should_writeback_data() approach is that
+it should handle nobh better as well.
+
+Thanks to Curt Wohlgemuth for investigating this problem, and Aneesh
+Kumar for suggesting this approach.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4_jbd2.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/ext4_jbd2.h b/fs/ext4/ext4_jbd2.h
+index be2f426..f800134 100644
+--- a/fs/ext4/ext4_jbd2.h
++++ b/fs/ext4/ext4_jbd2.h
+@@ -282,7 +282,7 @@ static inline int ext4_should_order_data(struct inode *inode)
+ static inline int ext4_should_writeback_data(struct inode *inode)
+ {
+ 	if (EXT4_JOURNAL(inode) == NULL)
+-		return 0;
++		return 1;
+ 	if (!S_ISREG(inode->i_mode))
+ 		return 0;
+ 	if (EXT4_I(inode)->i_flags & EXT4_JOURNAL_DATA_FL)
