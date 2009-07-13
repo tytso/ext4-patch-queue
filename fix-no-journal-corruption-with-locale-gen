@@ -13,19 +13,23 @@ Kumar for suggesting this approach.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4_jbd2.h |    2 +-
- 1 files changed, 1 insertions(+), 1 deletions(-)
+ fs/ext4/ext4_jbd2.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/ext4_jbd2.h b/fs/ext4/ext4_jbd2.h
-index be2f426..f800134 100644
+index be2f426..d574a85 100644
 --- a/fs/ext4/ext4_jbd2.h
 +++ b/fs/ext4/ext4_jbd2.h
-@@ -282,7 +282,7 @@ static inline int ext4_should_order_data(struct inode *inode)
+@@ -281,10 +281,10 @@ static inline int ext4_should_order_data(struct inode *inode)
+ 
  static inline int ext4_should_writeback_data(struct inode *inode)
  {
- 	if (EXT4_JOURNAL(inode) == NULL)
+-	if (EXT4_JOURNAL(inode) == NULL)
 -		return 0;
-+		return 1;
  	if (!S_ISREG(inode->i_mode))
  		return 0;
++	if (EXT4_JOURNAL(inode) == NULL)
++		return 1;
  	if (EXT4_I(inode)->i_flags & EXT4_JOURNAL_DATA_FL)
+ 		return 0;
+ 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_WRITEBACK_DATA)
