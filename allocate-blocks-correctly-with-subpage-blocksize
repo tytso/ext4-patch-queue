@@ -18,10 +18,10 @@ Signed-off-by: Jan Kara <jack@suse.cz>
  2 files changed, 21 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 9c35a7b..f2a2591 100644
+index 73ebfb4..3e8889f 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -3069,7 +3069,7 @@ static void ext4_falloc_update_inode(struct inode *inode,
+@@ -3074,7 +3074,7 @@ static void ext4_falloc_update_inode(struct inode *inode,
  	 */
  	if (!(mode & FALLOC_FL_KEEP_SIZE)) {
  		if (new_size > i_size_read(inode))
@@ -31,11 +31,11 @@ index 9c35a7b..f2a2591 100644
  			ext4_update_i_disksize(inode, new_size);
  	}
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index f4cf46e..6450b55 100644
+index f9c642b..8be6d41 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1491,7 +1491,7 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
-  	index = pos >> PAGE_CACHE_SHIFT;
+@@ -1472,7 +1472,7 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
+ 	index = pos >> PAGE_CACHE_SHIFT;
  	from = pos & (PAGE_CACHE_SIZE - 1);
  	to = from + len;
 -
@@ -43,7 +43,7 @@ index f4cf46e..6450b55 100644
  retry:
  	handle = ext4_journal_start(inode, needed_blocks);
  	if (IS_ERR(handle)) {
-@@ -1550,6 +1550,8 @@ retry:
+@@ -1531,6 +1531,8 @@ retry:
  	if (ret == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
  		goto retry;
  out:
@@ -52,7 +52,7 @@ index f4cf46e..6450b55 100644
  	return ret;
  }
  
-@@ -1595,6 +1597,7 @@ static int ext4_generic_write_end(struct file *file,
+@@ -1576,6 +1578,7 @@ static int ext4_generic_write_end(struct file *file,
  	}
  	unlock_page(page);
  	page_cache_release(page);
@@ -60,16 +60,16 @@ index f4cf46e..6450b55 100644
  
  	/*
  	 * Don't mark the inode dirty under page lock. First, it unnecessarily
-@@ -1739,6 +1742,8 @@ static int ext4_journalled_write_end(struct file *file,
+@@ -1720,6 +1723,8 @@ static int ext4_journalled_write_end(struct file *file,
  
  	unlock_page(page);
  	page_cache_release(page);
 +	block_unlock_hole_extend(inode);
 +
- 	if (pos + len > inode->i_size)
+ 	if (pos + len > inode->i_size && ext4_can_truncate(inode))
  		/* if we have allocated more blocks and copied
  		 * less. We will have blocks allocated outside
-@@ -2888,6 +2893,7 @@ static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
+@@ -2958,6 +2963,7 @@ static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
  	}
  	*fsdata = (void *)0;
  	trace_ext4_da_write_begin(inode, pos, len, flags);
@@ -77,7 +77,7 @@ index f4cf46e..6450b55 100644
  retry:
  	/*
  	 * With delayed allocation, we don't log the i_disksize update
-@@ -2930,6 +2936,8 @@ retry:
+@@ -3000,6 +3006,8 @@ retry:
  	if (ret == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
  		goto retry;
  out:
@@ -86,7 +86,7 @@ index f4cf46e..6450b55 100644
  	return ret;
  }
  
-@@ -3468,7 +3476,7 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
+@@ -3322,7 +3330,7 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
  			loff_t end = offset + ret;
  			if (end > inode->i_size) {
  				ei->i_disksize = end;
@@ -95,7 +95,7 @@ index f4cf46e..6450b55 100644
  				/*
  				 * We're going to return a positive `ret'
  				 * here due to non-zero-length I/O, so there's
-@@ -3513,6 +3521,7 @@ static const struct address_space_operations ext4_ordered_aops = {
+@@ -3367,6 +3375,7 @@ static const struct address_space_operations ext4_ordered_aops = {
  	.sync_page		= block_sync_page,
  	.write_begin		= ext4_write_begin,
  	.write_end		= ext4_ordered_write_end,
@@ -103,7 +103,7 @@ index f4cf46e..6450b55 100644
  	.bmap			= ext4_bmap,
  	.invalidatepage		= ext4_invalidatepage,
  	.releasepage		= ext4_releasepage,
-@@ -3528,6 +3537,7 @@ static const struct address_space_operations ext4_writeback_aops = {
+@@ -3382,6 +3391,7 @@ static const struct address_space_operations ext4_writeback_aops = {
  	.sync_page		= block_sync_page,
  	.write_begin		= ext4_write_begin,
  	.write_end		= ext4_writeback_write_end,
@@ -111,7 +111,7 @@ index f4cf46e..6450b55 100644
  	.bmap			= ext4_bmap,
  	.invalidatepage		= ext4_invalidatepage,
  	.releasepage		= ext4_releasepage,
-@@ -3543,6 +3553,7 @@ static const struct address_space_operations ext4_journalled_aops = {
+@@ -3397,6 +3407,7 @@ static const struct address_space_operations ext4_journalled_aops = {
  	.sync_page		= block_sync_page,
  	.write_begin		= ext4_write_begin,
  	.write_end		= ext4_journalled_write_end,
@@ -119,7 +119,7 @@ index f4cf46e..6450b55 100644
  	.set_page_dirty		= ext4_journalled_set_page_dirty,
  	.bmap			= ext4_bmap,
  	.invalidatepage		= ext4_invalidatepage,
-@@ -3558,6 +3569,7 @@ static const struct address_space_operations ext4_da_aops = {
+@@ -3412,6 +3423,7 @@ static const struct address_space_operations ext4_da_aops = {
  	.sync_page		= block_sync_page,
  	.write_begin		= ext4_da_write_begin,
  	.write_end		= ext4_da_write_end,
@@ -127,7 +127,7 @@ index f4cf46e..6450b55 100644
  	.bmap			= ext4_bmap,
  	.invalidatepage		= ext4_da_invalidatepage,
  	.releasepage		= ext4_releasepage,
-@@ -5404,6 +5416,12 @@ int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
+@@ -5262,6 +5274,12 @@ int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
  	struct address_space *mapping = inode->i_mapping;
  
  	/*
