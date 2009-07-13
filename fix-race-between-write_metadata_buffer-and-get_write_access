@@ -1,0 +1,70 @@
+jbd2: fix race bwtween write_metadata_buffer and get_write_access
+
+From: dingdinghua <dingdinghua85@gmail.com>
+
+The function jbd2_journal_write_metadata_buffer() calls
+jbd_unlock_bh_state(bh_in) too early; this could potentially allow
+another thread to call get_write_access on the buffer head, modify the
+data, and dirty it, and allowing the wrong data to be written into the
+journal.  Fortunately, if we lose this race, the only time this will
+actually cause filesystem corruption is if there is a system crash or
+other unclean shutdown of the system before the next commit can take
+place.
+
+Signed-off-by: dingdinghua <dingdinghua85@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 18bfd5d..a601417 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -297,6 +297,7 @@ int jbd2_journal_write_metadata_buffer(transaction_t *transaction,
+ 	unsigned int new_offset;
+ 	struct buffer_head *bh_in = jh2bh(jh_in);
+ 	struct jbd2_buffer_trigger_type *triggers;
++	journal_t *journal = transaction->t_journal;
+ 
+ 	/*
+ 	 * The buffer really shouldn't be locked: only the current committing
+@@ -310,6 +311,11 @@ int jbd2_journal_write_metadata_buffer(transaction_t *transaction,
+ 	J_ASSERT_BH(bh_in, buffer_jbddirty(bh_in));
+ 
+ 	new_bh = alloc_buffer_head(GFP_NOFS|__GFP_NOFAIL);
++	/* keep subsequent assertions sane */
++	new_bh->b_state = 0;
++	init_buffer(new_bh, NULL, NULL);
++	atomic_set(&new_bh->b_count, 1);
++	new_jh = jbd2_journal_add_journal_head(new_bh);	/* This sleeps */
+ 
+ 	/*
+ 	 * If a new transaction has already done a buffer copy-out, then
+@@ -388,14 +394,6 @@ repeat:
+ 		kunmap_atomic(mapped_data, KM_USER0);
+ 	}
+ 
+-	/* keep subsequent assertions sane */
+-	new_bh->b_state = 0;
+-	init_buffer(new_bh, NULL, NULL);
+-	atomic_set(&new_bh->b_count, 1);
+-	jbd_unlock_bh_state(bh_in);
+-
+-	new_jh = jbd2_journal_add_journal_head(new_bh);	/* This sleeps */
+-
+ 	set_bh_page(new_bh, new_page, new_offset);
+ 	new_jh->b_transaction = NULL;
+ 	new_bh->b_size = jh2bh(jh_in)->b_size;
+@@ -412,7 +410,11 @@ repeat:
+ 	 * copying is moved to the transaction's shadow queue.
+ 	 */
+ 	JBUFFER_TRACE(jh_in, "file as BJ_Shadow");
+-	jbd2_journal_file_buffer(jh_in, transaction, BJ_Shadow);
++	spin_lock(&journal->j_list_lock);
++	__jbd2_journal_file_buffer(jh_in, transaction, BJ_Shadow);
++	spin_unlock(&journal->j_list_lock);
++	jbd_unlock_bh_state(bh_in);
++
+ 	JBUFFER_TRACE(new_jh, "file as BJ_IO");
+ 	jbd2_journal_file_buffer(new_jh, transaction, BJ_IO);
+ 
+-- 
+1.6.0.4
