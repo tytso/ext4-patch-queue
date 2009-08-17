@@ -1,0 +1,65 @@
+Ext4: Compile warning fix when EXT_DEBUG enabled
+
+From: Mingming <cmm@us.ibm.com>
+
+When EXT_DEBUG is enabled I received the following compile warning on
+PPC64:
+
+  CC [M]  fs/ext4/inode.o
+  CC [M]  fs/ext4/extents.o
+fs/ext4/extents.c: In function ‘ext4_ext_rm_leaf’:
+fs/ext4/extents.c:2097: warning: format ‘%lu’ expects type ‘long unsigned int’, but argument 2 has type ‘ext4_lblk_t’
+fs/ext4/extents.c: In function ‘ext4_ext_get_blocks’:
+fs/ext4/extents.c:2789: warning: format ‘%u’ expects type ‘unsigned int’, but argument 4 has type ‘long unsigned int’
+fs/ext4/extents.c:2852: warning: format ‘%lu’ expects type ‘long unsigned int’, but argument 3 has type ‘ext4_lblk_t’
+fs/ext4/extents.c:2953: warning: format ‘%lu’ expects type ‘long unsigned int’, but argument 4 has type ‘unsigned int’
+  CC [M]  fs/ext4/migrate.o
+
+The patch fixes compile warning.
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+Index: linux-2.6.31-rc4/fs/ext4/extents.c
+===================================================================
+--- linux-2.6.31-rc4.orig/fs/ext4/extents.c
++++ linux-2.6.31-rc4/fs/ext4/extents.c
+@@ -2094,7 +2094,7 @@ ext4_ext_rm_leaf(handle_t *handle, struc
+ 		else
+ 			uninitialized = 0;
+ 
+-		ext_debug("remove ext %lu:%u\n", ex_ee_block, ex_ee_len);
++		ext_debug("remove ext %u:%d\n", ex_ee_block, ex_ee_len);
+ 		path[depth].p_ext = ex;
+ 
+ 		a = ex_ee_block > start ? ex_ee_block : start;
+@@ -2786,7 +2786,7 @@ int ext4_ext_get_blocks(handle_t *handle
+ 	struct ext4_allocation_request ar;
+ 
+ 	__clear_bit(BH_New, &bh_result->b_state);
+-	ext_debug("blocks %u/%u requested for inode %u\n",
++	ext_debug("blocks %u/%u requested for inode %lu\n",
+ 			iblock, max_blocks, inode->i_ino);
+ 
+ 	/* check in cache */
+@@ -2849,7 +2849,7 @@ int ext4_ext_get_blocks(handle_t *handle
+ 			newblock = iblock - ee_block + ee_start;
+ 			/* number of remaining blocks in the extent */
+ 			allocated = ee_len - (iblock - ee_block);
+-			ext_debug("%u fit into %lu:%d -> %llu\n", iblock,
++			ext_debug("%u fit into %u:%d -> %llu\n", iblock,
+ 					ee_block, ee_len, newblock);
+ 
+ 			/* Do not put uninitialized extent in the cache */
+@@ -2950,7 +2950,7 @@ int ext4_ext_get_blocks(handle_t *handle
+ 	newblock = ext4_mb_new_blocks(handle, &ar, &err);
+ 	if (!newblock)
+ 		goto out2;
+-	ext_debug("allocate new block: goal %llu, found %llu/%lu\n",
++	ext_debug("allocate new block: goal %llu, found %llu/%u\n",
+ 		  ar.goal, newblock, allocated);
+ 
+ 	/* try to insert new extent into found leaf and return */
+
+
+
