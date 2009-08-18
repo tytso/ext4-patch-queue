@@ -1,0 +1,53 @@
+jbd2: Annotate transaction start also for jbd2_journal_restart()
+
+From: Jan Kara <jack@suse.cz>
+
+lockdep annotation for a transaction start has been at the end of
+jbd2_journal_start(). But a transaction is also started from
+jbd2_journal_restart(). Move the lockdep annotation to start_this_handle()
+which covers both cases.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/transaction.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index 6213ac7..8b6a692 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -238,6 +238,8 @@ repeat_locked:
+ 		  __jbd2_log_space_left(journal));
+ 	spin_unlock(&transaction->t_handle_lock);
+ 	spin_unlock(&journal->j_state_lock);
++
++	lock_map_acquire(&handle->h_lockdep_map);
+ out:
+ 	if (unlikely(new_transaction))		/* It's usually NULL */
+ 		kfree(new_transaction);
+@@ -303,8 +305,6 @@ handle_t *jbd2_journal_start(journal_t *journal, int nblocks)
+ 		handle = ERR_PTR(err);
+ 		goto out;
+ 	}
+-
+-	lock_map_acquire(&handle->h_lockdep_map);
+ out:
+ 	return handle;
+ }
+@@ -426,6 +426,7 @@ int jbd2_journal_restart(handle_t *handle, int nblocks)
+ 	__jbd2_log_start_commit(journal, transaction->t_tid);
+ 	spin_unlock(&journal->j_state_lock);
+ 
++	lock_map_release(&handle->h_lockdep_map);
+ 	handle->h_buffer_credits = nblocks;
+ 	ret = start_this_handle(journal, handle);
+ 	return ret;
+-- 
+1.6.0.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
