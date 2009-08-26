@@ -19,13 +19,8 @@ that we know the final size of the file, and the filesystem is not
 busy, avoid using group preallocation.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/ext4/ext4.h    |   22 +++++++++++++++++++++-
- fs/ext4/mballoc.c |   10 +++++++++-
- 2 files changed, 30 insertions(+), 2 deletions(-)
-
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 1ca6995..2808345 100644
+index 70aa951..b989920 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -952,6 +952,7 @@ struct ext4_sb_info {
@@ -36,7 +31,7 @@ index 1ca6995..2808345 100644
  
  	/* locality groups */
  	struct ext4_locality_group *s_locality_groups;
-@@ -1593,15 +1594,34 @@ struct ext4_group_info {
+@@ -1593,15 +1594,42 @@ struct ext4_group_info {
  #define EXT4_MB_GRP_NEED_INIT(grp)	\
  	(test_bit(EXT4_GROUP_INFO_NEED_INIT_BIT, &((grp)->bb_state)))
  
@@ -63,17 +58,25 @@ index 1ca6995..2808345 100644
 -	spin_lock(ext4_group_lock_ptr(sb, group));
 +	spinlock_t *lock = ext4_group_lock_ptr(sb, group);
 +	if (spin_trylock(lock))
++		/* 
++		 * We're able to grab the lock right away, so drop the
++		 * lock contention counter.
++		 */
++		atomic_add_unless(&EXT4_SB(sb)->s_lock_busy, -1, 0);
++	else {
++		/*
++		 * The lock is busy, so bump the contention counter,
++		 * and then wait on the spin lock.
++		 */
 +		atomic_add_unless(&EXT4_SB(sb)->s_lock_busy, 1,
 +				  EXT4_MAX_CONTENTION);
-+	else {
-+		atomic_add_unless(&EXT4_SB(sb)->s_lock_busy, -1, 0);
 +		spin_lock(lock);
 +	}
  }
  
  static inline void ext4_unlock_group(struct super_block *sb,
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 2097dec..f27866f 100644
+index a103cb0..ee563e2 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -4191,9 +4191,17 @@ static void ext4_mb_group_or_file(struct ext4_allocation_context *ac)
@@ -86,7 +89,7 @@ index 2097dec..f27866f 100644
  	size = max(size, isize);
  
 +	if ((size == isize) &&
-+	    ext4_fs_is_busy(sbi) &&
++	    !ext4_fs_is_busy(sbi) &&
 +	    (atomic_read(&ac->ac_inode->i_writecount) == 0)) {
 +		ac->ac_flags |= EXT4_MB_HINT_NOPREALLOC;
 +		return;
