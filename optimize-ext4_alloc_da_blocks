@@ -1,0 +1,221 @@
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index d61fb52..55d1e05 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3127,6 +3127,7 @@ out:
+ /*
+  * Force all delayed allocation blocks to be allocated for a given inode.
+  */
++#if 1
+ int ext4_alloc_da_blocks(struct inode *inode)
+ {
+ 	if (!EXT4_I(inode)->i_reserved_data_blocks &&
+@@ -3166,6 +3167,208 @@ int ext4_alloc_da_blocks(struct inode *inode)
+ 	 */
+ 	return filemap_flush(inode->i_mapping);
+ }
++#else
++static int flush_alloc_da_page(struct page *page, struct mpage_da_data *mpd)
++{
++	struct inode *inode = mpd->inode;
++	struct buffer_head *bh, *head;
++	sector_t logical;
++
++	/*
++	 * Can we merge this page to current extent?
++	 */
++	if (mpd->next_page != page->index) {
++		/*
++		 * Nope, we can't. So, we map non-allocated blocks
++		 * and start IO on them using writepage()
++		 */
++		if (mpd->next_page != mpd->first_page) {
++			printk(KERN_INFO
++			       "flush_alloc_da_page map_blocks: "
++			       "ino %lu blk %llu, size %u\n",
++			       mpd->inode->i_ino, mpd->b_blocknr,
++			       mpd->b_size >> mpd->inode->i_blkbits);
++			mpage_da_map_blocks(mpd);
++			/*
++			 * skip rest of the page in the page_vec
++			 */
++			unlock_page(page);
++			return MPAGE_DA_EXTENT_TAIL;
++		}
++
++		/*
++		 * Start next extent of pages ...
++		 */
++		mpd->first_page = page->index;
++
++		/*
++		 * ... and blocks
++		 */
++		mpd->b_size = 0;
++		mpd->b_state = 0;
++		mpd->b_blocknr = 0;
++	}
++
++	mpd->next_page = page->index + 1;
++	logical = (sector_t) page->index <<
++		  (PAGE_CACHE_SHIFT - inode->i_blkbits);
++
++	if (!page_has_buffers(page)) {
++		mpage_add_bh_to_extent(mpd, logical, PAGE_CACHE_SIZE,
++				       (1 << BH_Dirty) | (1 << BH_Uptodate));
++	} else {
++		/*
++		 * Page with regular buffer heads, just add all dirty ones
++		 */
++		head = page_buffers(page);
++		bh = head;
++		do {
++			BUG_ON(buffer_locked(bh));
++			/*
++			 * We need to try to allocate
++			 * unmapped blocks in the same page.
++			 * Otherwise we won't make progress
++			 * with the page in ext4_writepage
++			 */
++			if (ext4_bh_delay_or_unwritten(NULL, bh)) {
++				mpage_add_bh_to_extent(mpd, logical,
++						       bh->b_size,
++						       bh->b_state);
++			} else if (buffer_dirty(bh) && (buffer_mapped(bh))) {
++				/*
++				 * mapped dirty buffer. We need to update
++				 * the b_state because we look at
++				 * b_state in mpage_da_map_blocks. We don't
++				 * update b_size because if we find an
++				 * unmapped buffer_head later we need to
++				 * use the b_state flag of that buffer_head.
++				 */
++				if (mpd->b_size == 0)
++					mpd->b_state = bh->b_state & BH_FLAGS;
++			}
++			logical++;
++		} while ((bh = bh->b_this_page) != head);
++	}
++	return 0;
++}
++
++int ext4_alloc_da_blocks(struct inode *inode)
++{
++	struct address_space *mapping = inode->i_mapping;
++	struct pagevec pvec;
++	pgoff_t	index = 0;
++	handle_t *handle = NULL;
++	struct mpage_da_data mpd;
++	int i;
++	int nr_pages;
++	int needed_blocks, ret = 0;
++	struct ext4_sb_info *sbi = EXT4_SB(mapping->host->i_sb);
++
++	if (ext4_should_journal_data(inode))
++		return 0;
++
++	/*
++	 * If no pages to write, return right away.
++	 */
++	if (!mapping->nrpages || !mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
++		return 0;
++
++	/*
++	 * If the filesystem has aborted, return immediately with an
++	 * EROFS error.
++	 */
++	if (unlikely(sbi->s_mount_flags & EXT4_MF_FS_ABORTED))
++		return -EROFS;
++
++	printk(KERN_INFO "ext4_alloc_da_pages(%lu)\n", inode->i_ino);
++	mpd.inode = mapping->host;
++
++	while (1) {
++		/*
++		 * we insert one extent at a time. So we need
++		 * credit needed for single extent allocation.
++		 * journalled mode is currently not supported
++		 * by delalloc
++		 */
++		BUG_ON(ext4_should_journal_data(inode));
++		needed_blocks = ext4_da_writepages_trans_blocks(inode);
++
++		pagevec_init(&pvec, 0);
++		nr_pages = pagevec_lookup_tag(&pvec, mapping, &index,
++					      PAGECACHE_TAG_DIRTY,
++					      (pgoff_t)PAGEVEC_SIZE);
++		if (nr_pages == 0)
++			break;
++
++		/* start a new transaction*/
++		handle = ext4_journal_start(inode, needed_blocks);
++		if (IS_ERR(handle))
++			break;
++
++		mpd.b_size = 0;
++		mpd.b_state = 0;
++		mpd.b_blocknr = 0;
++		mpd.first_page = 0;
++		mpd.next_page = 0;
++		mpd.io_done = 0;
++		mpd.pages_written = 0;
++		mpd.retval = 0;
++
++		do {
++			for (i = 0; i < nr_pages; i++) {
++				struct page *page = pvec.pages[i];
++
++				lock_page(page);
++				if (unlikely(page->mapping != mapping) ||
++				    !PageDirty(page) ||
++				    PageWriteback(page)) {
++					unlock_page(page);
++					continue;
++				}
++
++				ret = flush_alloc_da_page(page, &mpd);
++				if (ret) {
++					pagevec_release(&pvec);
++					goto map_extent;
++				}
++			}
++			pagevec_release(&pvec);
++			cond_resched();
++
++			nr_pages = pagevec_lookup_tag(&pvec, mapping, &index,
++						      PAGECACHE_TAG_DIRTY,
++						      (pgoff_t)PAGEVEC_SIZE);
++		} while (nr_pages);
++
++		/*
++		 * If we have a contigous extent of pages and we
++		 * haven't done the I/O yet, map the blocks and submit
++		 * them for I/O.
++		 */
++	map_extent:
++		if (!mpd.io_done && mpd.next_page != mpd.first_page) {
++			printk(KERN_INFO
++			       "ext4_alloc_da_blocks map_blocks: "
++			       "ino %lu blk %llu, size %u\n",
++			       mpd.inode->i_ino, mpd.b_blocknr,
++			       mpd.b_size >> mpd.inode->i_blkbits);
++			mpage_da_map_blocks(&mpd);
++		}
++
++		ext4_journal_stop(handle);
++
++		if ((mpd.retval == -ENOSPC) && sbi->s_journal) {
++			/* commit the transaction which would
++			 * free blocks released in the transaction
++			 * and try again
++			 */
++			jbd2_journal_force_commit_nested(sbi->s_journal);
++		}
++	}
++	printk(KERN_INFO "ext4_alloc_da_pages(%lu) exit\n", inode->i_ino);
++	return ret;
++}
++#endif
+ 
+ /*
+  * bmap() is special.  It gets used by applications such as lilo and by
