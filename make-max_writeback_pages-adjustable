@@ -1,0 +1,127 @@
+vm: Add an tuning knob for vm.max_writeback_pages
+
+Originally, MAX_WRITEBACK_PAGES was hard-coded to 1024 because of a
+concern of not holding I_SYNC for too long.  (At least, that was the
+comment previously.)  This doesn't make sense now because the only
+time we wait for I_SYNC is if we are calling sync or fsync, and in
+that case we need to write out all of the data anyway.  Previously
+there may have been other code paths that waited on I_SYNC, but not
+any more.
+
+According to Christoph, the current writeback size is way too small,
+and XFS had a hack that bumped out nr_to_write to four times the value
+sent by the VM to be able to saturate medium-sized RAID arrays.  This
+value was also problematic for ext4 as well, as it caused large files
+to be come interleaved on disk by in 8 megabyte chunks (we bumped up
+the nr_to_write by a factor of two).
+
+So, in this patch, we make the MAX_WRITEBACK_PAGES a tunable, and
+change the default to be 32768 blocks.
+
+http://bugzilla.kernel.org/show_bug.cgi?id=13930
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: linux-fsdevel@vger.kernel.org
+Cc: linux-ext4@vger.kernel.org
+Cc: linux-mm@vger.kernel.org
+---
+ include/linux/writeback.h |    1 +
+ kernel/sysctl.c           |    8 ++++++++
+ mm/page-writeback.c       |   23 ++++++++++-------------
+ 3 files changed, 19 insertions(+), 13 deletions(-)
+
+diff --git a/include/linux/writeback.h b/include/linux/writeback.h
+index 3224820..c1e6c08 100644
+--- a/include/linux/writeback.h
++++ b/include/linux/writeback.h
+@@ -110,6 +110,7 @@ extern int vm_dirty_ratio;
+ extern unsigned long vm_dirty_bytes;
+ extern unsigned int dirty_writeback_interval;
+ extern unsigned int dirty_expire_interval;
++extern unsigned int max_writeback_pages;
+ extern int vm_highmem_is_dirtyable;
+ extern int block_dump;
+ extern int laptop_mode;
+diff --git a/kernel/sysctl.c b/kernel/sysctl.c
+index 58be760..06d1c4c 100644
+--- a/kernel/sysctl.c
++++ b/kernel/sysctl.c
+@@ -1104,6 +1104,14 @@ static struct ctl_table vm_table[] = {
+ 		.proc_handler	= &proc_dointvec,
+ 	},
+ 	{
++		.ctl_name	= CTL_UNNUMBERED,
++		.procname	= "max_writeback_pages",
++		.data		= &max_writeback_pages,
++		.maxlen		= sizeof(max_writeback_pages),
++		.mode		= 0644,
++		.proc_handler	= &proc_dointvec,
++	},
++	{
+ 		.ctl_name	= VM_NR_PDFLUSH_THREADS,
+ 		.procname	= "nr_pdflush_threads",
+ 		.data		= &nr_pdflush_threads,
+diff --git a/mm/page-writeback.c b/mm/page-writeback.c
+index 81627eb..6b98098 100644
+--- a/mm/page-writeback.c
++++ b/mm/page-writeback.c
+@@ -36,15 +36,6 @@
+ #include <linux/pagevec.h>
+ 
+ /*
+- * The maximum number of pages to writeout in a single bdflush/kupdate
+- * operation.  We do this so we don't hold I_SYNC against an inode for
+- * enormous amounts of time, which would block a userspace task which has
+- * been forced to throttle against that inode.  Also, the code reevaluates
+- * the dirty each time it has written this many pages.
+- */
+-#define MAX_WRITEBACK_PAGES	1024
+-
+-/*
+  * After a CPU has dirtied this many pages, balance_dirty_pages_ratelimited
+  * will look to see if it needs to force writeback or throttling.
+  */
+@@ -64,6 +55,12 @@ static inline long sync_writeback_pages(void)
+ /* The following parameters are exported via /proc/sys/vm */
+ 
+ /*
++ * The maximum number of pages to write out in a single bdflush/kupdate
++ * operation.
++ */
++unsigned int max_writeback_pages = 32768;
++
++/*
+  * Start background writeback (via pdflush) at this percentage
+  */
+ int dirty_background_ratio = 10;
+@@ -708,10 +705,10 @@ static void background_writeout(unsigned long _min_pages)
+ 			break;
+ 		wbc.more_io = 0;
+ 		wbc.encountered_congestion = 0;
+-		wbc.nr_to_write = MAX_WRITEBACK_PAGES;
++		wbc.nr_to_write = max_writeback_pages;
+ 		wbc.pages_skipped = 0;
+ 		writeback_inodes(&wbc);
+-		min_pages -= MAX_WRITEBACK_PAGES - wbc.nr_to_write;
++		min_pages -= max_writeback_pages - wbc.nr_to_write;
+ 		if (wbc.nr_to_write > 0 || wbc.pages_skipped > 0) {
+ 			/* Wrote less than expected */
+ 			if (wbc.encountered_congestion || wbc.more_io)
+@@ -783,7 +780,7 @@ static void wb_kupdate(unsigned long arg)
+ 	while (nr_to_write > 0) {
+ 		wbc.more_io = 0;
+ 		wbc.encountered_congestion = 0;
+-		wbc.nr_to_write = MAX_WRITEBACK_PAGES;
++		wbc.nr_to_write = max_writeback_pages;
+ 		writeback_inodes(&wbc);
+ 		if (wbc.nr_to_write > 0) {
+ 			if (wbc.encountered_congestion || wbc.more_io)
+@@ -791,7 +788,7 @@ static void wb_kupdate(unsigned long arg)
+ 			else
+ 				break;	/* All the old data is written */
+ 		}
+-		nr_to_write -= MAX_WRITEBACK_PAGES - wbc.nr_to_write;
++		nr_to_write -= max_writeback_pages - wbc.nr_to_write;
+ 	}
+ 	if (time_before(next_jif, jiffies + HZ))
+ 		next_jif = jiffies + HZ;
