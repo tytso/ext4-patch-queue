@@ -1,0 +1,31 @@
+ext4: Return exchanged blocks count to user space in failure
+
+From: Akira Fujita <a-fujita@rs.jp.nec.com>
+
+Return exchanged blocks count (moved_len) to user space,
+if ext4_move_extents() failed on the way.
+
+Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ioctl.c |    7 +++----
+ 1 files changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index b0b434b..efd11c8 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -255,10 +255,9 @@ setversion_out:
+ 					me.donor_start, me.len, &me.moved_len);
+ 		fput(donor_filp);
+
+-		if (!err)
+-			if (copy_to_user((struct move_extent *)arg,
+-				&me, sizeof(me)))
+-				return -EFAULT;
++		if (copy_to_user((struct move_extent *)arg, &me, sizeof(me)))
++			return -EFAULT;
++
+ 		return err;
+ 	}
+

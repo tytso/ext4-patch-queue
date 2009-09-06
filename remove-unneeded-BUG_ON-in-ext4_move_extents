@@ -1,0 +1,31 @@
+ext4: Remove unneeded BUG_ON() in ext4_move_extents()
+
+From: Akira Fujita <a-fujita@rs.jp.nec.com>
+
+The ext4_move_extents() functions checks with BUG_ON() whether the
+exchanged blocks count accords with request blocks count.  But, if the
+target range (orig_start + len) includes sparse block(s), 'moved_len'
+(exchanged blocks count) does not agree with 'len' (request blocks
+count), since sparse block is not counted in 'moved_len'.  This causes
+us to hit the BUG_ON(), even though the function succeeded.
+
+Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/move_extent.c |    3 ---
+ 1 files changed, 0 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
+index 60ed567..643156a 100644
+--- a/fs/ext4/move_extent.c
++++ b/fs/ext4/move_extent.c
+@@ -1323,8 +1323,5 @@ out2:
+ 	if (ret)
+ 		return ret;
+
+-	/* All of the specified blocks must be exchanged in succeed */
+-	BUG_ON(*moved_len != len);
+-
+ 	return 0;
+ }
+
