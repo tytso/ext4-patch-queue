@@ -1,0 +1,55 @@
+ext4: Drop mapped buffer_head check during page_mkwrite
+
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+
+In order to check whether the buffer_heads are mapped we need to hold
+page lock.  Otherwise a reclaim can cleanup the attached buffer_heads.
+
+Instead of taking page lock and check whether buffer_heads are mapped
+we let the write_begin/write_end callback does the equivalent.  It
+does have a performance impact in that we are doing more work if we
+the buffer_heads are already mapped.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |   11 -----------
+ 1 files changed, 0 insertions(+), 11 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index f9c642b..ad99286 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -5245,11 +5245,6 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
+ 	return err;
+ }
+ 
+-static int ext4_bh_unmapped(handle_t *handle, struct buffer_head *bh)
+-{
+-	return !buffer_mapped(bh);
+-}
+-
+ int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
+ {
+ 	struct page *page = vmf->page;
+@@ -5281,12 +5276,6 @@ int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
+ 	else
+ 		len = PAGE_CACHE_SIZE;
+ 
+-	if (page_has_buffers(page)) {
+-		/* return if we have all the buffers mapped */
+-		if (!walk_page_buffers(NULL, page_buffers(page), 0, len, NULL,
+-				       ext4_bh_unmapped))
+-			goto out_unlock;
+-	}
+ 	/*
+ 	 * OK, we need to fill the hole... Do write_begin write_end
+ 	 * to do block allocation/reservation.We are not holding
+-- 
+1.6.4.1.196.g31f0b
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
