@@ -1,0 +1,28 @@
+ext4: Assure that metadata blocks are written during fsync in no journal mode
+
+When there is no journal present, we must attach buffer heads
+associated with extent tree and indirect blocks to the inode's
+mapping->private_list so that fsync() will write out the inode's
+metadata blocks.  This is done via mark_buffer_dirty_inode().
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4_jbd2.c |    5 ++++-
+ 1 files changed, 4 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/ext4_jbd2.c b/fs/ext4/ext4_jbd2.c
+index ecb9ca4..6a94099 100644
+--- a/fs/ext4/ext4_jbd2.c
++++ b/fs/ext4/ext4_jbd2.c
+@@ -89,7 +89,10 @@ int __ext4_handle_dirty_metadata(const char *where, handle_t *handle,
+ 			ext4_journal_abort_handle(where, __func__, bh,
+ 						  handle, err);
+ 	} else {
+-		mark_buffer_dirty(bh);
++		if (inode && bh)
++			mark_buffer_dirty_inode(bh, inode);
++		else
++			mark_buffer_dirty(bh);
+ 		if (inode && inode_needs_sync(inode)) {
+ 			sync_dirty_buffer(bh);
+ 			if (buffer_req(bh) && !buffer_uptodate(bh)) {
