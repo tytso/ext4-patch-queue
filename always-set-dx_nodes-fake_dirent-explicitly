@@ -1,0 +1,39 @@
+ext4: Always set dx_node's fake_dirent explicitly.
+
+From: Andreas Schlick <schlick@lavabit.com>
+
+When ext4_dx_add_entry() has to split an index node, it has to ensure that
+name_len of dx_node's fake_dirent is also zero, because otherwise e2fsck
+won't recognise it as an intermediate htree node and consider the htree to
+be corrupted.
+
+Signed-off-by: Andreas Schlick <schlick@lavabit.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/namei.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 22098e1..682a488 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1590,9 +1590,9 @@ static int ext4_dx_add_entry(handle_t *handle, struct dentry *dentry,
+ 			goto cleanup;
+ 		node2 = (struct dx_node *)(bh2->b_data);
+ 		entries2 = node2->entries;
++		memset(&node2->fake, 0, sizeof(struct fake_dirent));
+ 		node2->fake.rec_len = ext4_rec_len_to_disk(sb->s_blocksize,
+ 							   sb->s_blocksize);
+-		node2->fake.inode = 0;
+ 		BUFFER_TRACE(frame->bh, "get_write_access");
+ 		err = ext4_journal_get_write_access(handle, frame->bh);
+ 		if (err)
+-- 
+1.6.4
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
