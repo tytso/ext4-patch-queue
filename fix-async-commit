@@ -23,11 +23,11 @@ FSUse%        Count         Size    Files/sec     App Overhead
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/jbd2/commit.c |   48 +++++++++++++++++++++++++++++++++++++++++++-----
- 1 files changed, 43 insertions(+), 5 deletions(-)
+ fs/jbd2/commit.c |   11 +++++++----
+ 1 files changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index 7b4088b..d6f4763 100644
+index 7b4088b..82f63d1 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
 @@ -25,6 +25,7 @@
@@ -38,42 +38,7 @@ index 7b4088b..d6f4763 100644
  #include <trace/events/jbd2.h>
  
  /*
-@@ -83,6 +84,34 @@ nope:
- 	__brelse(bh);
- }
- 
-+static void end_empty_barrier(struct bio *bio, int err)
-+{
-+	if (err) {
-+		if (err == -EOPNOTSUPP)
-+			set_bit(BIO_EOPNOTSUPP, &bio->bi_flags);
-+		clear_bit(BIO_UPTODATE, &bio->bi_flags);
-+	}
-+	complete(bio->bi_private);
-+}
-+
-+struct bio *issue_flush(struct block_device *bdev, struct completion *wait)
-+{
-+
-+	struct bio *bio;
-+
-+	if (!bdev->bd_disk || !bdev->bd_disk->queue)
-+		return NULL;
-+
-+	bio = bio_alloc(GFP_KERNEL, 0);
-+	if (!bio)
-+		return NULL;
-+	bio->bi_end_io = end_empty_barrier;
-+	bio->bi_private = wait;
-+	bio->bi_bdev = bdev;
-+	submit_bio(WRITE_BARRIER, bio);
-+	return bio;
-+}
-+
- /*
-  * Done it all: now submit the commit record.  We should have
-  * cleaned up our previous buffers by now, so if we are in abort
-@@ -133,8 +162,8 @@ static int journal_submit_commit_record(journal_t *journal,
+@@ -133,8 +134,8 @@ static int journal_submit_commit_record(journal_t *journal,
  	bh->b_end_io = journal_end_buffer_io_sync;
  
  	if (journal->j_flags & JBD2_BARRIER &&
@@ -84,16 +49,7 @@ index 7b4088b..d6f4763 100644
  		set_buffer_ordered(bh);
  		barrier_done = 1;
  	}
-@@ -352,6 +381,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
- 	transaction_t *commit_transaction;
- 	struct journal_head *jh, *new_jh, *descriptor;
- 	struct buffer_head **wbuf = journal->j_wbuf;
-+	struct bio *bio_flush = NULL;
-+	DECLARE_COMPLETION_ONSTACK(wait_flush);
- 	int bufs;
- 	int flags;
- 	int err;
-@@ -707,11 +738,13 @@ start_journal_io:
+@@ -707,11 +708,13 @@ start_journal_io:
  	/* Done it all: now write the commit record asynchronously. */
  
  	if (JBD2_HAS_INCOMPAT_FEATURE(journal,
@@ -104,23 +60,16 @@ index 7b4088b..d6f4763 100644
  		if (err)
  			__jbd2_journal_abort_hard(journal);
 +		if (journal->j_flags & JBD2_BARRIER)
-+			bio_flush = issue_flush(journal->j_dev, &wait_flush);
++			blkdev_issue_flush(journal->j_dev, NULL);
  	}
  
  	/*
-@@ -833,8 +866,13 @@ wait_for_iobuf:
- 
+@@ -834,7 +837,7 @@ wait_for_iobuf:
  	jbd_debug(3, "JBD: commit phase 5\n");
  
--	if (!JBD2_HAS_INCOMPAT_FEATURE(journal,
+ 	if (!JBD2_HAS_INCOMPAT_FEATURE(journal,
 -		JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)) {
-+	if (JBD2_HAS_INCOMPAT_FEATURE(journal,
-+				      JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)) {
-+		if (bio_flush) {
-+			wait_for_completion(&wait_flush);
-+			bio_put(bio_flush);
-+		}
-+	} else {
++				       JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)) {
  		err = journal_submit_commit_record(journal, commit_transaction,
  						&cbh, crc32_sum);
  		if (err)
