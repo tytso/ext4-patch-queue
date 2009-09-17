@@ -36,14 +36,14 @@ int main(int argc, char **argv)
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h  |    2 +
- fs/ext4/ioctl.c |   63 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 65 insertions(+), 0 deletions(-)
+ fs/ext4/ioctl.c |   66 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 68 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index a09ea10..24bb528 100644
+index 98cf2b3..68ffbb6 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -373,6 +373,8 @@ struct ext4_new_group_data {
+@@ -388,6 +388,8 @@ struct ext4_new_group_data {
  #define EXT4_IOC32_SETVERSION_OLD	FS_IOC32_SETVERSION
  
  
@@ -53,7 +53,7 @@ index a09ea10..24bb528 100644
   *  Mount options
   */
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 7050a9c..b0b434b 100644
+index c1cdf61..d1fe495 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
 @@ -15,9 +15,21 @@
@@ -78,7 +78,7 @@ index 7050a9c..b0b434b 100644
  long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  {
  	struct inode *inode = filp->f_dentry->d_inode;
-@@ -315,6 +327,56 @@ setversion_out:
+@@ -314,6 +326,59 @@ setversion_out:
  		return err;
  	}
  
@@ -104,21 +104,24 @@ index 7050a9c..b0b434b 100644
 +#else
 +		spin_lock(&inode_lock);
 +#endif
-+		if (!list_empty(&sb->s_dirty)) {
-+			printk(KERN_DEBUG "s_dirty list:\n");
-+			list_for_each_entry(inode, &sb->s_dirty, i_list) {
++		if (!list_empty(&sb->s_bdi->wb.b_dirty)) {
++			printk(KERN_DEBUG "s_bdi->wb.b_dirty list:\n");
++			list_for_each_entry(inode, &sb->s_bdi->wb.b_dirty,
++					    i_list) {
 +				print_inode_dealloc_info(inode);
 +			}
 +		}
-+		if (!list_empty(&sb->s_io)) {
-+			printk(KERN_DEBUG "s_io list:\n");
-+			list_for_each_entry(inode, &sb->s_io, i_list) {
++		if (!list_empty(&sb->s_bdi->wb.b_io)) {
++			printk(KERN_DEBUG "s_bdi->wb.b_io list:\n");
++			list_for_each_entry(inode, &sb->s_bdi->wb.b_io,
++					    i_list) {
 +				print_inode_dealloc_info(inode);
 +			}
 +		}
-+		if (!list_empty(&sb->s_more_io)) {
-+			printk(KERN_DEBUG "s_more_io list:\n");
-+			list_for_each_entry(inode, &sb->s_more_io, i_list) {
++		if (!list_empty(&sb->s_bdi->wb.b_more_io)) {
++			printk(KERN_DEBUG "s_bdi->wb.b_more_io list:\n");
++			list_for_each_entry(inode, &sb->s_bdi->wb.b_more_io,
++					    i_list) {
 +				print_inode_dealloc_info(inode);
 +			}
 +		}
@@ -135,7 +138,7 @@ index 7050a9c..b0b434b 100644
  	default:
  		return -ENOTTY;
  	}
-@@ -358,6 +420,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+@@ -357,6 +422,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
  		cmd = EXT4_IOC_SETRSVSZ;
  		break;
  	case EXT4_IOC_GROUP_ADD:
