@@ -10,12 +10,12 @@ Cc: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h    |    2 +-
- fs/ext4/inode.c   |    5 +----
+ fs/ext4/inode.c   |    6 ++----
  fs/ext4/migrate.c |   20 ++++++++++----------
- 3 files changed, 12 insertions(+), 15 deletions(-)
+ 3 files changed, 13 insertions(+), 15 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index c187b08..c63966a 100644
+index b558de8..98cf2b3 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -268,7 +268,6 @@ struct flex_groups {
@@ -35,10 +35,10 @@ index c187b08..c63966a 100644
  /* Used to pass group descriptor data when online resize is done */
  struct ext4_new_group_input {
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index d04c842..baead19 100644
+index 5a89792..a5b4ce4 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1246,8 +1246,7 @@ int ext4_get_blocks(handle_t *handle, struct inode *inode, sector_t block,
+@@ -1255,8 +1255,7 @@ int ext4_get_blocks(handle_t *handle, struct inode *inode, sector_t block,
  			 * i_data's format changing.  Force the migrate
  			 * to fail by clearing migrate flags
  			 */
@@ -48,12 +48,13 @@ index d04c842..baead19 100644
  		}
  	}
  
-@@ -4587,8 +4586,6 @@ static int ext4_do_update_inode(handle_t *handle,
+@@ -4596,8 +4595,7 @@ static int ext4_do_update_inode(handle_t *handle,
  	if (ext4_inode_blocks_set(handle, raw_inode, ei))
  		goto out_brelse;
  	raw_inode->i_dtime = cpu_to_le32(ei->i_dtime);
 -	/* clear the migrate flag in the raw_inode */
 -	raw_inode->i_flags = cpu_to_le32(ei->i_flags & ~EXT4_EXT_MIGRATE);
++	raw_inode->i_flags = cpu_to_le32(ei->i_flags);
  	if (EXT4_SB(inode->i_sb)->s_es->s_creator_os !=
  	    cpu_to_le32(EXT4_OS_HURD))
  		raw_inode->i_file_acl_high =
