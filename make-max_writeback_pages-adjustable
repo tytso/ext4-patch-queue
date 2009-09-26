@@ -30,10 +30,10 @@ Signed-off-by: Jens Axboe <jens.axboe@oracle.com>
  4 files changed, 16 insertions(+), 8 deletions(-)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index da86ef5..05c09b0 100644
+index fb61178..7bbe2af 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
-@@ -637,14 +637,7 @@ void writeback_inodes_wbc(struct writeback_control *wbc)
+@@ -711,14 +711,7 @@ void writeback_inodes_wbc(struct writeback_control *wbc)
  	writeback_inodes_wb(&bdi->wb, wbc);
  }
  
@@ -50,10 +50,10 @@ index da86ef5..05c09b0 100644
  static inline bool over_bground_thresh(void)
  {
 diff --git a/include/linux/writeback.h b/include/linux/writeback.h
-index 78b1e46..fbed759 100644
+index 66ebddc..2bc7883 100644
 --- a/include/linux/writeback.h
 +++ b/include/linux/writeback.h
-@@ -104,6 +104,7 @@ extern int vm_dirty_ratio;
+@@ -103,6 +103,7 @@ extern int vm_dirty_ratio;
  extern unsigned long vm_dirty_bytes;
  extern unsigned int dirty_writeback_interval;
  extern unsigned int dirty_expire_interval;
@@ -62,10 +62,10 @@ index 78b1e46..fbed759 100644
  extern int block_dump;
  extern int laptop_mode;
 diff --git a/kernel/sysctl.c b/kernel/sysctl.c
-index 3125cff..2a94e26 100644
+index 0d949c5..3d93ac6 100644
 --- a/kernel/sysctl.c
 +++ b/kernel/sysctl.c
-@@ -1111,6 +1111,14 @@ static struct ctl_table vm_table[] = {
+@@ -1145,6 +1145,14 @@ static struct ctl_table vm_table[] = {
  		.proc_handler	= &proc_dointvec,
  	},
  	{
@@ -81,10 +81,10 @@ index 3125cff..2a94e26 100644
  		.procname	= "nr_pdflush_threads",
  		.data		= &nr_pdflush_threads,
 diff --git a/mm/page-writeback.c b/mm/page-writeback.c
-index 25e7770..7f821e6 100644
+index 69b5fba..5f90221 100644
 --- a/mm/page-writeback.c
 +++ b/mm/page-writeback.c
-@@ -55,6 +55,12 @@ static inline long sync_writeback_pages(void)
+@@ -58,6 +58,12 @@ static inline long sync_writeback_pages(unsigned long dirtied)
  /* The following parameters are exported via /proc/sys/vm */
  
  /*
@@ -94,9 +94,6 @@ index 25e7770..7f821e6 100644
 +unsigned int max_writeback_mb = 128;
 +
 +/*
-  * Start background writeback (via pdflush) at this percentage
+  * Start background writeback (via writeback threads) at this percentage
   */
  int dirty_background_ratio = 10;
--- 
-1.6.3.2.1.gb9f7d.dirty
-
