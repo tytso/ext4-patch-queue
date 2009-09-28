@@ -1,5 +1,7 @@
 ext4: release reserved quota when block reservation for delalloc retry
 
+From: Mingming Cao <cmm@us.ibm.com>
+
 ext4_da_reserve_space() can reserve quota blocks multiple times if
 ext4_claim_free_blocks() fail and we retry the allocation. We should
 release the quota reservation before restarting.
@@ -9,14 +11,11 @@ Bug found by Jan Kara.
 Signed-off-by: Mingming Cao <cmm@us.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |    2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
-
-Index: linux-2.6.31-rc4/fs/ext4/inode.c
-===================================================================
---- linux-2.6.31-rc4.orig/fs/ext4/inode.c
-+++ linux-2.6.31-rc4/fs/ext4/inode.c
-@@ -1785,11 +1785,11 @@ repeat:
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 9e0acb7..be80fa2 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1850,11 +1850,11 @@ repeat:
  
  	if (ext4_claim_free_blocks(sbi, total)) {
  		spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
