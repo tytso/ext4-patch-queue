@@ -1,0 +1,143 @@
+ext4, jbd2: Drop unneeded printks at mount and unmount time
+
+There are a number of kernel printk's which are printed when an ext4
+filesystem is mounted and unmounted.  Disable them to economize space
+in the system logs.  In addition, disabling the mballoc stats by
+default saves a number of unneeded atomic operations for every block
+allocation or deallocation.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+---
+ fs/ext4/extents.c |    2 ++
+ fs/ext4/mballoc.c |    2 --
+ fs/ext4/mballoc.h |    2 +-
+ fs/ext4/super.c   |   17 ++++-------------
+ fs/jbd2/journal.c |    9 +++------
+ 5 files changed, 10 insertions(+), 22 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 10a6309..10539e3 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2380,6 +2380,7 @@ void ext4_ext_init(struct super_block *sb)
+ 	 */
+ 
+ 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_EXTENTS)) {
++#if defined(AGGRESSIVE_TEST) || defined(CHECK_BINSEARCH) || defined(EXTENTS_STATS)
+ 		printk(KERN_INFO "EXT4-fs: file extents enabled");
+ #ifdef AGGRESSIVE_TEST
+ 		printk(", aggressive tests");
+@@ -2391,6 +2392,7 @@ void ext4_ext_init(struct super_block *sb)
+ 		printk(", stats");
+ #endif
+ 		printk("\n");
++#endif
+ #ifdef EXTENTS_STATS
+ 		spin_lock_init(&EXT4_SB(sb)->s_ext_stats_lock);
+ 		EXT4_SB(sb)->s_ext_min = 1 << 30;
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index c73d439..3e2320e 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2712,8 +2712,6 @@ int ext4_mb_init(struct super_block *sb, int needs_recovery)
+ 
+ 	if (sbi->s_journal)
+ 		sbi->s_journal->j_commit_callback = release_blocks_on_commit;
+-
+-	printk(KERN_INFO "EXT4-fs: mballoc enabled\n");
+ 	return 0;
+ }
+ 
+diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
+index 188d3d7..14f25f2 100644
+--- a/fs/ext4/mballoc.h
++++ b/fs/ext4/mballoc.h
+@@ -84,7 +84,7 @@ extern u8 mb_enable_debug;
+  * with 'ext4_mb_stats' allocator will collect stats that will be
+  * shown at umount. The collecting costs though!
+  */
+-#define MB_DEFAULT_STATS		1
++#define MB_DEFAULT_STATS		0
+ 
+ /*
+  * files smaller than MB_DEFAULT_STREAM_THRESHOLD are served
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 3f7e701..e5b206a 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1673,13 +1673,6 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+ 			EXT4_INODES_PER_GROUP(sb),
+ 			sbi->s_mount_opt);
+ 
+-	if (EXT4_SB(sb)->s_journal) {
+-		ext4_msg(sb, KERN_INFO, "%s journal on %s",
+-		       EXT4_SB(sb)->s_journal->j_inode ? "internal" :
+-		       "external", EXT4_SB(sb)->s_journal->j_devname);
+-	} else {
+-		ext4_msg(sb, KERN_INFO, "no journal");
+-	}
+ 	return res;
+ }
+ 
+@@ -2885,12 +2878,12 @@ no_journal:
+ 			 "available");
+ 	}
+ 
+-	if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA) {
++	if (test_opt(sb, DELALLOC) &&
++	    (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)) {
+ 		ext4_msg(sb, KERN_WARNING, "Ignoring delalloc option - "
+ 			 "requested data journaling mode");
+ 		clear_opt(sbi->s_mount_opt, DELALLOC);
+-	} else if (test_opt(sb, DELALLOC))
+-		ext4_msg(sb, KERN_INFO, "delayed allocation enabled");
++	}
+ 
+ 	err = ext4_setup_system_zone(sb);
+ 	if (err) {
+@@ -3202,9 +3195,7 @@ static int ext4_load_journal(struct super_block *sb,
+ 			return -EINVAL;
+ 	}
+ 
+-	if (journal->j_flags & JBD2_BARRIER)
+-		ext4_msg(sb, KERN_INFO, "barriers enabled");
+-	else
++	if (!(journal->j_flags & JBD2_BARRIER))
+ 		ext4_msg(sb, KERN_INFO, "barriers disabled");
+ 
+ 	if (!really_read_only && test_opt(sb, UPDATE_JOURNAL)) {
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 53b86e1..977a8da 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -136,10 +136,6 @@ static int kjournald2(void *arg)
+ 	journal->j_task = current;
+ 	wake_up(&journal->j_wait_done_commit);
+ 
+-	printk(KERN_INFO "kjournald2 starting: pid %d, dev %s, "
+-	       "commit interval %ld seconds\n", current->pid,
+-	       journal->j_devname, journal->j_commit_interval / HZ);
+-
+ 	/*
+ 	 * And now, wait forever for commit wakeup events.
+ 	 */
+@@ -223,7 +219,8 @@ static int jbd2_journal_start_thread(journal_t *journal)
+ {
+ 	struct task_struct *t;
+ 
+-	t = kthread_run(kjournald2, journal, "kjournald2");
++	t = kthread_run(kjournald2, journal, "jbd2/%s",
++			journal->j_devname);
+ 	if (IS_ERR(t))
+ 		return PTR_ERR(t);
+ 
+@@ -1115,7 +1112,7 @@ journal_t * jbd2_journal_init_inode (struct inode *inode)
+ 	while ((p = strchr(p, '/')))
+ 		*p = '!';
+ 	p = journal->j_devname + strlen(journal->j_devname);
+-	sprintf(p, ":%lu", journal->j_inode->i_ino);
++	sprintf(p, "-%lu", journal->j_inode->i_ino);
+ 	jbd_debug(1,
+ 		  "journal %p: inode %s/%ld, size %Ld, bits %d, blksize %ld\n",
+ 		  journal, inode->i_sb->s_id, inode->i_ino,
