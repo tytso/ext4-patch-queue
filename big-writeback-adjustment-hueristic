@@ -7,41 +7,35 @@ more than 2048 blocks at a time.  So we need to defeat the round-robin
 characteristics of the writeback code and try to write out as many
 blocks in one inode before allowing the writeback code to move on to
 another inode.  We add a a new per-filesystem tunable,
-max_contig_writeback_mb, which caps this to a default of 128mb per
+max_writeback_mb_bump, which caps this to a default of 128mb per
 inode.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/ext4/ext4.h              |    1 +
- fs/ext4/inode.c             |  100 +++++++++++++++++++++++++++++++++++++-----
- fs/ext4/super.c             |    3 +
- include/trace/events/ext4.h |   14 ++++--
- 4 files changed, 102 insertions(+), 16 deletions(-)
-
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index e227eea..9f99427 100644
+index e227eea..a58438e 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -942,6 +942,7 @@ struct ext4_sb_info {
  	unsigned int s_mb_stats;
  	unsigned int s_mb_order2_reqs;
  	unsigned int s_mb_group_prealloc;
-+	unsigned int s_max_contig_writeback_mb;
++	unsigned int s_max_writeback_mb_bump;
  	/* where last allocation was done - for stream allocation */
  	unsigned long s_mb_last_group;
  	unsigned long s_mb_last_start;
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 5fb72a9..9e0acb7 100644
+index 5fb72a9..20e2d70 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1145,6 +1145,60 @@ static int check_block_validity(struct inode *inode, const char *msg,
+@@ -1145,6 +1145,64 @@ static int check_block_validity(struct inode *inode, const char *msg,
  }
  
  /*
 + * Return the number of dirty pages in the given inode starting at
 + * page frame idx.
 + */
-+static pgoff_t ext4_num_dirty_pages(struct inode *inode, pgoff_t idx)
++static pgoff_t ext4_num_dirty_pages(struct inode *inode, pgoff_t idx,
++				    unsigned int max_pages)
 +{
 +	struct address_space *mapping = inode->i_mapping;
 +	pgoff_t	index;
@@ -49,8 +43,9 @@ index 5fb72a9..9e0acb7 100644
 +	pgoff_t num = 0;
 +	int i, nr_pages, done = 0;
 +
++	if (max_pages == 0)
++		return 0;
 +	pagevec_init(&pvec, 0);
-+
 +	while (!done) {
 +		index = idx;
 +		nr_pages = pagevec_lookup_tag(&pvec, mapping, &index,
@@ -85,6 +80,8 @@ index 5fb72a9..9e0acb7 100644
 +				break;
 +			idx++;
 +			num++;
++			if (num >= max_pages)
++				break;
 +		}
 +		pagevec_release(&pvec);
 +	}
@@ -95,9 +92,11 @@ index 5fb72a9..9e0acb7 100644
   * The ext4_get_blocks() function tries to look up the requested blocks,
   * and returns if the blocks are already mapped.
   *
-@@ -2744,7 +2798,8 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -2743,8 +2801,10 @@ static int ext4_da_writepages(struct address_space *mapping,
+ 	int no_nrwrite_index_update;
  	int pages_written = 0;
  	long pages_skipped;
++	unsigned int max_pages;
  	int range_cyclic, cycled = 1, io_done = 0;
 -	int needed_blocks, ret = 0, nr_to_writebump = 0;
 +	int needed_blocks, ret = 0;
@@ -105,7 +104,7 @@ index 5fb72a9..9e0acb7 100644
  	loff_t range_start = wbc->range_start;
  	struct ext4_sb_info *sbi = EXT4_SB(mapping->host->i_sb);
  
-@@ -2771,16 +2826,6 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -2771,16 +2831,6 @@ static int ext4_da_writepages(struct address_space *mapping,
  	if (unlikely(sbi->s_mount_flags & EXT4_MF_FS_ABORTED))
  		return -EROFS;
  
@@ -122,7 +121,7 @@ index 5fb72a9..9e0acb7 100644
  	if (wbc->range_start == 0 && wbc->range_end == LLONG_MAX)
  		range_whole = 1;
  
-@@ -2795,6 +2840,36 @@ static int ext4_da_writepages(struct address_space *mapping,
+@@ -2795,6 +2845,36 @@ static int ext4_da_writepages(struct address_space *mapping,
  	} else
  		index = wbc->range_start >> PAGE_CACHE_SHIFT;
  
@@ -140,16 +139,16 @@ index 5fb72a9..9e0acb7 100644
 +	 * stupidity, which is that ext4's mballoc code only allocates
 +	 * at most 2048 blocks.  So we force contiguous writes up to
 +	 * the number of dirty blocks in the inode, or
-+	 * sbi->max_contig_writeback_mb whichever is smaller.
++	 * sbi->max_writeback_mb_bump whichever is smaller.
 +	 */
++	max_pages = sbi->s_max_writeback_mb_bump << (20 - PAGE_CACHE_SHIFT);
 +	if (!range_cyclic && range_whole)
 +		desired_nr_to_write = wbc->nr_to_write * 8;
 +	else
-+		desired_nr_to_write = ext4_num_dirty_pages(inode, index);
-+	if (desired_nr_to_write > (sbi->s_max_contig_writeback_mb << 
-+				   (20 - PAGE_CACHE_SHIFT)))
-+		desired_nr_to_write = (sbi->s_max_contig_writeback_mb << 
-+				       (20 - PAGE_CACHE_SHIFT));
++		desired_nr_to_write = ext4_num_dirty_pages(inode, index,
++							   max_pages);
++	if (desired_nr_to_write > max_pages)
++		desired_nr_to_write = max_pages;
 +
 +	if (wbc->nr_to_write < desired_nr_to_write) {
 +		nr_to_writebump = desired_nr_to_write - wbc->nr_to_write;
@@ -159,7 +158,7 @@ index 5fb72a9..9e0acb7 100644
  	mpd.wbc = wbc;
  	mpd.inode = mapping->host;
  
-@@ -2914,7 +2989,8 @@ retry:
+@@ -2914,7 +2994,8 @@ retry:
  out_writepages:
  	if (!no_nrwrite_index_update)
  		wbc->no_nrwrite_index_update = 0;
@@ -170,14 +169,14 @@ index 5fb72a9..9e0acb7 100644
  	trace_ext4_da_writepages_result(inode, wbc, ret, pages_written);
  	return ret;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index df539ba..9d04bd9 100644
+index df539ba..1681773 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -2197,6 +2197,7 @@ EXT4_RW_ATTR_SBI_UI(mb_min_to_scan, s_mb_min_to_scan);
  EXT4_RW_ATTR_SBI_UI(mb_order2_req, s_mb_order2_reqs);
  EXT4_RW_ATTR_SBI_UI(mb_stream_req, s_mb_stream_request);
  EXT4_RW_ATTR_SBI_UI(mb_group_prealloc, s_mb_group_prealloc);
-+EXT4_RW_ATTR_SBI_UI(max_contig_writeback, s_max_contig_writeback_mb);
++EXT4_RW_ATTR_SBI_UI(max_writeback_mb_bump, s_max_writeback_mb_bump);
  
  static struct attribute *ext4_attrs[] = {
  	ATTR_LIST(delayed_allocation_blocks),
@@ -185,7 +184,7 @@ index df539ba..9d04bd9 100644
  	ATTR_LIST(mb_order2_req),
  	ATTR_LIST(mb_stream_req),
  	ATTR_LIST(mb_group_prealloc),
-+	ATTR_LIST(max_contig_writeback),
++	ATTR_LIST(max_writeback_mb_bump),
  	NULL,
  };
  
@@ -193,7 +192,7 @@ index df539ba..9d04bd9 100644
  	}
  
  	sbi->s_stripe = ext4_get_stripe_size(sbi);
-+	sbi->s_max_contig_writeback_mb = 128;
++	sbi->s_max_writeback_mb_bump = 128;
  
  	/*
  	 * set up enough so that it can read an inode
