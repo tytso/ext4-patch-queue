@@ -1,0 +1,45 @@
+ext4: EXT4_IOC_MOVE_EXT: Check for different original and donor inodes first
+
+Move the check to make sure the original and donor inodes are
+different earlier, to avoid a potential deadlock by trying to lock the
+same inode twice.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/move_extent.c |   16 ++++++++--------
+ 1 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
+index 5332fd4..25b6b14 100644
+--- a/fs/ext4/move_extent.c
++++ b/fs/ext4/move_extent.c
+@@ -1001,14 +1001,6 @@ mext_check_arguments(struct inode *orig_inode,
+ 		return -EINVAL;
+ 	}
+ 
+-	/* orig and donor should be different file */
+-	if (orig_inode->i_ino == donor_inode->i_ino) {
+-		ext4_debug("ext4 move extent: The argument files should not "
+-			"be same file [ino:orig %lu, donor %lu]\n",
+-			orig_inode->i_ino, donor_inode->i_ino);
+-		return -EINVAL;
+-	}
+-
+ 	/* Ext4 move extent supports only extent based file */
+ 	if (!(EXT4_I(orig_inode)->i_flags & EXT4_EXTENTS_FL)) {
+ 		ext4_debug("ext4 move extent: orig file is not extents "
+@@ -1232,6 +1224,14 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp,
+ 	int block_len_in_page;
+ 	int uninit;
+ 
++	/* orig and donor should be different file */
++	if (orig_inode->i_ino == donor_inode->i_ino) {
++		ext4_debug("ext4 move extent: The argument files should not "
++			"be same file [ino:orig %lu, donor %lu]\n",
++			orig_inode->i_ino, donor_inode->i_ino);
++		return -EINVAL;
++	}
++
+ 	/* protect orig and donor against a truncate */
+ 	ret1 = mext_inode_double_lock(orig_inode, donor_inode);
+ 	if (ret1 < 0)
