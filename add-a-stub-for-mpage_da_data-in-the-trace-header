@@ -1,0 +1,35 @@
+ext4: Add a stub for mpage_da_data in the trace header
+
+From: Josh Stone <jistone@redhat.com>
+
+The tracepoint ext4_da_write_pages has a struct mpage_da_data*
+parameter, but that struct is only defined in fs/ext4/ext4.h.  This
+patch adds a forward declaration for that struct, so this tracepoint
+header can still be used by tools like SystemTap.
+
+This is a continuation of the fix in commit 3661d286.
+
+http://sourceware.org/bugzilla/show_bug.cgi?id=10703
+
+Signed-off-by: Josh Stone <jistone@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ include/trace/events/ext4.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
+index c1bd8f1..d502974 100644
+--- a/include/trace/events/ext4.h
++++ b/include/trace/events/ext4.h
+@@ -11,6 +11,7 @@ struct ext4_allocation_context;
+ struct ext4_allocation_request;
+ struct ext4_prealloc_space;
+ struct ext4_inode_info;
++struct mpage_da_data;
+ 
+ #define EXT4_I(inode) (container_of(inode, struct ext4_inode_info, vfs_inode))
+ 
+-- 
+1.6.2.5
+
+
