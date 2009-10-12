@@ -1,8 +1,14 @@
 Add a ioctl which dumps out all of the in-use buffer heads for a block device
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ block/compat_ioctl.c |    4 ++++
+ block/ioctl.c        |   11 +++++++++++
+ fs/buffer.c          |   40 ++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 55 insertions(+), 0 deletions(-)
+
 diff --git a/block/compat_ioctl.c b/block/compat_ioctl.c
-index f87615d..8bc8784 100644
+index 9bd086c..204c78e 100644
 --- a/block/compat_ioctl.c
 +++ b/block/compat_ioctl.c
 @@ -11,6 +11,9 @@
@@ -15,16 +21,16 @@ index f87615d..8bc8784 100644
  static int compat_put_ushort(unsigned long arg, unsigned short val)
  {
  	return put_user(val, (unsigned short __user *)compat_ptr(arg));
-@@ -734,6 +737,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
- 	switch (cmd) {
- 	case HDIO_GETGEO:
- 		return compat_hdio_getgeo(disk, bdev, compat_ptr(arg));
+@@ -747,6 +750,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
+ 		return compat_put_uint(arg, bdev_io_opt(bdev));
+ 	case BLKALIGNOFF:
+ 		return compat_put_int(arg, bdev_alignment_offset(bdev));
 +	case BLKDUMPUSEDBUFFERS:
  	case BLKFLSBUF:
  	case BLKROSET:
  	case BLKDISCARD:
 diff --git a/block/ioctl.c b/block/ioctl.c
-index 0f22e62..cdf1c03 100644
+index 1f4d1de..d30ab00 100644
 --- a/block/ioctl.c
 +++ b/block/ioctl.c
 @@ -8,6 +8,10 @@
@@ -38,7 +44,7 @@ index 0f22e62..cdf1c03 100644
  static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user *arg)
  {
  	struct block_device *bdevp;
-@@ -364,6 +368,13 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
+@@ -330,6 +334,13 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
  		ret = blk_trace_ioctl(bdev, cmd, (char __user *) arg);
  		unlock_kernel();
  		break;
@@ -53,7 +59,7 @@ index 0f22e62..cdf1c03 100644
  		ret = __blkdev_driver_ioctl(bdev, mode, cmd, arg);
  	}
 diff --git a/fs/buffer.c b/fs/buffer.c
-index b6e8b86..9a023bc 100644
+index 6fa5302..8438330 100644
 --- a/fs/buffer.c
 +++ b/fs/buffer.c
 @@ -33,6 +33,7 @@
@@ -64,9 +70,9 @@ index b6e8b86..9a023bc 100644
  #include <linux/buffer_head.h>
  #include <linux/task_io_accounting_ops.h>
  #include <linux/bio.h>
-@@ -310,6 +311,45 @@ int thaw_bdev(struct block_device *bdev, struct super_block *sb)
+@@ -300,6 +301,45 @@ static void free_more_memory(void)
+ 	}
  }
- EXPORT_SYMBOL(thaw_bdev);
  
 +void dump_used_buffers(struct block_device *bdev)
 +{
@@ -108,5 +114,5 @@ index b6e8b86..9a023bc 100644
 +}
 +
  /*
-  * Various filesystems appear to want __find_get_block to be non-blocking.
-  * But it's the page lock which protects the buffers.  To get around this,
+  * I/O completion handler for block_read_full_page() - pages
+  * which come unlocked at the end of I/O.
