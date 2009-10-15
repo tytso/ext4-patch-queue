@@ -1,0 +1,96 @@
+jbd2: Add journal checksum debugging code
+
+Activate by adding jbd2.xsum_debug=1 jbd2.ignore_xsum=1 to the boot
+command line.  The first will print some additional messages when
+replaying the journal.  The second will cause journal checksum errors
+to be ignored.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/recovery.c |   31 +++++++++++++++++++++++++++----
+ 1 files changed, 27 insertions(+), 4 deletions(-)
+
+diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
+index 7306328..df7b3ca 100644
+--- a/fs/jbd2/recovery.c
++++ b/fs/jbd2/recovery.c
+@@ -24,6 +24,15 @@
+ #include <linux/crc32.h>
+ #endif
+ 
++#include <linux/module.h>
++
++static int xsum_debug;
++static int ignore_xsum;
++
++module_param(xsum_debug, bool, 0644);
++module_param(ignore_xsum, bool, 0644);
++
++
+ /*
+  * Maintain information about the progress of the recovery job, so that
+  * the different passes can carry information between them.
+@@ -38,7 +47,7 @@ struct recovery_info
+ 	int		nr_revoke_hits;
+ };
+ 
+-enum passtype {PASS_SCAN, PASS_REVOKE, PASS_REPLAY};
++enum passtype { PASS_NOXSUM_SCAN, PASS_SCAN, PASS_REVOKE, PASS_REPLAY};
+ static int do_one_pass(journal_t *journal,
+ 				struct recovery_info *info, enum passtype pass);
+ static int scan_revoke_records(journal_t *, struct buffer_head *,
+@@ -246,6 +255,10 @@ int jbd2_journal_recover(journal_t *journal)
+ 		return 0;
+ 	}
+ 
++	if (xsum_debug) {
++		err = do_one_pass(journal, &info, PASS_NOXSUM_SCAN);
++		info.end_transaction = 0;
++	}
+ 	err = do_one_pass(journal, &info, PASS_SCAN);
+ 	if (!err)
+ 		err = do_one_pass(journal, &info, PASS_REVOKE);
+@@ -382,7 +395,7 @@ static int do_one_pass(journal_t *journal,
+ 	next_log_block = be32_to_cpu(sb->s_start);
+ 
+ 	first_commit_ID = next_commit_ID;
+-	if (pass == PASS_SCAN)
++	if (pass <= PASS_SCAN)
+ 		info->start_transaction = first_commit_ID;
+ 
+ 	jbd_debug(1, "Starting recovery pass %d\n", pass);
+@@ -407,7 +420,7 @@ static int do_one_pass(journal_t *journal,
+ 		 * check right now that we haven't gone past the end of
+ 		 * the log. */
+ 
+-		if (pass != PASS_SCAN)
++		if (pass > PASS_SCAN)
+ 			if (tid_geq(next_commit_ID, info->end_transaction))
+ 				break;
+ 
+@@ -641,6 +654,12 @@ static int do_one_pass(journal_t *journal,
+ 				 */
+ 						chksum_err = 1;
+ 
++				if (chksum_err && xsum_debug)
++					printk(KERN_ERR "JBD2: bad xsum "
++					       "txn %u\n", next_commit_ID);
++				if (chksum_err && ignore_xsum)
++					chksum_err = 0;
++
+ 				if (chksum_err) {
+ 					info->end_transaction = next_commit_ID;
+ 
+@@ -689,7 +708,11 @@ static int do_one_pass(journal_t *journal,
+ 	 * transaction marks the end of the valid log.
+ 	 */
+ 
+-	if (pass == PASS_SCAN) {
++	if (pass == PASS_NOXSUM_SCAN) {
++		info->end_transaction = next_commit_ID;
++		printk(KERN_INFO "JBD2: first txn is %u; last txn is %u\n",
++		       info->start_transaction, next_commit_ID);
++	} else if (pass == PASS_SCAN) {
+ 		if (!info->end_transaction)
+ 			info->end_transaction = next_commit_ID;
+ 	} else {
