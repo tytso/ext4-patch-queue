@@ -7,24 +7,22 @@ from being mounted using ext3.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
----
- Documentation/filesystems/ext4.txt |    8 ++++++--
- fs/ext4/super.c                    |   26 ++++++++++++++++++++++++--
- 2 files changed, 30 insertions(+), 4 deletions(-)
-
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
-index 3e329db..4f8d73a 100644
+index 6d94e06..05106b5 100644
 --- a/Documentation/filesystems/ext4.txt
 +++ b/Documentation/filesystems/ext4.txt
-@@ -135,8 +135,12 @@ ro                   	Mount filesystem read only. Note that ext4 will
- 		     	writes to the filesystem.
+@@ -140,9 +140,14 @@ journal_checksum	Enable checksumming of the journal transactions.
+ 			compatible change and will be ignored by older kernels.
  
  journal_async_commit	Commit block can be written to disk without waiting
 -			for descriptor blocks. If enabled older kernels cannot
--			mount the device.
-+			for descriptor blocks.  This mount option will be 
-+			automatically enabled if ext4-specific INCOMPAT
-+			features are present in the file system.
+-			mount the device. This will enable 'journal_checksum'
+-			internally.
++			for descriptor blocks.  This will enable
++			'journal_checksum' internally.  This mount
++			option will be automatically enabled if
++			ext4-specific INCOMPAT features are present in
++			the file system.
 +
 +nojournal_async_commit	Disable the journal_async_commit option, even
 +			for ext4 filesystems.
@@ -32,10 +30,10 @@ index 3e329db..4f8d73a 100644
  journal=update		Update the ext4 file system's journal to the current
  			format.
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index f1815d3..f644a5c 100644
+index d4ca92a..87a71e6 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -75,6 +75,15 @@ static int ext4_unfreeze(struct super_block *sb);
+@@ -69,6 +69,15 @@ static int ext4_unfreeze(struct super_block *sb);
  static void ext4_write_super(struct super_block *sb);
  static int ext4_freeze(struct super_block *sb);
  
@@ -51,7 +49,7 @@ index f1815d3..f644a5c 100644
  
  ext4_fsblk_t ext4_block_bitmap(struct super_block *sb,
  			       struct ext4_group_desc *bg)
-@@ -845,8 +854,13 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+@@ -866,8 +875,13 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
  	 */
  	seq_puts(seq, ",barrier=");
  	seq_puts(seq, test_opt(sb, BARRIER) ? "1" : "0");
@@ -67,15 +65,15 @@ index f1815d3..f644a5c 100644
  	if (test_opt(sb, NOBH))
  		seq_puts(seq, ",nobh");
  	if (test_opt(sb, I_VERSION))
-@@ -1050,6 +1064,7 @@ enum {
+@@ -1071,6 +1085,7 @@ enum {
  	Opt_commit, Opt_min_batch_time, Opt_max_batch_time,
  	Opt_journal_update, Opt_journal_dev,
  	Opt_journal_checksum, Opt_journal_async_commit,
 +	Opt_nojournal_async_commit,
  	Opt_abort, Opt_data_journal, Opt_data_ordered, Opt_data_writeback,
- 	Opt_data_err_abort, Opt_data_err_ignore, Opt_mb_history_length,
+ 	Opt_data_err_abort, Opt_data_err_ignore,
  	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
-@@ -1092,6 +1107,7 @@ static const match_table_t tokens = {
+@@ -1113,6 +1128,7 @@ static const match_table_t tokens = {
  	{Opt_journal_dev, "journal_dev=%u"},
  	{Opt_journal_checksum, "journal_checksum"},
  	{Opt_journal_async_commit, "journal_async_commit"},
@@ -83,9 +81,9 @@ index f1815d3..f644a5c 100644
  	{Opt_abort, "abort"},
  	{Opt_data_journal, "data=journal"},
  	{Opt_data_ordered, "data=ordered"},
-@@ -1284,6 +1300,9 @@ static int parse_options(char *options, struct super_block *sb,
- 		case Opt_journal_async_commit:
+@@ -1306,6 +1322,9 @@ static int parse_options(char *options, struct super_block *sb,
  			set_opt(sbi->s_mount_opt, JOURNAL_ASYNC_COMMIT);
+ 			set_opt(sbi->s_mount_opt, JOURNAL_CHECKSUM);
  			break;
 +		case Opt_nojournal_async_commit:
 +			clear_opt(sbi->s_mount_opt, JOURNAL_ASYNC_COMMIT);
@@ -93,7 +91,7 @@ index f1815d3..f644a5c 100644
  		case Opt_noload:
  			set_opt(sbi->s_mount_opt, NOLOAD);
  			break;
-@@ -2422,6 +2441,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2431,6 +2450,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	 */
  	set_opt(sbi->s_mount_opt, DELALLOC);
  
