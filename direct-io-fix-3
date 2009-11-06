@@ -1,0 +1,50 @@
+ext4: code clean up for dio fallocate handling
+
+From: Mingming <cmm@us.ibm.com>
+
+The ext4_debug() call in ext4_end_io_dio() should be moved after the
+check to make sure that io_end is non-NULL.
+
+The comment above ext4_get_block_dio_write() ("Maximum number of
+blocks...") is a duplicate; the original and correct comment is above
+the #define DIO_MAX_BLOCKS up above.
+
+Based on review comments from Curt Wohlgemuth.
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    9 ++++-----
+ 1 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index a9ed2bc..2c8caa5 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3446,8 +3446,6 @@ out:
+ 	return ret;
+ }
+ 
+-/* Maximum number of blocks we map for direct IO at once. */
+-
+ static int ext4_get_block_dio_write(struct inode *inode, sector_t iblock,
+ 		   struct buffer_head *bh_result, int create)
+ {
+@@ -3655,13 +3653,14 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+         ext4_io_end_t *io_end = iocb->private;
+ 	struct workqueue_struct *wq;
+ 
++	/* if not async direct IO or dio with 0 bytes write, just return */
++	if (!io_end || !size)
++		return;
++
+ 	ext_debug("ext4_end_io_dio(): io_end 0x%p"
+ 		  "for inode %lu, iocb 0x%p, offset %llu, size %llu\n",
+  		  iocb->private, io_end->inode->i_ino, iocb, offset,
+ 		  size);
+-	/* if not async direct IO or dio with 0 bytes write, just return */
+-	if (!io_end || !size)
+-		return;
+ 
+ 	/* if not aio dio with unwritten extents, just free io and return */
+ 	if (io_end->flag != DIO_AIO_UNWRITTEN){

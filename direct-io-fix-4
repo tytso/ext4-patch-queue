@@ -1,0 +1,60 @@
+ext4: Fix return value of ext4_split_unwritten_extents() to fix direct I/O
+
+From: Mingming <cmm@us.ibm.com>
+
+To prepare for a direct I/O write, we need to split the unwritten
+extents before submitting the I/O.  When no extents needed to be
+split, ext4_split_unwritten_extents() was incorrectly returning 0
+instead of the size of uninitialized extents. This bug caused the
+wrong return value sent back to VFS code when it gets called from
+async IO path, leading to an unnecessary fall back to buffered IO.
+
+This bug also hid the fact that the check to see whether or not a
+split would be necessary was incorrect; we can only skip splitting the
+extent if the write completely covers the uninitialized extent.
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c |   13 +++++++------
+ 1 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index e991ae2..715264b 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2807,6 +2807,8 @@ fix_extent_len:
+  * into three uninitialized extent(at most). After IO complete, the part
+  * being filled will be convert to initialized by the end_io callback function
+  * via ext4_convert_unwritten_extents().
++ *
++ * Returns the size of uninitialized extent to be written on success.
+  */
+ static int ext4_split_unwritten_extents(handle_t *handle,
+ 					struct inode *inode,
+@@ -2824,7 +2826,6 @@ static int ext4_split_unwritten_extents(handle_t *handle,
+ 	unsigned int allocated, ee_len, depth;
+ 	ext4_fsblk_t newblock;
+ 	int err = 0;
+-	int ret = 0;
+ 
+ 	ext_debug("ext4_split_unwritten_extents: inode %lu,"
+ 		  "iblock %llu, max_blocks %u\n", inode->i_ino,
+@@ -2842,12 +2843,12 @@ static int ext4_split_unwritten_extents(handle_t *handle,
+ 	ext4_ext_store_pblock(&orig_ex, ext_pblock(ex));
+ 
+ 	/*
+- 	 * if the entire unintialized extent length less than
+- 	 * the size of extent to write, there is no need to split
+- 	 * uninitialized extent
++ 	 * If the uninitialized extent begins at the same logical
++ 	 * block where the write begins, and the write completely
++ 	 * covers the extent, then we don't need to split it.
+  	 */
+- 	if (allocated <= max_blocks)
+-		return ret;
++	if ((iblock == ee_block) && (allocated <= max_blocks))
++		return allocated;
+ 
+ 	err = ext4_ext_get_access(handle, inode, path + depth);
+ 	if (err)
