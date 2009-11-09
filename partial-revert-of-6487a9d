@@ -1,11 +1,12 @@
 ext4: partial revert to fix double brelse WARNING()
 
 This is a partial revert of commit 6487a9d (only the changes made to
-fs/ext4/namei.c), since it is causing the following brelse() of an
-already free buffer when running fsstress on a file system with 1k
-blocksize:
+fs/ext4/namei.c), since it is causing the following brelse()
+double-free warning when running fsstress on a file system with 1k
+blocksize and we run into a block allocation failure while converting
+a single-block directory to a multi-block hash-tree indexed directory.
 
-WARNING: at /usr/projects/linux/ext4/fs/buffer.c:1197 __brelse+0x2e/0x33()
+WARNING: at fs/buffer.c:1197 __brelse+0x2e/0x33()
 Hardware name: 
 VFS: brelse: Trying to free free buffer
 Modules linked in:
@@ -34,17 +35,19 @@ Call Trace:
 ---[ end trace 5579351b86af61e3 ]---
 
 Commit 6487a9d was an attempt some buffer head leaks in an ENOSPC
-error path, but in some cases it actually results in an excess ENOSPC.
-Fixing this means cleaning up who is responsible for releasing the
-buffer heads from the callee to the caller of add_dirent_to_buf().
+error path, but in some cases it actually results in an excess ENOSPC,
+as shown above.  Fixing this means cleaning up who is responsible for
+releasing the buffer heads from the callee to the caller of
+add_dirent_to_buf().
 
-That's a pretty complicated change, though, and we're late in the rcX
-development cycle, so let's revert this now, and we'll fix things up
-after the merge window opens so the fix can get sufficient testing.
-We've lived with this buffer_head leak on ENOSPC in ext3 and ext4 for
-a very long time; a few more months won't kill us.
+Since that's a relatively complex change, and we're late in the rcX
+development cycle, I'm reverting this now, and holding back a more
+complete fix until after 2.6.32 ships.  We've lived with this
+buffer_head leak on ENOSPC in ext3 and ext4 for a very long time; a
+few more months won't kill us.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Curt Wohlgemuth <curtw@google.com>
 ---
  fs/ext4/namei.c |   16 ++++------------
  1 files changed, 4 insertions(+), 12 deletions(-)

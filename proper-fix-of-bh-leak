@@ -2,14 +2,15 @@ ext4: Fix potential buffer head leak when add_dirent_to_buf() returns ENOSPC
 
 Previously add_dirent_to_buf() did not free its passed-in buffer head
 in the case of ENOSPC, since in some cases the caller still needed it.
-However, this lead to potential buffer head leaks since not all
-callers dealt with this correctly.  Fix this by making simplifying the
-freeing convention; now add_dirent_to_buf() *never* frees the
-passed-in buffer head, and leaves that to the responsibility of its
-caller.  This makes things cleaner and easier to prove that the code
-is neither leaking buffer heads or calling brelse() one time too many.
+However, this led to potential buffer head leaks since not all callers
+dealt with this correctly.  Fix this by making simplifying the freeing
+convention; now add_dirent_to_buf() *never* frees the passed-in buffer
+head, and leaves that to the responsibility of its caller.  This makes
+things cleaner and easier to prove that the code is neither leaking
+buffer heads or calling brelse() one time too many.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Curt Wohlgemuth <curtw@google.com>
 ---
  fs/ext4/namei.c |   30 ++++++++++++------------------
  1 files changed, 12 insertions(+), 18 deletions(-)
