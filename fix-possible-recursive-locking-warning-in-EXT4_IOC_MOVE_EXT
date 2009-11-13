@@ -1,0 +1,38 @@
+ext4: Fix possible recursive locking warning in EXT4_IOC_MOVE_EXT
+
+From: Akira Fujita <a-fujita@rs.jp.nec.com>
+
+If CONFIG_PROVE_LOCKING is enabled, the double_down_write_data_sem()
+will trigger a false-positive warning of a recursive lock.  Since we
+take i_data_sem for the two inodes ordered by their inode numbers,
+this isn't a problem.  Use of down_write_nested() will notify the lock
+dependency checker machinery that there is no problem here.
+
+This problem was reported by Brian Rogers:
+
+	http://marc.info/?l=linux-ext4&m=125115356928011&w=1
+
+Reported-by: Brian Rogers <brian@xyzw.org>
+Signed-off-by: Akira Fujita <a-fujita@rs.jp.nec.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+Patch 3/4
+ fs/ext4/move_extent.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
+index a7410b3..2ca6aa3 100644
+--- a/fs/ext4/move_extent.c
++++ b/fs/ext4/move_extent.c
+@@ -189,7 +189,7 @@ double_down_write_data_sem(struct inode *orig_inode, struct inode *donor_inode)
+ 	}
+
+ 	down_write(&EXT4_I(first)->i_data_sem);
+-	down_write(&EXT4_I(second)->i_data_sem);
++	down_write_nested(&EXT4_I(second)->i_data_sem, SINGLE_DEPTH_NESTING);
+ }
+
+ /**
+
+
+
