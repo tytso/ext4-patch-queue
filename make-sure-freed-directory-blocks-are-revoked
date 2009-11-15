@@ -1,0 +1,30 @@
+ext4: directory blocks must be treated as metadata by ext4_forget()
+
+When a directory gets unlinked, ext4_forget() is called on any buffer
+heads corresponding to its data blocks.  Data blocks from directories
+must be treated as metadata, so that they are revoked by
+jbd2_journal_revoke, and not just forgotten via ext4_journal_forget().
+
+Thanks to Curt Wohlgemuth for pointing out potential problems in this
+area.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 13de1dd..639bb84 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -97,6 +97,10 @@ int ext4_forget(handle_t *handle, int is_metadata, struct inode *inode,
+ 		  bh, is_metadata, inode->i_mode,
+ 		  test_opt(inode->i_sb, DATA_FLAGS));
+ 
++	/* Directory blocks must be treated as metadata */
++	if (S_ISDIR(inode->i_mode))
++		is_metadata = 1;
++
+ 	/* Never use the revoke function if we are doing full data
+ 	 * journaling: there is no need to, and a V1 superblock won't
+ 	 * support it.  Otherwise, only skip the revoke on un-journaled
