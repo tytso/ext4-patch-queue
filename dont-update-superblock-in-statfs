@@ -1,0 +1,31 @@
+ext4: Don't update the superblock in ext4_statfs()
+
+commit a71ce8c6c9bf269b192f352ea555217815cf027e updated ext4_statfs()
+to update the on-disk superblock counters, but modified this buffer
+directly without any journaling of the change.  This is one of the
+accesses that was causing the crc errors in journal replay as seen in
+kernel.org bugzilla #14354.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 8662b2e..3cd519b 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3668,13 +3668,11 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+ 	buf->f_blocks = ext4_blocks_count(es) - sbi->s_overhead_last;
+ 	buf->f_bfree = percpu_counter_sum_positive(&sbi->s_freeblocks_counter) -
+ 		       percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
+-	ext4_free_blocks_count_set(es, buf->f_bfree);
+ 	buf->f_bavail = buf->f_bfree - ext4_r_blocks_count(es);
+ 	if (buf->f_bfree < ext4_r_blocks_count(es))
+ 		buf->f_bavail = 0;
+ 	buf->f_files = le32_to_cpu(es->s_inodes_count);
+ 	buf->f_ffree = percpu_counter_sum_positive(&sbi->s_freeinodes_counter);
+-	es->s_free_inodes_count = cpu_to_le32(buf->f_ffree);
+ 	buf->f_namelen = EXT4_NAME_LEN;
+ 	fsid = le64_to_cpup((void *)es->s_uuid) ^
+ 	       le64_to_cpup((void *)es->s_uuid + sizeof(u64));
