@@ -1,4 +1,4 @@
-ext4: directory blocks must be treated as metadata by ext4_forget()
+ext4: ext4_forget() must treat directory or symlink blocks as metadata
 
 When a directory gets unlinked, ext4_forget() is called on any buffer
 heads corresponding to its data blocks.  Data blocks from directories
@@ -15,15 +15,15 @@ Cc: stable@kernel.org
  1 files changed, 4 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 13de1dd..639bb84 100644
+index 13de1dd..24729ed 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -97,6 +97,10 @@ int ext4_forget(handle_t *handle, int is_metadata, struct inode *inode,
  		  bh, is_metadata, inode->i_mode,
  		  test_opt(inode->i_sb, DATA_FLAGS));
  
-+	/* Directory blocks must be treated as metadata */
-+	if (S_ISDIR(inode->i_mode))
++	/* Directory or symlink blocks must be treated as metadata */
++	if (S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode))
 +		is_metadata = 1;
 +
  	/* Never use the revoke function if we are doing full data
