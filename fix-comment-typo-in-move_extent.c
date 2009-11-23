@@ -1,4 +1,4 @@
-ext4: Fix spelling typos in move_extent.c
+ext4: fix spelling typos in move_extent.c
 
 From: Akira Fujita <a-fujita@rs.jp.nec.com>
 
