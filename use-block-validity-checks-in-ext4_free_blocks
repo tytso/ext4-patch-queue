@@ -1,0 +1,26 @@
+ext4: use ext4_data_block_valid() in ext4_free_blocks()
+
+The block validity framework does a more comprehensive set of checks,
+and it saves object code space to use the ext4_data_block_valid() than
+the limited open-coded version that had been in ext4_free_blocks().
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    4 +---
+ 1 files changed, 1 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 78de5d3..ab2dad1 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4463,9 +4463,7 @@ void ext4_free_blocks(handle_t *handle, struct inode *inode,
+ 
+ 	sbi = EXT4_SB(sb);
+ 	es = EXT4_SB(sb)->s_es;
+-	if (block < le32_to_cpu(es->s_first_data_block) ||
+-	    block + count < block ||
+-	    block + count > ext4_blocks_count(es)) {
++	if (!ext4_data_block_valid(sbi, block, count)) {
+ 		ext4_error(sb, __func__,
+ 			    "Freeing blocks not in datazone - "
+ 			    "block = %llu, count = %lu", block, count);
