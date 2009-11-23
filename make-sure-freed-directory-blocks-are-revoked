@@ -1,10 +1,13 @@
-ext4: ext4_forget() must treat directory or symlink blocks as metadata
+ext4: make sure directory and symlink blocks are revoked
 
-When a directory or symlink gets unlinked, ext4_forget() is called on
-any buffer heads corresponding to its data blocks.  Data blocks from
-these types of inodes must be treated as metadata, so that they are
-revoked by jbd2_journal_revoke, and not just forgotten via
-ext4_journal_forget().
+When an inode gets unlinked, the functions ext4_clear_blocks() and
+ext4_remove_blocks() call ext4_forget() for all the buffer heads
+corresponding to the deleted inode's data blocks.  If the inode is a
+directory or a symlink, the is_metadata parameter must be non-zero so
+ext4_forget() will revoke them via jbd2_journal_revoke().  Otherwise,
+if these blocks are reused for a data file, and the system crashes
+before a journal checkpoint, the journal replay could end up
+corrupting these data blocks.
 
 Thanks to Curt Wohlgemuth for pointing out potential problems in this
 area.
@@ -12,21 +15,47 @@ area.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: stable@kernel.org
 ---
- fs/ext4/inode.c |    4 ++++
- 1 files changed, 4 insertions(+), 0 deletions(-)
+ fs/ext4/extents.c |    2 +-
+ fs/ext4/inode.c   |    6 ++++--
+ 2 files changed, 5 insertions(+), 3 deletions(-)
 
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 715264b..74dcff8 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2074,7 +2074,7 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+ 		ext_debug("free last %u blocks starting %llu\n", num, start);
+ 		for (i = 0; i < num; i++) {
+ 			bh = sb_find_get_block(inode->i_sb, start + i);
+-			ext4_forget(handle, 0, inode, bh, start + i);
++			ext4_forget(handle, metadata, inode, bh, start + i);
+ 		}
+ 		ext4_free_blocks(handle, inode, start, num, metadata);
+ 	} else if (from == le32_to_cpu(ex->ee_block)
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 13de1dd..24729ed 100644
+index 13de1dd..c420aab 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -97,6 +97,10 @@ int ext4_forget(handle_t *handle, int is_metadata, struct inode *inode,
- 		  bh, is_metadata, inode->i_mode,
- 		  test_opt(inode->i_sb, DATA_FLAGS));
- 
-+	/* Directory or symlink blocks must be treated as metadata */
-+	if (S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode))
-+		is_metadata = 1;
+@@ -4121,6 +4121,8 @@ static void ext4_clear_blocks(handle_t *handle, struct inode *inode,
+ 			      __le32 *last)
+ {
+ 	__le32 *p;
++	int	is_metadata = S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode);
 +
- 	/* Never use the revoke function if we are doing full data
- 	 * journaling: there is no need to, and a V1 superblock won't
- 	 * support it.  Otherwise, only skip the revoke on un-journaled
+ 	if (try_to_extend_transaction(handle, inode)) {
+ 		if (bh) {
+ 			BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");
+@@ -4151,11 +4153,11 @@ static void ext4_clear_blocks(handle_t *handle, struct inode *inode,
+ 
+ 			*p = 0;
+ 			tbh = sb_find_get_block(inode->i_sb, nr);
+-			ext4_forget(handle, 0, inode, tbh, nr);
++			ext4_forget(handle, is_metadata, inode, tbh, nr);
+ 		}
+ 	}
+ 
+-	ext4_free_blocks(handle, inode, block_to_free, count, 0);
++	ext4_free_blocks(handle, inode, block_to_free, count, is_metadata);
+ }
+ 
+ /**
