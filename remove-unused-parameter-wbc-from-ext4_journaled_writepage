@@ -1,0 +1,33 @@
+ext4: remove unused parameter wbc from __ext4_journalled_writepage()
+
+From: Wu Fengguang <fengguang.wu@intel.com>
+
+CC: Jan Kara <jack@suse.cz> 
+Signed-off-by: Wu Fengguang <fengguang.wu@intel.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+--- linux.orig/fs/ext4/inode.c	2009-11-06 09:36:28.000000000 +0800
++++ linux/fs/ext4/inode.c	2009-11-06 09:52:22.000000000 +0800
+@@ -2599,7 +2599,6 @@ static int bput_one(handle_t *handle, st
+ }
+ 
+ static int __ext4_journalled_writepage(struct page *page,
+-				       struct writeback_control *wbc,
+ 				       unsigned int len)
+ {
+ 	struct address_space *mapping = page->mapping;
+@@ -2757,7 +2756,7 @@ static int ext4_writepage(struct page *p
+ 		 * doesn't seem much point in redirtying the page here.
+ 		 */
+ 		ClearPageChecked(page);
+-		return __ext4_journalled_writepage(page, wbc, len);
++		return __ext4_journalled_writepage(page, len);
+ 	}
+ 
+ 	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
+
+
+
