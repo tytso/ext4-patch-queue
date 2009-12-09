@@ -1,0 +1,52 @@
+ext4: remove blocks from inode prealloc list on failure
+
+From: Curt Wohlgemuth <curtw@google.com>
+
+This fixes a leak of blocks in an inode prealloc list if device failures
+cause ext4_mb_mark_diskspace_used() to fail.
+
+Signed-off-by: Curt Wohlgemuth <curtw@google.com>
+Acked-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+diff -uprN orig/fs/ext4/mballoc.c new/fs/ext4/mballoc.c
+--- orig/fs/ext4/mballoc.c	2009-12-01 09:27:25.000000000 -0800
++++ new/fs/ext4/mballoc.c	2009-12-04 11:09:03.000000000 -0800
+@@ -3011,6 +3011,24 @@ static void ext4_mb_collect_stats(struct
+ }
+
+ /*
++ * Called on failure; free up any blocks from the inode PA for this
++ * context.  We don't need this for MB_GROUP_PA because we only change
++ * pa_free in ext4_mb_release_context(), but on failure, we've already
++ * zeroed out ac->ac_b_ex.fe_len, so group_pa->pa_free is not changed.
++ */
++static void ext4_discard_allocated_blocks(struct ext4_allocation_context *ac)
++{
++	struct ext4_prealloc_space *pa = ac->ac_pa;
++	int len;
++
++	if (pa && pa->pa_type == MB_INODE_PA) {
++		len = ac->ac_b_ex.fe_len;
++		pa->pa_free += len;
++	}
++
++}
++
++/*
+  * use blocks preallocated to inode
+  */
+ static void ext4_mb_use_inode_pa(struct ext4_allocation_context *ac,
+@@ -4295,6 +4313,7 @@ repeat:
+ 			ac->ac_status = AC_STATUS_CONTINUE;
+ 			goto repeat;
+ 		} else if (*errp) {
++			ext4_discard_allocated_blocks(ac);
+ 			ac->ac_b_ex.fe_len = 0;
+ 			ar->len = 0;
+ 			ext4_mb_show_ac(ac);
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
