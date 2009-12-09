@@ -1,0 +1,36 @@
+ext4: fix incorrect block reservation on quota transfer.
+
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+
+Inside ->setattr() call both ATTR_UID and ATTR_GID may be valid
+This means that we may end-up with transferring all quotas. Add
+we have to reserve QUOTA_DEL_BLOCKS for all quotas, as we do in
+case of QUOTA_INIT_BLOCKS.
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 211722b..d42e954 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -5439,7 +5439,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
+ 		/* (user+group)*(old+new) structure, inode write (sb,
+ 		 * inode block, ? - but truncate inode update has it) */
+ 		handle = ext4_journal_start(inode, (EXT4_MAXQUOTAS_INIT_BLOCKS(inode->i_sb)+
+-					EXT4_QUOTA_DEL_BLOCKS(inode->i_sb))+3);
++					EXT4_MAXQUOTAS_DEL_BLOCKS(inode->i_sb))+3);
+ 		if (IS_ERR(handle)) {
+ 			error = PTR_ERR(handle);
+ 			goto err_out;
+-- 
+1.6.0.4
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
