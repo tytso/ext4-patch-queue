@@ -8,7 +8,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  3 files changed, 55 insertions(+), 0 deletions(-)
 
 diff --git a/block/compat_ioctl.c b/block/compat_ioctl.c
-index 9bd086c..204c78e 100644
+index 4eb8e9e..2535cb1 100644
 --- a/block/compat_ioctl.c
 +++ b/block/compat_ioctl.c
 @@ -11,6 +11,9 @@
@@ -21,16 +21,16 @@ index 9bd086c..204c78e 100644
  static int compat_put_ushort(unsigned long arg, unsigned short val)
  {
  	return put_user(val, (unsigned short __user *)compat_ptr(arg));
-@@ -747,6 +750,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
- 		return compat_put_uint(arg, bdev_io_opt(bdev));
- 	case BLKALIGNOFF:
+@@ -749,6 +752,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
  		return compat_put_int(arg, bdev_alignment_offset(bdev));
+ 	case BLKDISCARDZEROES:
+ 		return compat_put_uint(arg, bdev_discard_zeroes_data(bdev));
 +	case BLKDUMPUSEDBUFFERS:
  	case BLKFLSBUF:
  	case BLKROSET:
  	case BLKDISCARD:
 diff --git a/block/ioctl.c b/block/ioctl.c
-index 1f4d1de..d30ab00 100644
+index be48ea5..8cc002b 100644
 --- a/block/ioctl.c
 +++ b/block/ioctl.c
 @@ -8,6 +8,10 @@
@@ -44,7 +44,7 @@ index 1f4d1de..d30ab00 100644
  static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user *arg)
  {
  	struct block_device *bdevp;
-@@ -330,6 +334,13 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
+@@ -332,6 +336,13 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
  		ret = blk_trace_ioctl(bdev, cmd, (char __user *) arg);
  		unlock_kernel();
  		break;
