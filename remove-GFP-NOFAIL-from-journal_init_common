@@ -1,0 +1,29 @@
+jbd2: don't use __GFP_NOFAIL in journal_init_common()
+
+From: Andrew Morton <akpm@linux-foundation.org>
+
+It triggers the warning in get_page_from_freelist(), and it isn't
+appropriate to use __GFP_NOFAIL here anyway.
+
+Addresses http://bugzilla.kernel.org/show_bug.cgi?id=14843
+
+Reported-by: Christian Casteyde <casteyde.christian@free.fr>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+ fs/jbd2/journal.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff -puN fs/jbd2/journal.c~jbd2-dont-use-__gfp_nofail-in-journal_init_common fs/jbd2/journal.c
+--- a/fs/jbd2/journal.c~jbd2-dont-use-__gfp_nofail-in-journal_init_common
++++ a/fs/jbd2/journal.c
+@@ -814,7 +814,7 @@ static journal_t * journal_init_common (
+ 	journal_t *journal;
+ 	int err;
+ 
+-	journal = kzalloc(sizeof(*journal), GFP_KERNEL|__GFP_NOFAIL);
++	journal = kzalloc(sizeof(*journal), GFP_KERNEL);
+ 	if (!journal)
+ 		goto fail;
+ 
