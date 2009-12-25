@@ -1,0 +1,36 @@
+jbd2: /sys/kernel/debug/jbd2/jbd2-debug should be writable.
+
+From: "Yin, Kangkai" <kangkai.yin@intel.com>
+
+Make this sysfs file writeable so we can enable debugging without
+needing to reboot and futzing with boot command-line option.
+
+Signed-off-by: Yin Kangkai <kangkai.yin@intel.com>
+Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/journal.c |    3 ++-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index fed8538..3c41c5a 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -2103,7 +2103,8 @@ static void __init jbd2_create_debugfs_entry(void)
+ {
+ 	jbd2_debugfs_dir = debugfs_create_dir("jbd2", NULL);
+ 	if (jbd2_debugfs_dir)
+-		jbd2_debug = debugfs_create_u8(JBD2_DEBUG_NAME, S_IRUGO,
++		jbd2_debug = debugfs_create_u8(JBD2_DEBUG_NAME,
++					       S_IRUGO | S_IWUSR,
+ 					       jbd2_debugfs_dir,
+ 					       &jbd2_journal_enable_debug);
+ }
+-- 
+1.6.5
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
