@@ -1,0 +1,57 @@
+ext4: Ensure zeroout blocks have no dirty metadata
+
+From: Curt Wohlgemuth <curtw@google.com>
+
+This fixes a bug with no journal being used, in which new blocks
+returned from an extent created with ext4_ext_zeroout() can have dirty
+metadata in the buffer cache still associated with them.  This can
+cause corruption in data files when previously freed metadata blocks
+are reallocated for the data files.
+
+Signed-off-by: Curt Wohlgemuth <curtw@google.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+This is for the problem I reported on 23 Nov ("Bug in extent zeroout: blocks
+not marked as new").  I'm not seeing the corruption with this fix that I was
+seeing without it.
+
+diff -uprN orig/fs/ext4/extents.c new/fs/ext4/extents.c
+--- orig/fs/ext4/extents.c	2009-12-09 15:09:25.000000000 -0800
++++ new/fs/ext4/extents.c	2009-12-15 13:26:29.000000000 -0800
+@@ -2474,9 +2474,28 @@ static int ext4_ext_zeroout(struct inode
+ 		submit_bio(WRITE, bio);
+ 		wait_for_completion(&event);
+
+-		if (test_bit(BIO_UPTODATE, &bio->bi_flags))
++		if (test_bit(BIO_UPTODATE, &bio->bi_flags)) {
++
+ 			ret = 0;
+-		else {
++
++			/* On success, if there is no journal through which
++			 * metadata is committed, we need to insure all
++			 * metadata associated with each of these blocks is
++			 * unmapped. */
++			if (EXT4_SB(inode->i_sb)->s_journal == NULL) {
++				sector_t block = ee_pblock;
++
++				done = 0;
++				while (done < len) {
++					unmap_underlying_metadata(inode->i_sb->
++									s_bdev,
++								  block);
++
++					done++;
++					block++;
++				}
++			}
++		} else {
+ 			ret = -EIO;
+ 			break;
+ 		}
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
