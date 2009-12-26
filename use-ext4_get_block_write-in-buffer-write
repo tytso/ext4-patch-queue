@@ -1,0 +1,361 @@
+ext4: use ext4_get_block_write in buffer write
+
+From: Jiaying Zhang <jiayingz@google.com>
+
+Allocate uninitialized extent before ext4 buffer write and
+convert the extent to initialized after io completes.
+The purpose is to make sure an extent can only be marked
+initialized after it has been written with new data so
+we can safely drop the i_mutex lock in ext4 DIO read without
+exposing stale data. This helps to improve multi-thread DIO
+read performance on high-speed disks.
+
+Skip the nobh and data=journal mount cases to make things simple for now.
+
+Signed-off-by: Jiaying Zhang <jiayingz@google.com>
+---
+ fs/ext4/ext4.h    |    5 +++
+ fs/ext4/extents.c |   10 +++---
+ fs/ext4/inode.c   |   81 +++++++++++++++++++++++++++++++++++++++++++++--------
+ fs/ext4/super.c   |   30 +++++++++++++++++--
+ 4 files changed, 105 insertions(+), 21 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 98c115b..2262248 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -134,6 +134,7 @@ struct mpage_da_data {
+ 	int retval;
+ };
+ #define        EXT4_IO_UNWRITTEN       0x1
++#define	EXT4_IO_WRITTEN		0x2
+ typedef struct ext4_io_end {
+ 	struct list_head	list;		/* per-file finished AIO list */
+ 	struct inode		*inode;		/* file being written to */
+@@ -757,6 +758,7 @@ struct ext4_inode_info {
+ #define EXT4_MOUNT_QUOTA		0x80000 /* Some quota option set */
+ #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
+ #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
++#define EXT4_MOUNT_DIOREAD_NOLOCK	0x400000 /* Enable support for dio read nolocking */
+ #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
+ #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
+ #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
+@@ -1768,6 +1770,9 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
+ 	set_bit(BH_BITMAP_UPTODATE, &(bh)->b_state);
+ }
+ 
++/* BH_Uninit flag: blocks are allocated but uninitialized on disk */
++#define BH_Uninit (BH_JBDPrivateStart + 1)
++BUFFER_FNS(Uninit, uninit)
+ #endif	/* __KERNEL__ */
+ 
+ #endif	/* _EXT4_H */
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index b2d9f40..14e7966 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -3073,6 +3073,7 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+ 			io->flag = EXT4_IO_UNWRITTEN;
+ 		else
+ 			EXT4_I(inode)->i_state |= EXT4_STATE_DIO_UNWRITTEN;
++		set_buffer_uninit(bh_result);
+ 		goto out;
+ 	}
+ 	/* IO end_io complete, convert the filled extent to written */
+@@ -3322,11 +3323,9 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 	if (flags & EXT4_GET_BLOCKS_UNINIT_EXT) {
+ 		ext4_ext_mark_uninitialized(&newex);
+ 		/*
+-		 * io_end structure was created for every async
+-		 * direct IO write to the middle of the file.
+-		 * To avoid unecessary convertion for every aio dio rewrite
+-		 * to the mid of file, here we flag the IO that is really
+-		 * need the convertion.
++		 * io_end structure was created for every IO write to an
++		 * uninitialized extent. To avoid unecessary convertion,
++		 * here we flag the IO that really needs the convertion.
+ 		 * For non asycn direct IO case, flag the inode state
+ 		 * that we need to perform convertion when IO is done.
+ 		 */
+@@ -3337,6 +3336,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 				EXT4_I(inode)->i_state |=
+ 					EXT4_STATE_DIO_UNWRITTEN;;
+ 		}
++		set_buffer_uninit(bh_result);
+ 	}
+ 	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
+ 	if (err) {
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 931b777..aa9f865 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1504,6 +1504,8 @@ static void ext4_truncate_failed_write(struct inode *inode)
+ 	ext4_truncate(inode);
+ }
+ 
++static int ext4_get_block_write(struct inode *inode, sector_t iblock,
++		   struct buffer_head *bh_result, int create);
+ static int ext4_write_begin(struct file *file, struct address_space *mapping,
+ 			    loff_t pos, unsigned len, unsigned flags,
+ 			    struct page **pagep, void **fsdata)
+@@ -1545,8 +1547,12 @@ retry:
+ 	}
+ 	*pagep = page;
+ 
+-	ret = block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
+-				ext4_get_block);
++	if (test_opt(inode->i_sb, DIOREAD_NOLOCK))
++		ret = block_write_begin(file, mapping, pos, len, flags, pagep,
++				fsdata, ext4_get_block_write);
++	else
++		ret = block_write_begin(file, mapping, pos, len, flags, pagep,
++				fsdata, ext4_get_block);
+ 
+ 	if (!ret && ext4_should_journal_data(inode)) {
+ 		ret = walk_page_buffers(handle, page_buffers(page),
+@@ -2065,6 +2071,8 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
+ 				} else if (buffer_mapped(bh))
+ 					BUG_ON(bh->b_blocknr != pblock);
+ 
++				if (buffer_uninit(exbh))
++					set_buffer_uninit(bh);
+ 				cur_logical++;
+ 				pblock++;
+ 			} while ((bh = bh->b_this_page) != head);
+@@ -2195,6 +2203,8 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
+ 	new.b_state = 0;
+ 	get_blocks_flags = (EXT4_GET_BLOCKS_CREATE |
+ 			    EXT4_GET_BLOCKS_DELALLOC_RESERVE);
++	if (test_opt(mpd->inode->i_sb, DIOREAD_NOLOCK))
++		get_blocks_flags |= EXT4_GET_BLOCKS_IO_CREATE_EXT;
+ 	if (mpd->b_state & (1 << BH_Delay))
+ 		get_blocks_flags |= EXT4_GET_BLOCKS_UPDATE_RESERVE_SPACE;
+ 	blks = ext4_get_blocks(handle, mpd->inode, next, max_blocks,
+@@ -2609,6 +2619,9 @@ out:
+ 	return ret;
+ }
+ 
++static int ext4_set_bh_endio(struct buffer_head *bh, struct inode *inode);
++static void ext4_end_io_buffer_write(struct buffer_head *bh, int uptodate);
++
+ /*
+  * Note that we don't need to start a transaction unless we're journaling data
+  * because we should have holes filled from ext4_page_mkwrite(). We even don't
+@@ -2656,7 +2669,7 @@ static int ext4_writepage(struct page *page,
+ 	int ret = 0;
+ 	loff_t size;
+ 	unsigned int len;
+-	struct buffer_head *page_bufs;
++	struct buffer_head *page_bufs = NULL;
+ 	struct inode *inode = page->mapping->host;
+ 
+ 	trace_ext4_writepage(inode, page);
+@@ -2732,7 +2745,11 @@ static int ext4_writepage(struct page *page,
+ 
+ 	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
+ 		ret = nobh_writepage(page, noalloc_get_block_write, wbc);
+-	else
++	else if (page_bufs && buffer_uninit(page_bufs)) {
++		ext4_set_bh_endio(page_bufs, inode);
++		ret = block_write_full_page_endio(page, noalloc_get_block_write,
++					    wbc, ext4_end_io_buffer_write);
++	} else
+ 		ret = block_write_full_page(page, noalloc_get_block_write,
+ 					    wbc);
+ 
+@@ -3512,12 +3529,10 @@ static int ext4_end_io_nolock(ext4_io_end_t *io)
+ 	if (list_empty(&io->list))
+ 		return ret;
+ 
+-	if (io->flag != EXT4_IO_UNWRITTEN)
++	if (io->flag != EXT4_IO_WRITTEN)
+ 		return ret;
+ 
+-	if (offset + size <= i_size_read(inode))
+-		ret = ext4_convert_unwritten_extents(inode, offset, size);
+-
++	ret = ext4_convert_unwritten_extents(inode, offset, size);
+ 	if (ret < 0) {
+ 		printk(KERN_EMERG "%s: failed to convert unwritten"
+ 			"extents to written extents, error is %d"
+@@ -3565,7 +3580,7 @@ static void ext4_end_io_work(struct work_struct *work)
+  */
+ int flush_completed_IO(struct inode *inode)
+ {
+-	ext4_io_end_t *io;
++	ext4_io_end_t *io, *tmp;
+ 	int ret = 0;
+ 	int ret2 = 0;
+ 
+@@ -3573,9 +3588,10 @@ int flush_completed_IO(struct inode *inode)
+ 		return ret;
+ 
+ 	dump_completed_IO(inode);
+-	while (!list_empty(&EXT4_I(inode)->i_completed_io_list)) {
+-		io = list_entry(EXT4_I(inode)->i_completed_io_list.next,
+-				ext4_io_end_t, list);
++	list_for_each_entry_safe(io, tmp,
++				 &EXT4_I(inode)->i_completed_io_list, list) {
++		if (io->flag == EXT4_IO_UNWRITTEN)
++			continue;
+ 		/*
+ 		 * Calling ext4_end_io_nolock() to convert completed
+ 		 * IO to written.
+@@ -3643,6 +3659,7 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+ 
+ 	io_end->offset = offset;
+ 	io_end->size = size;
++	io_end->flag = EXT4_IO_WRITTEN;
+ 	wq = EXT4_SB(io_end->inode->i_sb)->dio_unwritten_wq;
+ 
+ 	/* queue the work to convert unwritten extents to written */
+@@ -3654,6 +3671,46 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+ 	iocb->private = NULL;
+ }
+ 
++static void ext4_end_io_buffer_write(struct buffer_head *bh, int uptodate)
++{
++	ext4_io_end_t *io_end = bh->b_private;
++	struct workqueue_struct *wq;
++
++	if (!io_end)
++		goto out;
++	io_end->flag = EXT4_IO_WRITTEN;
++	wq = EXT4_SB(io_end->inode->i_sb)->dio_unwritten_wq;
++	/* queue the work to convert unwritten extents to written */
++	queue_work(wq, &io_end->work);
++out:
++	bh->b_private = NULL;
++	bh->b_end_io = NULL;
++	clear_buffer_uninit(bh);
++	end_buffer_async_write(bh, uptodate);
++}
++
++static int ext4_set_bh_endio(struct buffer_head *bh, struct inode *inode)
++{
++	ext4_io_end_t *io_end;
++	struct page *page = bh->b_page;
++	loff_t offset = (sector_t)page->index << PAGE_CACHE_SHIFT;
++	size_t size = bh->b_size;
++
++	io_end = ext4_init_io_end(inode);
++	if (!io_end)
++		return -ENOMEM;
++	io_end->offset = offset;
++	io_end->size = size;
++	io_end->flag = EXT4_IO_UNWRITTEN;
++	/* Add the io_end to per-inode completed io list*/
++	list_add_tail(&io_end->list,
++		 &EXT4_I(io_end->inode)->i_completed_io_list);
++
++	bh->b_private = io_end;
++	bh->b_end_io = ext4_end_io_buffer_write;
++	return 0;
++}
++
+ /*
+  * For ext4 extent files, ext4 will do direct-io write to holes,
+  * preallocated extents, and those write extend the file, no need to
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 9f2d8fe..a672d91 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -922,6 +922,9 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+ 	if (test_opt(sb, NOLOAD))
+ 		seq_puts(seq, ",norecovery");
+ 
++	if (test_opt(sb, DIOREAD_NOLOCK))
++		seq_puts(seq, ",dioread_nolock");
++
+ 	ext4_show_quota_options(seq, sb);
+ 
+ 	return 0;
+@@ -1103,6 +1106,7 @@ enum {
+ 	Opt_stripe, Opt_delalloc, Opt_nodelalloc,
+ 	Opt_block_validity, Opt_noblock_validity,
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
++	Opt_dioread_nolock, Opt_dioread_lock,
+ 	Opt_discard, Opt_nodiscard,
+ };
+ 
+@@ -1170,6 +1174,8 @@ static const match_table_t tokens = {
+ 	{Opt_auto_da_alloc, "auto_da_alloc=%u"},
+ 	{Opt_auto_da_alloc, "auto_da_alloc"},
+ 	{Opt_noauto_da_alloc, "noauto_da_alloc"},
++	{Opt_dioread_nolock, "dioread_nolock"},
++	{Opt_dioread_lock, "dioread_lock"},
+ 	{Opt_discard, "discard"},
+ 	{Opt_nodiscard, "nodiscard"},
+ 	{Opt_err, NULL},
+@@ -1603,6 +1609,12 @@ set_qf_format:
+ 		case Opt_nodiscard:
+ 			clear_opt(sbi->s_mount_opt, DISCARD);
+ 			break;
++		case Opt_dioread_nolock:
++			set_opt(sbi->s_mount_opt, DIOREAD_NOLOCK);
++			break;
++		case Opt_dioread_lock:
++			clear_opt(sbi->s_mount_opt, DIOREAD_NOLOCK);
++			break;
+ 		default:
+ 			ext4_msg(sb, KERN_ERR,
+ 			       "Unrecognized mount option \"%s\" "
+@@ -2763,7 +2775,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	      EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER)) {
+ 		ext4_msg(sb, KERN_ERR, "required journal recovery "
+ 		       "suppressed and not mounted read-only");
+-		goto failed_mount4;
++		goto failed_mount_wq;
+ 	} else {
+ 		clear_opt(sbi->s_mount_opt, DATA_FLAGS);
+ 		set_opt(sbi->s_mount_opt, WRITEBACK_DATA);
+@@ -2776,7 +2788,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	    !jbd2_journal_set_features(EXT4_SB(sb)->s_journal, 0, 0,
+ 				       JBD2_FEATURE_INCOMPAT_64BIT)) {
+ 		ext4_msg(sb, KERN_ERR, "Failed to set 64-bit journal feature");
+-		goto failed_mount4;
++		goto failed_mount_wq;
+ 	}
+ 
+ 	if (test_opt(sb, JOURNAL_ASYNC_COMMIT)) {
+@@ -2815,7 +2827,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		    (sbi->s_journal, 0, 0, JBD2_FEATURE_INCOMPAT_REVOKE)) {
+ 			ext4_msg(sb, KERN_ERR, "Journal does not support "
+ 			       "requested data journaling mode");
+-			goto failed_mount4;
++			goto failed_mount_wq;
+ 		}
+ 	default:
+ 		break;
+@@ -2823,13 +2835,17 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	set_task_ioprio(sbi->s_journal->j_task, journal_ioprio);
+ 
+ no_journal:
+-
+ 	if (test_opt(sb, NOBH)) {
+ 		if (!(test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_WRITEBACK_DATA)) {
+ 			ext4_msg(sb, KERN_WARNING, "Ignoring nobh option - "
+ 				"its supported only with writeback mode");
+ 			clear_opt(sbi->s_mount_opt, NOBH);
+ 		}
++		if (test_opt(sb, DIOREAD_NOLOCK)) {
++			ext4_msg(sb, KERN_WARNING, "dioread_nolock option is "
++				"not supported with nobh mode");
++			goto failed_mount_wq;
++		}
+ 	}
+ 	EXT4_SB(sb)->dio_unwritten_wq = create_workqueue("ext4-dio-unwritten");
+ 	if (!EXT4_SB(sb)->dio_unwritten_wq) {
+@@ -2894,6 +2910,12 @@ no_journal:
+ 			 "requested data journaling mode");
+ 		clear_opt(sbi->s_mount_opt, DELALLOC);
+ 	}
++	if (test_opt(sb, DIOREAD_NOLOCK) &&
++	    (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)) {
++		ext4_msg(sb, KERN_WARNING, "Ignoring dioread_nolock option - "
++			 "requested data journaling mode");
++		clear_opt(sbi->s_mount_opt, DIOREAD_NOLOCK);
++	}
+ 
+ 	err = ext4_setup_system_zone(sb);
+ 	if (err) {
