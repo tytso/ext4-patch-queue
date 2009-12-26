@@ -17,10 +17,10 @@ Cc: akpm@linux-foundation.org
  4 files changed, 23 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index c3b499f..256dcd3 100644
+index ec938cb..d96aa6b 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -759,6 +759,7 @@ struct ext4_inode_info {
+@@ -768,6 +768,7 @@ struct ext4_inode_info {
  #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
  #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
  #define EXT4_MOUNT_DISCARD		0x40000000 /* Issue DISCARD requests */
@@ -29,10 +29,10 @@ index c3b499f..256dcd3 100644
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
  #define set_opt(o, opt)			o |= EXT4_MOUNT_##opt
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index d6b6e6c..1595a5d 100644
+index cee75c2..c769e27 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -884,6 +884,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+@@ -901,6 +901,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
  	}
  	if (test_opt(sb, NOBH))
  		seq_puts(seq, ",nobh");
@@ -41,16 +41,16 @@ index d6b6e6c..1595a5d 100644
  	if (test_opt(sb, I_VERSION))
  		seq_puts(seq, ",i_version");
  	if (!test_opt(sb, DELALLOC))
-@@ -1101,7 +1103,7 @@ enum {
- 	Opt_stripe, Opt_delalloc, Opt_nodelalloc,
+@@ -1122,7 +1124,7 @@ enum {
  	Opt_block_validity, Opt_noblock_validity,
  	Opt_inode_readahead_blks, Opt_journal_ioprio,
+ 	Opt_dioread_nolock, Opt_dioread_lock,
 -	Opt_discard, Opt_nodiscard,
 +	Opt_discard, Opt_nodiscard, Opt_akpm_lock_hack
  };
  
  static const match_table_t tokens = {
-@@ -1159,6 +1161,7 @@ static const match_table_t tokens = {
+@@ -1181,6 +1183,7 @@ static const match_table_t tokens = {
  	{Opt_i_version, "i_version"},
  	{Opt_stripe, "stripe=%u"},
  	{Opt_resize, "resize"},
@@ -58,9 +58,9 @@ index d6b6e6c..1595a5d 100644
  	{Opt_delalloc, "delalloc"},
  	{Opt_nodelalloc, "nodelalloc"},
  	{Opt_block_validity, "block_validity"},
-@@ -1600,6 +1603,9 @@ set_qf_format:
- 		case Opt_nodiscard:
- 			clear_opt(sbi->s_mount_opt, DISCARD);
+@@ -1634,6 +1637,9 @@ set_qf_format:
+ 		case Opt_dioread_lock:
+ 			clear_opt(sbi->s_mount_opt, DIOREAD_NOLOCK);
  			break;
 +		case Opt_akpm_lock_hack:
 +			set_opt(sbi->s_mount_opt, AKPM_LOCK_HACK);
@@ -68,7 +68,7 @@ index d6b6e6c..1595a5d 100644
  		default:
  			ext4_msg(sb, KERN_ERR,
  			       "Unrecognized mount option \"%s\" "
-@@ -3011,6 +3017,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -3055,6 +3061,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
@@ -117,10 +117,10 @@ index a051270..3621ce9 100644
  	error = -EROFS;
  	if (is_handle_aborted(handle)) {
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index f1011f7..f89668a 100644
+index 8ada2a1..6a7551f 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
-@@ -1007,6 +1007,7 @@ struct journal_s
+@@ -1001,6 +1001,7 @@ struct journal_s
  #define JBD2_ABORT_ON_SYNCDATA_ERR	0x040	/* Abort the journal on file
  						 * data write error in ordered
  						 * mode */
