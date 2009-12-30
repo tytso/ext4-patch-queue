@@ -1,55 +1,54 @@
 ext4: Ensure zeroout blocks have no dirty metadata
 
-From: Curt Wohlgemuth <curtw@google.com>
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
 
-This fixes a bug with no journal being used, in which new blocks
+This fixes a bug (found by Curt Wohlgemuth) in which new blocks
 returned from an extent created with ext4_ext_zeroout() can have dirty
-metadata in the buffer cache still associated with them.  This can
-cause corruption in data files when previously freed metadata blocks
-are reallocated for the data files.
+metadata still associated with them.
 
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
 Signed-off-by: Curt Wohlgemuth <curtw@google.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
 
-This is for the problem I reported on 23 Nov ("Bug in extent zeroout: blocks
-not marked as new").  I'm not seeing the corruption with this fix that I was
-seeing without it.
 
 diff -uprN orig/fs/ext4/extents.c new/fs/ext4/extents.c
---- orig/fs/ext4/extents.c	2009-12-09 15:09:25.000000000 -0800
-+++ new/fs/ext4/extents.c	2009-12-15 13:26:29.000000000 -0800
-@@ -2474,9 +2474,28 @@ static int ext4_ext_zeroout(struct inode
- 		submit_bio(WRITE, bio);
- 		wait_for_completion(&event);
+--- orig/fs/ext4/extents.c	2009-12-29 14:59:12.000000000 -0800
++++ new/fs/ext4/extents.c	2009-12-29 15:18:43.000000000 -0800
+@@ -3023,6 +3023,14 @@ out:
+ 	return err;
+ }
 
--		if (test_bit(BIO_UPTODATE, &bio->bi_flags))
-+		if (test_bit(BIO_UPTODATE, &bio->bi_flags)) {
++static void unmap_underlying_metadata_blocks(struct block_device *bdev,
++			sector_t block, int count)
++{
++	int i;
++	for (i = 0; i < count; i++)
++                unmap_underlying_metadata(bdev, block + i);
++}
 +
- 			ret = 0;
--		else {
-+
-+			/* On success, if there is no journal through which
-+			 * metadata is committed, we need to insure all
-+			 * metadata associated with each of these blocks is
-+			 * unmapped. */
-+			if (EXT4_SB(inode->i_sb)->s_journal == NULL) {
-+				sector_t block = ee_pblock;
-+
-+				done = 0;
-+				while (done < len) {
-+					unmap_underlying_metadata(inode->i_sb->
-+									s_bdev,
-+								  block);
-+
-+					done++;
-+					block++;
-+				}
-+			}
-+		} else {
- 			ret = -EIO;
- 			break;
- 		}
+ static int
+ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+ 			ext4_lblk_t iblock, unsigned int max_blocks,
+@@ -3098,6 +3106,18 @@ out:
+ 	} else
+ 		allocated = ret;
+ 	set_buffer_new(bh_result);
++	/*
++	 * if we allocated more blocks than requested
++	 * we need to make sure we unmap the extra block
++	 * allocated. The actual needed block will get
++	 * unmapped later when we find the buffer_head marked
++	 * new.
++	 */
++	if (allocated > max_blocks) {
++		unmap_underlying_metadata_blocks(inode->i_sb->s_bdev,
++					newblock + max_blocks,
++					allocated - max_blocks);
++	}
+ map_out:
+ 	set_buffer_mapped(bh_result);
+ out1:
 --
 To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
 the body of a message to majordomo@vger.kernel.org
