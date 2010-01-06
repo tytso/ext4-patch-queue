@@ -8,15 +8,8 @@ patches so that they can be used by ext4 buffer write as well.
 
 Signed-off-by: Jiaying Zhang <jiayingz@google.com>
 ---
- fs/ext4/ext4.h    |   18 ++++----
- fs/ext4/extents.c |   32 ++++++++--------
- fs/ext4/fsync.c   |    2 +-
- fs/ext4/inode.c   |  108 ++++++++++++++++++++++++++---------------------------
- fs/ext4/super.c   |    2 +-
- 5 files changed, 80 insertions(+), 82 deletions(-)
-
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 56f9271..b7b1b45 100644
+index ab31e65..de3d767 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -133,7 +133,7 @@ struct mpage_da_data {
@@ -24,7 +17,7 @@ index 56f9271..b7b1b45 100644
  	int retval;
  };
 -#define	DIO_AIO_UNWRITTEN	0x1
-+#define        EXT4_IO_UNWRITTEN       0x1
++#define	EXT4_IO_UNWRITTEN	0x1
  typedef struct ext4_io_end {
  	struct list_head	list;		/* per-file finished AIO list */
  	struct inode		*inode;		/* file being written to */
@@ -33,32 +26,32 @@ index 56f9271..b7b1b45 100644
  	unitialized extents if not allocated, split the uninitialized
  	extent if blocks has been preallocated already*/
 -#define EXT4_GET_BLOCKS_DIO			0x0010
-+#define EXT4_GET_BLOCKS_PRE_IO                 0x0010
++#define EXT4_GET_BLOCKS_PRE_IO			0x0010
  #define EXT4_GET_BLOCKS_CONVERT			0x0020
 -#define EXT4_GET_BLOCKS_DIO_CREATE_EXT		(EXT4_GET_BLOCKS_DIO|\
-+#define EXT4_GET_BLOCKS_IO_CREATE_EXT          (EXT4_GET_BLOCKS_PRE_IO|\
-+					EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
-+       /* Convert extent to initialized after IO complete */
-+#define EXT4_GET_BLOCKS_IO_CONVERT_EXT         (EXT4_GET_BLOCKS_CONVERT|\
++#define EXT4_GET_BLOCKS_IO_CREATE_EXT		(EXT4_GET_BLOCKS_PRE_IO|\
  					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
 -	/* Convert extent to initialized after direct IO complete */
 -#define EXT4_GET_BLOCKS_DIO_CONVERT_EXT		(EXT4_GET_BLOCKS_CONVERT|\
 -					 EXT4_GET_BLOCKS_DIO_CREATE_EXT)
++	/* Convert extent to initialized after IO complete */
++#define EXT4_GET_BLOCKS_IO_CONVERT_EXT		(EXT4_GET_BLOCKS_CONVERT|\
++					 EXT4_GET_BLOCKS_IO_CREATE_EXT)
  
  /*
   * Flags used by ext4_free_blocks
-@@ -709,8 +709,8 @@ struct ext4_inode_info {
- 	qsize_t i_reserved_quota;
- #endif
+@@ -705,8 +705,8 @@ struct ext4_inode_info {
+ 
+ 	spinlock_t i_block_reservation_lock;
  
 -	/* completed async DIOs that might need unwritten extents handling */
 -	struct list_head i_aio_dio_complete_list;
-+       /* completed IOs that might need unwritten extents handling */
-+       struct list_head i_completed_io_list;
++	/* completed IOs that might need unwritten extents handling */
++	struct list_head i_completed_io_list;
  	/* current io_end structure for async DIO write*/
  	ext4_io_end_t *cur_aio_dio;
  
-@@ -1440,7 +1440,7 @@ extern int ext4_block_truncate_page(handle_t *handle,
+@@ -1436,7 +1436,7 @@ extern int ext4_block_truncate_page(handle_t *handle,
  		struct address_space *mapping, loff_t from);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf);
  extern qsize_t *ext4_get_reserved_space(struct inode *inode);
@@ -68,7 +61,7 @@ index 56f9271..b7b1b45 100644
  extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
  extern long ext4_compat_ioctl(struct file *, unsigned int, unsigned long);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 91ae460..a30b706 100644
+index 3ccc07b..1da5c32 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -1603,7 +1603,7 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
@@ -76,7 +69,7 @@ index 91ae460..a30b706 100644
  
  	/* try to insert block into found extent and return */
 -	if (ex && (flag != EXT4_GET_BLOCKS_DIO_CREATE_EXT)
-+       if (ex && !(flag & EXT4_GET_BLOCKS_PRE_IO)
++	if (ex && (flag != EXT4_GET_BLOCKS_PRE_IO)
  		&& ext4_can_extents_be_merged(inode, ex, newext)) {
  		ext_debug("append [%d]%d block to %d:[%d]%d (from %llu)\n",
  				ext4_ext_is_uninitialized(newext),
@@ -85,11 +78,11 @@ index 91ae460..a30b706 100644
  merge:
  	/* try to merge extents to the right */
 -	if (flag != EXT4_GET_BLOCKS_DIO_CREATE_EXT)
-+       if (!(flag & EXT4_GET_BLOCKS_PRE_IO))
++	if (flag != EXT4_GET_BLOCKS_PRE_IO)
  		ext4_ext_try_to_merge(inode, path, nearex);
  
  	/* try to merge extents to the left */
-@@ -2968,7 +2968,7 @@ fix_extent_len:
+@@ -2987,7 +2987,7 @@ fix_extent_len:
  	ext4_ext_dirty(handle, inode, path + depth);
  	return err;
  }
@@ -98,22 +91,18 @@ index 91ae460..a30b706 100644
  					      struct inode *inode,
  					      struct ext4_ext_path *path)
  {
-@@ -3048,26 +3048,26 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+@@ -3059,8 +3059,8 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  		  flags, allocated);
  	ext4_ext_show_leaf(inode, path);
  
 -	/* DIO get_block() before submit the IO, split the extent */
 -	if (flags == EXT4_GET_BLOCKS_DIO_CREATE_EXT) {
 +	/* get_block() before submit the IO, split the extent */
-+	if ((flags & EXT4_GET_BLOCKS_PRE_IO)) {
++	if (flags == EXT4_GET_BLOCKS_PRE_IO) {
  		ret = ext4_split_unwritten_extents(handle,
--						inode, path, iblock,
--						max_blocks, flags);
-+						   inode, path, iblock,
-+						   max_blocks, flags);
- 		/*
- 		 * Flag the inode(non aio case) or end_io struct (aio case)
- 		 * that this IO needs to convertion to written when IO is
+ 						inode, path, iblock,
+ 						max_blocks, flags);
+@@ -3070,14 +3070,14 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  		 * completed
  		 */
  		if (io)
@@ -126,36 +115,25 @@ index 91ae460..a30b706 100644
 -	/* async DIO end_io complete, convert the filled extent to written */
 -	if (flags == EXT4_GET_BLOCKS_DIO_CONVERT_EXT) {
 -		ret = ext4_convert_unwritten_extents_dio(handle, inode,
--							path);
 +	/* IO end_io complete, convert the filled extent to written */
-+	if ((flags & EXT4_GET_BLOCKS_CONVERT)) {
++	if (flags == EXT4_GET_BLOCKS_CONVERT) {
 +		ret = ext4_convert_unwritten_extents_endio(handle, inode,
-+							   path);
+ 							path);
  		if (ret >= 0)
  			ext4_update_inode_fsync_trans(handle, inode, 1);
- 		goto out2;
-@@ -3320,7 +3320,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
- 	ext4_ext_store_pblock(&newex, newblock);
- 	newex.ee_len = cpu_to_le16(ar.len);
- 	/* Mark uninitialized */
--	if (flags & EXT4_GET_BLOCKS_UNINIT_EXT){
-+	if (flags & EXT4_GET_BLOCKS_UNINIT_EXT) {
- 		ext4_ext_mark_uninitialized(&newex);
- 		/*
- 		 * io_end structure was created for every async
-@@ -3331,9 +3331,9 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -3330,9 +3330,9 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  		 * For non asycn direct IO case, flag the inode state
  		 * that we need to perform convertion when IO is done.
  		 */
 -		if (flags == EXT4_GET_BLOCKS_DIO_CREATE_EXT) {
-+		if ((flags & EXT4_GET_BLOCKS_PRE_IO)) {
++		if (flags == EXT4_GET_BLOCKS_PRE_IO) {
  			if (io)
 -				io->flag = DIO_AIO_UNWRITTEN;
 +				io->flag = EXT4_IO_UNWRITTEN;
  			else
  				EXT4_I(inode)->i_state |=
  					EXT4_STATE_DIO_UNWRITTEN;;
-@@ -3599,7 +3599,7 @@ int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
+@@ -3598,7 +3598,7 @@ int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
  		map_bh.b_state = 0;
  		ret = ext4_get_blocks(handle, inode, block,
  				      max_blocks, &map_bh,
@@ -178,10 +156,10 @@ index 98bd140..0d0c323 100644
  		return ret;
  	
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 3e3b454..40089bc 100644
+index 34a2db5..b2d047b 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -3420,52 +3420,44 @@ out:
+@@ -3421,7 +3421,7 @@ out:
  	return ret;
  }
  
@@ -189,12 +167,10 @@ index 3e3b454..40089bc 100644
 +static int ext4_get_block_write(struct inode *inode, sector_t iblock,
  		   struct buffer_head *bh_result, int create)
  {
--	handle_t *handle = NULL;
-+	handle_t *handle = ext4_journal_current_handle();
- 	int ret = 0;
+ 	handle_t *handle = NULL;
+@@ -3429,28 +3429,14 @@ static int ext4_get_block_dio_write(struct inode *inode, sector_t iblock,
  	unsigned max_blocks = bh_result->b_size >> inode->i_blkbits;
  	int dio_credits;
-+	int started = 0;
  
 -	ext4_debug("ext4_get_block_dio_write: inode %lu, create flag %d\n",
 +	ext4_debug("ext4_get_block_write: inode %lu, create flag %d\n",
@@ -224,44 +200,15 @@ index 3e3b454..40089bc 100644
 -	create = EXT4_GET_BLOCKS_DIO_CREATE_EXT;
 +	create = EXT4_GET_BLOCKS_IO_CREATE_EXT;
  
--	if (max_blocks > DIO_MAX_BLOCKS)
--		max_blocks = DIO_MAX_BLOCKS;
--	dio_credits = ext4_chunk_trans_blocks(inode, max_blocks);
--	handle = ext4_journal_start(inode, dio_credits);
--	if (IS_ERR(handle)) {
--		ret = PTR_ERR(handle);
--		goto out;
-+	if (!handle) {
-+		if (max_blocks > DIO_MAX_BLOCKS)
-+			max_blocks = DIO_MAX_BLOCKS;
-+		dio_credits = ext4_chunk_trans_blocks(inode, max_blocks);
-+		handle = ext4_journal_start(inode, dio_credits);
-+		if (IS_ERR(handle)) {
-+			ret = PTR_ERR(handle);
-+			goto out;
-+		}
-+		started = 1;
- 	}
-+
- 	ret = ext4_get_blocks(handle, inode, iblock, max_blocks, bh_result,
- 			      create);
- 	if (ret > 0) {
- 		bh_result->b_size = (ret << inode->i_blkbits);
- 		ret = 0;
- 	}
--	ext4_journal_stop(handle);
-+	if (started)
-+		ext4_journal_stop(handle);
- out:
- 	return ret;
- }
-@@ -3476,19 +3468,20 @@ static void ext4_free_io_end(ext4_io_end_t *io)
+ 	if (max_blocks > DIO_MAX_BLOCKS)
+ 		max_blocks = DIO_MAX_BLOCKS;
+@@ -3477,19 +3463,20 @@ static void ext4_free_io_end(ext4_io_end_t *io)
  	iput(io->inode);
  	kfree(io);
  }
 -static void dump_aio_dio_list(struct inode * inode)
 +
-+static void dump_completed_IO(struct inode *inode)
++static void dump_completed_IO(struct inode * inode)
  {
  #ifdef	EXT4_DEBUG
  	struct list_head *cur, *before, *after;
@@ -269,7 +216,7 @@ index 3e3b454..40089bc 100644
  
 -	if (list_empty(&EXT4_I(inode)->i_aio_dio_complete_list)){
 -		ext4_debug("inode %lu aio dio list is empty\n", inode->i_ino);
-+	if (list_empty(&EXT4_I(inode)->i_completed_io_list)) {
++	if (list_empty(&EXT4_I(inode)->i_completed_io_list)){
 +		ext4_debug("inode %lu completed_io list is empty\n", inode->i_ino);
  		return;
  	}
@@ -277,11 +224,11 @@ index 3e3b454..40089bc 100644
 -	ext4_debug("Dump inode %lu aio_dio_completed_IO list \n", inode->i_ino);
 -	list_for_each_entry(io, &EXT4_I(inode)->i_aio_dio_complete_list, list){
 +	ext4_debug("Dump inode %lu completed_io list \n", inode->i_ino);
-+	list_for_each_entry(io, &EXT4_I(inode)->i_completed_io_list, list) {
++	list_for_each_entry(io, &EXT4_I(inode)->i_completed_io_list, list){
  		cur = &io->list;
  		before = cur->prev;
  		io0 = container_of(before, ext4_io_end_t, list);
-@@ -3504,21 +3497,21 @@ static void dump_aio_dio_list(struct inode * inode)
+@@ -3505,21 +3492,21 @@ static void dump_aio_dio_list(struct inode * inode)
  /*
   * check a range of space and convert unwritten extents to written.
   */
@@ -306,7 +253,7 @@ index 3e3b454..40089bc 100644
  		return ret;
  
  	if (offset + size <= i_size_read(inode))
-@@ -3536,17 +3529,18 @@ static int ext4_end_aio_dio_nolock(ext4_io_end_t *io)
+@@ -3537,17 +3524,18 @@ static int ext4_end_aio_dio_nolock(ext4_io_end_t *io)
  	io->flag = 0;
  	return ret;
  }
@@ -327,7 +274,7 @@ index 3e3b454..40089bc 100644
  	if (ret >= 0) {
  		if (!list_empty(&io->list))
  			list_del_init(&io->list);
-@@ -3554,32 +3548,35 @@ static void ext4_end_aio_dio_work(struct work_struct *work)
+@@ -3555,32 +3543,35 @@ static void ext4_end_aio_dio_work(struct work_struct *work)
  	}
  	mutex_unlock(&inode->i_mutex);
  }
@@ -365,7 +312,7 @@ index 3e3b454..40089bc 100644
 -	while (!list_empty(&EXT4_I(inode)->i_aio_dio_complete_list)){
 -		io = list_entry(EXT4_I(inode)->i_aio_dio_complete_list.next,
 +	dump_completed_IO(inode);
-+	while (!list_empty(&EXT4_I(inode)->i_completed_io_list)) {
++	while (!list_empty(&EXT4_I(inode)->i_completed_io_list)){
 +		io = list_entry(EXT4_I(inode)->i_completed_io_list.next,
  				ext4_io_end_t, list);
  		/*
@@ -374,7 +321,7 @@ index 3e3b454..40089bc 100644
  		 * IO to written.
  		 *
  		 * When ext4_sync_file() is called, run_queue() may already
-@@ -3592,7 +3589,7 @@ int flush_aio_dio_completed_IO(struct inode *inode)
+@@ -3593,7 +3584,7 @@ int flush_aio_dio_completed_IO(struct inode *inode)
  		 * avoid double converting from both fsync and background work
  		 * queue work.
  		 */
@@ -383,7 +330,7 @@ index 3e3b454..40089bc 100644
  		if (ret < 0)
  			ret2 = ret;
  		else
-@@ -3614,7 +3611,7 @@ static ext4_io_end_t *ext4_init_io_end (struct inode *inode)
+@@ -3615,7 +3606,7 @@ static ext4_io_end_t *ext4_init_io_end (struct inode *inode)
  		io->offset = 0;
  		io->size = 0;
  		io->error = 0;
@@ -392,28 +339,28 @@ index 3e3b454..40089bc 100644
  		INIT_LIST_HEAD(&io->list);
  	}
  
-@@ -3637,7 +3634,7 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+@@ -3638,7 +3629,7 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
  		  size);
  
  	/* if not aio dio with unwritten extents, just free io and return */
 -	if (io_end->flag != DIO_AIO_UNWRITTEN){
-+	if (io_end->flag != EXT4_IO_UNWRITTEN) {
++	if (io_end->flag != EXT4_IO_UNWRITTEN){
  		ext4_free_io_end(io_end);
  		iocb->private = NULL;
  		return;
-@@ -3652,9 +3649,10 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+@@ -3653,9 +3644,10 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
  
  	/* Add the io_end to per-inode completed aio dio list*/
  	list_add_tail(&io_end->list,
 -		 &EXT4_I(io_end->inode)->i_aio_dio_complete_list);
-+		      &EXT4_I(io_end->inode)->i_completed_io_list);
++		 &EXT4_I(io_end->inode)->i_completed_io_list);
  	iocb->private = NULL;
  }
 +
  /*
   * For ext4 extent files, ext4 will do direct-io write to holes,
   * preallocated extents, and those write extend the file, no need to
-@@ -3724,7 +3722,7 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
+@@ -3725,7 +3717,7 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
  		ret = blockdev_direct_IO(rw, iocb, inode,
  					 inode->i_sb->s_bdev, iov,
  					 offset, nr_segs,
@@ -423,10 +370,10 @@ index 3e3b454..40089bc 100644
  		if (iocb->private)
  			EXT4_I(inode)->cur_aio_dio = NULL;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 7cccb35..4d46fee 100644
+index 953e5f7..8254bf0 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -707,7 +707,7 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
+@@ -704,7 +704,7 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
  #ifdef CONFIG_QUOTA
  	ei->i_reserved_quota = 0;
  #endif
@@ -435,3 +382,4 @@ index 7cccb35..4d46fee 100644
  	ei->cur_aio_dio = NULL;
  	ei->i_sync_tid = 0;
  	ei->i_datasync_tid = 0;
+

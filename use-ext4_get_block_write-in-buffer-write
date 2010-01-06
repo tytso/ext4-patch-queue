@@ -14,24 +14,27 @@ Skip the nobh and data=journal mount cases to make things simple for now.
 
 Signed-off-by: Jiaying Zhang <jiayingz@google.com>
 ---
- fs/ext4/ext4.h    |    5 +++
- fs/ext4/extents.c |   10 +++---
- fs/ext4/inode.c   |   81 +++++++++++++++++++++++++++++++++++++++++++++--------
- fs/ext4/super.c   |   30 +++++++++++++++++--
- 4 files changed, 105 insertions(+), 21 deletions(-)
-
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 98c115b..2262248 100644
+index de3d767..5900385 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -134,6 +134,7 @@ struct mpage_da_data {
  	int retval;
  };
- #define        EXT4_IO_UNWRITTEN       0x1
+ #define	EXT4_IO_UNWRITTEN	0x1
 +#define	EXT4_IO_WRITTEN		0x2
  typedef struct ext4_io_end {
  	struct list_head	list;		/* per-file finished AIO list */
  	struct inode		*inode;		/* file being written to */
+@@ -373,7 +374,7 @@ struct ext4_new_group_data {
+ 					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
+ 	/* Convert extent to initialized after IO complete */
+ #define EXT4_GET_BLOCKS_IO_CONVERT_EXT		(EXT4_GET_BLOCKS_CONVERT|\
+-					 EXT4_GET_BLOCKS_IO_CREATE_EXT)
++					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
+ 
+ /*
+  * Flags used by ext4_free_blocks
 @@ -757,6 +758,7 @@ struct ext4_inode_info {
  #define EXT4_MOUNT_QUOTA		0x80000 /* Some quota option set */
  #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
@@ -51,10 +54,37 @@ index 98c115b..2262248 100644
  
  #endif	/* _EXT4_H */
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index b2d9f40..14e7966 100644
+index 1da5c32..4844dcf 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -3073,6 +3073,7 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+@@ -1603,7 +1603,7 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
+ 	BUG_ON(path[depth].p_hdr == NULL);
+ 
+ 	/* try to insert block into found extent and return */
+-	if (ex && (flag != EXT4_GET_BLOCKS_PRE_IO)
++	if (ex && !(flag & EXT4_GET_BLOCKS_PRE_IO)
+ 		&& ext4_can_extents_be_merged(inode, ex, newext)) {
+ 		ext_debug("append [%d]%d block to %d:[%d]%d (from %llu)\n",
+ 				ext4_ext_is_uninitialized(newext),
+@@ -1724,7 +1724,7 @@ has_space:
+ 
+ merge:
+ 	/* try to merge extents to the right */
+-	if (flag != EXT4_GET_BLOCKS_PRE_IO)
++	if (!(flag & EXT4_GET_BLOCKS_PRE_IO))
+ 		ext4_ext_try_to_merge(inode, path, nearex);
+ 
+ 	/* try to merge extents to the left */
+@@ -3060,7 +3060,7 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+ 	ext4_ext_show_leaf(inode, path);
+ 
+ 	/* get_block() before submit the IO, split the extent */
+-	if (flags == EXT4_GET_BLOCKS_PRE_IO) {
++	if ((flags & EXT4_GET_BLOCKS_PRE_IO)) {
+ 		ret = ext4_split_unwritten_extents(handle,
+ 						inode, path, iblock,
+ 						max_blocks, flags);
+@@ -3073,10 +3073,11 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  			io->flag = EXT4_IO_UNWRITTEN;
  		else
  			EXT4_I(inode)->i_state |= EXT4_STATE_DIO_UNWRITTEN;
@@ -62,8 +92,13 @@ index b2d9f40..14e7966 100644
  		goto out;
  	}
  	/* IO end_io complete, convert the filled extent to written */
-@@ -3322,11 +3323,9 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
- 	if (flags & EXT4_GET_BLOCKS_UNINIT_EXT) {
+-	if (flags == EXT4_GET_BLOCKS_CONVERT) {
++	if ((flags & EXT4_GET_BLOCKS_CONVERT)) {
+ 		ret = ext4_convert_unwritten_extents_endio(handle, inode,
+ 							path);
+ 		if (ret >= 0)
+@@ -3322,21 +3323,20 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 	if (flags & EXT4_GET_BLOCKS_UNINIT_EXT){
  		ext4_ext_mark_uninitialized(&newex);
  		/*
 -		 * io_end structure was created for every async
@@ -77,7 +112,11 @@ index b2d9f40..14e7966 100644
  		 * For non asycn direct IO case, flag the inode state
  		 * that we need to perform convertion when IO is done.
  		 */
-@@ -3337,6 +3336,7 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+-		if (flags == EXT4_GET_BLOCKS_PRE_IO) {
++		if ((flags & EXT4_GET_BLOCKS_PRE_IO)) {
+ 			if (io)
+ 				io->flag = EXT4_IO_UNWRITTEN;
+ 			else
  				EXT4_I(inode)->i_state |=
  					EXT4_STATE_DIO_UNWRITTEN;;
  		}
@@ -86,7 +125,7 @@ index b2d9f40..14e7966 100644
  	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
  	if (err) {
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 931b777..aa9f865 100644
+index b2d047b..9ee3550 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -1504,6 +1504,8 @@ static void ext4_truncate_failed_write(struct inode *inode)
@@ -163,7 +202,55 @@ index 931b777..aa9f865 100644
  		ret = block_write_full_page(page, noalloc_get_block_write,
  					    wbc);
  
-@@ -3512,12 +3529,10 @@ static int ext4_end_io_nolock(ext4_io_end_t *io)
+@@ -3424,10 +3441,11 @@ out:
+ static int ext4_get_block_write(struct inode *inode, sector_t iblock,
+ 		   struct buffer_head *bh_result, int create)
+ {
+-	handle_t *handle = NULL;
++	handle_t *handle = ext4_journal_current_handle();
+ 	int ret = 0;
+ 	unsigned max_blocks = bh_result->b_size >> inode->i_blkbits;
+ 	int dio_credits;
++	int started = 0;
+ 
+ 	ext4_debug("ext4_get_block_write: inode %lu, create flag %d\n",
+ 		   inode->i_ino, create);
+@@ -3438,21 +3456,26 @@ static int ext4_get_block_write(struct inode *inode, sector_t iblock,
+ 	 */
+ 	create = EXT4_GET_BLOCKS_IO_CREATE_EXT;
+ 
+-	if (max_blocks > DIO_MAX_BLOCKS)
+-		max_blocks = DIO_MAX_BLOCKS;
+-	dio_credits = ext4_chunk_trans_blocks(inode, max_blocks);
+-	handle = ext4_journal_start(inode, dio_credits);
+-	if (IS_ERR(handle)) {
+-		ret = PTR_ERR(handle);
+-		goto out;
++	if (!handle) {
++		if (max_blocks > DIO_MAX_BLOCKS)
++			max_blocks = DIO_MAX_BLOCKS;
++		dio_credits = ext4_chunk_trans_blocks(inode, max_blocks);
++		handle = ext4_journal_start(inode, dio_credits);
++		if (IS_ERR(handle)) {
++			ret = PTR_ERR(handle);
++			goto out;
++		}
++		started = 1;
+ 	}
++
+ 	ret = ext4_get_blocks(handle, inode, iblock, max_blocks, bh_result,
+ 			      create);
+ 	if (ret > 0) {
+ 		bh_result->b_size = (ret << inode->i_blkbits);
+ 		ret = 0;
+ 	}
+-	ext4_journal_stop(handle);
++	if (started)
++		ext4_journal_stop(handle);
+ out:
+ 	return ret;
+ }
+@@ -3506,12 +3529,10 @@ static int ext4_end_io_nolock(ext4_io_end_t *io)
  	if (list_empty(&io->list))
  		return ret;
  
@@ -178,7 +265,7 @@ index 931b777..aa9f865 100644
  	if (ret < 0) {
  		printk(KERN_EMERG "%s: failed to convert unwritten"
  			"extents to written extents, error is %d"
-@@ -3565,7 +3580,7 @@ static void ext4_end_io_work(struct work_struct *work)
+@@ -3559,7 +3580,7 @@ static void ext4_end_io_work(struct work_struct *work)
   */
  int flush_completed_IO(struct inode *inode)
  {
@@ -187,21 +274,21 @@ index 931b777..aa9f865 100644
  	int ret = 0;
  	int ret2 = 0;
  
-@@ -3573,9 +3588,10 @@ int flush_completed_IO(struct inode *inode)
+@@ -3567,9 +3588,10 @@ int flush_completed_IO(struct inode *inode)
  		return ret;
  
  	dump_completed_IO(inode);
--	while (!list_empty(&EXT4_I(inode)->i_completed_io_list)) {
+-	while (!list_empty(&EXT4_I(inode)->i_completed_io_list)){
 -		io = list_entry(EXT4_I(inode)->i_completed_io_list.next,
 -				ext4_io_end_t, list);
 +	list_for_each_entry_safe(io, tmp,
-+				 &EXT4_I(inode)->i_completed_io_list, list) {
++			&EXT4_I(inode)->i_completed_io_list, list) {
 +		if (io->flag == EXT4_IO_UNWRITTEN)
 +			continue;
  		/*
  		 * Calling ext4_end_io_nolock() to convert completed
  		 * IO to written.
-@@ -3643,6 +3659,7 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+@@ -3637,6 +3659,7 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
  
  	io_end->offset = offset;
  	io_end->size = size;
@@ -209,7 +296,7 @@ index 931b777..aa9f865 100644
  	wq = EXT4_SB(io_end->inode->i_sb)->dio_unwritten_wq;
  
  	/* queue the work to convert unwritten extents to written */
-@@ -3654,6 +3671,46 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+@@ -3648,6 +3671,46 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
  	iocb->private = NULL;
  }
  
@@ -257,7 +344,7 @@ index 931b777..aa9f865 100644
   * For ext4 extent files, ext4 will do direct-io write to holes,
   * preallocated extents, and those write extend the file, no need to
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 9f2d8fe..a672d91 100644
+index 8254bf0..dccdd41 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -922,6 +922,9 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
@@ -359,3 +446,4 @@ index 9f2d8fe..a672d91 100644
  
  	err = ext4_setup_system_zone(sb);
  	if (err) {
+
