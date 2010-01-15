@@ -14,11 +14,11 @@ Signed-off-by: Jiaying Zhang <jiayingz@google.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h      |   12 +++++-
- fs/ext4/ext4_jbd2.h |   13 ++++++
+ fs/ext4/ext4_jbd2.h |   24 ++++++++++++
  fs/ext4/extents.c   |   22 ++++++-----
  fs/ext4/inode.c     |  105 ++++++++++++++++++++++++++++++++++++++++----------
  fs/ext4/super.c     |   30 +++++++++++++--
- 5 files changed, 146 insertions(+), 36 deletions(-)
+ 5 files changed, 157 insertions(+), 36 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index b1dcbb7..b8b4887 100644
@@ -65,13 +65,22 @@ index b1dcbb7..b8b4887 100644
   * __unmap_underlying_bh_blocks - just a helper function to unmap
   * set of blocks described by @bh
 diff --git a/fs/ext4/ext4_jbd2.h b/fs/ext4/ext4_jbd2.h
-index 05eca81..2c62040 100644
+index 05eca81..dd58020 100644
 --- a/fs/ext4/ext4_jbd2.h
 +++ b/fs/ext4/ext4_jbd2.h
-@@ -304,4 +304,17 @@ static inline int ext4_should_writeback_data(struct inode *inode)
+@@ -304,4 +304,28 @@ static inline int ext4_should_writeback_data(struct inode *inode)
  	return 0;
  }
  
++/*
++ * This function controls whether or not we should try to go down the
++ * dioread_nolock code paths, which makes it safe to avoid taking
++ * i_mutex for direct I/O reads.  This only works for extent-based
++ * files, and it doesn't work for nobh or if data journaling is
++ * enabled, since the dioread_nolock code uses b_private to pass
++ * information back to the I/O completion handler, and this conflicts
++ * with the jbd's use of b_private.
++ */
 +static inline int ext4_should_dioread_nolock(struct inode *inode)
 +{
 +	if (!test_opt(inode->i_sb, DIOREAD_NOLOCK))
@@ -79,6 +88,8 @@ index 05eca81..2c62040 100644
 +	if (test_opt(inode->i_sb, NOBH))
 +		return 0;
 +	if (!S_ISREG(inode->i_mode))
++		return 0;
++	if (EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL)
 +		return 0;
 +	if (ext4_should_journal_data(inode))
 +		return 0;
