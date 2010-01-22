@@ -21,8 +21,9 @@ assumption is no longer valid, it's possible for the value
 (ext4_inode_table(sb, desc) - group_first_block) to go negative, which
 will cause ext4_find_next_zero_bit() to trigger a kernel GPF.
 
-Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Addresses-Google-Bug: #2220436
 
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h    |    1 +
  fs/ext4/inode.c   |   39 ++++++++++++++++++++++++++++++---------
@@ -70,7 +71,7 @@ index c818972..eb78dec 100644
 +	if (!ext4_data_block_valid(EXT4_SB(inode->i_sb), block_to_free,
 +				   count)) {
 +		ext4_error(inode->i_sb, __func__, "inode #%lu: "
-+			   "attempt to clear blocks %llu len %d, invalid",
++			   "attempt to clear blocks %llu len %lu, invalid",
 +			   inode->i_ino, (unsigned long long) block_to_free,
 +			   count);
 +		return 1;
