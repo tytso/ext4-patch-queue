@@ -131,7 +131,7 @@ index e3eddc0..eb9bce0 100644
 @@ -3069,10 +3069,12 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  			io->flag = EXT4_IO_UNWRITTEN;
  		else
- 			EXT4_I(inode)->i_state |= EXT4_STATE_DIO_UNWRITTEN;
+ 			ext4_set_inode_state(inode, EXT4_STATE_DIO_UNWRITTEN);
 +		if (ext4_should_dioread_nolock(inode))
 +			set_buffer_uninit(bh_result);
  		goto out;
@@ -162,8 +162,8 @@ index e3eddc0..eb9bce0 100644
  			if (io)
  				io->flag = EXT4_IO_UNWRITTEN;
  			else
- 				EXT4_I(inode)->i_state |=
- 					EXT4_STATE_DIO_UNWRITTEN;;
+ 				ext4_set_inode_state(inode,
+ 						     EXT4_STATE_DIO_UNWRITTEN);
  		}
 +		if (ext4_should_dioread_nolock(inode))
 +			set_buffer_uninit(bh_result);
