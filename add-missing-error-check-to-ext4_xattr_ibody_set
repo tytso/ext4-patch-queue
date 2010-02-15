@@ -1,0 +1,22 @@
+ext4: add missing error checking to ext4_expand_extra_isize_ea()
+
+From: Roel Kluin <roel.kluin@gmail.com>
+
+Signed-off-by: Roel Kluin <roel.kluin@gmail.com>
+---
+Is this needed?
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index f3a2f7e..b77930c 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -1302,6 +1302,8 @@ retry:
+ 
+ 		/* Remove the chosen entry from the inode */
+ 		error = ext4_xattr_ibody_set(handle, inode, &i, is);
++		if (error)
++			goto cleanup;
+ 
+ 		entry = IFIRST(header);
+ 		if (entry_size + EXT4_XATTR_SIZE(size) >= new_extra_isize)
+
