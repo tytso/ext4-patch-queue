@@ -1,43 +1,71 @@
 ext4: Fix optional-arg mount options
 
+From: Eric Sandeen <sandeen@redhat.com>
+
 We have 2 mount options, "barrier" and "auto_da_alloc" which may or
 may not take a 1/0 argument.  This causes the ext4 superblock mount
 code to subtract uninitialized pointers and pass the result to
 kmalloc, which results in very noisy failures.
 
+Per Ted's suggestion, initialize the args struct so that
+we know whether match_token() found an argument for the
+option, and skip match_int() if not.
+
+Also, return error (0) from parse_options if we thought
+we found an argument, but match_int() Fails.
+
 Reported-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/super.c |    5 +++--
- 1 files changed, 3 insertions(+), 2 deletions(-)
+ fs/ext4/super.c |   23 +++++++++++++++--------
+ 1 files changed, 15 insertions(+), 8 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 735c20d..7e9a7ea 100644
+index 735c20d..68a55df 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1229,6 +1229,7 @@ static int parse_options(char *options, struct super_block *sb,
+@@ -1229,6 +1229,11 @@ static int parse_options(char *options, struct super_block *sb,
  		if (!*p)
  			continue;
  
++		/*
++		 * Initialize args struct so we know whether arg was
++		 * found; some options take optional arguments.
++		 */
 +		args[0].to = args[0].from = 0;
  		token = match_token(p, tokens, args);
  		switch (token) {
  		case Opt_bsd_df:
-@@ -1518,7 +1519,7 @@ set_qf_format:
+@@ -1518,10 +1523,11 @@ set_qf_format:
  			clear_opt(sbi->s_mount_opt, BARRIER);
  			break;
  		case Opt_barrier:
 -			if (match_int(&args[0], &option)) {
-+			if (!args[0].from || match_int(&args[0], &option)) {
+-				set_opt(sbi->s_mount_opt, BARRIER);
+-				break;
+-			}
++			if (args[0].from) {
++				if (match_int(&args[0], &option))
++					return 0;
++			} else
++				option = 1;	/* No argument, default to 1 */
+ 			if (option)
  				set_opt(sbi->s_mount_opt, BARRIER);
- 				break;
- 			}
-@@ -1594,7 +1595,7 @@ set_qf_format:
+ 			else
+@@ -1594,10 +1600,11 @@ set_qf_format:
  			set_opt(sbi->s_mount_opt,NO_AUTO_DA_ALLOC);
  			break;
  		case Opt_auto_da_alloc:
 -			if (match_int(&args[0], &option)) {
-+			if (!args[0].from || match_int(&args[0], &option)) {
+-				clear_opt(sbi->s_mount_opt, NO_AUTO_DA_ALLOC);
+-				break;
+-			}
++			if (args[0].from) {
++				if (match_int(&args[0], &option))
++					return 0;
++			} else
++				option = 1;	/* No argument, default to 1 */
+ 			if (option)
  				clear_opt(sbi->s_mount_opt, NO_AUTO_DA_ALLOC);
- 				break;
- 			}
+ 			else
