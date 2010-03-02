@@ -1,0 +1,66 @@
+ext4: Fix page eviction vs ext4_end_io_work() race
+
+From: jiayingz <jiayingz@google.com>
+Date:   Wed Feb 3 20:22:50 2010 +0000
+
+    - Store page pointer in io_end structure. Inc page count in ext4_set_bh_endio()
+    and dec count ext4_free_io_end() so the page won't be evicted before ext4_end_io_work() finishes.
+    - Also get rid of the error field in io_end structure that doesn't seem to be used anywhere.
+    
+    TESTED:
+    tested on prod machine and verified it helps eliminate the race between buffer read and ext4_end_io_work().
+    
+Will be merged into dio_read patch
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+
+---
+ fs/ext4/ext4.h  |    2 +-
+ fs/ext4/inode.c |    6 +++++-
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 92c056d..79c067e 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -138,7 +138,7 @@ typedef struct ext4_io_end {
+ 	struct list_head	list;		/* per-file finished AIO list */
+ 	struct inode		*inode;		/* file being written to */
+ 	unsigned int		flag;		/* unwritten or not */
+-	int			error;		/* I/O error code */
++	struct page		*page;		/* page struct for buffer write */
+ 	loff_t			offset;		/* offset in the file */
+ 	ssize_t			size;		/* size of the extent */
+ 	struct work_struct	work;		/* data work queue */
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index a03d46e..2efc543 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3538,6 +3538,8 @@ out:
+ static void ext4_free_io_end(ext4_io_end_t *io)
+ {
+ 	BUG_ON(!io);
++	if (io->page)
++		put_page(io->page);
+ 	iput(io->inode);
+ 	kfree(io);
+ }
+@@ -3697,7 +3699,7 @@ static ext4_io_end_t *ext4_init_io_end (struct inode *inode, gfp_t flags)
+ 		io->flag = 0;
+ 		io->offset = 0;
+ 		io->size = 0;
+-		io->error = 0;
++		io->page = NULL;
+ 		INIT_WORK(&io->work, ext4_end_io_work);
+ 		INIT_LIST_HEAD(&io->list);
+ 	}
+@@ -3789,6 +3791,8 @@ retry:
+ 	}
+ 	io_end->offset = offset;
+ 	io_end->size = size;
++	io_end->page = page;
++	get_page(io_end->page);
+ 
+ 	bh->b_private = io_end;
+ 	bh->b_end_io = ext4_end_io_buffer_write;
