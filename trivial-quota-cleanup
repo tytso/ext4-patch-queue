@@ -12,14 +12,14 @@ Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Acked-by: Jan Kara <jack@suse.cz>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/super.c |  122 ++++++++++++++++++++++++++++++------------------------
- 1 files changed, 68 insertions(+), 54 deletions(-)
+ fs/ext4/super.c |  123 +++++++++++++++++++++++++++++++------------------------
+ 1 files changed, 69 insertions(+), 54 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index a247673..4fd8cfb 100644
+index 7e8b1b4..79937e9 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1213,6 +1213,63 @@ static ext4_fsblk_t get_sb_block(void **data)
+@@ -1206,6 +1206,64 @@ static ext4_fsblk_t get_sb_block(void **data)
  
  #define DEFAULT_JOURNAL_IOPRIO (IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, 3))
  
@@ -61,7 +61,8 @@ index a247673..4fd8cfb 100644
 +	return 1;
 +}
 +
-+static int clear_qf_name(struct super_block *sb, int qtype) {
++static int clear_qf_name(struct super_block *sb, int qtype)
++{
 +
 +	struct ext4_sb_info *sbi = EXT4_SB(sb);
 +
@@ -83,7 +84,7 @@ index a247673..4fd8cfb 100644
  static int parse_options(char *options, struct super_block *sb,
  			 unsigned long *journal_devnum,
  			 unsigned int *journal_ioprio,
-@@ -1224,8 +1281,7 @@ static int parse_options(char *options, struct super_block *sb,
+@@ -1217,8 +1275,7 @@ static int parse_options(char *options, struct super_block *sb,
  	int data_opt = 0;
  	int option;
  #ifdef CONFIG_QUOTA
@@ -93,7 +94,7 @@ index a247673..4fd8cfb 100644
  #endif
  
  	if (!options)
-@@ -1403,63 +1459,22 @@ static int parse_options(char *options, struct super_block *sb,
+@@ -1401,63 +1458,22 @@ static int parse_options(char *options, struct super_block *sb,
  			break;
  #ifdef CONFIG_QUOTA
  		case Opt_usrjquota:
@@ -107,15 +108,15 @@ index a247673..4fd8cfb 100644
 -				ext4_msg(sb, KERN_ERR,
 -				       "Cannot change journaled "
 -				       "quota options when quota turned on");
--				return 0;
++			if (!set_qf_name(sb, USRQUOTA, &args[0]))
+ 				return 0;
 -			}
 -			qname = match_strdup(&args[0]);
 -			if (!qname) {
 -				ext4_msg(sb, KERN_ERR,
 -					"Not enough memory for "
 -					"storing quotafile name");
-+			if (!set_qf_name(sb, USRQUOTA, &args[0]))
- 				return 0;
+-				return 0;
 -			}
 -			if (sbi->s_qf_names[qtype] &&
 -			    strcmp(sbi->s_qf_names[qtype], qname)) {
@@ -166,7 +167,7 @@ index a247673..4fd8cfb 100644
  		case Opt_jqfmt_vfsold:
  			qfmt = QFMT_VFS_OLD;
  			goto set_qf_format;
-@@ -1636,8 +1651,7 @@ set_qf_format:
+@@ -1630,8 +1646,7 @@ set_qf_format:
  		if (test_opt(sb, GRPQUOTA) && sbi->s_qf_names[GRPQUOTA])
  			clear_opt(sbi->s_mount_opt, GRPQUOTA);
  
@@ -176,11 +177,3 @@ index a247673..4fd8cfb 100644
  			ext4_msg(sb, KERN_ERR, "old and new quota "
  					"format mixing");
  			return 0;
--- 
-1.6.3.3
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
