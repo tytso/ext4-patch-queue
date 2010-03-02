@@ -12,27 +12,30 @@ Skip the nobh and data=journal mount cases to make things simple for now.
 
 Signed-off-by: Jiaying Zhang <jiayingz@google.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+
 ---
- fs/ext4/ext4.h      |   12 +++++-
- fs/ext4/ext4_jbd2.h |   24 ++++++++++++
- fs/ext4/extents.c   |   22 ++++++-----
- fs/ext4/inode.c     |  105 ++++++++++++++++++++++++++++++++++++++++----------
- fs/ext4/super.c     |   30 +++++++++++++--
- 5 files changed, 157 insertions(+), 36 deletions(-)
+ fs/ext4/ext4.h      |   14 ++++-
+ fs/ext4/ext4_jbd2.h |   24 +++++++
+ fs/ext4/extents.c   |   22 ++++---
+ fs/ext4/inode.c     |  166 +++++++++++++++++++++++++++++++++++++++++----------
+ fs/ext4/super.c     |   31 ++++++++-
+ 5 files changed, 209 insertions(+), 48 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index b1dcbb7..b8b4887 100644
+index c831a58..79c067e 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -134,6 +134,7 @@ struct mpage_da_data {
- 	int retval;
- };
- #define	EXT4_IO_UNWRITTEN	0x1
-+#define	EXT4_IO_WRITTEN		0x2
- typedef struct ext4_io_end {
+@@ -138,7 +138,7 @@ typedef struct ext4_io_end {
  	struct list_head	list;		/* per-file finished AIO list */
  	struct inode		*inode;		/* file being written to */
-@@ -370,7 +371,7 @@ struct ext4_new_group_data {
+ 	unsigned int		flag;		/* unwritten or not */
+-	int			error;		/* I/O error code */
++	struct page		*page;		/* page struct for buffer write */
+ 	loff_t			offset;		/* offset in the file */
+ 	ssize_t			size;		/* size of the extent */
+ 	struct work_struct	work;		/* data work queue */
+@@ -361,7 +361,7 @@ struct ext4_new_group_data {
  					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
  	/* Convert extent to initialized after IO complete */
  #define EXT4_GET_BLOCKS_IO_CONVERT_EXT		(EXT4_GET_BLOCKS_CONVERT|\
@@ -41,7 +44,15 @@ index b1dcbb7..b8b4887 100644
  
  /*
   * Flags used by ext4_free_blocks
-@@ -761,6 +762,7 @@ struct ext4_inode_info {
+@@ -702,6 +702,7 @@ struct ext4_inode_info {
+ 
+ 	/* completed IOs that might need unwritten extents handling */
+ 	struct list_head i_completed_io_list;
++	spinlock_t i_completed_io_lock;
+ 	/* current io_end structure for async DIO write*/
+ 	ext4_io_end_t *cur_aio_dio;
+ 
+@@ -752,6 +753,7 @@ struct ext4_inode_info {
  #define EXT4_MOUNT_QUOTA		0x80000 /* Some quota option set */
  #define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
  #define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
@@ -49,9 +60,9 @@ index b1dcbb7..b8b4887 100644
  #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
  #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
  #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
-@@ -1774,6 +1776,14 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
- 	set_bit(BH_BITMAP_UPTODATE, &(bh)->b_state);
- }
+@@ -1781,6 +1783,14 @@ extern int ext4_move_extents(struct file *o_filp, struct file *d_filp,
+ 			     __u64 len, __u64 *moved_len);
+ 
  
 +/* BH_Uninit flag: blocks are allocated but uninitialized on disk */
 +enum ext4_state_bits {
@@ -62,10 +73,10 @@ index b1dcbb7..b8b4887 100644
 +BUFFER_FNS(Uninit, uninit)
 +
  /*
-  * __unmap_underlying_bh_blocks - just a helper function to unmap
-  * set of blocks described by @bh
+  * Add new method to test wether block and inode bitmaps are properly
+  * initialized. With uninit_bg reading the block from disk is not enough
 diff --git a/fs/ext4/ext4_jbd2.h b/fs/ext4/ext4_jbd2.h
-index 05eca81..dd58020 100644
+index 05eca81..b79ad51 100644
 --- a/fs/ext4/ext4_jbd2.h
 +++ b/fs/ext4/ext4_jbd2.h
 @@ -304,4 +304,28 @@ static inline int ext4_should_writeback_data(struct inode *inode)
@@ -98,10 +109,10 @@ index 05eca81..dd58020 100644
 +
  #endif	/* _EXT4_JBD2_H */
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index e3eddc0..eb9bce0 100644
+index f6ea4a2..202667b 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -1618,7 +1618,7 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
+@@ -1619,7 +1619,7 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
  	BUG_ON(path[depth].p_hdr == NULL);
  
  	/* try to insert block into found extent and return */
@@ -110,7 +121,7 @@ index e3eddc0..eb9bce0 100644
  		&& ext4_can_extents_be_merged(inode, ex, newext)) {
  		ext_debug("append [%d]%d block to %d:[%d]%d (from %llu)\n",
  				ext4_ext_is_uninitialized(newext),
-@@ -1739,7 +1739,7 @@ has_space:
+@@ -1740,7 +1740,7 @@ has_space:
  
  merge:
  	/* try to merge extents to the right */
@@ -119,7 +130,7 @@ index e3eddc0..eb9bce0 100644
  		ext4_ext_try_to_merge(inode, path, nearex);
  
  	/* try to merge extents to the left */
-@@ -3056,7 +3056,7 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+@@ -3065,7 +3065,7 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  	ext4_ext_show_leaf(inode, path);
  
  	/* get_block() before submit the IO, split the extent */
@@ -128,7 +139,7 @@ index e3eddc0..eb9bce0 100644
  		ret = ext4_split_unwritten_extents(handle,
  						inode, path, iblock,
  						max_blocks, flags);
-@@ -3069,10 +3069,12 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+@@ -3078,10 +3078,12 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  			io->flag = EXT4_IO_UNWRITTEN;
  		else
  			ext4_set_inode_state(inode, EXT4_STATE_DIO_UNWRITTEN);
@@ -142,7 +153,7 @@ index e3eddc0..eb9bce0 100644
  		ret = ext4_convert_unwritten_extents_endio(handle, inode,
  							path);
  		if (ret >= 0)
-@@ -3330,21 +3332,21 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+@@ -3351,21 +3353,21 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
  	if (flags & EXT4_GET_BLOCKS_UNINIT_EXT){
  		ext4_ext_mark_uninitialized(&newex);
  		/*
@@ -168,13 +179,21 @@ index e3eddc0..eb9bce0 100644
 +		if (ext4_should_dioread_nolock(inode))
 +			set_buffer_uninit(bh_result);
  	}
- 	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
- 	if (err) {
+ 
+ 	if (unlikely(EXT4_I(inode)->i_flags & EXT4_EOFBLOCKS_FL)) {
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index a3a5149..1f56484 100644
+index 28f116b..ae7adf2 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1535,6 +1535,8 @@ static void ext4_truncate_failed_write(struct inode *inode)
+@@ -38,6 +38,7 @@
+ #include <linux/uio.h>
+ #include <linux/bio.h>
+ #include <linux/workqueue.h>
++#include <linux/kernel.h>
+ 
+ #include "ext4_jbd2.h"
+ #include "xattr.h"
+@@ -1534,6 +1535,8 @@ static void ext4_truncate_failed_write(struct inode *inode)
  	ext4_truncate(inode);
  }
  
@@ -183,7 +202,7 @@ index a3a5149..1f56484 100644
  static int ext4_write_begin(struct file *file, struct address_space *mapping,
  			    loff_t pos, unsigned len, unsigned flags,
  			    struct page **pagep, void **fsdata)
-@@ -1576,8 +1578,12 @@ retry:
+@@ -1575,8 +1578,12 @@ retry:
  	}
  	*pagep = page;
  
@@ -198,7 +217,7 @@ index a3a5149..1f56484 100644
  
  	if (!ret && ext4_should_journal_data(inode)) {
  		ret = walk_page_buffers(handle, page_buffers(page),
-@@ -2105,6 +2111,8 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
+@@ -2092,6 +2099,8 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
  				} else if (buffer_mapped(bh))
  					BUG_ON(bh->b_blocknr != pblock);
  
@@ -207,7 +226,7 @@ index a3a5149..1f56484 100644
  				cur_logical++;
  				pblock++;
  			} while ((bh = bh->b_this_page) != head);
-@@ -2218,6 +2226,8 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
+@@ -2221,6 +2230,8 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
  	 */
  	new.b_state = 0;
  	get_blocks_flags = EXT4_GET_BLOCKS_CREATE;
@@ -216,7 +235,7 @@ index a3a5149..1f56484 100644
  	if (mpd->b_state & (1 << BH_Delay))
  		get_blocks_flags |= EXT4_GET_BLOCKS_DELALLOC_RESERVE;
  
-@@ -2633,6 +2643,9 @@ out:
+@@ -2636,6 +2647,9 @@ out:
  	return ret;
  }
  
@@ -226,7 +245,7 @@ index a3a5149..1f56484 100644
  /*
   * Note that we don't need to start a transaction unless we're journaling data
   * because we should have holes filled from ext4_page_mkwrite(). We even don't
-@@ -2680,7 +2693,7 @@ static int ext4_writepage(struct page *page,
+@@ -2683,7 +2697,7 @@ static int ext4_writepage(struct page *page,
  	int ret = 0;
  	loff_t size;
  	unsigned int len;
@@ -235,7 +254,7 @@ index a3a5149..1f56484 100644
  	struct inode *inode = page->mapping->host;
  
  	trace_ext4_writepage(inode, page);
-@@ -2756,7 +2769,11 @@ static int ext4_writepage(struct page *page,
+@@ -2759,7 +2773,11 @@ static int ext4_writepage(struct page *page,
  
  	if (test_opt(inode->i_sb, NOBH) && ext4_should_writeback_data(inode))
  		ret = nobh_writepage(page, noalloc_get_block_write, wbc);
@@ -248,7 +267,7 @@ index a3a5149..1f56484 100644
  		ret = block_write_full_page(page, noalloc_get_block_write,
  					    wbc);
  
-@@ -3448,10 +3465,11 @@ out:
+@@ -3471,10 +3489,11 @@ out:
  static int ext4_get_block_write(struct inode *inode, sector_t iblock,
  		   struct buffer_head *bh_result, int create)
  {
@@ -261,7 +280,7 @@ index a3a5149..1f56484 100644
  
  	ext4_debug("ext4_get_block_write: inode %lu, create flag %d\n",
  		   inode->i_ino, create);
-@@ -3462,21 +3480,26 @@ static int ext4_get_block_write(struct inode *inode, sector_t iblock,
+@@ -3485,21 +3504,26 @@ static int ext4_get_block_write(struct inode *inode, sector_t iblock,
  	 */
  	create = EXT4_GET_BLOCKS_IO_CREATE_EXT;
  
@@ -296,12 +315,41 @@ index a3a5149..1f56484 100644
  out:
  	return ret;
  }
-@@ -3530,12 +3553,10 @@ static int ext4_end_io_nolock(ext4_io_end_t *io)
- 	if (list_empty(&io->list))
- 		return ret;
+@@ -3507,6 +3531,8 @@ out:
+ static void ext4_free_io_end(ext4_io_end_t *io)
+ {
+ 	BUG_ON(!io);
++	if (io->page)
++		put_page(io->page);
+ 	iput(io->inode);
+ 	kfree(io);
+ }
+@@ -3516,6 +3542,7 @@ static void dump_completed_IO(struct inode * inode)
+ #ifdef	EXT4_DEBUG
+ 	struct list_head *cur, *before, *after;
+ 	ext4_io_end_t *io, *io0, *io1;
++	unsigned long flags;
  
--	if (io->flag != EXT4_IO_UNWRITTEN)
-+	if (io->flag != EXT4_IO_WRITTEN)
+ 	if (list_empty(&EXT4_I(inode)->i_completed_io_list)){
+ 		ext4_debug("inode %lu completed_io list is empty\n", inode->i_ino);
+@@ -3523,6 +3550,7 @@ static void dump_completed_IO(struct inode * inode)
+ 	}
+ 
+ 	ext4_debug("Dump inode %lu completed_io list \n", inode->i_ino);
++	spin_lock_irqsave(&EXT4_I(inode)->i_completed_io_lock, flags);
+ 	list_for_each_entry(io, &EXT4_I(inode)->i_completed_io_list, list){
+ 		cur = &io->list;
+ 		before = cur->prev;
+@@ -3533,6 +3561,7 @@ static void dump_completed_IO(struct inode * inode)
+ 		ext4_debug("io 0x%p from inode %lu,prev 0x%p,next 0x%p\n",
+ 			    io, inode->i_ino, io0, io1);
+ 	}
++	spin_unlock_irqrestore(&EXT4_I(inode)->i_completed_io_lock, flags);
+ #endif
+ }
+ 
+@@ -3556,9 +3585,7 @@ static int ext4_end_io_nolock(ext4_io_end_t *io)
+ 	if (io->flag != EXT4_IO_UNWRITTEN)
  		return ret;
  
 -	if (offset + size <= i_size_read(inode))
@@ -311,38 +359,122 @@ index a3a5149..1f56484 100644
  	if (ret < 0) {
  		printk(KERN_EMERG "%s: failed to convert unwritten"
  			"extents to written extents, error is %d"
-@@ -3583,7 +3604,7 @@ static void ext4_end_io_work(struct work_struct *work)
+@@ -3577,18 +3604,25 @@ static int ext4_end_io_nolock(ext4_io_end_t *io)
   */
+ static void ext4_end_io_work(struct work_struct *work)
+ {
+-	ext4_io_end_t *io  = container_of(work, ext4_io_end_t, work);
+-	struct inode *inode = io->inode;
+-	int ret = 0;
++	ext4_io_end_t		*io = container_of(work, ext4_io_end_t, work);
++	struct inode		*inode = io->inode;
++	struct ext4_inode_info	*ei = EXT4_I(inode);
++	unsigned long		flags;
++	int			ret;
+ 
+ 	mutex_lock(&inode->i_mutex);
+ 	ret = ext4_end_io_nolock(io);
+-	if (ret >= 0) {
+-		if (!list_empty(&io->list))
+-			list_del_init(&io->list);
+-		ext4_free_io_end(io);
++	if (ret < 0) {
++		mutex_unlock(&inode->i_mutex);
++		return;
+ 	}
++
++	spin_lock_irqsave(&ei->i_completed_io_lock, flags);
++	if (!list_empty(&io->list))
++		list_del_init(&io->list);
++	spin_unlock_irqrestore(&ei->i_completed_io_lock, flags);
+ 	mutex_unlock(&inode->i_mutex);
++	ext4_free_io_end(io);
+ }
+ 
+ /*
+@@ -3607,15 +3641,18 @@ static void ext4_end_io_work(struct work_struct *work)
  int flush_completed_IO(struct inode *inode)
  {
--	ext4_io_end_t *io;
-+	ext4_io_end_t *io, *tmp;
+ 	ext4_io_end_t *io;
++	struct ext4_inode_info *ei = EXT4_I(inode);
++	unsigned long flags;
  	int ret = 0;
  	int ret2 = 0;
  
-@@ -3591,9 +3612,10 @@ int flush_completed_IO(struct inode *inode)
+-	if (list_empty(&EXT4_I(inode)->i_completed_io_list))
++	if (list_empty(&ei->i_completed_io_list))
  		return ret;
  
  	dump_completed_IO(inode);
 -	while (!list_empty(&EXT4_I(inode)->i_completed_io_list)){
 -		io = list_entry(EXT4_I(inode)->i_completed_io_list.next,
--				ext4_io_end_t, list);
-+	list_for_each_entry_safe(io, tmp,
-+			&EXT4_I(inode)->i_completed_io_list, list) {
-+		if (io->flag == EXT4_IO_UNWRITTEN)
-+			continue;
++	spin_lock_irqsave(&ei->i_completed_io_lock, flags);
++	while (!list_empty(&ei->i_completed_io_list)){
++		io = list_entry(ei->i_completed_io_list.next,
+ 				ext4_io_end_t, list);
  		/*
  		 * Calling ext4_end_io_nolock() to convert completed
- 		 * IO to written.
-@@ -3661,6 +3683,7 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+@@ -3631,20 +3668,23 @@ int flush_completed_IO(struct inode *inode)
+ 		 * avoid double converting from both fsync and background work
+ 		 * queue work.
+ 		 */
++		spin_unlock_irqrestore(&ei->i_completed_io_lock, flags);
+ 		ret = ext4_end_io_nolock(io);
++		spin_lock_irqsave(&ei->i_completed_io_lock, flags);
+ 		if (ret < 0)
+ 			ret2 = ret;
+ 		else
+ 			list_del_init(&io->list);
+ 	}
++	spin_unlock_irqrestore(&ei->i_completed_io_lock, flags);
+ 	return (ret2 < 0) ? ret2 : 0;
+ }
+ 
+-static ext4_io_end_t *ext4_init_io_end (struct inode *inode)
++static ext4_io_end_t *ext4_init_io_end (struct inode *inode, gfp_t flags)
+ {
+ 	ext4_io_end_t *io = NULL;
+ 
+-	io = kmalloc(sizeof(*io), GFP_NOFS);
++	io = kmalloc(sizeof(*io), flags);
+ 
+ 	if (io) {
+ 		igrab(inode);
+@@ -3652,7 +3692,7 @@ static ext4_io_end_t *ext4_init_io_end (struct inode *inode)
+ 		io->flag = 0;
+ 		io->offset = 0;
+ 		io->size = 0;
+-		io->error = 0;
++		io->page = NULL;
+ 		INIT_WORK(&io->work, ext4_end_io_work);
+ 		INIT_LIST_HEAD(&io->list);
+ 	}
+@@ -3665,6 +3705,8 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+ {
+         ext4_io_end_t *io_end = iocb->private;
+ 	struct workqueue_struct *wq;
++	unsigned long flags;
++	struct ext4_inode_info *ei;
+ 
+ 	/* if not async direct IO or dio with 0 bytes write, just return */
+ 	if (!io_end || !size)
+@@ -3684,17 +3726,77 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
  
  	io_end->offset = offset;
  	io_end->size = size;
-+	io_end->flag = EXT4_IO_WRITTEN;
++	io_end->flag = EXT4_IO_UNWRITTEN;
  	wq = EXT4_SB(io_end->inode->i_sb)->dio_unwritten_wq;
  
  	/* queue the work to convert unwritten extents to written */
-@@ -3672,6 +3695,46 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+ 	queue_work(wq, &io_end->work);
+ 
+ 	/* Add the io_end to per-inode completed aio dio list*/
+-	list_add_tail(&io_end->list,
+-		 &EXT4_I(io_end->inode)->i_completed_io_list);
++	ei = EXT4_I(io_end->inode);
++	spin_lock_irqsave(&ei->i_completed_io_lock, flags);
++	list_add_tail(&io_end->list, &ei->i_completed_io_list);
++	spin_unlock_irqrestore(&ei->i_completed_io_lock, flags);
  	iocb->private = NULL;
  }
  
@@ -350,11 +482,20 @@ index a3a5149..1f56484 100644
 +{
 +	ext4_io_end_t *io_end = bh->b_private;
 +	struct workqueue_struct *wq;
++	struct inode *inode;
++	unsigned long flags;
 +
 +	if (!io_end)
 +		goto out;
-+	io_end->flag = EXT4_IO_WRITTEN;
-+	wq = EXT4_SB(io_end->inode->i_sb)->dio_unwritten_wq;
++	io_end->flag = EXT4_IO_UNWRITTEN;
++	inode = io_end->inode;
++
++	/* Add the io_end to per-inode completed io list*/
++	spin_lock_irqsave(&EXT4_I(inode)->i_completed_io_lock, flags);
++	list_add_tail(&io_end->list, &EXT4_I(inode)->i_completed_io_list);
++	spin_unlock_irqrestore(&EXT4_I(inode)->i_completed_io_lock, flags);
++
++	wq = EXT4_SB(inode->i_sb)->dio_unwritten_wq;
 +	/* queue the work to convert unwritten extents to written */
 +	queue_work(wq, &io_end->work);
 +out:
@@ -371,15 +512,23 @@ index a3a5149..1f56484 100644
 +	loff_t offset = (sector_t)page->index << PAGE_CACHE_SHIFT;
 +	size_t size = bh->b_size;
 +
-+	io_end = ext4_init_io_end(inode);
-+	if (!io_end)
-+		return -ENOMEM;
++retry:
++	io_end = ext4_init_io_end(inode, GFP_ATOMIC);
++	if (!io_end) {
++		if (printk_ratelimit())
++			printk(KERN_WARNING "%s: allocation fail\n", __func__);
++		schedule();
++		goto retry;
++	}
 +	io_end->offset = offset;
 +	io_end->size = size;
-+	io_end->flag = EXT4_IO_UNWRITTEN;
-+	/* Add the io_end to per-inode completed io list*/
-+	list_add_tail(&io_end->list,
-+		 &EXT4_I(io_end->inode)->i_completed_io_list);
++	/*
++	 * We need to hold a reference to the page to make sure it
++	 * doesn't get evicted before ext4_end_io_work() has a chance
++	 * to convert the extent from written to unwritten.
++	 */
++	io_end->page = page;
++	get_page(io_end->page);
 +
 +	bh->b_private = io_end;
 +	bh->b_end_io = ext4_end_io_buffer_write;
@@ -389,11 +538,28 @@ index a3a5149..1f56484 100644
  /*
   * For ext4 extent files, ext4 will do direct-io write to holes,
   * preallocated extents, and those write extend the file, no need to
+@@ -3748,7 +3850,7 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
+ 		iocb->private = NULL;
+ 		EXT4_I(inode)->cur_aio_dio = NULL;
+ 		if (!is_sync_kiocb(iocb)) {
+-			iocb->private = ext4_init_io_end(inode);
++			iocb->private = ext4_init_io_end(inode, GFP_NOFS);
+ 			if (!iocb->private)
+ 				return -ENOMEM;
+ 			/*
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 2a64aeb..20f18d8 100644
+index dc7a97e..200d257 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -926,6 +926,9 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+@@ -709,6 +709,7 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
+ 	ei->i_reserved_quota = 0;
+ #endif
+ 	INIT_LIST_HEAD(&ei->i_completed_io_list);
++	spin_lock_init(&ei->i_completed_io_lock);
+ 	ei->cur_aio_dio = NULL;
+ 	ei->i_sync_tid = 0;
+ 	ei->i_datasync_tid = 0;
+@@ -926,6 +927,9 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
  	if (test_opt(sb, NOLOAD))
  		seq_puts(seq, ",norecovery");
  
@@ -403,7 +569,7 @@ index 2a64aeb..20f18d8 100644
  	ext4_show_quota_options(seq, sb);
  
  	return 0;
-@@ -1109,6 +1112,7 @@ enum {
+@@ -1109,6 +1113,7 @@ enum {
  	Opt_stripe, Opt_delalloc, Opt_nodelalloc,
  	Opt_block_validity, Opt_noblock_validity,
  	Opt_inode_readahead_blks, Opt_journal_ioprio,
@@ -411,7 +577,7 @@ index 2a64aeb..20f18d8 100644
  	Opt_discard, Opt_nodiscard,
  };
  
-@@ -1176,6 +1180,8 @@ static const match_table_t tokens = {
+@@ -1176,6 +1181,8 @@ static const match_table_t tokens = {
  	{Opt_auto_da_alloc, "auto_da_alloc=%u"},
  	{Opt_auto_da_alloc, "auto_da_alloc"},
  	{Opt_noauto_da_alloc, "noauto_da_alloc"},
@@ -420,7 +586,7 @@ index 2a64aeb..20f18d8 100644
  	{Opt_discard, "discard"},
  	{Opt_nodiscard, "nodiscard"},
  	{Opt_err, NULL},
-@@ -1609,6 +1615,12 @@ set_qf_format:
+@@ -1640,6 +1647,12 @@ set_qf_format:
  		case Opt_nodiscard:
  			clear_opt(sbi->s_mount_opt, DISCARD);
  			break;
@@ -433,7 +599,7 @@ index 2a64aeb..20f18d8 100644
  		default:
  			ext4_msg(sb, KERN_ERR,
  			       "Unrecognized mount option \"%s\" "
-@@ -2766,7 +2778,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2795,7 +2808,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	      EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER)) {
  		ext4_msg(sb, KERN_ERR, "required journal recovery "
  		       "suppressed and not mounted read-only");
@@ -442,7 +608,7 @@ index 2a64aeb..20f18d8 100644
  	} else {
  		clear_opt(sbi->s_mount_opt, DATA_FLAGS);
  		set_opt(sbi->s_mount_opt, WRITEBACK_DATA);
-@@ -2779,7 +2791,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2808,7 +2821,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	    !jbd2_journal_set_features(EXT4_SB(sb)->s_journal, 0, 0,
  				       JBD2_FEATURE_INCOMPAT_64BIT)) {
  		ext4_msg(sb, KERN_ERR, "Failed to set 64-bit journal feature");
@@ -451,7 +617,7 @@ index 2a64aeb..20f18d8 100644
  	}
  
  	if (test_opt(sb, JOURNAL_ASYNC_COMMIT)) {
-@@ -2818,7 +2830,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2847,7 +2860,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		    (sbi->s_journal, 0, 0, JBD2_FEATURE_INCOMPAT_REVOKE)) {
  			ext4_msg(sb, KERN_ERR, "Journal does not support "
  			       "requested data journaling mode");
@@ -460,7 +626,7 @@ index 2a64aeb..20f18d8 100644
  		}
  	default:
  		break;
-@@ -2826,13 +2838,17 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2855,13 +2868,17 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	set_task_ioprio(sbi->s_journal->j_task, journal_ioprio);
  
  no_journal:
@@ -479,7 +645,7 @@ index 2a64aeb..20f18d8 100644
  	}
  	EXT4_SB(sb)->dio_unwritten_wq = create_workqueue("ext4-dio-unwritten");
  	if (!EXT4_SB(sb)->dio_unwritten_wq) {
-@@ -2897,6 +2913,12 @@ no_journal:
+@@ -2926,6 +2943,12 @@ no_journal:
  			 "requested data journaling mode");
  		clear_opt(sbi->s_mount_opt, DELALLOC);
  	}
