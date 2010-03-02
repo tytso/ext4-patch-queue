@@ -1,0 +1,34 @@
+ext4: explicitly remove inode from orphan list after failed direct io
+
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+
+Otherwise non-empty orphan list will be triggered on umount.
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 8c00127..0383b18 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3467,6 +3467,9 @@ retry:
+ 			 * but cannot extend i_size. Bail out and pretend
+ 			 * the write failed... */
+ 			ret = PTR_ERR(handle);
++			if (inode->i_nlink)
++				ext4_orphan_del(NULL, inode);
++
+ 			goto out;
+ 		}
+ 		if (inode->i_nlink)
+-- 
+1.6.6
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
