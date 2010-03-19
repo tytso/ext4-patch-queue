@@ -1,0 +1,29 @@
+ext4: Convert calls of ext4_error() to EXT4_ERROR_INODE()
+
+EXT4_ERROR_INODE() tends to provide better error information and in a
+more consistent format.
+
+Addresses-Google-Bug: #2507977
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/namei.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 0c070fa..0c0cba4 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1072,9 +1072,9 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, stru
+ 		inode = ext4_iget(dir->i_sb, ino);
+ 		if (unlikely(IS_ERR(inode))) {
+ 			if (PTR_ERR(inode) == -ESTALE) {
+-				ext4_error(dir->i_sb,
+-						"deleted inode referenced: %u",
+-						ino);
++				EXT4_ERROR_INODE(dir,
++						 "deleted inode referenced: %u",
++						 ino);
+ 				return ERR_PTR(-EIO);
+ 			} else {
+ 				return ERR_CAST(inode);
