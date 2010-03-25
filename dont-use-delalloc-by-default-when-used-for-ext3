@@ -2,30 +2,30 @@ ext4: Don't use delayed allocation by default when used instead of ext3
 
 From: Jan Kara <jack@suse.cz>
 
-When ext4 driver is used to mount a filesystem instead of the ext3
-file system driver, do not enable delayed allocation by default since
-some ext3 users and application writers have developed unfortunate
-expectations about the safety of writing files on systems subject to
-sudden and violent death without using fsync().
+When ext4 driver is used to mount a filesystem instead of the ext3 file
+system driver (through CONFIG_EXT4_USE_FOR_EXT23), do not enable delayed
+allocation by default since some ext3 users and application writers have
+developed unfortunate expectations about the safety of writing files on
+systems subject to sudden and violent death without using fsync().
 
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/super.c |   22 +++++++++++++---------
- 1 files changed, 13 insertions(+), 9 deletions(-)
+ fs/ext4/super.c |   25 ++++++++++++++++---------
+ 1 files changed, 16 insertions(+), 9 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index ce84a6e..3d1a056 100644
+index f4b038f..29c6875 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -68,7 +68,18 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf);
+@@ -68,7 +68,21 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf);
  static int ext4_unfreeze(struct super_block *sb);
  static void ext4_write_super(struct super_block *sb);
  static int ext4_freeze(struct super_block *sb);
 +static int ext4_get_sb(struct file_system_type *fs_type, int flags,
 +		       const char *dev_name, void *data, struct vfsmount *mnt);
  
-+#if !defined(CONTIG_EXT3_FS) && !defined(CONFIG_EXT3_FS_MODULE) && defined(CONFIG_EXT4_USE_FOR_EXT23)
++#if !defined(CONFIG_EXT3_FS) && !defined(CONFIG_EXT3_FS_MODULE) && defined(CONFIG_EXT4_USE_FOR_EXT23)
 +static struct file_system_type ext3_fs_type = {
 +	.owner		= THIS_MODULE,
 +	.name		= "ext3",
@@ -33,24 +33,27 @@ index ce84a6e..3d1a056 100644
 +	.kill_sb	= kill_block_super,
 +	.fs_flags	= FS_REQUIRES_DEV,
 +};
++#define IS_EXT3_SB(sb) ((sb)->s_bdev->bd_holder == &ext3_fs_type)
++#else
++#define IS_EXT3_SB(sb) (0)
 +#endif
  
  ext4_fsblk_t ext4_block_bitmap(struct super_block *sb,
  			       struct ext4_group_desc *bg)
-@@ -2539,7 +2550,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2539,7 +2553,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	 * enable delayed allocation by default
  	 * Use -o nodelalloc to turn it off
  	 */
 -	set_opt(sbi->s_mount_opt, DELALLOC);
-+	if (sb->s_bdev->bd_holder != &ext3_fs_type)
++	if (!IS_EXT3_SB(sb))
 +		set_opt(sbi->s_mount_opt, DELALLOC);
  
  	if (!parse_options((char *) data, sb, &journal_devnum,
  			   &journal_ioprio, NULL, 0))
-@@ -4096,14 +4108,6 @@ static inline void unregister_as_ext2(void) { }
+@@ -4096,14 +4111,6 @@ static inline void unregister_as_ext2(void) { }
  #endif
  
- #if !defined(CONTIG_EXT3_FS) && !defined(CONFIG_EXT3_FS_MODULE) && defined(CONFIG_EXT4_USE_FOR_EXT23)
+ #if !defined(CONFIG_EXT3_FS) && !defined(CONFIG_EXT3_FS_MODULE) && defined(CONFIG_EXT4_USE_FOR_EXT23)
 -static struct file_system_type ext3_fs_type = {
 -	.owner		= THIS_MODULE,
 -	.name		= "ext3",
