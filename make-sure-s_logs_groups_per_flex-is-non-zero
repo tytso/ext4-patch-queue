@@ -1,0 +1,44 @@
+ext4: check s_log_groups_per_flex in online resize code
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+If groups_per_flex < 2, sbi->s_flex_groups[] doesn't get filled out,
+and every other access to this first tests s_log_groups_per_flex;
+same thing needs to happen in resize or we'll wander off into
+a null pointer when doing an online resize of the file system.
+
+Thanks to Christoph Biedl, who came up with the trivial testcase:
+
+# truncate --size 128M fsfile
+# mkfs.ext3 -F fsfile
+# tune2fs -O extents,uninit_bg,dir_index,flex_bg,huge_file,dir_nlink,extra_isize fsfile
+# e2fsck -yDf -C0 fsfile
+# truncate --size 132M fsfile
+# losetup /dev/loop0 fsfile
+# mount /dev/loop0 mnt
+# resize2fs -p /dev/loop0
+
+	https://bugzilla.kernel.org/show_bug.cgi?id=13549
+
+Reported-by: Alessandro Polverini <alex@nibbles.it>
+Test-case-by: Christoph Biedl  <bugzilla.kernel.bpeb@manchmal.in-ulm.de>
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/resize.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 5692c48..6df797e 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -911,7 +911,8 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+ 	percpu_counter_add(&sbi->s_freeinodes_counter,
+ 			   EXT4_INODES_PER_GROUP(sb));
+ 
+-	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG)) {
++	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG) &&
++	    sbi->s_log_groups_per_flex) {
+ 		ext4_group_t flex_group;
+ 		flex_group = ext4_flex_group(sbi, input->group);
+ 		atomic_add(input->free_blocks_count,
