@@ -1,0 +1,46 @@
+ext4: stop issuing discards if not supported by device
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+Turn off issuance of discard requests if the device does
+not support it - similar to the action we take for barriers.
+This will save a little computation time if a non-discardable
+device is mounted with -o discard, and also makes it obvious
+that it's not doing what was asked at mount time ...
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 506713a..6ee4cac 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2556,6 +2556,7 @@ static void release_blocks_on_commit(journal_t *journal, transaction_t *txn)
+ 		}
+ 		ext4_unlock_group(sb, entry->group);
+ 		if (test_opt(sb, DISCARD)) {
++			int ret;
+ 			ext4_fsblk_t discard_block;
+ 
+ 			discard_block = entry->start_blk +
+@@ -2563,7 +2564,12 @@ static void release_blocks_on_commit(journal_t *journal, transaction_t *txn)
+ 			trace_ext4_discard_blocks(sb,
+ 					(unsigned long long)discard_block,
+ 					entry->count);
+-			sb_issue_discard(sb, discard_block, entry->count);
++			ret = sb_issue_discard(sb, discard_block, entry->count);
++			if (ret == EOPNOTSUPP) {
++				ext4_warning(sb,
++					"discard not supported, disabling");
++				clear_opt(EXT4_SB(sb)->s_mount_opt, DISCARD);
++			}
+ 		}
+ 		kmem_cache_free(ext4_free_ext_cachep, entry);
+ 		ext4_mb_release_desc(&e4b);
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
