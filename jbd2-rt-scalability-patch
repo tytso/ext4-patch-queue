@@ -1,3 +1,17 @@
+jbd2: Improve scalability by not taking j_state_lock in jbd2_journal_stop()
+
+One of the most contended locks in the jbd2 layer is j_state_lock when
+running dbench.  This is especially true if using the real-time kernel
+with its "sleeping spinlocks" patch that replaces spinlocks with
+priority inheriting mutexes --- but it also shows up on large SMP
+benchmarks.
+
+Thanks to John Stultz for pointing this out.
+
+Reviewed by Mingming Cao and Jan Kara.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
 index bfc70f5..e214d68 100644
 --- a/fs/jbd2/transaction.c
