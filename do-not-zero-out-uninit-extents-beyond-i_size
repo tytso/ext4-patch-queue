@@ -1,4 +1,4 @@
-ext4: Do not zeroout uninitialized extents beyond i_size
+ext4: Do not zero out uninitialized extents beyond i_size
 
 From: Dmitry Monakhov <dmonakhov@openvz.org>
 
@@ -14,11 +14,11 @@ https://bugzilla.kernel.org/show_bug.cgi?id=15742
 Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents.c |   66 ++++++++++++++++++++++++++++++++++++++++-------------
- 1 files changed, 50 insertions(+), 16 deletions(-)
+ fs/ext4/extents.c |   67 ++++++++++++++++++++++++++++++++++++++++------------
+ 1 files changed, 51 insertions(+), 16 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 228eeaf..7c0438e 100644
+index 228eeaf..ee611da 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -2631,11 +2631,21 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
@@ -173,7 +173,7 @@ index 228eeaf..7c0438e 100644
  			err =  ext4_ext_zeroout(inode, &orig_ex);
  			if (err)
  				goto fix_extent_len;
-@@ -3016,8 +3049,9 @@ static int ext4_split_unwritten_extents(handle_t *handle,
+@@ -3016,8 +3049,10 @@ static int ext4_split_unwritten_extents(handle_t *handle,
  		 * update the extent length after successful insert of the
  		 * split extent
  		 */
@@ -181,11 +181,12 @@ index 228eeaf..7c0438e 100644
 -						ext4_ext_get_actual_len(ex3));
 +		ee_len -= ext4_ext_get_actual_len(ex3);
 +		orig_ex.ee_len = cpu_to_le16(ee_len);
++		may_zeroout = ee_block + ee_len <= eof_block;
 +
  		depth = newdepth;
  		ext4_ext_drop_refs(path);
  		path = ext4_ext_find_extent(inode, iblock, path);
-@@ -3063,7 +3097,7 @@ static int ext4_split_unwritten_extents(handle_t *handle,
+@@ -3063,7 +3098,7 @@ static int ext4_split_unwritten_extents(handle_t *handle,
  	goto out;
  insert:
  	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
