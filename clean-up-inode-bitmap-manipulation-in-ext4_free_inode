@@ -13,14 +13,14 @@ From: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ialloc.c |   88 +++++++++++++++++++++++++++---------------------------
- 1 files changed, 44 insertions(+), 44 deletions(-)
+ fs/ext4/ialloc.c |   81 ++++++++++++++++++++++++-----------------------------
+ 1 files changed, 37 insertions(+), 44 deletions(-)
 
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index 57f6eef..25fe42f 100644
+index 57f6eef..52618d5 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
-@@ -240,56 +240,56 @@ void ext4_free_inode(handle_t *handle, struct inode *inode)
+@@ -240,56 +240,49 @@ void ext4_free_inode(handle_t *handle, struct inode *inode)
  	if (fatal)
  		goto error_return;
  
@@ -54,9 +54,8 @@ index 57f6eef..25fe42f 100644
 -				}
 +	}
 +	ext4_lock_group(sb, block_group);
-+	if (fatal) {
-+		/* Skip group descriptor update, update only inode bitmaps */
-+		cleared = ext4_clear_bit(bit, bitmap_bh->b_data);
++	cleared = ext4_clear_bit(bit, bitmap_bh->b_data);
++	if (fatal || !cleared) {
 +		ext4_unlock_group(sb, block_group);
 +		goto out;
 +	}
@@ -79,24 +78,18 @@ index 57f6eef..25fe42f 100644
 -		BUFFER_TRACE(bh2, "call ext4_handle_dirty_metadata");
 -		err = ext4_handle_dirty_metadata(handle, NULL, bh2);
 -		if (!fatal) fatal = err;
-+	/* Ok, now we can actually update the inode bitmaps.. */
-+	cleared = ext4_clear_bit(bit, bitmap_bh->b_data);
-+	if (!cleared) {
-+		ext4_unlock_group(sb, block_group);
-+		goto out;
- 	}
--	BUFFER_TRACE(bitmap_bh, "call ext4_handle_dirty_metadata");
--	err = ext4_handle_dirty_metadata(handle, NULL, bitmap_bh);
--	if (!fatal)
--		fatal = err;
--	sb->s_dirt = 1;
 +	count = ext4_free_inodes_count(sb, gdp) + 1;
 +	ext4_free_inodes_set(sb, gdp, count);
 +	if (is_directory) {
 +		count = ext4_used_dirs_count(sb, gdp) - 1;
 +		ext4_used_dirs_set(sb, gdp, count);
 +		percpu_counter_dec(&sbi->s_dirs_counter);
-+	}
+ 	}
+-	BUFFER_TRACE(bitmap_bh, "call ext4_handle_dirty_metadata");
+-	err = ext4_handle_dirty_metadata(handle, NULL, bitmap_bh);
+-	if (!fatal)
+-		fatal = err;
+-	sb->s_dirt = 1;
 +	gdp->bg_checksum = ext4_group_desc_csum(sbi, block_group, gdp);
 +	ext4_unlock_group(sb, block_group);
 +
