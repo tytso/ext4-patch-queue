@@ -1,0 +1,24 @@
+ext4: Fix for ext4_mb_collect_stats()
+
+From: Curt Wohlgemuth <curtw@google.com>
+
+Fix ext4_mb_collect_stats() to use the correct test for s_bal_success; it
+should be testing "best-extent.fe_len >= orig-extent.fe_len" , not
+"orig-extent.fe_len >= goal-extent.fe_len" .
+
+Signed-off-by: Curt Wohlgemuth <curtw@google.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+diff -uprN orig/fs/ext4/mballoc.c new/fs/ext4/mballoc.c
+--- orig/fs/ext4/mballoc.c	2010-05-03 10:11:36.000000000 -0700
++++ new/fs/ext4/mballoc.c	2010-05-03 10:13:31.000000000 -0700
+@@ -2981,7 +2981,7 @@ static void ext4_mb_collect_stats(struct
+ 	if (sbi->s_mb_stats && ac->ac_g_ex.fe_len > 1) {
+ 		atomic_inc(&sbi->s_bal_reqs);
+ 		atomic_add(ac->ac_b_ex.fe_len, &sbi->s_bal_allocated);
+-		if (ac->ac_o_ex.fe_len >= ac->ac_g_ex.fe_len)
++		if (ac->ac_b_ex.fe_len >= ac->ac_o_ex.fe_len)
+ 			atomic_inc(&sbi->s_bal_success);
+ 		atomic_add(ac->ac_found, &sbi->s_bal_ex_scanned);
+ 		if (ac->ac_g_ex.fe_start == ac->ac_b_ex.fe_start &&
+
