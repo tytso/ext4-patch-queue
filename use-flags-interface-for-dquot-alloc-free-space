@@ -11,12 +11,15 @@ cleaner to add a "nofail" option in the next patch.
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
+ fs/quota/dquot.c         |    8 +++++---
+ include/linux/quotaops.h |   25 ++++++++++++++-----------
+ 2 files changed, 19 insertions(+), 14 deletions(-)
 
 diff --git a/fs/quota/dquot.c b/fs/quota/dquot.c
-index e0b870f..8436d9b 100644
+index 788b580..8c40c07 100644
 --- a/fs/quota/dquot.c
 +++ b/fs/quota/dquot.c
-@@ -1484,11 +1484,12 @@ static void inode_decr_space(struct inode *inode, qsize_t number, int reserve)
+@@ -1488,11 +1488,12 @@ static void inode_decr_space(struct inode *inode, qsize_t number, int reserve)
  /*
   * This operation can block, but only after everything is updated
   */
@@ -31,7 +34,7 @@ index e0b870f..8436d9b 100644
  
  	/*
  	 * First test before acquiring mutex - solves deadlocks when we
-@@ -1608,10 +1609,11 @@ EXPORT_SYMBOL(dquot_claim_space_nodirty);
+@@ -1612,10 +1613,11 @@ EXPORT_SYMBOL(dquot_claim_space_nodirty);
  /*
   * This operation can block, but only after everything is updated
   */
@@ -45,19 +48,19 @@ index e0b870f..8436d9b 100644
  	/* First test before acquiring mutex - solves deadlocks when we
           * re-enter the quota code and are already holding the mutex */
 diff --git a/include/linux/quotaops.h b/include/linux/quotaops.h
-index e6fa7ac..daa106f 100644
+index e6fa7ac..9edd53c 100644
 --- a/include/linux/quotaops.h
 +++ b/include/linux/quotaops.h
-@@ -14,6 +14,9 @@ static inline struct quota_info *sb_dqopt(struct super_block *sb)
- 	return &sb->s_dquot;
- }
+@@ -9,6 +9,9 @@
+ 
+ #include <linux/fs.h>
  
 +#define DQUOT_SPACE_WARN	0x1
 +#define DQUOT_SPACE_RESERVE	0x2
 +
- #if defined(CONFIG_QUOTA)
- 
- /*
+ static inline struct quota_info *sb_dqopt(struct super_block *sb)
+ {
+ 	return &sb->s_dquot;
 @@ -33,9 +36,8 @@ int dquot_scan_active(struct super_block *sb,
  struct dquot *dquot_alloc(struct super_block *sb, int type);
  void dquot_destroy(struct dquot *dquot);
@@ -129,9 +132,3 @@ index e6fa7ac..daa106f 100644
  }
  
  #endif /* _LINUX_QUOTAOPS_ */
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
