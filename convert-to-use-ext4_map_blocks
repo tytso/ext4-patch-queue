@@ -11,10 +11,9 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
  fs/ext4/dir.c     |   12 +-
- fs/ext4/ext4.h    |    2 +-
  fs/ext4/extents.c |   40 +++----
- fs/ext4/inode.c   |  342 +++++++++++++++++++++--------------------------------
- 4 files changed, 158 insertions(+), 238 deletions(-)
+ fs/ext4/inode.c   |  329 +++++++++++++++++++++--------------------------------
+ 3 files changed, 151 insertions(+), 230 deletions(-)
 
 diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
 index 86cb6d8..e3f2700 100644
@@ -49,21 +48,8 @@ index 86cb6d8..e3f2700 100644
  		}
  
  		/*
-diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 8dfc70b..08f541b 100644
---- a/fs/ext4/ext4.h
-+++ b/fs/ext4/ext4.h
-@@ -139,7 +139,7 @@ struct ext4_allocation_request {
- #define EXT4_MAP_UNINIT		(1 << BH_Uninit)
- #define EXT4_MAP_FLAGS		(EXT4_MAP_NEW | EXT4_MAP_MAPPED |\
- 				 EXT4_MAP_UNWRITTEN | EXT4_MAP_BOUNDARY |\
--				 EXT4_MAP_UNINIT);
-+				 EXT4_MAP_UNINIT)
- 
- struct ext4_map_blocks {
- 	ext4_fsblk_t m_pblk;
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 005dce9..2282f40 100644
+index 614528e..4f79cd9 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -3667,13 +3667,12 @@ static void ext4_falloc_update_inode(struct inode *inode,
@@ -97,8 +83,8 @@ index 005dce9..2282f40 100644
  	/*
  	 * credits to insert 1 extent into extent tree
  	 */
-@@ -3701,16 +3700,14 @@ long ext4_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
- 	mutex_lock(&inode->i_mutex);
+@@ -3706,16 +3705,14 @@ long ext4_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
+ 	}
  retry:
  	while (ret >= 0 && ret < max_blocks) {
 -		block = block + ret;
@@ -117,7 +103,7 @@ index 005dce9..2282f40 100644
  				      EXT4_GET_BLOCKS_CREATE_UNINIT_EXT);
  		if (ret <= 0) {
  #ifdef EXT4FS_DEBUG
-@@ -3724,14 +3721,14 @@ retry:
+@@ -3729,14 +3726,14 @@ retry:
  			ret2 = ext4_journal_stop(handle);
  			break;
  		}
@@ -135,7 +121,7 @@ index 005dce9..2282f40 100644
  		ext4_mark_inode_dirty(handle, inode);
  		ret2 = ext4_journal_stop(handle);
  		if (ret2)
-@@ -3760,42 +3757,39 @@ int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
+@@ -3765,42 +3762,39 @@ int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
  				    ssize_t len)
  {
  	handle_t *handle;
@@ -187,10 +173,10 @@ index 005dce9..2282f40 100644
  		ext4_mark_inode_dirty(handle, inode);
  		ret2 = ext4_journal_stop(handle);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 0b79f46..ce733e7 100644
+index 83c8bb7..7a0595f 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1345,133 +1345,112 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
+@@ -1336,133 +1336,112 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
  	return retval;
  }
  
@@ -392,7 +378,7 @@ index 0b79f46..ce733e7 100644
  }
  
  struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
-@@ -2056,28 +2035,23 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+@@ -2050,28 +2029,23 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
  /*
   * mpage_put_bnr_to_bhs - walk blocks and assign them actual numbers
   *
@@ -427,7 +413,7 @@ index 0b79f46..ce733e7 100644
  	cur_logical = index << (PAGE_CACHE_SHIFT - inode->i_blkbits);
  
  	pagevec_init(&pvec, 0);
-@@ -2104,17 +2078,16 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
+@@ -2098,17 +2072,16 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
  
  			/* skip blocks out of the range */
  			do {
@@ -448,7 +434,7 @@ index 0b79f46..ce733e7 100644
  
  					BUG_ON(bh->b_bdev != inode->i_sb->s_bdev);
  
-@@ -2133,7 +2106,7 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
+@@ -2127,7 +2100,7 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
  				} else if (buffer_mapped(bh))
  					BUG_ON(bh->b_blocknr != pblock);
  
@@ -457,7 +443,7 @@ index 0b79f46..ce733e7 100644
  					set_buffer_uninit(bh);
  				cur_logical++;
  				pblock++;
-@@ -2144,21 +2117,6 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
+@@ -2138,21 +2111,6 @@ static void mpage_put_bnr_to_bhs(struct mpage_da_data *mpd, sector_t logical,
  }
  
  
@@ -479,7 +465,7 @@ index 0b79f46..ce733e7 100644
  static void ext4_da_block_invalidatepages(struct mpage_da_data *mpd,
  					sector_t logical, long blk_cnt)
  {
-@@ -2220,7 +2178,7 @@ static void ext4_print_free_blocks(struct inode *inode)
+@@ -2214,7 +2172,7 @@ static void ext4_print_free_blocks(struct inode *inode)
  static int mpage_da_map_blocks(struct mpage_da_data *mpd)
  {
  	int err, blks, get_blocks_flags;
@@ -488,7 +474,7 @@ index 0b79f46..ce733e7 100644
  	sector_t next = mpd->b_blocknr;
  	unsigned max_blocks = mpd->b_size >> mpd->inode->i_blkbits;
  	loff_t disksize = EXT4_I(mpd->inode)->i_disksize;
-@@ -2261,15 +2219,15 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
+@@ -2255,15 +2213,15 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
  	 * EXT4_GET_BLOCKS_DELALLOC_RESERVE so the delalloc accounting
  	 * variables are updated after the blocks have been allocated.
  	 */
@@ -507,7 +493,7 @@ index 0b79f46..ce733e7 100644
  	if (blks < 0) {
  		err = blks;
  		/*
-@@ -2311,10 +2269,13 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
+@@ -2305,10 +2263,13 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
  	}
  	BUG_ON(blks == 0);
  
@@ -524,7 +510,7 @@ index 0b79f46..ce733e7 100644
  
  	/*
  	 * If blocks are delayed marked, we need to
-@@ -2322,7 +2283,7 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
+@@ -2316,7 +2277,7 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
  	 */
  	if ((mpd->b_state & (1 << BH_Delay)) ||
  	    (mpd->b_state & (1 << BH_Unwritten)))
@@ -533,7 +519,7 @@ index 0b79f46..ce733e7 100644
  
  	if (ext4_should_order_data(mpd->inode)) {
  		err = ext4_jbd2_file_inode(handle, mpd->inode);
-@@ -2551,8 +2512,9 @@ static int __mpage_da_writepage(struct page *page,
+@@ -2534,8 +2495,9 @@ static int __mpage_da_writepage(struct page *page,
   * initialized properly.
   */
  static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
@@ -544,7 +530,7 @@ index 0b79f46..ce733e7 100644
  	int ret = 0;
  	sector_t invalid_block = ~((sector_t) 0xffff);
  
-@@ -2560,45 +2522,50 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+@@ -2543,16 +2505,22 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  		invalid_block = ~0;
  
  	BUG_ON(create == 0);
@@ -562,15 +548,19 @@ index 0b79f46..ce733e7 100644
 -	ret = ext4_get_blocks(NULL, inode, iblock, 1,  bh_result, 0);
 -	if ((ret == 0) && !buffer_delay(bh_result)) {
 -		/* the block isn't (pre)allocated yet, let's reserve space */
--		/*
--		 * XXX: __block_prepare_write() unmaps passed block,
--		 * is it OK?
--		 */
--		ret = ext4_da_reserve_space(inode, iblock);
--		if (ret)
--			/* not enough space to reserve */
--			return ret;
--
++	ret = ext4_map_blocks(NULL, inode, &map, 0);
++	if (ret < 0)
++		return ret;
++	if (ret == 0) {
++		if (buffer_delay(bh))
++			return 0; /* Not sure this could or should happen */
+ 		/*
+ 		 * XXX: __block_prepare_write() unmaps passed block,
+ 		 * is it OK?
+@@ -2562,26 +2530,26 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+ 			/* not enough space to reserve */
+ 			return ret;
+ 
 -		map_bh(bh_result, inode->i_sb, invalid_block);
 -		set_buffer_new(bh_result);
 -		set_buffer_delay(bh_result);
@@ -583,26 +573,14 @@ index 0b79f46..ce733e7 100644
 -			 * when we write to the same offset and new
 -			 * ensures that we do proper zero out for
 -			 * partial write.
-+	ret = ext4_map_blocks(NULL, inode, &map, 0);
-+	if (ret < 0)
-+		return ret;
-+	if (ret == 0) {
-+		if (!(map.m_flags & EXT4_MAP_DELAY)) {
-+			/*
-+			 * XXX: __block_prepare_write() unmaps passed
-+			 * block, is it OK?
- 			 */
+-			 */
 -			set_buffer_new(bh_result);
 -			set_buffer_mapped(bh_result);
-+			ret = ext4_da_reserve_space(inode, iblock);
-+			if (ret)
-+				return ret; /* not enough space to reserve */
-+
-+			map_bh(bh, inode->i_sb, invalid_block);
-+			set_buffer_new(bh);
-+			set_buffer_delay(bh);
- 		}
+-		}
 -		ret = 0;
++		map_bh(bh, inode->i_sb, invalid_block);
++		set_buffer_new(bh);
++		set_buffer_delay(bh);
 +		return 0;
  	}
  
@@ -624,7 +602,7 @@ index 0b79f46..ce733e7 100644
  }
  
  /*
-@@ -2620,21 +2587,8 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+@@ -2603,21 +2571,8 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  static int noalloc_get_block_write(struct inode *inode, sector_t iblock,
  				   struct buffer_head *bh_result, int create)
  {
@@ -647,7 +625,7 @@ index 0b79f46..ce733e7 100644
  }
  
  static int bget_one(handle_t *handle, struct buffer_head *bh)
-@@ -3569,46 +3523,18 @@ out:
+@@ -3644,46 +3599,18 @@ out:
  	return ret;
  }
  
