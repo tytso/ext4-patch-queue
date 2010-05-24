@@ -11,16 +11,18 @@ partitions, it's easy to have no block groups with a block extent large
 enough to satisfy the input request length.  This currently causes the loop
 during cr == 0 in ext4_mb_regular_allocator() to load the buddy bitmap pages
 for EVERY block group.  That can be a lot of pages.  The patch below allows
-us to call ext4_mb_good_group() BEFORE we load the buddy pages.
+us to call ext4_mb_good_group() BEFORE we load the buddy pages (although we
+have check again after we lock the block group).
 
 Addresses-Google-Bug: #2578108
+Addresses-Google-Bug: #2704453
 
 Signed-off-by: Curt Wohlgemuth <curtw@google.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h    |    1 +
- fs/ext4/mballoc.c |   71 ++++++++++++++++++++++++++++++++++++++--------------
- 2 files changed, 53 insertions(+), 19 deletions(-)
+ fs/ext4/mballoc.c |   70 +++++++++++++++++++++++++++++++++++++++++++----------
+ 2 files changed, 58 insertions(+), 13 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index bf938cf..d266003 100644
@@ -35,7 +37,7 @@ index bf938cf..d266003 100644
  #ifdef DOUBLE_CHECK
  	void            *bb_bitmap;
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 4f2d3a9..d963843 100644
+index 4f2d3a9..aa499fe 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -658,6 +658,27 @@ static void ext4_mb_mark_free_simple(struct super_block *sb,
@@ -188,21 +190,21 @@ index 4f2d3a9..d963843 100644
  				continue;
  
  			err = ext4_mb_load_buddy(sb, group, &e4b);
-@@ -2039,13 +2078,6 @@ repeat:
+@@ -2039,8 +2078,12 @@ repeat:
  				goto out;
  
  			ext4_lock_group(sb, group);
--			if (!ext4_mb_good_group(ac, group, cr)) {
++
++			/*
++			 * We need to check again after locking the
++			 * block group
++			 */
+ 			if (!ext4_mb_good_group(ac, group, cr)) {
 -				/* someone did allocation from this group */
--				ext4_unlock_group(sb, group);
--				ext4_mb_unload_buddy(&e4b);
--				continue;
--			}
--
- 			ac->ac_groups_scanned++;
- 			if (cr == 0)
- 				ext4_mb_simple_scan_group(ac, &e4b);
-@@ -2253,6 +2285,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+ 				ext4_unlock_group(sb, group);
+ 				ext4_mb_unload_buddy(&e4b);
+ 				continue;
+@@ -2253,6 +2296,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
  	INIT_LIST_HEAD(&meta_group_info[i]->bb_prealloc_list);
  	init_rwsem(&meta_group_info[i]->alloc_sem);
  	meta_group_info[i]->bb_free_root = RB_ROOT;
