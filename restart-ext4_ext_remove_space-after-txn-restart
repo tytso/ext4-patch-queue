@@ -1,0 +1,94 @@
+ext4: restart ext4_ext_remove_space() after transaction restart
+
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+
+If i_data_sem was internally dropped due to transaction restart, it is
+necessary to restart path look-up because extents tree was possibly
+modified by ext4_get_block().
+
+https://bugzilla.kernel.org/show_bug.cgi?id=15827
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Acked-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/ext4.h    |    1 +
+ fs/ext4/extents.c |   18 +++++++++++++-----
+ 2 files changed, 14 insertions(+), 5 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 6641c58..c69efb2 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1089,6 +1089,7 @@ enum {
+ 	EXT4_STATE_DA_ALLOC_CLOSE,	/* Alloc DA blks on close */
+ 	EXT4_STATE_EXT_MIGRATE,		/* Inode is migrating */
+ 	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
++	EXT4_STATE_EXT_TRUNC,		/* truncate is in progress, modified under i_data_sem */
+ };
+ 
+ #define EXT4_INODE_BIT_FNS(name, field)					\
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 4fa103c..6856272 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -107,11 +107,8 @@ static int ext4_ext_truncate_extend_restart(handle_t *handle,
+ 	if (err <= 0)
+ 		return err;
+ 	err = ext4_truncate_restart_trans(handle, inode, needed);
+-	/*
+-	 * We have dropped i_data_sem so someone might have cached again
+-	 * an extent we are going to truncate.
+-	 */
+-	ext4_ext_invalidate_cache(inode);
++	if (!err && !ext4_test_inode_state(inode, EXT4_STATE_EXT_TRUNC))
++		err = -EAGAIN;
+ 
+ 	return err;
+ }
+@@ -2370,12 +2367,15 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
+ 	if (IS_ERR(handle))
+ 		return PTR_ERR(handle);
+ 
++again:
+ 	ext4_ext_invalidate_cache(inode);
+ 
+ 	/*
+ 	 * We start scanning from right side, freeing all the blocks
+ 	 * after i_size and walking into the tree depth-wise.
+ 	 */
++	ext4_set_inode_state(inode, EXT4_STATE_EXT_TRUNC);
++	depth = ext_depth(inode);
+ 	path = kzalloc(sizeof(struct ext4_ext_path) * (depth + 1), GFP_NOFS);
+ 	if (path == NULL) {
+ 		ext4_journal_stop(handle);
+@@ -2480,6 +2480,11 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
+ out:
+ 	ext4_ext_drop_refs(path);
+ 	kfree(path);
++	if (err == -EAGAIN) {
++		err = 0;
++		goto again;
++	}
++	ext4_clear_inode_state(inode, EXT4_STATE_EXT_TRUNC);
+ 	ext4_journal_stop(handle);
+ 
+ 	return err;
+@@ -3338,6 +3343,9 @@ int ext4_ext_get_blocks(handle_t *handle, struct inode *inode,
+ 	ext_debug("blocks %u/%u requested for inode %lu\n",
+ 			iblock, max_blocks, inode->i_ino);
+ 
++	if (unlikely((flags & EXT4_GET_BLOCKS_CREATE)) &&
++		ext4_test_inode_state(inode, EXT4_STATE_EXT_TRUNC))
++		ext4_clear_inode_state(inode, EXT4_STATE_EXT_TRUNC);
+ 	/* check in cache */
+ 	cache_type = ext4_ext_in_cache(inode, iblock, &newex);
+ 	if (cache_type) {
+-- 
+1.6.6.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
