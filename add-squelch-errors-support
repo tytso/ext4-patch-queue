@@ -18,10 +18,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 17 insertions(+), 6 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index bf938cf..58b4983 100644
+index db4c882..e9ddbe2 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -895,6 +895,7 @@ struct ext4_super_block {
+@@ -1013,6 +1013,7 @@ struct ext4_super_block {
   */
  #define EXT4_MF_MNTDIR_SAMPLED	0x0001
  #define EXT4_MF_FS_ABORTED	0x0002	/* Fatal error detected */
@@ -29,19 +29,19 @@ index bf938cf..58b4983 100644
  
  /*
   * fourth extended-fs super-block data in memory
-@@ -1062,6 +1063,7 @@ enum {
- 	EXT4_STATE_DA_ALLOC_CLOSE,	/* Alloc DA blks on close */
+@@ -1181,6 +1182,7 @@ enum {
  	EXT4_STATE_EXT_MIGRATE,		/* Inode is migrating */
  	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
+ 	EXT4_STATE_EXT_TRUNC,		/* truncate is in progress, modified under i_data_sem */
 +	EXT4_STATE_ERR_SQUELCHED,	/* squeched error */
  };
  
- static inline int ext4_test_inode_state(struct inode *inode, int bit)
+ #define EXT4_INODE_BIT_FNS(name, field)					\
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 1d23b65..c28e8bc 100644
+index 2987339..d7af366 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -363,12 +363,19 @@ void ext4_error_inode(const char *function, struct inode *inode,
+@@ -367,12 +367,19 @@ void ext4_error_inode(const char *function, struct inode *inode,
  {
  	va_list args;
  
@@ -67,7 +67,7 @@ index 1d23b65..c28e8bc 100644
  
  	ext4_handle_error(inode->i_sb);
  }
-@@ -2354,6 +2361,7 @@ EXT4_RW_ATTR_SBI_UI(mb_order2_req, s_mb_order2_reqs);
+@@ -2360,6 +2367,7 @@ EXT4_RW_ATTR_SBI_UI(mb_order2_req, s_mb_order2_reqs);
  EXT4_RW_ATTR_SBI_UI(mb_stream_req, s_mb_stream_request);
  EXT4_RW_ATTR_SBI_UI(mb_group_prealloc, s_mb_group_prealloc);
  EXT4_RW_ATTR_SBI_UI(max_writeback_mb_bump, s_max_writeback_mb_bump);
@@ -75,7 +75,7 @@ index 1d23b65..c28e8bc 100644
  
  static struct attribute *ext4_attrs[] = {
  	ATTR_LIST(delayed_allocation_blocks),
-@@ -2368,6 +2376,7 @@ static struct attribute *ext4_attrs[] = {
+@@ -2374,6 +2382,7 @@ static struct attribute *ext4_attrs[] = {
  	ATTR_LIST(mb_stream_req),
  	ATTR_LIST(mb_group_prealloc),
  	ATTR_LIST(max_writeback_mb_bump),
