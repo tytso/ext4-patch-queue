@@ -27,12 +27,12 @@ index e3f2700..883d21e 100644
  	if (error_msg != NULL)
 -		__ext4_error(dir->i_sb, function,
 -			"bad entry in directory #%lu: %s - block=%llu"
-+		ext4_error_inode(function, dir, 
++		ext4_error_inode(function, dir,
 +			"bad entry in directory: %s - block=%llu"
  			"offset=%u(%u), inode=%u, rec_len=%d, name_len=%d",
 -			dir->i_ino, error_msg, 
 -			(unsigned long long) bh->b_blocknr,     
-+			error_msg, (unsigned long long) bh->b_blocknr,     
++			error_msg, (unsigned long long) bh->b_blocknr,
  			(unsigned) (offset%bh->b_size), offset,
  			le32_to_cpu(de->inode),
  			rlen, de->name_len);
@@ -151,7 +151,7 @@ index 7a0595f..a8c4c24 100644
 -					       "corruption after allocation",
 -					       map->m_lblk, map->m_pblk,
 -					       retval);
-+		int ret = check_block_validity(inode, 
++		int ret = check_block_validity(inode,
 +					       "ext4_map_blocks_after_alloc",
 +					       map);
  		if (ret != 0)
@@ -266,7 +266,7 @@ index 7a0595f..a8c4c24 100644
 -			ext4_error(inode->i_sb, "IO error syncing inode, "
 -				   "inode=%lu, block=%llu", inode->i_ino,
 -				   (unsigned long long)iloc.bh->b_blocknr);
-+			EXT4_ERROR_INODE(inode, 
++			EXT4_ERROR_INODE(inode,
 +				"IO error syncing inode (block=%llu)",
 +				(unsigned long long) iloc.bh->b_blocknr);
  			err = -EIO;

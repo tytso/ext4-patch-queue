@@ -10,9 +10,9 @@ since we can avoid allocating a struct buffer_head on the stack.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h    |   30 ++++++-
- fs/ext4/extents.c |  233 +++++++++++++++++++++++++---------------------------
+ fs/ext4/extents.c |  237 +++++++++++++++++++++++++---------------------------
  fs/ext4/inode.c   |  102 +++++++++++++----------
- 3 files changed, 197 insertions(+), 168 deletions(-)
+ 3 files changed, 199 insertions(+), 170 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index d266003..57fc0e5 100644
@@ -70,7 +70,7 @@ index d266003..57fc0e5 100644
  			   sector_t block, unsigned int max_blocks,
  			   struct buffer_head *bh, int flags);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 8a8f9f0..614528e 100644
+index 8a8f9f0..37f9387 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -2611,7 +2611,7 @@ static int ext4_ext_zeroout(struct inode *inode, struct ext4_extent *ex)
@@ -174,12 +174,14 @@ index 8a8f9f0..614528e 100644
  				return allocated;
  
  			} else if (err)
-@@ -2752,7 +2751,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+@@ -2751,8 +2750,8 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 				 */
  				depth = ext_depth(inode);
  				ext4_ext_drop_refs(path);
- 				path = ext4_ext_find_extent(inode,
+-				path = ext4_ext_find_extent(inode,
 -								iblock, path);
-+								map->m_lblk, path);
++				path = ext4_ext_find_extent(inode, map->m_lblk,
++							    path);
  				if (IS_ERR(path)) {
  					err = PTR_ERR(path);
  					return err;
@@ -383,8 +385,9 @@ index 8a8f9f0..614528e 100644
  	}
  	/*
 -	 * ex2: iblock to iblock + maxblocks-1 : to be direct IO written,
-+	 * ex2: map->m_lblk to map->m_lblk + map->m_len-1 : to be direct IO written,
- 	 * uninitialised still.
+-	 * uninitialised still.
++	 * ex2: map->m_lblk to map->m_lblk + map->m_len-1 : to be written
++	 * using direct I/O, uninitialised still.
  	 */
 -	ex2->ee_block = cpu_to_le32(iblock);
 +	ex2->ee_block = cpu_to_le32(map->m_lblk);
@@ -396,7 +399,7 @@ index 8a8f9f0..614528e 100644
  static int
  ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
 -			ext4_lblk_t iblock, unsigned int max_blocks,
-+			struct ext4_map_blocks *map, 
++			struct ext4_map_blocks *map,
  			struct ext4_ext_path *path, int flags,
 -			unsigned int allocated, struct buffer_head *bh_result,
 -			ext4_fsblk_t newblock)
@@ -718,7 +721,7 @@ index 8a8f9f0..614528e 100644
  				    "max_blocks=%u", __func__,
  				    inode->i_ino, block, max_blocks);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 10be87b..83c8bb7 100644
+index 830336d..ff2f5fd 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -149,7 +149,7 @@ int ext4_truncate_restart_trans(handle_t *handle, struct inode *inode,
