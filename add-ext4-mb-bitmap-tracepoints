@@ -1,0 +1,67 @@
+ext4: Add new tracepoints to track mballoc's buddy bitmap loads
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 0bdc018..a93f554 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -890,6 +890,7 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
+ 			BUG_ON(incore == NULL);
+ 			mb_debug(1, "put buddy for group %u in page %lu/%x\n",
+ 				group, page->index, i * blocksize);
++			trace_ext4_mb_buddy_bitmap_load(sb, group);
+ 			grinfo = ext4_get_group_info(sb, group);
+ 			grinfo->bb_fragments = 0;
+ 			memset(grinfo->bb_counters, 0,
+@@ -907,6 +908,7 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
+ 			BUG_ON(incore != NULL);
+ 			mb_debug(1, "put bitmap for group %u in page %lu/%x\n",
+ 				group, page->index, i * blocksize);
++			trace_ext4_mb_bitmap_load(sb, group);
+ 
+ 			/* see comments in ext4_mb_put_pa() */
+ 			ext4_lock_group(sb, group);
+diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
+index 2aa6aa3..99fbf1d 100644
+--- a/include/trace/events/ext4.h
++++ b/include/trace/events/ext4.h
+@@ -974,6 +974,39 @@ TRACE_EVENT(ext4_da_release_space,
+ 		  __entry->reserved_meta_blocks, __entry->allocated_meta_blocks)
+ );
+ 
++DECLARE_EVENT_CLASS(ext4__bitmap_load,
++	TP_PROTO(struct super_block *sb, unsigned long group),
++
++	TP_ARGS(sb, group),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	__u32,	group			)
++
++	),
++
++	TP_fast_assign(
++		__entry->dev	= sb->s_dev;
++		__entry->group	= group;
++	),
++
++	TP_printk("dev %s group %u",
++		  jbd2_dev_to_name(__entry->dev), __entry->group)
++);
++
++DEFINE_EVENT(ext4__bitmap_load, ext4_mb_bitmap_load,
++
++	TP_PROTO(struct super_block *sb, unsigned long group),
++
++	TP_ARGS(sb, group)
++);
++
++DEFINE_EVENT(ext4__bitmap_load, ext4_mb_buddy_bitmap_load,
++
++	TP_PROTO(struct super_block *sb, unsigned long group),
++
++	TP_ARGS(sb, group)
++);
+ 
+ #endif /* _TRACE_EXT4_H */
+ 
