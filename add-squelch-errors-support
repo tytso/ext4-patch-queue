@@ -18,7 +18,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 17 insertions(+), 6 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index db4c882..e9ddbe2 100644
+index 60bd310..d281f62 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1013,6 +1013,7 @@ struct ext4_super_block {
@@ -32,13 +32,13 @@ index db4c882..e9ddbe2 100644
 @@ -1181,6 +1182,7 @@ enum {
  	EXT4_STATE_EXT_MIGRATE,		/* Inode is migrating */
  	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
- 	EXT4_STATE_EXT_TRUNC,		/* truncate is in progress, modified under i_data_sem */
+ 	EXT4_STATE_NEWENTRY,		/* File just added to dir */
 +	EXT4_STATE_ERR_SQUELCHED,	/* squeched error */
  };
  
  #define EXT4_INODE_BIT_FNS(name, field)					\
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 2987339..d7af366 100644
+index eb9fa88..6e3f83d 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -367,12 +367,19 @@ void ext4_error_inode(const char *function, struct inode *inode,
