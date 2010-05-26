@@ -12,24 +12,11 @@ Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Acked-by: Jan Kara <jack@suse.cz>
 ---
- fs/ext4/ext4.h    |    1 +
- fs/ext4/extents.c |   21 ++++++++++++++-------
- 2 files changed, 15 insertions(+), 7 deletions(-)
+ fs/ext4/extents.c |   16 +++++++++-------
+ 1 files changed, 9 insertions(+), 7 deletions(-)
 
-diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 7441488..eab0de6 100644
---- a/fs/ext4/ext4.h
-+++ b/fs/ext4/ext4.h
-@@ -1162,6 +1162,7 @@ enum {
- 	EXT4_STATE_DA_ALLOC_CLOSE,	/* Alloc DA blks on close */
- 	EXT4_STATE_EXT_MIGRATE,		/* Inode is migrating */
- 	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
-+	EXT4_STATE_EXT_TRUNC,		/* truncate is in progress, modified under i_data_sem */
- };
- 
- #define EXT4_INODE_BIT_FNS(name, field)					\
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index ffcaa11..9933573 100644
+index ffcaa11..0a47bec 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -107,11 +107,8 @@ static int ext4_ext_truncate_extend_restart(handle_t *handle,
@@ -41,7 +28,7 @@ index ffcaa11..9933573 100644
 -	 * an extent we are going to truncate.
 -	 */
 -	ext4_ext_invalidate_cache(inode);
-+	if (!err && !ext4_test_inode_state(inode, EXT4_STATE_EXT_TRUNC))
++	if (err == 0)
 +		err = -EAGAIN;
  
  	return err;
@@ -55,7 +42,7 @@ index ffcaa11..9933573 100644
  
  	ext_debug("truncate since %u\n", start);
  
-@@ -2368,23 +2365,27 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
+@@ -2368,23 +2365,26 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
  	if (IS_ERR(handle))
  		return PTR_ERR(handle);
  
@@ -66,7 +53,6 @@ index ffcaa11..9933573 100644
  	 * We start scanning from right side, freeing all the blocks
  	 * after i_size and walking into the tree depth-wise.
  	 */
-+	ext4_set_inode_state(inode, EXT4_STATE_EXT_TRUNC);
 +	depth = ext_depth(inode);
  	path = kzalloc(sizeof(struct ext4_ext_path) * (depth + 1), GFP_NOFS);
  	if (path == NULL) {
@@ -84,23 +70,12 @@ index ffcaa11..9933573 100644
  
  	while (i >= 0 && err == 0) {
  		if (i == depth) {
-@@ -2478,6 +2479,9 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
+@@ -2478,6 +2478,8 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
  out:
  	ext4_ext_drop_refs(path);
  	kfree(path);
 +	if (err == -EAGAIN)
 +		goto again;
-+	ext4_clear_inode_state(inode, EXT4_STATE_EXT_TRUNC);
  	ext4_journal_stop(handle);
  
  	return err;
-@@ -3327,6 +3331,9 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
- 	ext_debug("blocks %u/%u requested for inode %lu\n",
- 		  map->m_lblk, map->m_len, inode->i_ino);
- 
-+	if ((flags & EXT4_GET_BLOCKS_CREATE) &&
-+	    ext4_test_inode_state(inode, EXT4_STATE_EXT_TRUNC))
-+		ext4_clear_inode_state(inode, EXT4_STATE_EXT_TRUNC);
- 	/* check in cache */
- 	cache_type = ext4_ext_in_cache(inode, map->m_lblk, &newex);
- 	if (cache_type) {
