@@ -1,0 +1,61 @@
+ext4: Convert more i_flags references to use accessor functions
+
+These changes are not ones which are likely to result in races, but
+they should be fixed.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/dir.c     |    3 ++-
+ fs/ext4/inode.c   |    4 ++--
+ fs/ext4/migrate.c |    2 +-
+ 3 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index ea5e6cb..2965c39 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -121,7 +121,8 @@ static int ext4_readdir(struct file *filp,
+ 		 * We don't set the inode dirty flag since it's not
+ 		 * critical that it get flushed back to the disk.
+ 		 */
+-		ext4_clear_inode_flag(filp->f_path.dentry->d_inode, EXT4_INODE_INDEX);
++		ext4_clear_inode_flag(filp->f_path.dentry->d_inode,
++				      EXT4_INODE_INDEX);
+ 	}
+ 	stored = 0;
+ 	offset = filp->f_pos & (sb->s_blocksize - 1);
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 42272d6..6c6614c 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4976,7 +4976,7 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
+ 		/* we are using combined 48 bit field */
+ 		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
+ 					le32_to_cpu(raw_inode->i_blocks_lo);
+-		if (ei->i_flags & EXT4_HUGE_FILE_FL) {
++		if (ext4_test_inode_flag(inode, EXT4_INODE_HUGE_FILE)) {
+ 			/* i_blocks represent file system block size */
+ 			return i_blocks  << (inode->i_blkbits - 9);
+ 		} else {
+@@ -5126,7 +5126,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+ 				 ei->i_file_acl);
+ 		ret = -EIO;
+ 		goto bad_inode;
+-	} else if (ei->i_flags & EXT4_EXTENTS_FL) {
++	} else if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)) {
+ 		if (S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
+ 		    (S_ISLNK(inode->i_mode) &&
+ 		     !ext4_inode_is_fast_symlink(inode)))
+diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
+index 6f3a27e..1765c2c 100644
+--- a/fs/ext4/migrate.c
++++ b/fs/ext4/migrate.c
+@@ -376,7 +376,7 @@ static int ext4_ext_swap_inode_data(handle_t *handle, struct inode *inode,
+ 	 * We have the extent map build with the tmp inode.
+ 	 * Now copy the i_data across
+ 	 */
+-	ei->i_flags |= EXT4_EXTENTS_FL;
++	ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS);
+ 	memcpy(ei->i_data, tmp_ei->i_data, sizeof(ei->i_data));
+ 
+ 	/*
