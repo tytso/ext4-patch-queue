@@ -9,16 +9,24 @@ to reflect that error up to userspace.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/jbd2/journal.c     |   14 +++++++++--
- fs/jbd2/transaction.c |   60 +++++++++++++++++++++++++++++++++---------------
+ fs/jbd2/journal.c     |   15 +++++++++--
+ fs/jbd2/transaction.c |   61 +++++++++++++++++++++++++++++++++---------------
  include/linux/jbd2.h  |    4 ++-
- 3 files changed, 55 insertions(+), 23 deletions(-)
+ 3 files changed, 57 insertions(+), 23 deletions(-)
 
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index f7bf157..eb84fbd 100644
+index f7bf157..a79d334 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
-@@ -48,8 +48,6 @@
+@@ -41,6 +41,7 @@
+ #include <linux/hash.h>
+ #include <linux/log2.h>
+ #include <linux/vmalloc.h>
++#include <linux/backing-dev.h>
+ 
+ #define CREATE_TRACE_POINTS
+ #include <trace/events/jbd2.h>
+@@ -48,8 +49,6 @@
  #include <asm/uaccess.h>
  #include <asm/page.h>
  
@@ -27,7 +35,7 @@ index f7bf157..eb84fbd 100644
  EXPORT_SYMBOL(jbd2_journal_extend);
  EXPORT_SYMBOL(jbd2_journal_stop);
  EXPORT_SYMBOL(jbd2_journal_lock_updates);
-@@ -311,7 +309,17 @@ int jbd2_journal_write_metadata_buffer(transaction_t *transaction,
+@@ -311,7 +310,17 @@ int jbd2_journal_write_metadata_buffer(transaction_t *transaction,
  	 */
  	J_ASSERT_BH(bh_in, buffer_jbddirty(bh_in));
  
@@ -47,10 +55,19 @@ index f7bf157..eb84fbd 100644
  	new_bh->b_state = 0;
  	init_buffer(new_bh, NULL, NULL);
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index e214d68..43241c0 100644
+index e214d68..001e95f 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
-@@ -83,30 +83,39 @@ jbd2_get_transaction(journal_t *journal, transaction_t *transaction)
+@@ -26,6 +26,8 @@
+ #include <linux/mm.h>
+ #include <linux/highmem.h>
+ #include <linux/hrtimer.h>
++#include <linux/backing-dev.h>
++#include <linux/module.h>
+ 
+ static void __jbd2_journal_temp_unlink_buffer(struct journal_head *jh);
+ 
+@@ -83,30 +85,38 @@ jbd2_get_transaction(journal_t *journal, transaction_t *transaction)
   * transaction's buffer credits.
   */
  
@@ -78,7 +95,6 @@ index e214d68..43241c0 100644
  	if (!journal->j_running_transaction) {
 -		new_transaction = kzalloc(sizeof(*new_transaction),
 -						GFP_NOFS|__GFP_NOFAIL);
-+	retry_alloc:
 +		new_transaction = kzalloc(sizeof(*new_transaction), gfp_mask);
  		if (!new_transaction) {
 -			ret = -ENOMEM;
@@ -90,15 +106,15 @@ index e214d68..43241c0 100644
 +			 * __GFP_NOFAIL is going away, we will arrange
 +			 * to retry the allocation ourselves.
 +			 */
-+			if ((gfp & __GFP_FS) == 0) {
++			if ((gfp_mask & __GFP_FS) == 0) {
 +				congestion_wait(BLK_RW_ASYNC, HZ/50);
-+				goto retry_alloc;
++				goto alloc_transaction;
 +			}
 +			return -ENOMEM;
  		}
  	}
  
-@@ -123,8 +132,8 @@ repeat_locked:
+@@ -123,8 +133,8 @@ repeat_locked:
  	if (is_journal_aborted(journal) ||
  	    (journal->j_errno != 0 && !(journal->j_flags & JBD2_ACK_ERR))) {
  		spin_unlock(&journal->j_state_lock);
@@ -109,7 +125,7 @@ index e214d68..43241c0 100644
  	}
  
  	/* Wait on the journal's transaction barrier if necessary */
-@@ -240,10 +249,8 @@ repeat_locked:
+@@ -240,10 +250,8 @@ repeat_locked:
  	spin_unlock(&journal->j_state_lock);
  
  	lock_map_acquire(&handle->h_lockdep_map);
@@ -122,7 +138,7 @@ index e214d68..43241c0 100644
  }
  
  static struct lock_class_key jbd2_handle_key;
-@@ -278,7 +285,7 @@ static handle_t *new_handle(int nblocks)
+@@ -278,7 +286,7 @@ static handle_t *new_handle(int nblocks)
   *
   * Return a pointer to a newly allocated handle, or NULL on failure
   */
@@ -131,16 +147,16 @@ index e214d68..43241c0 100644
  {
  	handle_t *handle = journal_current_handle();
  	int err;
-@@ -298,7 +305,7 @@ handle_t *jbd2_journal_start(journal_t *journal, int nblocks)
+@@ -298,7 +306,7 @@ handle_t *jbd2_journal_start(journal_t *journal, int nblocks)
  
  	current->journal_info = handle;
  
 -	err = start_this_handle(journal, handle);
-+	err = start_this_handle(journal, handle, GFP_NOFS);
++	err = start_this_handle(journal, handle, gfp_mask);
  	if (err < 0) {
  		jbd2_free_handle(handle);
  		current->journal_info = NULL;
-@@ -308,6 +315,15 @@ handle_t *jbd2_journal_start(journal_t *journal, int nblocks)
+@@ -308,6 +316,15 @@ handle_t *jbd2_journal_start(journal_t *journal, int nblocks)
  out:
  	return handle;
  }
@@ -156,7 +172,7 @@ index e214d68..43241c0 100644
  
  /**
   * int jbd2_journal_extend() - extend buffer credits.
-@@ -394,8 +410,7 @@ out:
+@@ -394,8 +411,7 @@ out:
   * transaction capabable of guaranteeing the requested number of
   * credits.
   */
@@ -166,12 +182,12 @@ index e214d68..43241c0 100644
  {
  	transaction_t *transaction = handle->h_transaction;
  	journal_t *journal = transaction->t_journal;
-@@ -428,10 +443,17 @@ int jbd2_journal_restart(handle_t *handle, int nblocks)
+@@ -428,10 +444,17 @@ int jbd2_journal_restart(handle_t *handle, int nblocks)
  
  	lock_map_release(&handle->h_lockdep_map);
  	handle->h_buffer_credits = nblocks;
 -	ret = start_this_handle(journal, handle);
-+	ret = start_this_handle(journal, handle, GFP_NOFS);
++	ret = start_this_handle(journal, handle, gfp_mask);
  	return ret;
  }
 +EXPORT_SYMBOL(jbd2__journal_restart);
