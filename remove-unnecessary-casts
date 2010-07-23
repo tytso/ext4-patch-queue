@@ -1,0 +1,37 @@
+ext4: Remove unnecessary casts of private_data
+
+From: Joe Perches <joe@perches.com>
+
+Signed-off-by: Joe Perches <joe@perches.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/dir.c     |    2 +-
+ fs/ext4/mballoc.c |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index ea5e6cb..737bf12 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -343,7 +343,7 @@ int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
+ 	struct dir_private_info *info;
+ 	int len;
+ 
+-	info = (struct dir_private_info *) dir_file->private_data;
++	info = dir_file->private_data;
+ 	p = &info->root.rb_node;
+ 
+ 	/* Create and allocate the fname structure */
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 12b3bc0..204588d 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2221,7 +2221,7 @@ static int ext4_mb_seq_groups_open(struct inode *inode, struct file *file)
+ 
+ 	rc = seq_open(file, &ext4_mb_seq_groups_ops);
+ 	if (rc == 0) {
+-		struct seq_file *m = (struct seq_file *)file->private_data;
++		struct seq_file *m = file->private_data;
+ 		m->private = sb;
+ 	}
+ 	return rc;
