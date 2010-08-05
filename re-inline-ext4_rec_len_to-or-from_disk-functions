@@ -1,0 +1,118 @@
+ext4: re-inline ext4_rec_len_(to|from)_disk functions
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+commit 3d0518f4, "ext4: New rec_len encoding for very
+large blocksizes" made several changes to this path, but from
+a perf perspective, un-inlining ext4_rec_len_from_disk() seems
+most significant.  This function is called from ext4_check_dir_entry(),
+which on a file-creation workload is called extremely often.
+
+I tested this with bonnie:
+
+# bonnie++ -u root -s 0 -f -x 200 -d /mnt/test -n 32
+
+(this does 200 iterations) and got this for the file creations:
+
+ext4 stock:   Average =  21206.8 files/s
+ext4 inlined: Average =  22346.7 files/s  (+5%)
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h  |   39 +++++++++++++++++++++++++++++++++++++--
+ fs/ext4/namei.c |   24 ------------------------
+ 2 files changed, 37 insertions(+), 26 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index ed14e1d..e03841d 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1412,6 +1412,43 @@ struct ext4_dir_entry_2 {
+ #define EXT4_MAX_REC_LEN		((1<<16)-1)
+ 
+ /*
++ * If we ever get support for fs block sizes > page_size, we'll need
++ * to remove the #if statements in the next two functions...
++ */
++static inline unsigned int
++ext4_rec_len_from_disk(__le16 dlen, unsigned blocksize)
++{
++	unsigned len = le16_to_cpu(dlen);
++
++#if (PAGE_CACHE_SIZE >= 65536)
++	if (len == EXT4_MAX_REC_LEN || len == 0)
++		return blocksize;
++	return (len & 65532) | ((len & 3) << 16);
++#else
++	return len;
++#endif
++}
++
++static inline __le16 ext4_rec_len_to_disk(unsigned len, unsigned blocksize)
++{
++	if ((len > blocksize) || (blocksize > (1 << 18)) || (len & 3))
++		BUG();
++#if (PAGE_CACHE_SIZE >= 65536)
++	if (len < 65536)
++		return cpu_to_le16(len);
++	if (len == blocksize) {
++		if (blocksize == 65536)
++			return cpu_to_le16(EXT4_MAX_REC_LEN);
++		else
++			return cpu_to_le16(0);
++	}
++	return cpu_to_le16((len & 65532) | ((len >> 16) & 3));
++#else
++	return cpu_to_le16(len);
++#endif
++}
++
++/*
+  * Hash Tree Directory indexing
+  * (c) Daniel Phillips, 2001
+  */
+@@ -1636,8 +1673,6 @@ extern long ext4_compat_ioctl(struct file *, unsigned int, unsigned long);
+ extern int ext4_ext_migrate(struct inode *);
+ 
+ /* namei.c */
+-extern unsigned int ext4_rec_len_from_disk(__le16 dlen, unsigned blocksize);
+-extern __le16 ext4_rec_len_to_disk(unsigned len, unsigned blocksize);
+ extern int ext4_orphan_add(handle_t *, struct inode *);
+ extern int ext4_orphan_del(handle_t *, struct inode *);
+ extern int ext4_htree_fill_tree(struct file *dir_file, __u32 start_hash,
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index ea8b59d..314c0d3 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -179,30 +179,6 @@ static struct buffer_head * ext4_dx_find_entry(struct inode *dir,
+ static int ext4_dx_add_entry(handle_t *handle, struct dentry *dentry,
+ 			     struct inode *inode);
+ 
+-unsigned int ext4_rec_len_from_disk(__le16 dlen, unsigned blocksize)
+-{
+-	unsigned len = le16_to_cpu(dlen);
+-
+-	if (len == EXT4_MAX_REC_LEN || len == 0)
+-		return blocksize;
+-	return (len & 65532) | ((len & 3) << 16);
+-}
+-
+-__le16 ext4_rec_len_to_disk(unsigned len, unsigned blocksize)
+-{
+-	if ((len > blocksize) || (blocksize > (1 << 18)) || (len & 3))
+-		BUG();
+-	if (len < 65536)
+-		return cpu_to_le16(len);
+-	if (len == blocksize) {
+-		if (blocksize == 65536)
+-			return cpu_to_le16(EXT4_MAX_REC_LEN);
+-		else
+-			return cpu_to_le16(0);
+-	}
+-	return cpu_to_le16((len & 65532) | ((len >> 16) & 3));
+-}
+-
+ /*
+  * p is at least 6 bytes before the end of page
+  */
