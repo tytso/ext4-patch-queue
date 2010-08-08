@@ -17,10 +17,10 @@ Cc: akpm@linux-foundation.org
  4 files changed, 23 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 04f17ea..cee5699 100644
+index 8328e6d..257d9bb 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -889,6 +889,7 @@ struct ext4_inode_info {
+@@ -891,6 +891,7 @@ struct ext4_inode_info {
  #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
  #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
  #define EXT4_MOUNT_DISCARD		0x40000000 /* Issue DISCARD requests */
@@ -29,7 +29,7 @@ index 04f17ea..cee5699 100644
  #define clear_opt(o, opt)		o &= ~EXT4_MOUNT_##opt
  #define set_opt(o, opt)			o |= EXT4_MOUNT_##opt
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 6ef755b..cfca91c 100644
+index be9821d..c83ca9e 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1020,6 +1020,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
@@ -40,8 +40,8 @@ index 6ef755b..cfca91c 100644
 +		seq_puts(seq, ",akpm_lock_hack");
  	if (test_opt(sb, I_VERSION))
  		seq_puts(seq, ",i_version");
- 	if (!test_opt(sb, DELALLOC))
-@@ -1233,7 +1235,7 @@ enum {
+ 	if (!test_opt(sb, DELALLOC) &&
+@@ -1238,7 +1240,7 @@ enum {
  	Opt_block_validity, Opt_noblock_validity,
  	Opt_inode_readahead_blks, Opt_journal_ioprio,
  	Opt_dioread_nolock, Opt_dioread_lock,
@@ -50,7 +50,7 @@ index 6ef755b..cfca91c 100644
  };
  
  static const match_table_t tokens = {
-@@ -1292,6 +1294,7 @@ static const match_table_t tokens = {
+@@ -1297,6 +1299,7 @@ static const match_table_t tokens = {
  	{Opt_i_version, "i_version"},
  	{Opt_stripe, "stripe=%u"},
  	{Opt_resize, "resize"},
@@ -58,7 +58,7 @@ index 6ef755b..cfca91c 100644
  	{Opt_delalloc, "delalloc"},
  	{Opt_nodelalloc, "nodelalloc"},
  	{Opt_block_validity, "block_validity"},
-@@ -1778,6 +1781,9 @@ set_qf_format:
+@@ -1783,6 +1786,9 @@ set_qf_format:
  		case Opt_dioread_lock:
  			clear_opt(sbi->s_mount_opt, DIOREAD_NOLOCK);
  			break;
@@ -68,7 +68,7 @@ index 6ef755b..cfca91c 100644
  		default:
  			ext4_msg(sb, KERN_ERR,
  			       "Unrecognized mount option \"%s\" "
-@@ -3276,6 +3282,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -3301,6 +3307,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
@@ -76,14 +76,14 @@ index 6ef755b..cfca91c 100644
 +		journal->j_flags |= JBD2_LOCK_HACK;
 +	else
 +		journal->j_flags &= ~JBD2_LOCK_HACK;
- 	spin_unlock(&journal->j_state_lock);
+ 	write_unlock(&journal->j_state_lock);
  }
  
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index e214d68..a1c9885 100644
+index 5c83a91..452069b 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
-@@ -531,6 +531,7 @@ do_get_write_access(handle_t *handle, struct journal_head *jh,
+@@ -568,6 +568,7 @@ do_get_write_access(handle_t *handle, struct journal_head *jh,
  	int error;
  	char *frozen_buffer = NULL;
  	int need_copy = 0;
@@ -91,7 +91,7 @@ index e214d68..a1c9885 100644
  
  	if (is_handle_aborted(handle))
  		return -EROFS;
-@@ -546,7 +547,13 @@ repeat:
+@@ -583,7 +584,13 @@ repeat:
  
  	/* @@@ Need to check for errors here at some point. */
  
@@ -106,7 +106,7 @@ index e214d68..a1c9885 100644
  	jbd_lock_bh_state(bh);
  
  	/* We now hold the buffer lock so it is safe to query the buffer
-@@ -587,7 +594,8 @@ repeat:
+@@ -624,7 +631,8 @@ repeat:
  		set_buffer_jbddirty(bh);
  	}
  
@@ -117,7 +117,7 @@ index e214d68..a1c9885 100644
  	error = -EROFS;
  	if (is_handle_aborted(handle)) {
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index a4d2e9f..301a6bf 100644
+index 01743b5..154bedf 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
 @@ -991,6 +991,7 @@ struct journal_s
