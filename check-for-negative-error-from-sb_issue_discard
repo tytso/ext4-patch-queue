@@ -1,0 +1,57 @@
+From lczerner@redhat.com Fri Sep 10 14:51:37 2010
+Return-Path: <lczerner@redhat.com>
+Received: from po14.mit.edu ([unix socket])
+	by po14.mit.edu (Cyrus v2.1.5) with LMTP; Fri, 10 Sep 2010 14:51:37 -0400
+X-Sieve: CMU Sieve 2.2
+Received: from mit-mailsec-scanner-1.mit.edu by po14.mit.edu (8.13.6/4.7) id o8AIpHr0027791; Fri, 10 Sep 2010 14:51:37 -0400 (EDT)
+Received: from mailhub-dmz-4.mit.edu (MAILHUB-DMZ-4.MIT.EDU [18.7.62.38])
+	by mit-mailsec-scanner-1.mit.edu (Symantec Brightmail Gateway) with SMTP id 1B.D4.02534.63E7A8C4; Fri, 10 Sep 2010 14:51:34 -0400 (EDT)
+Received: from dmz-mailsec-scanner-8.mit.edu (DMZ-MAILSEC-SCANNER-8.MIT.EDU [18.7.68.37])
+	by mailhub-dmz-4.mit.edu (8.13.8/8.9.2) with ESMTP id o8AIpM90009353
+	for <tytso@mit.edu>; Fri, 10 Sep 2010 14:51:37 -0400
+X-AuditID: 12074f0c-b7c6bae0000009e6-26-4c8a7e3666ce
+Received: from mx1.redhat.com ( [209.132.183.28])
+	by dmz-mailsec-scanner-8.mit.edu (Symantec Brightmail Gateway) with SMTP id 13.9E.24343.E2E7A8C4; Fri, 10 Sep 2010 14:51:26 -0400 (EDT)
+Received: from int-mx03.intmail.prod.int.phx2.redhat.com (int-mx03.intmail.prod.int.phx2.redhat.com [10.5.11.16])
+	by mx1.redhat.com (8.13.8/8.13.8) with ESMTP id o8AIpZEm003107
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 10 Sep 2010 14:51:35 -0400
+Received: from dhcp-lab-213.englab.brq.redhat.com (dhcp-27-236.brq.redhat.com [10.34.27.236])
+	by int-mx03.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id o8AIpXTF000530;
+	Fri, 10 Sep 2010 14:51:34 -0400
+From: Lukas Czerner <lczerner@redhat.com>
+To: linux-ext4@vger.kernel.org
+Cc: sandeen@redhat.com, tytso@mit.edu, adilger@dilger.ca, lczerner@redhat.com
+Subject: [PATCH 1/2] Use negative error code
+Date: Fri, 10 Sep 2010 20:51:30 +0200
+Message-Id: <1284144691-15576-1-git-send-email-lczerner@redhat.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.16
+X-Brightmail-Tracker: AAAAAA==
+Status: RO
+Content-Length: 738
+
+sb_issue_discard() is returning negative error code, so check for
+-EOPNOTSUPP.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+---
+ fs/ext4/mballoc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 4b4ad4b..ec2793a 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2567,7 +2567,7 @@ static inline void ext4_issue_discard(struct super_block *sb,
+ 	trace_ext4_discard_blocks(sb,
+ 			(unsigned long long) discard_block, count);
+ 	ret = sb_issue_discard(sb, discard_block, count);
+-	if (ret == EOPNOTSUPP) {
++	if (ret == -EOPNOTSUPP) {
+ 		ext4_warning(sb, "discard not supported, disabling");
+ 		clear_opt(EXT4_SB(sb)->s_mount_opt, DISCARD);
+ 	}
+-- 
+1.7.2.2
+
+
