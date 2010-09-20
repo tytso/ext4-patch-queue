@@ -1,0 +1,29 @@
+ext4: fix NULL pointer dereference in print_daily_error_info()
+
+From: Sergey Senozhatsky <sergey.senozhatsky@gmail.com>
+
+Fix NULL pointer dereference in print_daily_error_info, when   
+called on unmounted fs (EXT4_SB(sb) returns NULL), by removing error 
+reporting timer in ext4_put_super.
+
+Google-Bug-Id: 3017663
+
+Signed-off-by: Sergey Senozhatsky <sergey.senozhatsky@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 2614774..751997d 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -719,6 +719,7 @@ static void ext4_put_super(struct super_block *sb)
+ 			ext4_abort(sb, "Couldn't clean up the journal");
+ 	}
+ 
++	del_timer(&sbi->s_err_report);
+ 	ext4_release_system_zone(sb);
+ 	ext4_mb_release(sb);
+ 	ext4_ext_release(sb);
+
+
+
