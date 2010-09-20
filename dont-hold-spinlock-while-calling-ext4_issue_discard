@@ -1,0 +1,36 @@
+ext4: don't hold spinlock while calling ext4_issue_discard()
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+We can't hold the block group spinlock because we ext4_issue_discard()
+calls wait and hence can get rescheduled.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index ec2793a..c214cfc 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4640,12 +4640,12 @@ do_more:
+ 		 * with group lock held. generate_buddy look at
+ 		 * them with group lock_held
+ 		 */
++		if (test_opt(sb, DISCARD))
++			ext4_issue_discard(sb, block_group, bit, count);
+ 		ext4_lock_group(sb, block_group);
+ 		mb_clear_bits(bitmap_bh->b_data, bit, count);
+ 		mb_free_blocks(inode, &e4b, bit, count);
+ 		ext4_mb_return_to_preallocation(inode, &e4b, block, count);
+-		if (test_opt(sb, DISCARD))
+-			ext4_issue_discard(sb, block_group, bit, count);
+ 	}
+ 
+ 	ret = ext4_free_blks_count(sb, gdp) + count;
+-- 
+1.7.2.2
+
+
