@@ -1,4 +1,4 @@
-ext4: Don't bump up LLONG_MAX nr_to_write by a factor of 8
+ext4: Don't bump up LONG_MAX nr_to_write by a factor of 8
 
 From: Eric Sandeen <sandeen@redhat.com>
 
@@ -9,9 +9,11 @@ making anything better, so avoid the multiplier in that case.
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
+ fs/ext4/inode.c |    9 ++++++---
+ 1 files changed, 6 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index d88ba4a..65c049c 100644
+index d88ba4a..50f3bba 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -3004,9 +3004,12 @@ static int ext4_da_writepages(struct address_space *mapping,
@@ -22,7 +24,7 @@ index d88ba4a..65c049c 100644
 -		desired_nr_to_write = wbc->nr_to_write * 8;
 -	else
 +	if (!range_cyclic && range_whole) {
-+		if (wbc->nr_to_write == LLONG_MAX)
++		if (wbc->nr_to_write == LONG_MAX)
 +			desired_nr_to_write = wbc->nr_to_write;
 +		else
 +			desired_nr_to_write = wbc->nr_to_write * 8;
@@ -30,9 +32,3 @@ index d88ba4a..65c049c 100644
  		desired_nr_to_write = ext4_num_dirty_pages(inode, index,
  							   max_pages);
  	if (desired_nr_to_write > max_pages)
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
