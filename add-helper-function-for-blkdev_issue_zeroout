@@ -1,0 +1,32 @@
+Add helper function for blkdev_issue_zeroout (sb_issue_discard)
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+This is done the same way as helper sb_issue_discard for
+blkdev_issue_discard.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ include/linux/blkdev.h |    8 ++++++++
+ 1 files changed, 8 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
+index 2c54906..e5cb4d0 100644
+--- a/include/linux/blkdev.h
++++ b/include/linux/blkdev.h
+@@ -941,6 +941,14 @@ static inline int sb_issue_discard(struct super_block *sb,
+ 	return blkdev_issue_discard(sb->s_bdev, block, nr_blocks, GFP_NOFS,
+ 				   BLKDEV_IFL_WAIT | BLKDEV_IFL_BARRIER);
+ }
++static inline int sb_issue_zeroout(struct super_block *sb, sector_t block,
++		sector_t nr_blocks, gfp_t gfp_mask, unsigned long flags)
++{
++	return blkdev_issue_zeroout(sb->s_bdev,
++				    block << (sb->s_blocksize_bits - 9),
++				    nr_blocks << (sb->s_blocksize_bits - 9),
++				    gfp_mask, flags);
++}
+ 
+ extern int blk_verify_command(unsigned char *cmd, fmode_t has_write_perm);
+ 
