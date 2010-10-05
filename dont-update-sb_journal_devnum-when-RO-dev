@@ -1,0 +1,39 @@
+ext4: don't update sb journal_devnum when RO dev
+
+From: Maciej Żenczykowski <zenczykowski@gmail.com>
+
+An ext4 filesystem on a read-only device, with an external journal
+which is at a different device number then recorded in the superblock
+will fail to honor the read-only setting of the device and trigger
+a superblock update (write).
+
+For example:
+  - ext4 on a software raid which is in read-only mode
+  - external journal on a read-write device which has changed device num
+  - attempt to mount with -o journal_dev=<new_number>
+  - hits BUG_ON(mddev->ro = 1) in md.c
+
+Cc: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Maciej Żenczykowski <zenczykowski@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 2614774..48388c7 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3470,7 +3470,7 @@ static int ext4_load_journal(struct super_block *sb,
+ 	EXT4_SB(sb)->s_journal = journal;
+ 	ext4_clear_journal_err(sb, es);
+ 
+-	if (journal_devnum &&
++	if (!really_read_only && journal_devnum &&
+ 	    journal_devnum != le32_to_cpu(es->s_journal_dev)) {
+ 		es->s_journal_dev = cpu_to_le32(journal_devnum);
+ 
+-- 
+1.7.2.3
+
+
