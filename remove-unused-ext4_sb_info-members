@@ -1,0 +1,49 @@
+Subject: [PATCH] ext4: remove unused ext4_sb_info members
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+Not that these take up a lot of room, but the structure is long enough
+as it is, and there's no need to confuse people with these various
+undocumented & unused structure members...
+
+Signed-off-by: Eric Sandeen <sandeen@redaht.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 889ec9d..39e8513 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1087,7 +1087,6 @@ struct ext4_sb_info {
+ 	struct completion s_kobj_unregister;
+ 
+ 	/* Journaling */
+-	struct inode *s_journal_inode;
+ 	struct journal_s *s_journal;
+ 	struct list_head s_orphan;
+ 	struct mutex s_orphan_lock;
+@@ -1120,10 +1119,7 @@ struct ext4_sb_info {
+ 	/* for buddy allocator */
+ 	struct ext4_group_info ***s_group_info;
+ 	struct inode *s_buddy_cache;
+-	long s_blocks_reserved;
+-	spinlock_t s_reserve_lock;
+ 	spinlock_t s_md_lock;
+-	tid_t s_last_transaction;
+ 	unsigned short *s_mb_offsets;
+ 	unsigned int *s_mb_maxs;
+ 
+@@ -1141,7 +1137,6 @@ struct ext4_sb_info {
+ 	unsigned long s_mb_last_start;
+ 
+ 	/* stats for buddy allocator */
+-	spinlock_t s_mb_pa_lock;
+ 	atomic_t s_bal_reqs;	/* number of reqs with len > 1 */
+ 	atomic_t s_bal_success;	/* we found long enough chunks */
+ 	atomic_t s_bal_allocated;	/* in blocks */
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
