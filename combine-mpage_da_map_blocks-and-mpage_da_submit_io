@@ -12,11 +12,11 @@ is to do with ext4 functions deep in the writeback codepath fails.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |   59 +++++++++++++++++++++++++++----------------------------
- 1 files changed, 29 insertions(+), 30 deletions(-)
+ fs/ext4/inode.c |   63 ++++++++++++++++++++++++++----------------------------
+ 1 files changed, 30 insertions(+), 33 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 50f3bba..cf55463 100644
+index 50f3bba..9b0b691 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -60,6 +60,7 @@ static inline int ext4_begin_ordered_truncate(struct inode *inode,
@@ -123,7 +123,7 @@ index 50f3bba..cf55463 100644
  	}
  
  	/*
-@@ -2323,10 +2323,12 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
+@@ -2323,10 +2323,13 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
  		disksize = i_size_read(mpd->inode);
  	if (disksize > EXT4_I(mpd->inode)->i_disksize) {
  		ext4_update_i_disksize(mpd->inode, disksize);
@@ -135,20 +135,22 @@ index 50f3bba..cf55463 100644
 -	return 0;
 +submit_io:
 +	mpage_da_submit_io(mpd);
++	mpd->io_done = 1;
  }
  
  #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | \
-@@ -2403,8 +2405,7 @@ flush_it:
+@@ -2403,9 +2406,7 @@ flush_it:
  	 * We couldn't merge the block to our extent, so we
  	 * need to flush current  extent and start new one
  	 */
 -	if (mpage_da_map_blocks(mpd) == 0)
 -		mpage_da_submit_io(mpd);
+-	mpd->io_done = 1;
 +	mpage_da_map_and_submit(mpd);
- 	mpd->io_done = 1;
  	return;
  }
-@@ -2437,11 +2438,10 @@ static int __mpage_da_writepage(struct page *page,
+ 
+@@ -2437,15 +2438,13 @@ static int __mpage_da_writepage(struct page *page,
  	if (mpd->next_page != page->index) {
  		/*
  		 * Nope, we can't. So, we map non-allocated blocks
@@ -162,13 +164,18 @@ index 50f3bba..cf55463 100644
  			/*
  			 * skip rest of the page in the page_vec
  			 */
-@@ -3071,8 +3071,7 @@ retry:
+-			mpd->io_done = 1;
+ 			redirty_page_for_writepage(wbc, page);
+ 			unlock_page(page);
+ 			return MPAGE_DA_EXTENT_TAIL;
+@@ -3071,9 +3070,7 @@ retry:
  		 * them for I/O.
  		 */
  		if (!mpd.io_done && mpd.next_page != mpd.first_page) {
 -			if (mpage_da_map_blocks(&mpd) == 0)
 -				mpage_da_submit_io(&mpd);
+-			mpd.io_done = 1;
 +			mpage_da_map_and_submit(&mpd);
- 			mpd.io_done = 1;
  			ret = MPAGE_DA_EXTENT_TAIL;
  		}
+ 		trace_ext4_da_write_pages(inode, &mpd);
