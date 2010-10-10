@@ -1,12 +1,19 @@
+ext4: Simply ext4_writepage()
+
+The actual code in ext4_writepage() is unnecessarily convoluted.
+Simplify it so it is easier to understand, but otherwise logically
+equivalent.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/inode.c |   78 ++++++++++++++++++------------------------------------
  1 files changed, 26 insertions(+), 52 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index cf55463..ff61441 100644
+index 6f70c12..226740a 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -2715,61 +2715,35 @@ static int ext4_writepage(struct page *page,
+@@ -2714,61 +2714,35 @@ static int ext4_writepage(struct page *page,
  	else
  		len = PAGE_CACHE_SIZE;
  
@@ -93,7 +100,7 @@ index cf55463..ff61441 100644
  	if (PageChecked(page) && ext4_should_journal_data(inode)) {
  		/*
  		 * It's mmapped pagecache.  Add buffers and journal it.  There
-@@ -2779,7 +2753,7 @@ static int ext4_writepage(struct page *page,
+@@ -2778,7 +2752,7 @@ static int ext4_writepage(struct page *page,
  		return __ext4_journalled_writepage(page, len);
  	}
  
