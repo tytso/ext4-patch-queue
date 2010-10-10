@@ -13,11 +13,11 @@ minor CPU savings.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |   65 +++++++++++++++++++++++++++++++++++++++++++++---------
- 1 files changed, 54 insertions(+), 11 deletions(-)
+ fs/ext4/inode.c |   70 ++++++++++++++++++++++++++++++++++++++++++++++--------
+ 1 files changed, 59 insertions(+), 11 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 85613ef..d98cfa3 100644
+index 75fe6b9..d0e2b17 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -60,7 +60,12 @@ static inline int ext4_begin_ordered_truncate(struct inode *inode,
@@ -51,7 +51,15 @@ index 85613ef..d98cfa3 100644
  
  	BUG_ON(mpd->next_page <= mpd->first_page);
  	/*
-@@ -2033,18 +2041,54 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+@@ -2023,6 +2031,7 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+ 		if (nr_pages == 0)
+ 			break;
+ 		for (i = 0; i < nr_pages; i++) {
++			int commit_write = 0;
+ 			struct page *page = pvec.pages[i];
+ 
+ 			index = page->index;
+@@ -2033,18 +2042,58 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
  			BUG_ON(!PageLocked(page));
  			BUG_ON(PageWriteback(page));
  
@@ -69,13 +77,16 @@ index 85613ef..d98cfa3 100644
 +			 * block_prepare_write.  If this fails,
 +			 * redirty the page and move on.
 +			 */
-+			if (!page_has_buffers(page) &&
-+			    block_prepare_write(page, 0, len,
++			if (!page_has_buffers(page)) {
++				if (block_prepare_write(page, 0, len,
 +						noalloc_get_block_write)) {
-+			redirty_page:
-+				redirty_page_for_writepage(mpd->wbc, page);
-+				unlock_page(page);
-+				continue;
++				redirty_page:
++					redirty_page_for_writepage(mpd->wbc,
++								   page);
++					unlock_page(page);
++					continue;
++				}
++				commit_write = 1;
 +			}
 +			page_bufs = page_buffers(page);
 +			if (walk_page_buffers(NULL, page_bufs, 0, len, NULL,
@@ -89,8 +100,9 @@ index 85613ef..d98cfa3 100644
 +				goto redirty_page;
 +			}
 +
-+			/* mark the buffer_heads as dirty and uptodate */
-+			block_commit_write(page, 0, len);
++			if (commit_write)
++				/* mark the buffer_heads as dirty & uptodate */
++				block_commit_write(page, 0, len);
 +
 +			if (journal_data && PageChecked(page))
 +				err = __ext4_journalled_writepage(page, len);
@@ -112,7 +124,7 @@ index 85613ef..d98cfa3 100644
  			 */
  			if (ret == 0)
  				ret = err;
-@@ -2624,6 +2668,7 @@ static int __ext4_journalled_writepage(struct page *page,
+@@ -2624,6 +2673,7 @@ static int __ext4_journalled_writepage(struct page *page,
  	int ret = 0;
  	int err;
  
@@ -120,9 +132,9 @@ index 85613ef..d98cfa3 100644
  	page_bufs = page_buffers(page);
  	BUG_ON(!page_bufs);
  	walk_page_buffers(handle, page_bufs, 0, len, NULL, bget_one);
-@@ -2743,14 +2788,12 @@ static int ext4_writepage(struct page *page,
- 	/* now mark the buffer_heads as dirty and uptodate */
- 	block_commit_write(page, 0, len);
+@@ -2746,14 +2796,12 @@ static int ext4_writepage(struct page *page,
+ 		/* now mark the buffer_heads as dirty and uptodate */
+ 		block_commit_write(page, 0, len);
  
 -	if (PageChecked(page) && ext4_should_journal_data(inode)) {
 +	if (PageChecked(page) && ext4_should_journal_data(inode))

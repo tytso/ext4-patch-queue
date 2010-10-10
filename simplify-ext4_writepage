@@ -6,14 +6,23 @@ equivalent.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |   78 ++++++++++++++++++------------------------------------
- 1 files changed, 26 insertions(+), 52 deletions(-)
+ fs/ext4/inode.c |   73 +++++++++++++++++++------------------------------------
+ 1 files changed, 25 insertions(+), 48 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 6f70c12..226740a 100644
+index 6f70c12..75fe6b9 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -2714,61 +2714,35 @@ static int ext4_writepage(struct page *page,
+@@ -2701,7 +2701,7 @@ static void ext4_end_io_buffer_write(struct buffer_head *bh, int uptodate);
+ static int ext4_writepage(struct page *page,
+ 			  struct writeback_control *wbc)
+ {
+-	int ret = 0;
++	int ret = 0, commit_write = 0;
+ 	loff_t size;
+ 	unsigned int len;
+ 	struct buffer_head *page_bufs = NULL;
+@@ -2714,60 +2714,37 @@ static int ext4_writepage(struct page *page,
  	else
  		len = PAGE_CACHE_SIZE;
  
@@ -29,22 +38,21 @@ index 6f70c12..226740a 100644
 -			 * If we don't have mapping block we just ignore
 -			 * them. We can also reach here via shrink_page_list
 -			 */
--			redirty_page_for_writepage(wbc, page);
--			unlock_page(page);
--			return 0;
--		}
--	} else {
 +	/*
 +	 * If the page does not have buffers (for whatever reason),
 +	 * try to create them using block_prepare_write.  If this
 +	 * fails, redirty the page and move on.
 +	 */
-+	if (!page_has_buffers(page) &&
-+	    block_prepare_write(page, 0, len, noalloc_get_block_write)) {
-+	redirty_page:
-+		redirty_page_for_writepage(wbc, page);
-+		unlock_page(page);
-+		return 0;
++	if (!page_buffers(page)) {
++		if (block_prepare_write(page, 0, len,
++					noalloc_get_block_write)) {
++		redirty_page:
+ 			redirty_page_for_writepage(wbc, page);
+ 			unlock_page(page);
+ 			return 0;
+ 		}
+-	} else {
++		commit_write = 1;
 +	}
 +	page_bufs = page_buffers(page);
 +	if (walk_page_buffers(NULL, page_bufs, 0, len, NULL,
@@ -89,18 +97,16 @@ index 6f70c12..226740a 100644
 -			unlock_page(page);
 -			return 0;
 -		}
--		/* now mark the buffer_heads as dirty and uptodate */
--		block_commit_write(page, 0, len);
 +		goto redirty_page;
- 	}
++	}
++	if (commit_write)
+ 		/* now mark the buffer_heads as dirty and uptodate */
+ 		block_commit_write(page, 0, len);
+-	}
  
-+	/* now mark the buffer_heads as dirty and uptodate */
-+	block_commit_write(page, 0, len);
-+
  	if (PageChecked(page) && ext4_should_journal_data(inode)) {
  		/*
- 		 * It's mmapped pagecache.  Add buffers and journal it.  There
-@@ -2778,7 +2752,7 @@ static int ext4_writepage(struct page *page,
+@@ -2778,7 +2755,7 @@ static int ext4_writepage(struct page *page,
  		return __ext4_journalled_writepage(page, len);
  	}
  
