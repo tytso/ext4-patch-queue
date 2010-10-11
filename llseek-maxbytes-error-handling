@@ -68,10 +68,10 @@ index 374510f..ece76fb 100644
  	.readdir	= ext4_readdir,		/* we take BKL. needed?*/
  	.unlocked_ioctl = ext4_ioctl,
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 889ec9d..603f8d2 100644
+index 4c5fe37..e1c0155 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1960,6 +1960,7 @@ extern const struct file_operations ext4_dir_operations;
+@@ -2006,6 +2006,7 @@ extern const struct file_operations ext4_dir_operations;
  /* file.c */
  extern const struct inode_operations ext4_file_inode_operations;
  extern const struct file_operations ext4_file_operations;
@@ -80,17 +80,17 @@ index 889ec9d..603f8d2 100644
  /* namei.c */
  extern const struct inode_operations ext4_dir_inode_operations;
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index ee92b66..4efa6ba 100644
+index ee92b66..5a5c55d 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
 @@ -130,8 +130,50 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
  	return dquot_file_open(inode, filp);
  }
  
-+/* 
-+ * ext4_llseek() copied from generic_file_llseek() to handle both 
-+ * block-mapped and extent-mapped maxbytes values. This should otherwise be 
-+ * identical with generic_file_llseek(). 
++/*
++ * ext4_llseek() copied from generic_file_llseek() to handle both
++ * block-mapped and extent-mapped maxbytes values. This should
++ * otherwise be identical with generic_file_llseek().
 + */
 +loff_t ext4_llseek(struct file *file, loff_t offset, int origin)
 +{
@@ -125,7 +125,7 @@ index ee92b66..4efa6ba 100644
 +		file->f_version = 0;
 +	}
 +	mutex_unlock(&inode->i_mutex);
-+ 
++
 +	return offset;
 +}
 +
@@ -135,10 +135,3 @@ index ee92b66..4efa6ba 100644
  	.read		= do_sync_read,
  	.write		= do_sync_write,
  	.aio_read	= generic_file_aio_read,
--- 
-1.5.5.6
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
