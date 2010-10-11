@@ -8,11 +8,11 @@ pagevec_lookup() loop.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |  132 ++++++++++++++-----------------------------------------
- 1 files changed, 33 insertions(+), 99 deletions(-)
+ fs/ext4/inode.c |  139 +++++++++++++++----------------------------------------
+ 1 files changed, 38 insertions(+), 101 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 6f785b7..23160c6 100644
+index 8d054a1..f379ceb 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -2003,7 +2003,8 @@ static void ext4_da_page_release_reservation(struct page *page,
@@ -33,7 +33,14 @@ index 6f785b7..23160c6 100644
  
  	BUG_ON(mpd->next_page <= mpd->first_page);
  	/*
-@@ -2037,6 +2039,12 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+@@ -2031,12 +2033,18 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+ 		if (nr_pages == 0)
+ 			break;
+ 		for (i = 0; i < nr_pages; i++) {
+-			int commit_write = 0;
++			int commit_write = 0, redirty_page = 0;
+ 			struct page *page = pvec.pages[i];
+ 
  			index = page->index;
  			if (index > end)
  				break;
@@ -46,12 +53,15 @@ index 6f785b7..23160c6 100644
  			index++;
  
  			BUG_ON(!PageLocked(page));
-@@ -2068,13 +2076,31 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+@@ -2068,13 +2076,34 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
  			bh = page_bufs = page_buffers(page);
  			block_start = 0;
  			do {
+-				/* redirty page if block allocation undone */
+-				if (!bh || buffer_delay(bh) ||
+-				    buffer_unwritten(bh))
 +				if (!bh)
-+					goto redirty_page;
+ 					goto redirty_page;
 +				if (map && (cur_logical >= map->m_lblk) &&
 +				    (cur_logical <= (map->m_lblk +
 +						     (map->m_len - 1)))) {
@@ -67,21 +77,22 @@ index 6f785b7..23160c6 100644
 +					clear_buffer_unwritten(bh);
 +				}
 +
- 				/* redirty page if block allocation undone */
--				if (!bh || buffer_delay(bh) ||
--				    buffer_unwritten(bh))
++				/* redirty page if block allocation undone */
 +				if (buffer_delay(bh) || buffer_unwritten(bh))
- 					goto redirty_page;
++					redirty_page = 1;
  				bh = bh->b_this_page;
  				block_start += bh->b_size;
 -			} while ((bh != page_bufs) && (block_start < len));
 +				cur_logical++;
 +				pblock++;
 +			} while (bh != page_bufs);
++
++			if (redirty_page)
++				goto redirty_page;
  
  			if (commit_write)
  				/* mark the buffer_heads as dirty & uptodate */
-@@ -2105,91 +2131,6 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+@@ -2105,91 +2134,6 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
  	return ret;
  }
  
@@ -173,7 +184,7 @@ index 6f785b7..23160c6 100644
  static void ext4_da_block_invalidatepages(struct mpage_da_data *mpd,
  					sector_t logical, long blk_cnt)
  {
-@@ -2252,7 +2193,7 @@ static void ext4_print_free_blocks(struct inode *inode)
+@@ -2252,7 +2196,7 @@ static void ext4_print_free_blocks(struct inode *inode)
  static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
  {
  	int err, blks, get_blocks_flags;
@@ -182,7 +193,7 @@ index 6f785b7..23160c6 100644
  	sector_t next = mpd->b_blocknr;
  	unsigned max_blocks = mpd->b_size >> mpd->inode->i_blkbits;
  	loff_t disksize = EXT4_I(mpd->inode)->i_disksize;
-@@ -2343,6 +2284,7 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
+@@ -2343,6 +2287,7 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
  	}
  	BUG_ON(blks == 0);
  
@@ -190,7 +201,7 @@ index 6f785b7..23160c6 100644
  	if (map.m_flags & EXT4_MAP_NEW) {
  		struct block_device *bdev = mpd->inode->i_sb->s_bdev;
  		int i;
-@@ -2351,14 +2293,6 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
+@@ -2351,14 +2296,6 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
  			unmap_underlying_metadata(bdev, map.m_pblk + i);
  	}
  
@@ -205,7 +216,7 @@ index 6f785b7..23160c6 100644
  	if (ext4_should_order_data(mpd->inode)) {
  		err = ext4_jbd2_file_inode(handle, mpd->inode);
  		if (err)
-@@ -2379,7 +2313,7 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
+@@ -2379,7 +2316,7 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
  	}
  
  submit_io:
