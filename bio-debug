@@ -1,0 +1,261 @@
+Debugging patches for the bio code
+
+---
+ block/blk-core.c      |   17 +++++++++++++++++
+ fs/buffer.c           |   36 ++++++++++++++++++++++++++++++++++++
+ fs/ext4/inode.c       |   18 ++++++++++++++++++
+ fs/ext4/mballoc.c     |    8 +++++++-
+ fs/jbd2/commit.c      |   17 +++++++++++++++++
+ fs/jbd2/transaction.c |    5 +++++
+ mm/filemap.c          |    7 +++++++
+ 7 files changed, 107 insertions(+), 1 deletions(-)
+
+diff --git a/block/blk-core.c b/block/blk-core.c
+index 32a1c12..115574b 100644
+--- a/block/blk-core.c
++++ b/block/blk-core.c
+@@ -248,6 +248,9 @@ int blk_remove_plug(struct request_queue *q)
+ 	if (!queue_flag_test_and_clear(QUEUE_FLAG_PLUGGED, q))
+ 		return 0;
+ 
++#if 1				/* PDEBUG */
++	trace_printk("del timer %s\n", q->backing_dev_info.name);
++#endif
+ 	del_timer(&q->unplug_timer);
+ 	return 1;
+ }
+@@ -379,6 +382,9 @@ EXPORT_SYMBOL(blk_stop_queue);
+  */
+ void blk_sync_queue(struct request_queue *q)
+ {
++#if 1				/* PDEBUG */
++	trace_printk("del timer %s\n", q->backing_dev_info.name);
++#endif
+ 	del_timer_sync(&q->unplug_timer);
+ 	del_timer_sync(&q->timeout);
+ 	cancel_work_sync(&q->unplug_work);
+@@ -1525,6 +1531,17 @@ static inline void __generic_make_request(struct bio *bio)
+ 		trace_block_bio_queue(q, bio);
+ 
+ 		ret = q->make_request_fn(q, bio);
++
++#if 1				/* PDEBUG */
++		{
++			char str[KSYM_SYMBOL_LEN];
++
++			kallsyms_lookup((unsigned long) q->make_request_fn,
++					NULL, NULL, NULL, str);
++			trace_printk("returned from %s (pid %d)\n",
++				     str, task_pid_nr(current));
++		}
++#endif
+ 	} while (ret);
+ 
+ 	return;
+diff --git a/fs/buffer.c b/fs/buffer.c
+index 3e7dca2..b0b0545 100644
+--- a/fs/buffer.c
++++ b/fs/buffer.c
+@@ -70,6 +70,19 @@ static int sync_buffer(void *word)
+ 
+ void __lock_buffer(struct buffer_head *bh)
+ {
++#if 1				/* PDEBUG */
++	void *ip = __builtin_return_address(0);
++	char str[KSYM_SYMBOL_LEN];
++	char b[BDEVNAME_SIZE];
++
++	if (buffer_locked(bh)) {
++		kallsyms_lookup((unsigned long) ip, NULL, NULL, NULL, str);
++		trace_printk("lock bh %s blk %lu, ret_pc %p (%s) pid %d\n",
++			     bdevname(bh->b_bdev, b),
++			     (unsigned long) bh->b_blocknr, ip, str, 
++			     task_pid_nr(current));
++	}
++#endif
+ 	wait_on_bit_lock(&bh->b_state, BH_Lock, sync_buffer,
+ 							TASK_UNINTERRUPTIBLE);
+ }
+@@ -90,6 +103,17 @@ EXPORT_SYMBOL(unlock_buffer);
+  */
+ void __wait_on_buffer(struct buffer_head * bh)
+ {
++#if 1				/* PDEBUG */
++	void *ip = __builtin_return_address(0);
++	char str[KSYM_SYMBOL_LEN];
++	char b[BDEVNAME_SIZE];
++
++	kallsyms_lookup((unsigned long) ip, NULL, NULL, NULL, str);
++	trace_printk("dev %s blk %lu, ret_pc %p (%s) pid %d\n",
++		     bdevname(bh->b_bdev, b),
++		     (unsigned long) bh->b_blocknr, ip, str,
++		     task_pid_nr(current));
++#endif
+ 	wait_on_bit(&bh->b_state, BH_Lock, sync_buffer, TASK_UNINTERRUPTIBLE);
+ }
+ EXPORT_SYMBOL(__wait_on_buffer);
+@@ -2906,6 +2930,18 @@ int submit_bh(int rw, struct buffer_head * bh)
+ 	struct bio *bio;
+ 	int ret = 0;
+ 
++#if 1 				/* PDEBUG */
++	void *ip = __builtin_return_address(0);
++	char str[KSYM_SYMBOL_LEN];
++	char b[BDEVNAME_SIZE];
++
++	kallsyms_lookup((unsigned long) ip, NULL, NULL, NULL, str);
++	trace_printk("dev %s blk %lu, ret_pc %p (%s) pid %d\n",
++		     bdevname(bh->b_bdev, b),
++		     (unsigned long) bh->b_blocknr, ip, str,
++		     task_pid_nr(current));
++#endif
++
+ 	BUG_ON(!buffer_locked(bh));
+ 	BUG_ON(!buffer_mapped(bh));
+ 	BUG_ON(!bh->b_end_io);
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 2ceb1e8..566e2df 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2029,6 +2029,11 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
+ 	index = mpd->first_page;
+ 	end = mpd->next_page - 1;
+ 
++#if 1				/* PDEBUG */
++	trace_printk("%s: ino %lu index %lu end %lu size %lu\n", 
++		     inode->i_sb->s_id, inode->i_ino,
++		     index, end, (unsigned long) size);
++#endif
+ 	pagevec_init(&pvec, 0);
+ 	while (index <= end) {
+ 		nr_pages = pagevec_lookup(&pvec, mapping, index, PAGEVEC_SIZE);
+@@ -3654,6 +3659,9 @@ int flush_completed_IO(struct inode *inode)
+ 	if (list_empty(&ei->i_completed_io_list))
+ 		return ret;
+ 
++#if 1				/* PDEBUG */
++	trace_printk("%s: ino %lu\n", inode->i_sb->s_id, inode->i_ino);
++#endif
+ 	dump_completed_IO(inode);
+ 	spin_lock_irqsave(&ei->i_completed_io_lock, flags);
+ 	while (!list_empty(&ei->i_completed_io_list)){
+@@ -3694,6 +3702,16 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+ 	unsigned long flags;
+ 	struct ext4_inode_info *ei;
+ 
++#if 1				/* PDEBUG */
++	if (io_end)
++		trace_printk("%s: ino %lu io_end %p size %lu\n",
++			     io_end->inode->i_sb->s_id,
++			     io_end->inode->i_ino, io_end,
++			     (unsigned long) size);
++	else
++		trace_printk("null io_end\n");
++#endif
++
+ 	/* if not async direct IO or dio with 0 bytes write, just return */
+ 	if (!io_end || !size)
+ 		goto out;
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 3f62df5..e27119c 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -861,8 +861,14 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
+ 	}
+ 
+ 	/* wait for I/O completion */
+-	for (i = 0; i < groups_per_page && bh[i]; i++)
++	for (i = 0; i < groups_per_page && bh[i]; i++) {
++#if 1				/* PDEBUG */
++		if (buffer_locked(bh[i]))
++			trace_printk("%s: wait on %lu\n", sb->s_id,
++			       (unsigned long) bh[i]->b_blocknr);
++#endif
+ 		wait_on_buffer(bh[i]);
++	}
+ 
+ 	err = -EIO;
+ 	for (i = 0; i < groups_per_page && bh[i]; i++)
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index 6494c81..256008b 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -631,6 +631,9 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 		 * (which is of type BJ_IO)
+ 		 */
+ 		JBUFFER_TRACE(jh, "ph3: write metadata");
++#if 1				/* PDEBUG */
++		trace_printk("@635 %s block %llu\n", journal->j_devname, blocknr);
++#endif
+ 		flags = jbd2_journal_write_metadata_buffer(commit_transaction,
+ 						      jh, &new_jh, blocknr);
+ 		if (flags < 0) {
+@@ -693,6 +696,11 @@ start_journal_io:
+ 				clear_buffer_dirty(bh);
+ 				set_buffer_uptodate(bh);
+ 				bh->b_end_io = journal_end_buffer_io_sync;
++#if 1				/* PDEBUG */
++				trace_printk("@700 %s block %llu\n",
++					     journal->j_devname,
++					     bh->b_blocknr);
++#endif
+ 				submit_bh(write_op, bh);
+ 			}
+ 			cond_resched();
+@@ -762,6 +770,10 @@ wait_for_iobuf:
+ 		jh = commit_transaction->t_iobuf_list->b_tprev;
+ 		bh = jh2bh(jh);
+ 		if (buffer_locked(bh)) {
++#if 1				/* PDEBUG */
++			trace_printk("jbd wait_on_buffer@765: %lu\n",
++				     (unsigned long) bh->b_blocknr);
++#endif
+ 			wait_on_buffer(bh);
+ 			goto wait_for_iobuf;
+ 		}
+@@ -818,6 +830,11 @@ wait_for_iobuf:
+ 		jh = commit_transaction->t_log_list->b_tprev;
+ 		bh = jh2bh(jh);
+ 		if (buffer_locked(bh)) {
++#if 1				/* PDEBUG */
++			trace_printk("%s: jbd wait_on_buffer@823: %lu\n",
++				     journal->j_devname,
++				     (unsigned long) bh->b_blocknr);
++#endif
+ 			wait_on_buffer(bh);
+ 			goto wait_for_ctlbuf;
+ 		}
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index 6bf0a24..8873caa 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -701,6 +701,11 @@ repeat:
+ 			for ( ; ; ) {
+ 				prepare_to_wait(wqh, &wait.wait,
+ 						TASK_UNINTERRUPTIBLE);
++#if 1				/* PDEBUG */
++				trace_printk("%s: BJ shadow waiting on %lu\n",
++				       journal->j_devname,
++				       (unsigned long) bh->b_blocknr);
++#endif
+ 				if (jh->b_jlist != BJ_Shadow)
+ 					break;
+ 				schedule();
+diff --git a/mm/filemap.c b/mm/filemap.c
+index 3d4df44..a48e501 100644
+--- a/mm/filemap.c
++++ b/mm/filemap.c
+@@ -295,6 +295,13 @@ int filemap_fdatawait_range(struct address_space *mapping, loff_t start_byte,
+ 			if (page->index > end)
+ 				continue;
+ 
++#if 1				/* PDEBUG */
++			if (PageWriteback(page))
++				trace_printk("pid %d waiting on %lu:%lu\n", 
++					     task_pid_nr(current),
++					     mapping->host->i_ino,
++					     (unsigned long) page->index);
++#endif
+ 			wait_on_page_writeback(page);
+ 			if (PageError(page))
+ 				ret = -EIO;

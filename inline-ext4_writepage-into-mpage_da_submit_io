@@ -17,7 +17,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 59 insertions(+), 11 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 75fe6b9..d0e2b17 100644
+index 58b7008..f97fc46 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -60,7 +60,12 @@ static inline int ext4_begin_ordered_truncate(struct inode *inode,
@@ -51,7 +51,7 @@ index 75fe6b9..d0e2b17 100644
  
  	BUG_ON(mpd->next_page <= mpd->first_page);
  	/*
-@@ -2023,6 +2031,7 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+@@ -2023,28 +2031,69 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
  		if (nr_pages == 0)
  			break;
  		for (i = 0; i < nr_pages; i++) {
@@ -59,18 +59,21 @@ index 75fe6b9..d0e2b17 100644
  			struct page *page = pvec.pages[i];
  
  			index = page->index;
-@@ -2033,18 +2042,58 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+ 			if (index > end)
+ 				break;
++
++			if (index == size >> PAGE_CACHE_SHIFT)
++				len = size & ~PAGE_CACHE_MASK;
++			else
++				len = PAGE_CACHE_SIZE;
+ 			index++;
+ 
  			BUG_ON(!PageLocked(page));
  			BUG_ON(PageWriteback(page));
  
 -			pages_skipped = mpd->wbc->pages_skipped;
 -			err = ext4_writepage(page, mpd->wbc);
 -			if (!err && (pages_skipped == mpd->wbc->pages_skipped))
-+			if (index == size >> PAGE_CACHE_SHIFT)
-+				len = size & ~PAGE_CACHE_MASK;
-+			else
-+				len = PAGE_CACHE_SIZE;
-+
 +			/*
 +			 * If the page does not have buffers (for
 +			 * whatever reason), try to create them using

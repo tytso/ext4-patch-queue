@@ -12,7 +12,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 38 insertions(+), 101 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 8d054a1..f379ceb 100644
+index 9fda16c..93668ca 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -2003,7 +2003,8 @@ static void ext4_da_page_release_reservation(struct page *page,
@@ -29,11 +29,11 @@ index 8d054a1..f379ceb 100644
  	unsigned int len, block_start;
  	struct buffer_head *bh, *page_bufs = NULL;
  	int journal_data = ext4_should_journal_data(inode);
-+	sector_t pblock, cur_logical;
++	sector_t pblock = 0, cur_logical = 0;
  
  	BUG_ON(mpd->next_page <= mpd->first_page);
  	/*
-@@ -2031,12 +2033,18 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+@@ -2031,7 +2033,7 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
  		if (nr_pages == 0)
  			break;
  		for (i = 0; i < nr_pages; i++) {
@@ -42,8 +42,10 @@ index 8d054a1..f379ceb 100644
  			struct page *page = pvec.pages[i];
  
  			index = page->index;
- 			if (index > end)
- 				break;
+@@ -2042,6 +2044,12 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd)
+ 				len = size & ~PAGE_CACHE_MASK;
+ 			else
+ 				len = PAGE_CACHE_SIZE;
 +			if (map) {
 +				cur_logical = index << (PAGE_CACHE_SHIFT -
 +							inode->i_blkbits);
