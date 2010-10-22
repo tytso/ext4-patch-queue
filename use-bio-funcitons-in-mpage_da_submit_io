@@ -10,10 +10,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/Makefile  |    2 +-
  fs/ext4/ext4.h    |   33 +++++-
  fs/ext4/extents.c |    4 +-
- fs/ext4/inode.c   |  118 ++----------------
- fs/ext4/page-io.c |  343 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/inode.c   |  118 ++---------------
+ fs/ext4/page-io.c |  365 +++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/super.c   |    8 +-
- 6 files changed, 399 insertions(+), 109 deletions(-)
+ 6 files changed, 421 insertions(+), 109 deletions(-)
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index 8867b2a..c947e36 100644
@@ -293,10 +293,10 @@ index 93668ca..79fdace 100644
  	/* Add the io_end to per-inode completed io list*/
 diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
 new file mode 100644
-index 0000000..733606a
+index 0000000..e5a9dab
 --- /dev/null
 +++ b/fs/ext4/page-io.c
-@@ -0,0 +1,343 @@
+@@ -0,0 +1,365 @@
 +/*
 + * linux/fs/ext4/page-io.c
 + *
@@ -515,58 +515,58 @@ index 0000000..733606a
 +
 +void ext4_io_submit(struct ext4_io_submit *io)
 +{
-+	if (!io->io_bio)
-+		return;
-+	submit_bio(io->io_op, io->io_bio);
-+	BUG_ON(bio_flagged(io->io_bio, BIO_EOPNOTSUPP));
-+	bio_put(io->io_bio);
++	struct bio *bio = io->io_bio;
++
++	if (bio) {
++		bio_get(io->io_bio);
++		submit_bio(io->io_op, io->io_bio);
++		BUG_ON(bio_flagged(io->io_bio, BIO_EOPNOTSUPP));
++		bio_put(io->io_bio);
++	}
 +	io->io_bio = 0;
 +	io->io_op = 0;
 +	io->io_end = 0;
 +}
 +
-+static void io_submit_init(struct ext4_io_submit *io,
-+			   struct inode *inode,
-+			   struct writeback_control *wbc,
-+			   struct buffer_head *bh)
++static int io_submit_init(struct ext4_io_submit *io,
++			  struct inode *inode,
++			  struct writeback_control *wbc,
++			  struct buffer_head *bh)
 +{
 +	ext4_io_end_t *io_end;
 +	struct page *page = bh->b_page;
 +	int nvecs = bio_get_nr_vecs(bh->b_bdev);
 +	struct bio *bio;
 +
++	
++	io_end = ext4_init_io_end(inode, GFP_NOFS);
++	if (!io_end)
++		return -ENOMEM;
 +	do {
++
 +		bio = bio_alloc(GFP_NOIO, nvecs);
 +		nvecs >>= 1;
 +	} while (bio == NULL);
++
 +	bio->bi_sector = bh->b_blocknr * (bh->b_size >> 9);
 +	bio->bi_bdev = bh->b_bdev;
-+	bio_get(bio);
-+
-+retry_alloc:
-+	io_end = ext4_init_io_end(inode, GFP_NOFS);
-+	if (!io_end) {
-+		if (printk_ratelimit())
-+			ext4_msg(inode->i_sb, KERN_WARNING,
-+				 "%s: allocation fail\n", __func__);
-+		schedule();
-+		goto retry_alloc;
-+	}
-+	io_end->inode = inode;
-+	io_end->offset = (sector_t)page->index << PAGE_CACHE_SHIFT;
 +	bio->bi_private = io->io_end = io_end;
 +	bio->bi_end_io = ext4_end_bio;
++
++	io_end->inode = inode;
++	io_end->offset = (sector_t)page->index << PAGE_CACHE_SHIFT;
 +
 +	io->io_bio = bio;
 +	io->io_op = (wbc->sync_mode == WB_SYNC_ALL ?
 +			WRITE_SYNC_PLUG : WRITE);
 +	io->io_next_block = bh->b_blocknr;
++	return 0;
 +}
 +
-+static void io_submit_add_bh(struct ext4_io_submit *io,
-+			     struct inode *inode,
-+			     struct writeback_control *wbc,
-+			     struct buffer_head *bh)
++static int io_submit_add_bh(struct ext4_io_submit *io,
++			    struct inode *inode,
++			    struct writeback_control *wbc,
++			    struct buffer_head *bh)
 +{
 +	struct ext4_io_page *new_io_page;
 +	int ret;
@@ -579,8 +579,11 @@ index 0000000..733606a
 +retry:
 +	if (io->io_bio && bh->b_blocknr != io->io_next_block)
 +		ext4_io_submit(io);
-+	if (io->io_bio == NULL)
-+		io_submit_init(io, inode, wbc, bh);
++	if (io->io_bio == NULL) {
++		ret = io_submit_init(io, inode, wbc, bh);
++		if (ret)
++			return ret;
++	}
 +	if (buffer_uninit(bh))
 +		io->io_end->flag |= EXT4_IO_END_UNWRITTEN;
 +	io->io_end->size += bh->b_size;
@@ -600,6 +603,7 @@ index 0000000..733606a
 +		new_io_page->p_next = io->io_end->io_page;
 +		io->io_end->io_page = new_io_page;
 +	}
++	return 0;
 +}
 +
 +int ext4_bio_write_page(struct ext4_io_submit *io,
@@ -608,9 +612,9 @@ index 0000000..733606a
 +			struct writeback_control *wbc)
 +{
 +	struct inode *inode = page->mapping->host;
-+	unsigned block_start, block_end;
-+	unsigned blocksize;
++	unsigned block_start, block_end, blocksize;
 +	struct buffer_head *bh, *head;
++	int ret = 0, written = 0;
 +
 +	blocksize = 1 << inode->i_blkbits;
 +
@@ -627,18 +631,36 @@ index 0000000..733606a
 +			set_buffer_uptodate(bh);
 +			continue;
 +		}
-+		io_submit_add_bh(io, inode, wbc, bh);
++		if (!buffer_mapped(bh))
++			pr_err("buffer not mapped?\n");
++		if (!bh->b_bdev)
++			pr_err("buffer has no dev?\n");
++		else if (!bdev_get_queue(bh->b_bdev))
++			pr_err("buffer's device has no queue?\n");
++		ret = io_submit_add_bh(io, inode, wbc, bh);
++		if (ret) {
++			/* 
++			 * We only get here on ENOMEM.  Not much else
++			 * we can do but mark the page as dirty, and
++			 * better luck next time.
++			 */
++			set_page_dirty(page);
++			break;
++		}
++		written++;
 +	}
 +	unlock_page(page);
 +	/*
 +	 * If the page was truncated before we could do the writeback,
-+	 * we won't have submitted any pages for I/O.  In that case we
-+	 * need to make sure we've cleared the PageWriteback bit from
-+	 * the page to prevent the system from wedging later on.
++	 * or we had a memory allocation error while trying to write
++	 * the first buffer head, we won't have submitted any pages for
++	 * I/O.  In that case we need to make sure we've cleared the
++	 * PageWriteback bit from the page to prevent the system from
++	 * wedging later on.
 +	 */
-+	if (len == 0)
++	if (written == 0)
 +		end_page_writeback(page);
-+	return 0;
++	return ret;
 +}
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
 index 16002ec..9f602c2 100644
