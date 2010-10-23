@@ -1,14 +1,4 @@
-Debugging patches for the bio code
-
----
- block/blk-core.c      |   17 +++++++++++++++++
- fs/buffer.c           |   36 ++++++++++++++++++++++++++++++++++++
- fs/ext4/inode.c       |   18 ++++++++++++++++++
- fs/ext4/mballoc.c     |    8 +++++++-
- fs/jbd2/commit.c      |   17 +++++++++++++++++
- fs/jbd2/transaction.c |    5 +++++
- mm/filemap.c          |    7 +++++++
- 7 files changed, 107 insertions(+), 1 deletions(-)
+ext4: debugging patches for the bio code
 
 diff --git a/block/blk-core.c b/block/blk-core.c
 index 32a1c12..115574b 100644
@@ -114,7 +104,7 @@ index 3e7dca2..b0b0545 100644
  	BUG_ON(!buffer_mapped(bh));
  	BUG_ON(!bh->b_end_io);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 2ceb1e8..566e2df 100644
+index 79fdace..a5bb507 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -2029,6 +2029,11 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
@@ -157,7 +147,7 @@ index 2ceb1e8..566e2df 100644
  	if (!io_end || !size)
  		goto out;
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 3f62df5..e27119c 100644
+index d732ef5..d1b68b7 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -861,8 +861,14 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
@@ -176,6 +166,178 @@ index 3f62df5..e27119c 100644
  
  	err = -EIO;
  	for (i = 0; i < groups_per_page && bh[i]; i++)
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index 5b0a1a9..a258b5a 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -30,6 +30,8 @@
+ #include "acl.h"
+ #include "ext4_extents.h"
+ 
++#define PDEBUG
++
+ static struct kmem_cache *io_page_cachep;
+ 
+ int __init init_ext4_pageio(void)
+@@ -164,6 +166,12 @@ static void ext4_end_bio(struct bio *bio, int error)
+ 
+ 	BUG_ON(!io_end);
+ 	inode = io_end->inode;
++#ifdef PDEBUG
++	trace_printk("%s: enter: ino %lu offset %lu size %ld io_end=%p",
++		     inode->i_sb->s_id, inode->i_ino, 
++		     (unsigned long) io_end->offset,
++		     (long) io_end->size, io_end);
++#endif
+ 	bio->bi_private = NULL;
+ 	bio->bi_end_io = NULL;
+ 	if (test_bit(BIO_UPTODATE, &bio->bi_flags))
+@@ -233,6 +241,17 @@ static void ext4_end_bio(struct bio *bio, int error)
+ 				else if (!buffer_mapped(bh))
+ 					clear_buffer_dirty(bh);
+ 				else if (buffer_dirty(bh)) {
++#ifdef PDEBUG
++					char b[BDEVNAME_SIZE];
++
++					trace_printk("dirty partial %s "
++						     "offset %lu blk %lu "
++						     "pid %d\n",
++						     bdevname(bh->b_bdev, b),
++						     (unsigned long) offset,
++						     (unsigned long) bh->b_blocknr,
++						     task_pid_nr(current));
++#endif
+ 					partial = 1;
+ 					partial_write = 1;
+ 				}
+@@ -240,8 +259,19 @@ static void ext4_end_bio(struct bio *bio, int error)
+ 				bh = bh->b_this_page;
+ 			} while (bh != head);
+ 		}
+-		if (!partial)
+-			end_page_writeback(page);
++		if (!partial) {
++			if (!PageWriteback(page)) {
++				trace_printk("page_writeback clear: %s "
++					     "ino %lu index %lu io_end=%p",
++					     inode->i_sb->s_id, inode->i_ino,
++					     page->index, io_end);
++				pr_err("page_writeback clear: %s "
++				       "ino %lu index %lu io_end=%p",
++				       inode->i_sb->s_id, inode->i_ino,
++				       page->index, io_end);
++			} else
++				end_page_writeback(page);
++		}
+ 		/*
+ 		 * If this is a partial write which happened to make
+ 		 * all buffers uptodate then we can optimize away a
+@@ -261,12 +291,24 @@ static void ext4_end_bio(struct bio *bio, int error)
+ 	wq = EXT4_SB(inode->i_sb)->dio_unwritten_wq;
+ 	/* queue the work to convert unwritten extents to written */
+ 	queue_work(wq, &io_end->work);
++#ifdef PDEBUG
++	trace_printk("%s: exit: ino %lu", inode->i_sb->s_id,
++		     io_end->inode->i_ino);
++#endif
+ }
+ 
+ void ext4_io_submit(struct ext4_io_submit *io)
+ {
+ 	struct bio *bio = io->io_bio;
+ 
++#ifdef PDEBUG
++	if (io->io_end)
++		trace_printk("%s: io submitted io_end %p\n", 
++			     io->io_end->inode->i_sb->s_id, io->io_end);
++	else
++		trace_printk("io submitted io_end %p\n", 
++			     io->io_end);
++#endif
+ 	if (bio) {
+ 		bio_get(io->io_bio);
+ 		submit_bio(io->io_op, io->io_bio);
+@@ -309,10 +351,14 @@ static int io_submit_init(struct ext4_io_submit *io,
+ 	io->io_op = (wbc->sync_mode == WB_SYNC_ALL ?
+ 			WRITE_SYNC_PLUG : WRITE);
+ 	io->io_next_block = bh->b_blocknr;
++#ifdef PDEBUG
++	trace_printk("%s: io_submit_init for ino %lu, nvecs = %d",
++		     inode->i_sb->s_id, inode->i_ino, nvecs);
++#endif
+ 	return 0;
+ }
+ 
+-static int io_submit_add_bh(struct ext4_io_submit *io,
++static noinline int io_submit_add_bh(struct ext4_io_submit *io,
+ 			    struct inode *inode,
+ 			    struct writeback_control *wbc,
+ 			    struct buffer_head *bh)
+@@ -320,6 +366,14 @@ static int io_submit_add_bh(struct ext4_io_submit *io,
+ 	struct ext4_io_page *new_io_page;
+ 	int ret;
+ 
++#ifdef PDEBUG
++	trace_printk("%s enter: ino %lu blk %lu %s%s%s%s", inode->i_sb->s_id,
++		     inode->i_ino, (unsigned long) bh->b_blocknr,
++		     buffer_new(bh) ? "N" : "",
++		     buffer_mapped(bh) ? "M" : "",
++		     buffer_delay(bh) ? "D" : "",
++		     buffer_dirty(bh) ? "d" : "");
++#endif
+ 	if (buffer_new(bh)) {
+ 		clear_buffer_new(bh);
+ 		unmap_underlying_metadata(bh->b_bdev, bh->b_blocknr);
+@@ -347,6 +401,11 @@ retry:
+ 	ret = bio_add_page(io->io_bio, bh->b_page, bh->b_size, bh_offset(bh));
+ 	if (ret != bh->b_size) {
+ 	submit_and_retry:
++#ifdef PDEBUG
++		trace_printk("%s: submit and retry (ret = %d, size=%d, "
++			     "offset=%lu)\n", inode->i_sb->s_id, ret,
++			     bh->b_size, bh_offset(bh));
++#endif
+ 		ext4_io_submit(io);
+ 		goto retry;
+ 	}
+@@ -359,6 +418,16 @@ retry:
+ 		new_io_page->p_next = io->io_end->io_page;
+ 		io->io_end->io_page = new_io_page;
+ 	}
++#ifdef PDEBUG
++	if (io->io_end)
++		trace_printk("%s: exit: ino %lu offset %lu size %ld",
++			     inode->i_sb->s_id, inode->i_ino,
++			     (unsigned long) io->io_end->offset,
++			     (unsigned long) io->io_end->size);
++	else
++		trace_printk("%s: exit: ino %lu no_io_end",
++			     inode->i_sb->s_id, inode->i_ino);
++#endif
+ 	return 0;
+ }
+ 
+@@ -372,6 +441,10 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+ 	struct buffer_head *bh, *head;
+ 	int ret = 0, written = 0;
+ 
++#ifdef PDEBUG
++	trace_printk("%s: enter: ino %lu page %lu len %d", inode->i_sb->s_id,
++		     inode->i_ino, page->index, len);
++#endif
+ 	blocksize = 1 << inode->i_blkbits;
+ 
+ 	BUG_ON(PageWriteback(page));
+@@ -410,5 +483,9 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+ 	 */
+ 	if (written == 0)
+ 		end_page_writeback(page);
++#ifdef PDEBUG
++	trace_printk("%s: exit: for ino %lu", inode->i_sb->s_id,
++		     inode->i_ino);
++#endif
+ 	return ret;
+ }
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
 index 6494c81..256008b 100644
 --- a/fs/jbd2/commit.c

@@ -1,4 +1,4 @@
-Ext4: Use bio layer instead of buffer layer in mpage_da_submit_io
+ext4: use bio layer instead of buffer layer in mpage_da_submit_io
 
 Call the block I/O layer directly instad of going through the buffer
 layer.  This should give us much better performance and scalability,
@@ -8,12 +8,12 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
  fs/ext4/Makefile  |    2 +-
- fs/ext4/ext4.h    |   33 +++++-
+ fs/ext4/ext4.h    |   33 ++++-
  fs/ext4/extents.c |    4 +-
- fs/ext4/inode.c   |  118 ++---------------
- fs/ext4/page-io.c |  365 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/inode.c   |  118 ++-------------
+ fs/ext4/page-io.c |  415 +++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/super.c   |    8 +-
- 6 files changed, 421 insertions(+), 109 deletions(-)
+ 6 files changed, 471 insertions(+), 109 deletions(-)
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index 8867b2a..c947e36 100644
@@ -293,10 +293,10 @@ index 93668ca..79fdace 100644
  	/* Add the io_end to per-inode completed io list*/
 diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
 new file mode 100644
-index 0000000..e5a9dab
+index 0000000..ec81243
 --- /dev/null
 +++ b/fs/ext4/page-io.c
-@@ -0,0 +1,365 @@
+@@ -0,0 +1,415 @@
 +/*
 + * linux/fs/ext4/page-io.c
 + *
@@ -427,17 +427,30 @@ index 0000000..e5a9dab
 +{
 +	ext4_io_end_t *io = NULL;
 +
-+	io = kmalloc(sizeof(*io), flags);
++	io = kzalloc(sizeof(*io), flags);
 +
 +	if (io) {
-+		memset(io, 0, sizeof(*io));
-+		igrab(inode);
-+		io->inode = inode;
++		io->inode = igrab(inode);
++		BUG_ON(!io->inode);
 +		INIT_WORK(&io->work, ext4_end_io_work);
 +		INIT_LIST_HEAD(&io->list);
 +	}
-+
 +	return io;
++}
++
++/*
++ * Print an buffer I/O error compatible with the fs/buffer.c.  This
++ * provides compatibility with dmesg scrapers that look for a specific
++ * buffer I/O error message.  We really need a unified error reporting
++ * structure to userspace ala Digital Unix's uerf system, but it's
++ * probably not going to happen in my lifetime, due to LKML politics...
++ */
++static void buffer_io_error(struct buffer_head *bh)
++{
++	char b[BDEVNAME_SIZE];
++	printk(KERN_ERR "Buffer I/O error on device %s, logical block %Lu\n",
++			bdevname(bh->b_bdev, b),
++			(unsigned long long)bh->b_blocknr);
 +}
 +
 +static void ext4_end_bio(struct bio *bio, int error)
@@ -448,15 +461,13 @@ index 0000000..e5a9dab
 +	unsigned long flags;
 +	struct ext4_io_page *io_page;
 +
++	BUG_ON(!io_end);
 +	inode = io_end->inode;
 +	bio->bi_private = NULL;
 +	bio->bi_end_io = NULL;
 +	if (test_bit(BIO_UPTODATE, &bio->bi_flags))
 +		error = 0;
 +	bio_put(bio);
-+
-+	if (!io_end)
-+		return;
 +
 +	if (!(inode->i_sb->s_flags & MS_ACTIVE)) {
 +		printk("sb umounted, discard end_io request for inode %lu\n",
@@ -465,12 +476,18 @@ index 0000000..e5a9dab
 +		return;
 +	}
 +
-+	if (error)
++	if (error) {
 +		io_end->flag |= EXT4_IO_END_ERROR;
++		ext4_warning(inode->i_sb, "I/O error writing inode %lu "
++			     "(offset %llu size %ld)", inode->i_ino,
++			     (unsigned long long) io_end->offset,
++			     (long) io_end->size);
++	}
 +
 +	for (io_page = io_end->io_page; io_page; io_page = io_page->p_next) {
 +		struct page *page = io_page->p_page;
 +		struct buffer_head *bh, *head = page_buffers(io_page->p_page);
++		int partial = 0, partial_write = 0;
 +
 +		if (error)
 +			SetPageError(page);
@@ -480,27 +497,59 @@ index 0000000..e5a9dab
 +		else {
 +			/*
 +			 * If block_size < page_size we need to worry
-+			 * about partial writes.
++			 * about partial writes.  Note that we have
++			 * two different definitions of "partial"; one
++			 * is partial from the perspective of calling
++			 * end_page_writeback().  The problem here is
++			 * that if we needed to issue two bio's
++			 * against one page, but we can only allocate
++			 * a single end_page_writeback.
++			 *
++			 * The second is whether we can optimize away
++			 * a bogus readpage().  If there is a delayed
++			 * allocation buffer that was not resolved
++			 * before calling ext4_bio_write_page(), we
++			 * still need to call end_page_writeback(),
++			 * but we shouldn't call SetPageUptodate().
++			 * This is a mess, but it's the requirements
++			 * imposed on us by our VM overlords....
 +			 */
 +			loff_t offset;
 +			loff_t io_end_offset = io_end->offset + io_end->size;
-+			int partial = 0;
 +
 +			offset = (sector_t) page->index << PAGE_CACHE_SHIFT;
 +			bh = head;
 +			do {
 +				if ((offset >= io_end->offset) &&
-+				    (offset+bh->b_size <= io_end_offset))
++				    (offset+bh->b_size <= io_end_offset)) {
++					if (error)
++						buffer_io_error(bh);
++						
 +					clear_buffer_dirty(bh);
-+				if (buffer_dirty(bh))
++				}
++				if (buffer_delay(bh))
++					partial_write = 1;
++				else if (!buffer_mapped(bh))
++					clear_buffer_dirty(bh);
++				else if (buffer_dirty(bh)) {
 +					partial = 1;
++					partial_write = 1;
++				}
 +				offset += bh->b_size;
 +				bh = bh->b_this_page;
 +			} while (bh != head);
-+			if (partial)
-+				continue;
 +		}
-+		end_page_writeback(page);
++		if (!partial)
++			end_page_writeback(page);
++		/*
++		 * If this is a partial write which happened to make
++		 * all buffers uptodate then we can optimize away a
++		 * bogus readpage() for the next read(). Here we
++		 * 'discover' whether the page went uptodate as a
++		 * result of this (potentially partial) write.
++		 */
++		if (!partial_write)
++			SetPageUptodate(page);
 +	}
 +
 +	/* Add the io_end to per-inode completed io list*/
@@ -537,7 +586,6 @@ index 0000000..e5a9dab
 +	struct page *page = bh->b_page;
 +	int nvecs = bio_get_nr_vecs(bh->b_bdev);
 +	struct bio *bio;
-+
 +	
 +	io_end = ext4_init_io_end(inode, GFP_NOFS);
 +	if (!io_end)
@@ -554,7 +602,7 @@ index 0000000..e5a9dab
 +	bio->bi_end_io = ext4_end_bio;
 +
 +	io_end->inode = inode;
-+	io_end->offset = (sector_t)page->index << PAGE_CACHE_SHIFT;
++	io_end->offset = (page->index << PAGE_CACHE_SHIFT) + bh_offset(bh);
 +
 +	io->io_bio = bio;
 +	io->io_op = (wbc->sync_mode == WB_SYNC_ALL ?
@@ -574,6 +622,14 @@ index 0000000..e5a9dab
 +	if (buffer_new(bh)) {
 +		clear_buffer_new(bh);
 +		unmap_underlying_metadata(bh->b_bdev, bh->b_blocknr);
++	}
++
++	if (!buffer_mapped(bh) || buffer_delay(bh)) {
++		if (!buffer_mapped(bh))
++			clear_buffer_dirty(bh);
++		if (io->io_bio)
++			ext4_io_submit(io);
++		return 0;
 +	}
 +
 +retry:
@@ -631,12 +687,6 @@ index 0000000..e5a9dab
 +			set_buffer_uptodate(bh);
 +			continue;
 +		}
-+		if (!buffer_mapped(bh))
-+			pr_err("buffer not mapped?\n");
-+		if (!bh->b_bdev)
-+			pr_err("buffer has no dev?\n");
-+		else if (!bdev_get_queue(bh->b_bdev))
-+			pr_err("buffer's device has no queue?\n");
 +		ret = io_submit_add_bh(io, inode, wbc, bh);
 +		if (ret) {
 +			/* 
