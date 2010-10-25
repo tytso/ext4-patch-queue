@@ -12,11 +12,11 @@ is to do with ext4 functions deep in the writeback codepath fails.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |   63 ++++++++++++++++++++++++++----------------------------
- 1 files changed, 30 insertions(+), 33 deletions(-)
+ fs/ext4/inode.c |   66 +++++++++++++++++++++++++++---------------------------
+ 1 files changed, 33 insertions(+), 33 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 670ab15..c3cc036 100644
+index 670ab15..55961ff 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -60,6 +60,7 @@ static inline int ext4_begin_ordered_truncate(struct inode *inode,
@@ -123,13 +123,16 @@ index 670ab15..c3cc036 100644
  	}
  
  	/*
-@@ -2323,10 +2323,13 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
+@@ -2323,10 +2323,16 @@ static int mpage_da_map_blocks(struct mpage_da_data *mpd)
  		disksize = i_size_read(mpd->inode);
  	if (disksize > EXT4_I(mpd->inode)->i_disksize) {
  		ext4_update_i_disksize(mpd->inode, disksize);
 -		return ext4_mark_inode_dirty(handle, mpd->inode);
 +		err = ext4_mark_inode_dirty(handle, mpd->inode);
-+		/* XXX not sure what our error handling straegy is here */
++		if (err)
++			ext4_error(mpd->inode->i_sb,
++				   "Failed to mark inode %lu dirty",
++				   mpd->inode->i_ino);
  	}
  
 -	return 0;
@@ -139,7 +142,7 @@ index 670ab15..c3cc036 100644
  }
  
  #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | \
-@@ -2403,9 +2406,7 @@ flush_it:
+@@ -2403,9 +2409,7 @@ flush_it:
  	 * We couldn't merge the block to our extent, so we
  	 * need to flush current  extent and start new one
  	 */
@@ -150,7 +153,7 @@ index 670ab15..c3cc036 100644
  	return;
  }
  
-@@ -2437,15 +2438,13 @@ static int __mpage_da_writepage(struct page *page,
+@@ -2437,15 +2441,13 @@ static int __mpage_da_writepage(struct page *page,
  	if (mpd->next_page != page->index) {
  		/*
  		 * Nope, we can't. So, we map non-allocated blocks
@@ -168,7 +171,7 @@ index 670ab15..c3cc036 100644
  			redirty_page_for_writepage(wbc, page);
  			unlock_page(page);
  			return MPAGE_DA_EXTENT_TAIL;
-@@ -3071,9 +3070,7 @@ retry:
+@@ -3071,9 +3073,7 @@ retry:
  		 * them for I/O.
  		 */
  		if (!mpd.io_done && mpd.next_page != mpd.first_page) {
