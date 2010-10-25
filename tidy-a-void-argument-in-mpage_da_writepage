@@ -1,0 +1,45 @@
+From: Eric Sandeen <sandeen@redhat.com>
+
+ext4: tidy up a void argument in inode.c
+
+This doesn't fix anything at all, it just removes a vestige
+of prior use from __mpage_da_writepage()
+
+__mpage_da_writepage() had a *void argument leftover from
+its previous life as a callback; make it reflect the actual type.
+
+Fixing this up makes it slightly more obvious to read, and 
+enables proper typechecking.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+Ted, I had a similar change for mpage_put_bnr_to_bhs
+which takes an mpd but only wants an inode, but you
+absorbed that function in your patch series, so I didn't
+submit the change here.
+
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 50f3bba..854917e 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2424,9 +2423,9 @@ static int ext4_bh_delay_or_unwritten(handle_t *handle, struct buffer_head *bh)
+  * The function finds extents of pages and scan them for all blocks.
+  */
+ static int __mpage_da_writepage(struct page *page,
+-				struct writeback_control *wbc, void *data)
++				struct writeback_control *wbc,
++				struct mpage_da_data *mpd)
+ {
+-	struct mpage_da_data *mpd = data;
+ 	struct inode *inode = mpd->inode;
+ 	struct buffer_head *bh, *head;
+ 	sector_t logical;
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
