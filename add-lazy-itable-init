@@ -50,8 +50,8 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  Documentation/filesystems/ext4.txt |   14 ++
  fs/ext4/ext4.h                     |   40 ++++
  fs/ext4/ialloc.c                   |  120 ++++++++++
- fs/ext4/super.c                    |  439 +++++++++++++++++++++++++++++++++++-
- 4 files changed, 610 insertions(+), 3 deletions(-)
+ fs/ext4/super.c                    |  440 +++++++++++++++++++++++++++++++++++-
+ 4 files changed, 611 insertions(+), 3 deletions(-)
 
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
 index e1def17..6ab9442 100644
@@ -323,7 +323,7 @@ index 45853e0..e428f23 100644
 +	return ret;
 +}
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 751997d..7628193 100644
+index 751997d..5066537 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -41,6 +41,9 @@
@@ -453,7 +453,7 @@ index 751997d..7628193 100644
  
  	ext4_free_blocks_count_set(sbi->s_es, ext4_count_free_blocks(sb));
  	sbi->s_es->s_free_inodes_count =cpu_to_le32(ext4_count_free_inodes(sb));
-@@ -2543,6 +2582,377 @@ static void print_daily_error_info(unsigned long arg)
+@@ -2543,6 +2582,378 @@ static void print_daily_error_info(unsigned long arg)
  	mod_timer(&sbi->s_err_report, jiffies + 24*60*60*HZ);  /* Once a day */
  }
  
@@ -566,7 +566,7 @@ index 751997d..7628193 100644
 +
 +cont_thread:
 +	while (true) {
-+		next_wakeup = jiffies-1;
++		next_wakeup = MAX_JIFFY_OFFSET;
 +
 +		mutex_lock(&eli->li_list_mtx);
 +		if (list_empty(&eli->li_request_list)) {
@@ -578,10 +578,11 @@ index 751997d..7628193 100644
 +			elr = list_entry(pos, struct ext4_li_request,
 +					 lr_request);
 +
-+			if (time_before_eq(jiffies, elr->lr_next_sched))
-+				continue;
++			if (time_after_eq(jiffies, elr->lr_next_sched))
++				ret = ext4_run_li_request(elr);
 +
-+			if ((ret = ext4_run_li_request(elr)) != 0) {
++			if (ret) {
++				ret = 0;
 +				ext4_remove_li_request(elr);
 +				continue;
 +			}
@@ -831,7 +832,7 @@ index 751997d..7628193 100644
  static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  				__releases(kernel_lock)
  				__acquires(kernel_lock)
-@@ -2568,6 +2978,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2568,6 +2979,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	__u64 blocks_count;
  	int err;
  	unsigned int journal_ioprio = DEFAULT_JOURNAL_IOPRIO;
@@ -839,7 +840,7 @@ index 751997d..7628193 100644
  
  	sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
  	if (!sbi)
-@@ -2630,6 +3041,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2630,6 +3042,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  
  	/* Set defaults before we parse the mount options */
  	def_mount_opts = le32_to_cpu(es->s_default_mount_opts);
@@ -847,7 +848,7 @@ index 751997d..7628193 100644
  	if (def_mount_opts & EXT4_DEFM_DEBUG)
  		set_opt(sbi->s_mount_opt, DEBUG);
  	if (def_mount_opts & EXT4_DEFM_BSDGROUPS) {
-@@ -2909,7 +3321,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -2909,7 +3322,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  			goto failed_mount2;
  		}
  	}
@@ -856,7 +857,7 @@ index 751997d..7628193 100644
  		ext4_msg(sb, KERN_ERR, "group descriptors corrupted!");
  		goto failed_mount2;
  	}
-@@ -3130,6 +3542,10 @@ no_journal:
+@@ -3130,6 +3543,10 @@ no_journal:
  		goto failed_mount4;
  	}
  
@@ -867,7 +868,7 @@ index 751997d..7628193 100644
  	sbi->s_kobj.kset = ext4_kset;
  	init_completion(&sbi->s_kobj_unregister);
  	err = kobject_init_and_add(&sbi->s_kobj, &ext4_ktype, NULL,
-@@ -3847,6 +4263,19 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -3847,6 +4264,19 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  			enable_quota = 1;
  		}
  	}
@@ -887,7 +888,7 @@ index 751997d..7628193 100644
  	ext4_setup_system_zone(sb);
  	if (sbi->s_journal == NULL)
  		ext4_commit_super(sb, 1);
-@@ -4317,6 +4746,9 @@ static int __init init_ext4_fs(void)
+@@ -4317,6 +4747,9 @@ static int __init init_ext4_fs(void)
  	err = register_filesystem(&ext4_fs_type);
  	if (err)
  		goto out;
@@ -897,7 +898,7 @@ index 751997d..7628193 100644
  	return 0;
  out:
  	unregister_as_ext2();
-@@ -4336,6 +4768,7 @@ out4:
+@@ -4336,6 +4769,7 @@ out4:
  
  static void __exit exit_ext4_fs(void)
  {
