@@ -11,9 +11,9 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/ext4.h    |   36 +++++-
  fs/ext4/extents.c |    4 +-
  fs/ext4/inode.c   |  118 ++-------------
- fs/ext4/page-io.c |  426 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/page-io.c |  430 +++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/super.c   |    8 +-
- 6 files changed, 485 insertions(+), 109 deletions(-)
+ 6 files changed, 489 insertions(+), 109 deletions(-)
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index 8867b2a..c947e36 100644
@@ -29,7 +29,7 @@ index 8867b2a..c947e36 100644
  		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o
  
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 2283369..3d1abd0 100644
+index 2283369..ca9fda6 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -168,7 +168,20 @@ struct mpage_da_data {
@@ -77,7 +77,7 @@ index 2283369..3d1abd0 100644
  			     __u64 start_orig, __u64 start_donor,
  			     __u64 len, __u64 *moved_len);
  
-+/* page_io.c */
++/* page-io.c */
 +extern int __init init_ext4_pageio(void);
 +extern void exit_ext4_pageio(void);
 +extern void ext4_free_io_end(ext4_io_end_t *io);
@@ -114,7 +114,7 @@ index a0e6230..a1e20c8 100644
  				ext4_set_inode_state(inode,
  						     EXT4_STATE_DIO_UNWRITTEN);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 93668ca..79fdace 100644
+index c65d647..58604fe 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -2016,8 +2016,10 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
@@ -162,7 +162,7 @@ index 93668ca..79fdace 100644
  	return ret;
  }
  
-@@ -3423,15 +3426,6 @@ ext4_readpages(struct file *file, struct address_space *mapping,
+@@ -3426,15 +3429,6 @@ ext4_readpages(struct file *file, struct address_space *mapping,
  	return mpage_readpages(mapping, pages, nr_pages, ext4_get_block);
  }
  
@@ -178,7 +178,7 @@ index 93668ca..79fdace 100644
  static void ext4_invalidatepage_free_endio(struct page *page, unsigned long offset)
  {
  	struct buffer_head *head, *bh;
-@@ -3637,68 +3631,6 @@ static void dump_completed_IO(struct inode * inode)
+@@ -3640,68 +3634,6 @@ static void dump_completed_IO(struct inode * inode)
  }
  
  /*
@@ -247,7 +247,7 @@ index 93668ca..79fdace 100644
   * This function is called from ext4_sync_file().
   *
   * When IO is completed, the work to convert unwritten extents to
-@@ -3753,28 +3685,6 @@ int flush_completed_IO(struct inode *inode)
+@@ -3756,28 +3688,6 @@ int flush_completed_IO(struct inode *inode)
  	return (ret2 < 0) ? ret2 : 0;
  }
  
@@ -276,7 +276,7 @@ index 93668ca..79fdace 100644
  static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
  			    ssize_t size, void *private, int ret,
  			    bool is_async)
-@@ -3794,7 +3704,7 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+@@ -3797,7 +3707,7 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
  		  size);
  
  	/* if not aio dio with unwritten extents, just free io and return */
@@ -285,7 +285,7 @@ index 93668ca..79fdace 100644
  		ext4_free_io_end(io_end);
  		iocb->private = NULL;
  out:
-@@ -3839,7 +3749,7 @@ static void ext4_end_io_buffer_write(struct buffer_head *bh, int uptodate)
+@@ -3842,7 +3752,7 @@ static void ext4_end_io_buffer_write(struct buffer_head *bh, int uptodate)
  		goto out;
  	}
  
@@ -296,10 +296,10 @@ index 93668ca..79fdace 100644
  	/* Add the io_end to per-inode completed io list*/
 diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
 new file mode 100644
-index 0000000..ec92e38
+index 0000000..b972ca5
 --- /dev/null
 +++ b/fs/ext4/page-io.c
-@@ -0,0 +1,426 @@
+@@ -0,0 +1,430 @@
 +/*
 + * linux/fs/ext4/page-io.c
 + *
@@ -473,6 +473,7 @@ index 0000000..ec92e38
 +	struct workqueue_struct *wq;
 +	struct inode *inode;
 +	unsigned long flags;
++	ext4_fsblk_t err_block;
 +	int i;
 +
 +	BUG_ON(!io_end);
@@ -481,6 +482,7 @@ index 0000000..ec92e38
 +	bio->bi_end_io = NULL;
 +	if (test_bit(BIO_UPTODATE, &bio->bi_flags))
 +		error = 0;
++	err_block = bio->bi_sector >> (inode->i_blkbits - 9);
 +	bio_put(bio);
 +
 +	if (!(inode->i_sb->s_flags & MS_ACTIVE)) {
@@ -492,10 +494,12 @@ index 0000000..ec92e38
 +
 +	if (error) {
 +		io_end->flag |= EXT4_IO_END_ERROR;
-+		ext4_warning(inode->i_sb, "I/O error writing inode %lu "
-+			     "(offset %llu size %ld)", inode->i_ino,
++		ext4_warning(inode->i_sb, "I/O error writing to inode %lu "
++			     "(offset %llu size %ld starting block %llu)",
++			     inode->i_ino,
 +			     (unsigned long long) io_end->offset,
-+			     (long) io_end->size);
++			     (long) io_end->size,
++			     (unsigned long long) err_block);
 +	}
 +
 +	for (i = 0; i < io_end->num_io_pages; i++) {
@@ -727,10 +731,10 @@ index 0000000..ec92e38
 +	return ret;
 +}
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 16002ec..9f602c2 100644
+index 8a24e9b..e13b3c3 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -4768,9 +4768,12 @@ static int __init init_ext4_fs(void)
+@@ -4769,9 +4769,12 @@ static int __init init_ext4_fs(void)
  	int err;
  
  	ext4_check_flag_values();
@@ -744,7 +748,7 @@ index 16002ec..9f602c2 100644
  	ext4_kset = kset_create_and_add("ext4", NULL, fs_kobj);
  	if (!ext4_kset)
  		goto out4;
-@@ -4811,6 +4814,8 @@ out3:
+@@ -4812,6 +4815,8 @@ out3:
  	kset_unregister(ext4_kset);
  out4:
  	exit_ext4_system_zone();
@@ -753,7 +757,7 @@ index 16002ec..9f602c2 100644
  	return err;
  }
  
-@@ -4826,6 +4831,7 @@ static void __exit exit_ext4_fs(void)
+@@ -4827,6 +4832,7 @@ static void __exit exit_ext4_fs(void)
  	remove_proc_entry("fs/ext4", NULL);
  	kset_unregister(ext4_kset);
  	exit_ext4_system_zone();
