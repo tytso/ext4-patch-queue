@@ -23,15 +23,15 @@ Reviewed-by: Jan Kara <jack@suse.cz>
 Reviewed-by: Dmitry Monakhov <dmonakhov@openvz.org>
 ---
  fs/ext4/ext4.h    |    2 +
- fs/ext4/mballoc.c |  191 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/mballoc.c |  185 +++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/super.c   |    1 +
- 3 files changed, 194 insertions(+), 0 deletions(-)
+ 3 files changed, 188 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index b364b9d..1d0bb44 100644
+index 3d1abd0..8a9a151 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1631,6 +1631,8 @@ extern int ext4_mb_add_groupinfo(struct super_block *sb,
+@@ -1694,6 +1694,8 @@ extern int ext4_mb_add_groupinfo(struct super_block *sb,
  extern int ext4_mb_get_buddy_cache_lock(struct super_block *, ext4_group_t);
  extern void ext4_mb_put_buddy_cache_lock(struct super_block *,
  						ext4_group_t, int);
@@ -41,11 +41,11 @@ index b364b9d..1d0bb44 100644
  struct buffer_head *ext4_getblk(handle_t *, struct inode *,
  						ext4_lblk_t, int, int *);
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 93eb6c2..80a5139 100644
+index 11c2eec..e3bcc06 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -4746,3 +4746,194 @@ error_return:
- 		kmem_cache_free(ext4_ac_cachep, ac);
+@@ -4685,3 +4685,188 @@ error_return:
+ 	ext4_std_error(sb, err);
  	return;
  }
 +
@@ -124,7 +124,6 @@ index 93eb6c2..80a5139 100644
 +	ext4_lock_group(sb, group);
 +
 +	while (start < max) {
-+
 +		start = mb_find_next_zero_bit(bitmap, max, start);
 +		if (start >= max)
 +			break;
@@ -179,10 +178,9 @@ index 93eb6c2..80a5139 100644
 +int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
 +{
 +	struct ext4_buddy e4b;
-+	ext4_fsblk_t first_group, last_group;
++	ext4_group_t first_group, last_group;
 +	ext4_group_t group, ngroups = ext4_get_groups_count(sb);
 +	ext4_grpblk_t cnt = 0, first_block, last_block;
-+	struct ext4_super_block *es = EXT4_SB(sb)->s_es;
 +	uint64_t start, len, minlen, trimmed;
 +	int ret = 0;
 +
@@ -195,21 +193,17 @@ index 93eb6c2..80a5139 100644
 +		return -EINVAL;
 +
 +	/* Determine first and last group to examine based on start and len */
-+	first_group = (start - le32_to_cpu(es->s_first_data_block)) /
-+		      EXT4_BLOCKS_PER_GROUP(sb);
-+	last_group = (start + len - le32_to_cpu(es->s_first_data_block)) /
-+		     EXT4_BLOCKS_PER_GROUP(sb);
++	ext4_get_group_no_and_offset(sb, (ext4_fsblk_t) start,
++				     &first_group, &first_block);
++	ext4_get_group_no_and_offset(sb, (ext4_fsblk_t) (start + len),
++				     &last_group, &last_block);
 +	last_group = (last_group > ngroups - 1) ? ngroups - 1 : last_group;
++	last_block = EXT4_BLOCKS_PER_GROUP(sb);
 +
 +	if (first_group > last_group)
 +		return -EINVAL;
 +
-+	first_block = (start - le32_to_cpu(es->s_first_data_block)) %
-+			EXT4_BLOCKS_PER_GROUP(sb);
-+	last_block = EXT4_BLOCKS_PER_GROUP(sb);
-+
 +	for (group = first_group; group <= last_group; group++) {
-+
 +		ret = ext4_mb_load_buddy(sb, group, &e4b);
 +		if (ret) {
 +			ext4_error(sb, "Error in loading buddy "
@@ -240,10 +234,10 @@ index 93eb6c2..80a5139 100644
 +	return ret;
 +}
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 9134abf..9b67155 100644
+index e13b3c3..01e60aa 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1171,6 +1171,7 @@ static const struct super_operations ext4_sops = {
+@@ -1189,6 +1189,7 @@ static const struct super_operations ext4_sops = {
  	.quota_write	= ext4_quota_write,
  #endif
  	.bdev_try_to_free_page = bdev_try_to_free_page,
