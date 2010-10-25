@@ -1,0 +1,40 @@
+From: Lukas Czerner <lczerner@redhat.com>
+
+ext4: Use return value from sb_issue_discard()
+
+Use return value from sb_issue_discard() as return value in
+ext4_issue_discard(). Since sb_issue_discard() may result in more
+serious errors than just -EOPNOTSUPP it is worth to inform user of this
+function about them to handle error cases properly.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 66c3535..93eb6c2 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2603,7 +2603,7 @@ int ext4_mb_release(struct super_block *sb)
+ 	return 0;
+ }
+ 
+-static inline void ext4_issue_discard(struct super_block *sb,
++static inline int ext4_issue_discard(struct super_block *sb,
+ 		ext4_group_t block_group, ext4_grpblk_t block, int count)
+ {
+ 	int ret;
+@@ -2617,6 +2617,7 @@ static inline void ext4_issue_discard(struct super_block *sb,
+ 		ext4_warning(sb, "discard not supported, disabling");
+ 		clear_opt(EXT4_SB(sb)->s_mount_opt, DISCARD);
+ 	}
++	return ret;
+ }
+ 
+ /*
+-- 
+1.7.2.3
+
+
