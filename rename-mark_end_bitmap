@@ -1,0 +1,88 @@
+ext4: rename mark_bitmap_end() to ext4_mark_bitmap_end()
+
+Fix a namespace leak from fs/ext4
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+
+---
+ fs/ext4/balloc.c |    3 ++-
+ fs/ext4/ext4.h   |    2 +-
+ fs/ext4/ialloc.c |    4 ++--
+ fs/ext4/resize.c |    7 ++++---
+ 4 files changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index a12cefc..14c3af2 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -171,7 +171,8 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
+ 		 * less than the blocksize * 8 ( which is the size
+ 		 * of bitmap ), set rest of the block bitmap to 1
+ 		 */
+-		mark_bitmap_end(group_blocks, sb->s_blocksize * 8, bh->b_data);
++		ext4_mark_bitmap_end(group_blocks, sb->s_blocksize * 8,
++				     bh->b_data);
+ 	}
+ 	return free_blocks - ext4_group_used_meta_blocks(sb, block_group, gdp);
+ }
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 08b5df4..3deb980 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1666,7 +1666,7 @@ extern struct inode * ext4_orphan_get(struct super_block *, unsigned long);
+ extern unsigned long ext4_count_free_inodes(struct super_block *);
+ extern unsigned long ext4_count_dirs(struct super_block *);
+ extern void ext4_check_inodes_bitmap(struct super_block *);
+-extern void mark_bitmap_end(int start_bit, int end_bit, char *bitmap);
++extern void ext4_mark_bitmap_end(int start_bit, int end_bit, char *bitmap);
+ extern int ext4_init_inode_table(struct super_block *sb,
+ 				 ext4_group_t group, int barrier);
+ 
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 9666e4c..509f429 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -50,7 +50,7 @@
+  * need to use it within a single byte (to ensure we get endianness right).
+  * We can use memset for the rest of the bitmap as there are no other users.
+  */
+-void mark_bitmap_end(int start_bit, int end_bit, char *bitmap)
++void ext4_mark_bitmap_end(int start_bit, int end_bit, char *bitmap)
+ {
+ 	int i;
+ 
+@@ -86,7 +86,7 @@ static unsigned ext4_init_inode_bitmap(struct super_block *sb,
+ 	}
+ 
+ 	memset(bh->b_data, 0, (EXT4_INODES_PER_GROUP(sb) + 7) / 8);
+-	mark_bitmap_end(EXT4_INODES_PER_GROUP(sb), sb->s_blocksize * 8,
++	ext4_mark_bitmap_end(EXT4_INODES_PER_GROUP(sb), sb->s_blocksize * 8,
+ 			bh->b_data);
+ 
+ 	return EXT4_INODES_PER_GROUP(sb);
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 2f5e347..f398474 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -252,7 +252,8 @@ static int setup_new_group_blocks(struct super_block *sb,
+ 	if ((err = extend_or_restart_transaction(handle, 2, bh)))
+ 		goto exit_bh;
+ 
+-	mark_bitmap_end(input->blocks_count, sb->s_blocksize * 8, bh->b_data);
++	ext4_mark_bitmap_end(input->blocks_count, sb->s_blocksize * 8,
++			     bh->b_data);
+ 	ext4_handle_dirty_metadata(handle, NULL, bh);
+ 	brelse(bh);
+ 	/* Mark unused entries in inode bitmap used */
+@@ -263,8 +264,8 @@ static int setup_new_group_blocks(struct super_block *sb,
+ 		goto exit_journal;
+ 	}
+ 
+-	mark_bitmap_end(EXT4_INODES_PER_GROUP(sb), sb->s_blocksize * 8,
+-			bh->b_data);
++	ext4_mark_bitmap_end(EXT4_INODES_PER_GROUP(sb), sb->s_blocksize * 8,
++			     bh->b_data);
+ 	ext4_handle_dirty_metadata(handle, NULL, bh);
+ exit_bh:
+ 	brelse(bh);

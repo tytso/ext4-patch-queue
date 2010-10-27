@@ -1,0 +1,204 @@
+ext4: Move ext4_mb_{get,put}_buddy_cache_lock and make them static
+
+These functions are only used within fs/ext4/mballoc.c, so move them
+so they are used after they are defined, and then make them be static.
+
+(Eric Sandeen submitted a similar patch but I wanted to keep commits
+that move codes around as separate so they can be more easily
+audited.)
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h    |    3 -
+ fs/ext4/mballoc.c |  157 +++++++++++++++++++++++++++--------------------------
+ 2 files changed, 79 insertions(+), 81 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 3deb980..2e4d302 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1686,9 +1686,6 @@ extern void ext4_free_blocks(handle_t *handle, struct inode *inode,
+ 			     unsigned long count, int flags);
+ extern int ext4_mb_add_groupinfo(struct super_block *sb,
+ 		ext4_group_t i, struct ext4_group_desc *desc);
+-extern int ext4_mb_get_buddy_cache_lock(struct super_block *, ext4_group_t);
+-extern void ext4_mb_put_buddy_cache_lock(struct super_block *,
+-						ext4_group_t, int);
+ extern int ext4_trim_fs(struct super_block *, struct fstrim_range *);
+ 
+ /* inode.c */
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 381ac56..328ea9c 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -947,6 +947,85 @@ out:
+ }
+ 
+ /*
++ * lock the group_info alloc_sem of all the groups
++ * belonging to the same buddy cache page. This
++ * make sure other parallel operation on the buddy
++ * cache doesn't happen  whild holding the buddy cache
++ * lock
++ */
++static int ext4_mb_get_buddy_cache_lock(struct super_block *sb,
++					ext4_group_t group)
++{
++	int i;
++	int block, pnum;
++	int blocks_per_page;
++	int groups_per_page;
++	ext4_group_t ngroups = ext4_get_groups_count(sb);
++	ext4_group_t first_group;
++	struct ext4_group_info *grp;
++
++	blocks_per_page = PAGE_CACHE_SIZE / sb->s_blocksize;
++	/*
++	 * the buddy cache inode stores the block bitmap
++	 * and buddy information in consecutive blocks.
++	 * So for each group we need two blocks.
++	 */
++	block = group * 2;
++	pnum = block / blocks_per_page;
++	first_group = pnum * blocks_per_page / 2;
++
++	groups_per_page = blocks_per_page >> 1;
++	if (groups_per_page == 0)
++		groups_per_page = 1;
++	/* read all groups the page covers into the cache */
++	for (i = 0; i < groups_per_page; i++) {
++
++		if ((first_group + i) >= ngroups)
++			break;
++		grp = ext4_get_group_info(sb, first_group + i);
++		/* take all groups write allocation
++		 * semaphore. This make sure there is
++		 * no block allocation going on in any
++		 * of that groups
++		 */
++		down_write_nested(&grp->alloc_sem, i);
++	}
++	return i;
++}
++
++static void ext4_mb_put_buddy_cache_lock(struct super_block *sb,
++					 ext4_group_t group, int locked_group)
++{
++	int i;
++	int block, pnum;
++	int blocks_per_page;
++	ext4_group_t first_group;
++	struct ext4_group_info *grp;
++
++	blocks_per_page = PAGE_CACHE_SIZE / sb->s_blocksize;
++	/*
++	 * the buddy cache inode stores the block bitmap
++	 * and buddy information in consecutive blocks.
++	 * So for each group we need two blocks.
++	 */
++	block = group * 2;
++	pnum = block / blocks_per_page;
++	first_group = pnum * blocks_per_page / 2;
++	/* release locks on all the groups */
++	for (i = 0; i < locked_group; i++) {
++
++		grp = ext4_get_group_info(sb, first_group + i);
++		/* take all groups write allocation
++		 * semaphore. This make sure there is
++		 * no block allocation going on in any
++		 * of that groups
++		 */
++		up_write(&grp->alloc_sem);
++	}
++
++}
++
++/*
+  * Locking note:  This routine calls ext4_mb_init_cache(), which takes the
+  * block group lock of all groups for this page; do not hold the BG lock when
+  * calling this routine!
+@@ -1923,84 +2002,6 @@ static int ext4_mb_good_group(struct ext4_allocation_context *ac,
+ 	return 0;
+ }
+ 
+-/*
+- * lock the group_info alloc_sem of all the groups
+- * belonging to the same buddy cache page. This
+- * make sure other parallel operation on the buddy
+- * cache doesn't happen  whild holding the buddy cache
+- * lock
+- */
+-int ext4_mb_get_buddy_cache_lock(struct super_block *sb, ext4_group_t group)
+-{
+-	int i;
+-	int block, pnum;
+-	int blocks_per_page;
+-	int groups_per_page;
+-	ext4_group_t ngroups = ext4_get_groups_count(sb);
+-	ext4_group_t first_group;
+-	struct ext4_group_info *grp;
+-
+-	blocks_per_page = PAGE_CACHE_SIZE / sb->s_blocksize;
+-	/*
+-	 * the buddy cache inode stores the block bitmap
+-	 * and buddy information in consecutive blocks.
+-	 * So for each group we need two blocks.
+-	 */
+-	block = group * 2;
+-	pnum = block / blocks_per_page;
+-	first_group = pnum * blocks_per_page / 2;
+-
+-	groups_per_page = blocks_per_page >> 1;
+-	if (groups_per_page == 0)
+-		groups_per_page = 1;
+-	/* read all groups the page covers into the cache */
+-	for (i = 0; i < groups_per_page; i++) {
+-
+-		if ((first_group + i) >= ngroups)
+-			break;
+-		grp = ext4_get_group_info(sb, first_group + i);
+-		/* take all groups write allocation
+-		 * semaphore. This make sure there is
+-		 * no block allocation going on in any
+-		 * of that groups
+-		 */
+-		down_write_nested(&grp->alloc_sem, i);
+-	}
+-	return i;
+-}
+-
+-void ext4_mb_put_buddy_cache_lock(struct super_block *sb,
+-					ext4_group_t group, int locked_group)
+-{
+-	int i;
+-	int block, pnum;
+-	int blocks_per_page;
+-	ext4_group_t first_group;
+-	struct ext4_group_info *grp;
+-
+-	blocks_per_page = PAGE_CACHE_SIZE / sb->s_blocksize;
+-	/*
+-	 * the buddy cache inode stores the block bitmap
+-	 * and buddy information in consecutive blocks.
+-	 * So for each group we need two blocks.
+-	 */
+-	block = group * 2;
+-	pnum = block / blocks_per_page;
+-	first_group = pnum * blocks_per_page / 2;
+-	/* release locks on all the groups */
+-	for (i = 0; i < locked_group; i++) {
+-
+-		grp = ext4_get_group_info(sb, first_group + i);
+-		/* take all groups write allocation
+-		 * semaphore. This make sure there is
+-		 * no block allocation going on in any
+-		 * of that groups
+-		 */
+-		up_write(&grp->alloc_sem);
+-	}
+-
+-}
+-
+ static noinline_for_stack int
+ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+ {
