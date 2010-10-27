@@ -27,7 +27,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 15 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 01e60aa..c92750b 100644
+index 01e60aa..6b3feef 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -3962,9 +3962,12 @@ static int ext4_commit_super(struct super_block *sb, int sync)
@@ -40,7 +40,7 @@ index 01e60aa..c92750b 100644
  					&EXT4_SB(sb)->s_freeblocks_counter));
 -	es->s_free_inodes_count = cpu_to_le32(percpu_counter_sum_positive(
 +	if (percpu_counter_initialized(&EXT4_SB(sb)->s_freeinodes_counter))
-+		es->s_free_inodes_count = 
++		es->s_free_inodes_count =
 +			cpu_to_le32(percpu_counter_sum_positive(
  					&EXT4_SB(sb)->s_freeinodes_counter));
  	sb->s_dirt = 0;
