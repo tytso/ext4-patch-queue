@@ -1,0 +1,40 @@
+fs: build fix when !CONFIG_BLOCK
+
+From: Ingo Molnar <mingo@elte.hu>
+
+Today's -tip fails to build on !CONFIG_BLOCK, due to upstream commit
+367a51a ("fs: Add FITRIM ioctl"):
+
+ include/linux/fs.h:36: error: expected specifier-qualifier-list before ‘uint64_t’
+ include/linux/fs.h:36: error: expected specifier-qualifier-list before ‘uint64_t’
+ include/linux/fs.h:36: error: expected specifier-qualifier-list before ‘uint64_t’
+
+The commit adds uint64_t type usage to fs.h, but linux/types.h is not
+included explicitly - it's only included implicitly via
+linux/blk_types.h, and there only if CONFIG_BLOCK is enabled.
+
+Add the explicit #include to fix this.
+
+Signed-off-by: Ingo Molnar <mingo@elte.hu>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ include/linux/fs.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 6ed7ace..1c73b50 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -9,6 +9,7 @@
+ #include <linux/limits.h>
+ #include <linux/ioctl.h>
+ #include <linux/blk_types.h>
++#include <linux/types.h>
+ 
+ /*
+  * It's silly to have NR_OPEN bigger than NR_FILE, but you can change
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

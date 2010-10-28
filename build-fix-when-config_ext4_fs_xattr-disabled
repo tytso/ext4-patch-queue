@@ -1,0 +1,38 @@
+ext4: Fix build when !CONFIG_EXT4_FS_XATTR
+
+From: Ingo Molnar <mingo@elte.hu>
+
+> Theodore Ts'o (18):
+>       ext4: rename {exit,init}_ext4_*() to ext4_{exit,init}_*()
+
+Today's -tip fails to build due to upstream commit 5dabfc7 ("ext4:
+rename {exit,init}_ext4_*() to ext4_{exit,init}_*()"), on
+all[yes/mod]config with CONFIG_EXT4_FS_XATTR disabled:
+
+  fs/ext4/super.c:4776: error: implicit declaration of function ‘ext4_init_xattr’
+
+Commit 5dabfc7 renamed init_ext4_xattr to ext4_init_xattr but forgot
+to update the definition in fs/ext4/xattr.h. The patch below fixes it.
+
+[ Mea culpa, mea culpa, mea maximum culpa -Ted ]
+
+Signed-off-by: Ingo Molnar <mingo@elte.hu>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+--- linux.orig/fs/ext4/xattr.h
++++ linux/fs/ext4/xattr.h
+@@ -122,7 +122,7 @@ ext4_xattr_put_super(struct super_block 
+ }
+ 
+ static __init inline int
+-init_ext4_xattr(void)
++ext4_init_xattr(void)
+ {
+ 	return 0;
+ }
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
