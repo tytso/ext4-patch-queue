@@ -1,0 +1,46 @@
+ext4: BUG_ON fix: check if page has buffers before calling page_buffers() 
+
+We need to make check if a page does not have buffes by checking
+page_has_buffers(page) before calling page_buffers(page) in
+ext4_writepage().  Otherwise page_buffers() could throw a BUG_ON.
+
+Thanks also to Markus Trippelsdorf and Avinash Kurup who also reported
+the problem.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reported-by: Sedat Dilek <sedat.dilek@googlemail.com>
+Tested-by: Sedat Dilek <sedat.dilek@googlemail.com>
+---
+ fs/ext4/inode.c |   12 +++++-------
+ 1 files changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 2d6c6c8..1916164 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2718,7 +2718,7 @@ static int ext4_writepage(struct page *page,
+ 	 * try to create them using __block_write_begin.  If this
+ 	 * fails, redirty the page and move on.
+ 	 */
+-	if (!page_buffers(page)) {
++	if (!page_has_buffers(page)) {
+ 		if (__block_write_begin(page, 0, len,
+ 					noalloc_get_block_write)) {
+ 		redirty_page:
+@@ -2732,12 +2732,10 @@ static int ext4_writepage(struct page *page,
+ 	if (walk_page_buffers(NULL, page_bufs, 0, len, NULL,
+ 			      ext4_bh_delay_or_unwritten)) {
+ 		/*
+-		 * We don't want to do block allocation So redirty the
+-		 * page and return We may reach here when we do a
+-		 * journal commit via
+-		 * journal_submit_inode_data_buffers.  If we don't
+-		 * have mapping block we just ignore them. We can also
+-		 * reach here via shrink_page_list
++		 * We don't want to do block allocation, so redirty
++		 * the page and return.  We may reach here when we do
++		 * a journal commit via journal_submit_inode_data_buffers.
++		 * We can also reach here via shrink_page_list
+ 		 */
+ 		goto redirty_page;
+ 	}
