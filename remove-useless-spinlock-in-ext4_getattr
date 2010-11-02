@@ -1,12 +1,14 @@
-ext4: Remove useless spinlock in ext4_getattr()
+ext4: remove useless spinlock in ext4_getattr()
 
 Linus noted, and complained to me, that doing while lots of "git
-diff"'s of kernel sources, these spinlocks were responsible for 27% of
-the CPU on his two-processor system as reported by perf.
+diff"'s of kernel sources, these spinlocks were responsible for 28% of
+all of the spinlock activity on his two-processor system as reported
+by perf.
 
 Git was doing lots of parallel stats, and this was putting a lot of
 pressure on ext4_getattr().  A spinlock to protect a single
-memory-to-memory copy is pointless, so remove it.
+memory-to-memory copy is pointless, so remove it.  Fixing this caused
+a 2% increase on his workload.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
