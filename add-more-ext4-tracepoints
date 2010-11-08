@@ -1,0 +1,183 @@
+ext4: Add new ext4 inode tracepoints
+
+Add ext4_evict_inode, ext4_drop_inode, ext4_mark_inode_dirty, and
+ext4_begin_ordered_truncate()
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c             |    3 +
+ fs/ext4/super.c             |   10 ++++
+ include/trace/events/ext4.h |   97 +++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 110 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 4d78342..bdbe699 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -53,6 +53,7 @@
+ static inline int ext4_begin_ordered_truncate(struct inode *inode,
+ 					      loff_t new_size)
+ {
++	trace_ext4_begin_ordered_truncate(inode, new_size);
+ 	return jbd2_journal_begin_ordered_truncate(
+ 					EXT4_SB(inode->i_sb)->s_journal,
+ 					&EXT4_I(inode)->jinode,
+@@ -178,6 +179,7 @@ void ext4_evict_inode(struct inode *inode)
+ 	handle_t *handle;
+ 	int err;
+ 
++	trace_ext4_evict_inode(inode);
+ 	if (inode->i_nlink) {
+ 		truncate_inode_pages(&inode->i_data, 0);
+ 		goto no_delete;
+@@ -5647,6 +5649,7 @@ int ext4_mark_inode_dirty(handle_t *handle, struct inode *inode)
+ 	int err, ret;
+ 
+ 	might_sleep();
++	trace_ext4_mark_inode_dirty(inode, _RET_IP_);
+ 	err = ext4_reserve_inode_write(handle, inode, &iloc);
+ 	if (ext4_handle_valid(handle) &&
+ 	    EXT4_I(inode)->i_extra_isize < sbi->s_want_extra_isize &&
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 5a0f50b..17d1f8b 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -832,6 +832,14 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
+ 	return &ei->vfs_inode;
+ }
+ 
++static int ext4_drop_inode(struct inode *inode)
++{
++	int drop = generic_drop_inode(inode);
++
++	trace_ext4_drop_inode(inode, drop);
++	return drop;
++}
++
+ static void ext4_destroy_inode(struct inode *inode)
+ {
+ 	if (!list_empty(&(EXT4_I(inode)->i_orphan))) {
+@@ -1173,6 +1181,7 @@ static const struct super_operations ext4_sops = {
+ 	.destroy_inode	= ext4_destroy_inode,
+ 	.write_inode	= ext4_write_inode,
+ 	.dirty_inode	= ext4_dirty_inode,
++	.drop_inode	= ext4_drop_inode,
+ 	.evict_inode	= ext4_evict_inode,
+ 	.put_super	= ext4_put_super,
+ 	.sync_fs	= ext4_sync_fs,
+@@ -1194,6 +1203,7 @@ static const struct super_operations ext4_nojournal_sops = {
+ 	.destroy_inode	= ext4_destroy_inode,
+ 	.write_inode	= ext4_write_inode,
+ 	.dirty_inode	= ext4_dirty_inode,
++	.drop_inode	= ext4_drop_inode,
+ 	.evict_inode	= ext4_evict_inode,
+ 	.write_super	= ext4_write_super,
+ 	.put_super	= ext4_put_super,
+diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
+index 289010d..e5e345f 100644
+--- a/include/trace/events/ext4.h
++++ b/include/trace/events/ext4.h
+@@ -98,6 +98,103 @@ TRACE_EVENT(ext4_allocate_inode,
+ 		  (unsigned long) __entry->dir, __entry->mode)
+ );
+ 
++TRACE_EVENT(ext4_evict_inode,
++	TP_PROTO(struct inode *inode),
++
++	TP_ARGS(inode),
++
++	TP_STRUCT__entry(
++		__field(	int,   dev_major                )
++		__field(	int,   dev_minor                )
++		__field(	ino_t,	ino			)
++		__field(	int,	nlink			)
++	),
++
++	TP_fast_assign(
++		__entry->dev_major = MAJOR(inode->i_sb->s_dev);
++		__entry->dev_minor = MINOR(inode->i_sb->s_dev);
++		__entry->ino	= inode->i_ino;
++		__entry->nlink	= inode->i_nlink;
++	),
++
++	TP_printk("dev %d,%d ino %lu nlink %d",
++		  __entry->dev_major, __entry->dev_minor,
++		  (unsigned long) __entry->ino, __entry->nlink)
++);
++
++TRACE_EVENT(ext4_drop_inode,
++	TP_PROTO(struct inode *inode, int drop),
++
++	TP_ARGS(inode, drop),
++
++	TP_STRUCT__entry(
++		__field(	int,	dev_major		)
++		__field(	int,	dev_minor		)
++		__field(	ino_t,	ino			)
++		__field(	int,	drop			)
++	),
++
++	TP_fast_assign(
++		__entry->dev_major = MAJOR(inode->i_sb->s_dev);
++		__entry->dev_minor = MINOR(inode->i_sb->s_dev);
++		__entry->ino	= inode->i_ino;
++		__entry->drop	= drop;
++	),
++
++	TP_printk("dev %d,%d ino %lu drop %d",
++		  __entry->dev_major, __entry->dev_minor,
++		  (unsigned long) __entry->ino, __entry->drop)
++);
++
++TRACE_EVENT(ext4_mark_inode_dirty,
++	TP_PROTO(struct inode *inode, unsigned long IP),
++
++	TP_ARGS(inode, IP),
++
++	TP_STRUCT__entry(
++		__field(	int,	dev_major		)
++		__field(	int,	dev_minor		)
++		__field(	ino_t,	ino			)
++		__field(unsigned long,	ip			)
++	),
++
++	TP_fast_assign(
++		__entry->dev_major = MAJOR(inode->i_sb->s_dev);
++		__entry->dev_minor = MINOR(inode->i_sb->s_dev);
++		__entry->ino	= inode->i_ino;
++		__entry->ip	= IP;
++	),
++
++	TP_printk("dev %d,%d ino %lu caller %pF",
++		  __entry->dev_major, __entry->dev_minor,
++		  (unsigned long) __entry->ino, (void *)__entry->ip)
++);
++
++TRACE_EVENT(ext4_begin_ordered_truncate,
++	TP_PROTO(struct inode *inode, loff_t new_size),
++
++	TP_ARGS(inode, new_size),
++
++	TP_STRUCT__entry(
++		__field(	int,	dev_major		)
++		__field(	int,	dev_minor		)
++		__field(	ino_t,	ino			)
++		__field(	loff_t,	new_size		)
++	),
++
++	TP_fast_assign(
++		__entry->dev_major	= MAJOR(inode->i_sb->s_dev);
++		__entry->dev_minor	= MINOR(inode->i_sb->s_dev);
++		__entry->ino		= inode->i_ino;
++		__entry->new_size	= new_size;
++	),
++
++	TP_printk("dev %d,%d ino %lu new_size %lld",
++		  __entry->dev_major, __entry->dev_minor,
++		  (unsigned long) __entry->ino,
++		  (long long) __entry->new_size)
++);
++
+ DECLARE_EVENT_CLASS(ext4__write_begin,
+ 
+ 	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,

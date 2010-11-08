@@ -1,0 +1,107 @@
+ext4: fix potential race when freeing ext4_io_page structures
+
+Use an atomic_t and make sure we don't free the structure while we
+might still be submitting I/O for that page.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h    |    2 +-
+ fs/ext4/page-io.c |   38 +++++++++++++++-----------------------
+ 2 files changed, 16 insertions(+), 24 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 8b5dd63..f67b9a1 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -177,7 +177,7 @@ struct mpage_da_data {
+ 
+ struct ext4_io_page {
+ 	struct page	*p_page;
+-	int		p_count;
++	atomic_t	p_count;
+ };
+ 
+ #define MAX_IO_PAGES 128
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index 94bbdb4..56677f9 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -52,6 +52,15 @@ void ext4_exit_pageio(void)
+ 	kmem_cache_destroy(io_page_cachep);
+ }
+ 
++static void put_io_page(struct ext4_io_page *io_page)
++{
++	if (atomic_dec_and_test(&io_page->p_count)) {
++		end_page_writeback(io_page->p_page);
++		put_page(io_page->p_page);
++		kmem_cache_free(io_page_cachep, io_page);
++	}
++}
++
+ void ext4_free_io_end(ext4_io_end_t *io)
+ {
+ 	int i;
+@@ -59,15 +68,8 @@ void ext4_free_io_end(ext4_io_end_t *io)
+ 	BUG_ON(!io);
+ 	if (io->page)
+ 		put_page(io->page);
+-	for (i = 0; i < io->num_io_pages; i++) {
+-		if (--io->pages[i]->p_count == 0) {
+-			struct page *page = io->pages[i]->p_page;
+-
+-			end_page_writeback(page);
+-			put_page(page);
+-			kmem_cache_free(io_page_cachep, io->pages[i]);
+-		}
+-	}
++	for (i = 0; i < io->num_io_pages; i++)
++		put_io_page(io->pages[i]);
+ 	io->num_io_pages = 0;
+ 	iput(io->inode);
+ 	kmem_cache_free(io_end_cachep, io);
+@@ -215,13 +217,7 @@ static void ext4_end_bio(struct bio *bio, int error)
+ 			} while (bh != head);
+ 		}
+ 
+-		if (--io_end->pages[i]->p_count == 0) {
+-			struct page *page = io_end->pages[i]->p_page;
+-
+-			end_page_writeback(page);
+-			put_page(page);
+-			kmem_cache_free(io_page_cachep, io_end->pages[i]);
+-		}
++		put_io_page(io_end->pages[i]);
+ 
+ 		/*
+ 		 * If this is a partial write which happened to make
+@@ -359,7 +355,7 @@ submit_and_retry:
+ 	if ((io_end->num_io_pages == 0) ||
+ 	    (io_end->pages[io_end->num_io_pages-1] != io_page)) {
+ 		io_end->pages[io_end->num_io_pages++] = io_page;
+-		io_page->p_count++;
++		atomic_inc(&io_page->p_count);
+ 	}
+ 	return 0;
+ }
+@@ -388,7 +384,7 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+ 		return -ENOMEM;
+ 	}
+ 	io_page->p_page = page;
+-	io_page->p_count = 0;
++	atomic_set(&io_page->p_count, 1);
+ 	get_page(page);
+ 
+ 	for (bh = head = page_buffers(page), block_start = 0;
+@@ -420,10 +416,6 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+ 	 * PageWriteback bit from the page to prevent the system from
+ 	 * wedging later on.
+ 	 */
+-	if (io_page->p_count == 0) {
+-		put_page(page);
+-		end_page_writeback(page);
+-		kmem_cache_free(io_page_cachep, io_page);
+-	}
++	put_io_page(io_page);
+ 	return ret;
+ }
