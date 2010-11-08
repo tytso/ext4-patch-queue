@@ -49,9 +49,9 @@ Reported-by: Nick Bowler <nbowler@elliptictech.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h    |    2 +
- fs/ext4/page-io.c |   70 ++++++++++++++++++++++++++++++++++-------------------
+ fs/ext4/page-io.c |   69 +++++++++++++++++++++++++++++++++-------------------
  fs/ext4/super.c   |    2 +
- 3 files changed, 49 insertions(+), 25 deletions(-)
+ 3 files changed, 48 insertions(+), 25 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 8b5dd63..670d134 100644
@@ -74,7 +74,7 @@ index 8b5dd63..670d134 100644
  extern ext4_io_end_t *ext4_init_io_end(struct inode *inode, gfp_t flags);
  extern int ext4_end_io_nolock(ext4_io_end_t *io);
 diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
-index 46a7d6a..432a233 100644
+index 46a7d6a..3e25a88 100644
 --- a/fs/ext4/page-io.c
 +++ b/fs/ext4/page-io.c
 @@ -32,8 +32,14 @@
@@ -210,16 +210,14 @@ index 46a7d6a..432a233 100644
  	/* Add the io_end to per-inode completed io list*/
  	spin_lock_irqsave(&EXT4_I(inode)->i_completed_io_lock, flags);
  	list_add_tail(&io_end->list, &EXT4_I(inode)->i_completed_io_list);
-@@ -305,8 +325,8 @@ static int io_submit_init(struct ext4_io_submit *io,
+@@ -305,7 +325,6 @@ static int io_submit_init(struct ext4_io_submit *io,
  	bio->bi_private = io->io_end = io_end;
  	bio->bi_end_io = ext4_end_bio;
  
 -	io_end->inode = inode;
  	io_end->offset = (page->index << PAGE_CACHE_SHIFT) + bh_offset(bh);
-+	io_end->flag = EXT4_IO_END_UNWRITTEN;
  
  	io->io_bio = bio;
- 	io->io_op = (wbc->sync_mode == WB_SYNC_ALL ?
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
 index 04352e9..45653af 100644
 --- a/fs/ext4/super.c
