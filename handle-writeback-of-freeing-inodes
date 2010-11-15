@@ -47,11 +47,12 @@ used by XFS.
 
 Reported-by: Nick Bowler <nbowler@elliptictech.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Tested-by: Nick Bowler <nbowler@elliptictech.com>
 ---
  fs/ext4/ext4.h    |    2 +
- fs/ext4/page-io.c |   69 +++++++++++++++++++++++++++++++++-------------------
+ fs/ext4/page-io.c |   59 ++++++++++++++++++++++++++++++----------------------
  fs/ext4/super.c   |    2 +
- 3 files changed, 48 insertions(+), 25 deletions(-)
+ 3 files changed, 38 insertions(+), 25 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 8b5dd63..670d134 100644
@@ -74,7 +75,7 @@ index 8b5dd63..670d134 100644
  extern ext4_io_end_t *ext4_init_io_end(struct inode *inode, gfp_t flags);
  extern int ext4_end_io_nolock(ext4_io_end_t *io);
 diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
-index 46a7d6a..3e25a88 100644
+index 46a7d6a..a24c8cc 100644
 --- a/fs/ext4/page-io.c
 +++ b/fs/ext4/page-io.c
 @@ -32,8 +32,14 @@
@@ -178,23 +179,13 @@ index 46a7d6a..3e25a88 100644
  	for (i = 0; i < io_end->num_io_pages; i++) {
  		struct page *page = io_end->pages[i]->p_page;
  		struct buffer_head *bh, *head;
-@@ -254,9 +253,30 @@ static void ext4_end_bio(struct bio *bio, int error)
+@@ -254,8 +253,19 @@ static void ext4_end_bio(struct bio *bio, int error)
  		if (!partial_write)
  			SetPageUptodate(page);
  	}
 -
  	io_end->num_io_pages = 0;
- 
-+	if ((inode = io_end->inode) == NULL)
-+		goto no_work;
-+
-+	if (!(inode->i_sb->s_flags & MS_ACTIVE)) {
-+		pr_err("sb umounted, discard end_io request for inode %lu\n",
-+			io_end->inode->i_ino);
-+	no_work:
-+		ext4_free_io_end(io_end);
-+		return;
-+	}
++	inode = io_end->inode;
 +
 +	if (error) {
 +		io_end->flag |= EXT4_IO_END_ERROR;
@@ -206,11 +197,10 @@ index 46a7d6a..3e25a88 100644
 +			     (unsigned long long)
 +			     bio->bi_sector >> (inode->i_blkbits - 9));
 +	}
-+
+ 
  	/* Add the io_end to per-inode completed io list*/
  	spin_lock_irqsave(&EXT4_I(inode)->i_completed_io_lock, flags);
- 	list_add_tail(&io_end->list, &EXT4_I(inode)->i_completed_io_list);
-@@ -305,7 +325,6 @@ static int io_submit_init(struct ext4_io_submit *io,
+@@ -305,7 +315,6 @@ static int io_submit_init(struct ext4_io_submit *io,
  	bio->bi_private = io->io_end = io_end;
  	bio->bi_end_io = ext4_end_bio;
  
