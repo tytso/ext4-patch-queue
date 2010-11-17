@@ -1,0 +1,28 @@
+ext4: missing unlock in ext4_clear_request_list()
+
+From: Dan Carpenter <error27@gmail.com>
+
+If the the li_request_list was empty then it returned with the lock
+held.  Instead of adding a "goto unlock" I just removed that special
+case and let it go past the empty list_for_each_safe().
+
+Signed-off-by: Dan Carpenter <error27@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c |    3 ---
+ 1 files changed, 0 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 61182fe..ef09d14 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -2799,9 +2799,6 @@ static void ext4_clear_request_list(void)
+ 	struct ext4_li_request *elr;
+ 
+ 	mutex_lock(&ext4_li_info->li_list_mtx);
+-	if (list_empty(&ext4_li_info->li_request_list))
+-		return;
+-
+ 	list_for_each_safe(pos, n, &ext4_li_info->li_request_list) {
+ 		elr = list_entry(pos, struct ext4_li_request,
+ 				 lr_request);
