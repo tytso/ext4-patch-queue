@@ -1,0 +1,70 @@
+ext4: Add EXT4_IOC_TRIM ioctl to handle batched discard
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Filesystem independent ioctl was rejected as not common enough to be in
+core vfs ioctl. Since we still need to access to this functionality this
+commit adds ext4 specific ioctl EXT4_IOC_TRIM to dispatch
+ext4_trim_fs().
+
+It takes fstrim_range structure as an argument. fstrim_range is definec in
+the include/linux/fs.h and its definition is as follows.
+
+struct fstrim_range {
+	__u64 start;
+	__u64 len;
+	__u64 minlen;
+}
+
+start	- first Byte to trim
+len	- number of Bytes to trim from start
+minlen	- minimum extent length to trim, free extents shorter than this
+  number of Bytes will be ignored. This will be rounded up to fs
+  block size.
+
+After the FITRIM is done, the number of actually discarded Bytes is stored
+in fstrim_range.len to give the user better insight on how much storage
+space has been really released for wear-leveling.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+fs/ext4/ext4.h  |    1 +
+ fs/ext4/ioctl.c |   24 ++++++++++++++++++++++++
+ 2 files changed, 25 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index bf5ae88..e07944a 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -331,6 +331,30 @@ mext_out:
+ 		return err;
+ 	}
+ 
++	case FITRIM:
++	{
++		struct super_block *sb = inode->i_sb;
++		struct fstrim_range range;
++		int ret = 0;
++
++		if (!capable(CAP_SYS_ADMIN))
++			return -EPERM;
++
++		if (copy_from_user(&range, (struct fstrim_range *)arg,
++		    sizeof(range)))
++			return -EFAULT;
++
++		ret = ext4_trim_fs(sb, &range);
++		if (ret < 0)
++			return ret;
++
++		if (copy_to_user((struct fstrim_range *)arg, &range,
++		    sizeof(range)))
++			return -EFAULT;
++
++		return 0;
++	}
++
+ 	default:
+ 		return -ENOTTY;
+ 	}
