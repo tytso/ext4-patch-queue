@@ -40,10 +40,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 68 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index e9ddbe2..f015eaa 100644
+index 96deaf6..c91f4f0 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -533,6 +533,8 @@ struct ext4_new_group_data {
+@@ -562,6 +562,8 @@ struct ext4_new_group_data {
  #endif
  
  
@@ -53,7 +53,7 @@ index e9ddbe2..f015eaa 100644
   *  Mount options
   */
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 9fb2d01..9673a40 100644
+index eb3bc2f..1aae42d 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
 @@ -15,9 +15,21 @@
@@ -78,8 +78,8 @@ index 9fb2d01..9673a40 100644
  long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  {
  	struct inode *inode = filp->f_dentry->d_inode;
-@@ -331,6 +343,59 @@ mext_out:
- 		return err;
+@@ -355,6 +367,59 @@ mext_out:
+ 		return 0;
  	}
  
 +	case EXT4_IOC_DEBUG_DELALLOC:
@@ -107,21 +107,21 @@ index 9fb2d01..9673a40 100644
 +		if (!list_empty(&sb->s_bdi->wb.b_dirty)) {
 +			printk(KERN_DEBUG "s_bdi->wb.b_dirty list:\n");
 +			list_for_each_entry(inode, &sb->s_bdi->wb.b_dirty,
-+					    i_list) {
++					    i_wb_list) {
 +				print_inode_dealloc_info(inode);
 +			}
 +		}
 +		if (!list_empty(&sb->s_bdi->wb.b_io)) {
 +			printk(KERN_DEBUG "s_bdi->wb.b_io list:\n");
 +			list_for_each_entry(inode, &sb->s_bdi->wb.b_io,
-+					    i_list) {
++					    i_wb_list) {
 +				print_inode_dealloc_info(inode);
 +			}
 +		}
 +		if (!list_empty(&sb->s_bdi->wb.b_more_io)) {
 +			printk(KERN_DEBUG "s_bdi->wb.b_more_io list:\n");
 +			list_for_each_entry(inode, &sb->s_bdi->wb.b_more_io,
-+					    i_list) {
++					    i_wb_list) {
 +				print_inode_dealloc_info(inode);
 +			}
 +		}
@@ -138,7 +138,7 @@ index 9fb2d01..9673a40 100644
  	default:
  		return -ENOTTY;
  	}
-@@ -397,6 +462,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+@@ -421,6 +486,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
  		return err;
  	}
  	case EXT4_IOC_MOVE_EXT:
