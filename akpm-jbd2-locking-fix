@@ -10,38 +10,40 @@ buffer is modified in both the current and committing transaction.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: akpm@linux-foundation.org
 ---
- fs/ext4/ext4.h        |    1 +
+ fs/ext4/ext4.h        |    3 +++
  fs/ext4/super.c       |   11 +++++++++++
  fs/jbd2/transaction.c |   12 ++++++++++--
  include/linux/jbd2.h  |    1 +
- 4 files changed, 23 insertions(+), 2 deletions(-)
+ 4 files changed, 25 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index dbfe2fe..3ad9684 100644
+index 96cc62b..536a95f 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -888,6 +888,7 @@ struct ext4_inode_info {
- #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
- #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
- #define EXT4_MOUNT_I_VERSION            0x2000000 /* i_version support */
-+#define EXT4_MOUNT_AKPM_LOCK_HACK	0x4000000 /* akpm lock hack */
- #define EXT4_MOUNT_DELALLOC		0x8000000 /* Delalloc support */
- #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
- #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
+@@ -903,6 +903,9 @@ struct ext4_inode_info {
+ #define EXT4_MOUNT_DISCARD		0x40000000 /* Issue DISCARD requests */
+ #define EXT4_MOUNT_INIT_INODE_TABLE	0x80000000 /* Initialize uninitialized itables */
+ 
++#define EXT4_MOUNT2_AKPM_LOCK_HACK	0x0000001 /* akpm lock hack */
++
++
+ #define clear_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt &= \
+ 						~EXT4_MOUNT_##opt
+ #define set_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt |= \
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 630b567..9df1a0a 100644
+index d719551..4cd043f 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1032,6 +1032,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+@@ -1039,6 +1039,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
  	if (test_opt(sb, JOURNAL_CHECKSUM) &&
  	    !test_opt(sb, JOURNAL_ASYNC_COMMIT))
  		seq_puts(seq, ",journal_checksum");
-+	if (test_opt(sb, AKPM_LOCK_HACK))
++	if (test_opt2(sb, AKPM_LOCK_HACK))
 +		seq_puts(seq, ",akpm_lock_hack");
  	if (test_opt(sb, I_VERSION))
  		seq_puts(seq, ",i_version");
  	if (!test_opt(sb, DELALLOC) &&
-@@ -1256,6 +1258,7 @@ enum {
+@@ -1267,6 +1269,7 @@ enum {
  	Opt_dioread_nolock, Opt_dioread_lock,
  	Opt_discard, Opt_nodiscard,
  	Opt_init_inode_table, Opt_noinit_inode_table,
@@ -49,29 +51,29 @@ index 630b567..9df1a0a 100644
  };
  
  static const match_table_t tokens = {
-@@ -1314,6 +1317,7 @@ static const match_table_t tokens = {
+@@ -1325,6 +1328,7 @@ static const match_table_t tokens = {
  	{Opt_i_version, "i_version"},
  	{Opt_stripe, "stripe=%u"},
  	{Opt_resize, "resize"},
 +	{Opt_akpm_lock_hack, "akpm_lock_hack"},
  	{Opt_delalloc, "delalloc"},
  	{Opt_nodelalloc, "nodelalloc"},
- 	{Opt_block_validity, "block_validity"},
-@@ -1817,6 +1821,9 @@ set_qf_format:
+ 	{Opt_mblk_io_submit, "mblk_io_submit"},
+@@ -1836,6 +1840,9 @@ set_qf_format:
  		case Opt_noinit_inode_table:
- 			clear_opt(sbi->s_mount_opt, INIT_INODE_TABLE);
+ 			clear_opt(sb, INIT_INODE_TABLE);
  			break;
 +		case Opt_akpm_lock_hack:
-+			set_opt(sbi->s_mount_opt, AKPM_LOCK_HACK);
++			set_opt2(sb, AKPM_LOCK_HACK);
 +			break;
  		default:
  			ext4_msg(sb, KERN_ERR,
  			       "Unrecognized mount option \"%s\" "
-@@ -3738,6 +3745,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -3760,6 +3767,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
-+	if (test_opt(sb, AKPM_LOCK_HACK))
++	if (test_opt2(sb, AKPM_LOCK_HACK))
 +		journal->j_flags |= JBD2_LOCK_HACK;
 +	else
 +		journal->j_flags &= ~JBD2_LOCK_HACK;

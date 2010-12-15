@@ -13,7 +13,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 34 insertions(+), 6 deletions(-)
 
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
-index e1def17..8449e6f 100644
+index 6ab9442..713f5d5 100644
 --- a/Documentation/filesystems/ext4.txt
 +++ b/Documentation/filesystems/ext4.txt
 @@ -140,9 +140,14 @@ journal_checksum	Enable checksumming of the journal transactions.
@@ -35,10 +35,10 @@ index e1def17..8449e6f 100644
  journal=update		Update the ext4 file system's journal to the current
  			format.
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 15ac131..be9821d 100644
+index 9706981..d719551 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -196,6 +196,15 @@ void ext4_itable_unused_set(struct super_block *sb,
+@@ -203,6 +203,15 @@ void ext4_itable_unused_set(struct super_block *sb,
  		bg->bg_itable_unused_hi = cpu_to_le16(count >> 16);
  }
  
@@ -54,7 +54,7 @@ index 15ac131..be9821d 100644
  
  /* Just increment the non-pointer handle value */
  static handle_t *ext4_get_nojournal(void)
-@@ -1001,9 +1010,15 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+@@ -1020,9 +1029,15 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
  	 */
  	seq_puts(seq, ",barrier=");
  	seq_puts(seq, test_opt(sb, BARRIER) ? "1" : "0");
@@ -73,7 +73,7 @@ index 15ac131..be9821d 100644
  		seq_puts(seq, ",journal_checksum");
  	if (test_opt(sb, I_VERSION))
  		seq_puts(seq, ",i_version");
-@@ -1212,6 +1227,7 @@ enum {
+@@ -1239,6 +1254,7 @@ enum {
  	Opt_commit, Opt_min_batch_time, Opt_max_batch_time,
  	Opt_journal_update, Opt_journal_dev,
  	Opt_journal_checksum, Opt_journal_async_commit,
@@ -81,7 +81,7 @@ index 15ac131..be9821d 100644
  	Opt_abort, Opt_data_journal, Opt_data_ordered, Opt_data_writeback,
  	Opt_data_err_abort, Opt_data_err_ignore,
  	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
-@@ -1257,6 +1273,7 @@ static const match_table_t tokens = {
+@@ -1285,6 +1301,7 @@ static const match_table_t tokens = {
  	{Opt_journal_dev, "journal_dev=%u"},
  	{Opt_journal_checksum, "journal_checksum"},
  	{Opt_journal_async_commit, "journal_async_commit"},
@@ -89,22 +89,22 @@ index 15ac131..be9821d 100644
  	{Opt_abort, "abort"},
  	{Opt_data_journal, "data=journal"},
  	{Opt_data_ordered, "data=ordered"},
-@@ -1526,6 +1543,9 @@ static int parse_options(char *options, struct super_block *sb,
- 			set_opt(sbi->s_mount_opt, JOURNAL_ASYNC_COMMIT);
- 			set_opt(sbi->s_mount_opt, JOURNAL_CHECKSUM);
+@@ -1559,6 +1576,9 @@ static int parse_options(char *options, struct super_block *sb,
+ 			set_opt(sb, JOURNAL_ASYNC_COMMIT);
+ 			set_opt(sb, JOURNAL_CHECKSUM);
  			break;
 +		case Opt_nojournal_async_commit:
-+			clear_opt(sbi->s_mount_opt, JOURNAL_ASYNC_COMMIT);
++			clear_opt(sb, JOURNAL_ASYNC_COMMIT);
 +			break;
  		case Opt_noload:
- 			set_opt(sbi->s_mount_opt, NOLOAD);
+ 			set_opt(sb, NOLOAD);
  			break;
-@@ -2718,6 +2738,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -3161,6 +3181,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	    ((def_mount_opts & EXT4_DEFM_NODELALLOC) == 0))
- 		set_opt(sbi->s_mount_opt, DELALLOC);
+ 		set_opt(sb, DELALLOC);
  
 +	if (ASYNC_COMMIT_DEFAULT(sb))
-+		set_opt(sbi->s_mount_opt, JOURNAL_ASYNC_COMMIT);
++		set_opt(sb, JOURNAL_ASYNC_COMMIT);
 +
  	if (!parse_options((char *) sbi->s_es->s_mount_opts, sb,
  			   &journal_devnum, &journal_ioprio, NULL, 0)) {
