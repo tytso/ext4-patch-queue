@@ -1,0 +1,32 @@
+ext4: Use pr_warning_ratelimited() instead of printk_ratelimit()
+
+printk_ratelimit() is deprecated since it is a global instead of a
+per-printk ratelimit.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index db3cc91..c0fe426 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -40,6 +40,7 @@
+ #include <linux/workqueue.h>
+ #include <linux/kernel.h>
+ #include <linux/slab.h>
++#include <linux/ratelimit.h>
+ 
+ #include "ext4_jbd2.h"
+ #include "xattr.h"
+@@ -3729,8 +3730,7 @@ static int ext4_set_bh_endio(struct buffer_head *bh, struct inode *inode)
+ retry:
+ 	io_end = ext4_init_io_end(inode, GFP_ATOMIC);
+ 	if (!io_end) {
+-		if (printk_ratelimit())
+-			printk(KERN_WARNING "%s: allocation fail\n", __func__);
++		pr_warning_ratelimited("%s: allocation fail\n", __func__);
+ 		schedule();
+ 		goto retry;
+ 	}
