@@ -1,0 +1,36 @@
+jbd2: simplify return path of journal_init_common
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/journal.c |    6 ++----
+ 1 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 06dfd77..2447bd8 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -828,7 +828,7 @@ static journal_t * journal_init_common (void)
+ 
+ 	journal = kzalloc(sizeof(*journal), GFP_KERNEL);
+ 	if (!journal)
+-		goto fail;
++		return NULL;
+ 
+ 	init_waitqueue_head(&journal->j_wait_transaction_locked);
+ 	init_waitqueue_head(&journal->j_wait_logspace);
+@@ -853,14 +853,12 @@ static journal_t * journal_init_common (void)
+ 	err = jbd2_journal_init_revoke(journal, JOURNAL_REVOKE_DEFAULT_HASH);
+ 	if (err) {
+ 		kfree(journal);
+-		goto fail;
++		return NULL;
+ 	}
+ 
+ 	spin_lock_init(&journal->j_history_lock);
+ 
+ 	return journal;
+-fail:
+-	return NULL;
+ }
+ 
+ /* jbd2_journal_init_dev and jbd2_journal_init_inode:
