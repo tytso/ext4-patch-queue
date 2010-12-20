@@ -1,0 +1,26 @@
+ext4: Remove redundant unlikely()
+
+From: Tobias Klauser <tklauser@distanz.ch>
+
+IS_ERR() already implies unlikely(), so it can be omitted here.
+
+Signed-off-by: Tobias Klauser <tklauser@distanz.ch>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+fs/ext4/namei.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 92203b8..cec88ce 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1036,7 +1036,7 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, stru
+ 			return ERR_PTR(-EIO);
+ 		}
+ 		inode = ext4_iget(dir->i_sb, ino);
+-		if (unlikely(IS_ERR(inode))) {
++		if (IS_ERR(inode)) {
+ 			if (PTR_ERR(inode) == -ESTALE) {
+ 				EXT4_ERROR_INODE(dir,
+ 						 "deleted inode referenced: %u",
+
