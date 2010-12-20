@@ -1,0 +1,40 @@
+ext4: use kmem_cache_zalloc() in ext4_init_io_end()
+
+From: Jesper Juhl <jj@chaosbits.net>
+
+Use advantage of kmem_cache_zalloc() to remove a memset() call in
+ext4_init_io_end() and save a few bytes.
+
+Before:
+ [jj@dragon linux-2.6]$ size fs/ext4/page-io.o
+    text    data     bss     dec     hex filename
+    3016       0     624    3640     e38 fs/ext4/page-io.o
+After:
+ [jj@dragon linux-2.6]$ size fs/ext4/page-io.o
+    text    data     bss     dec     hex filename
+    3000       0     624    3624     e28 fs/ext4/page-io.o
+
+Signed-off-by: Jesper Juhl <jj@chaosbits.net>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+page-io.c |    5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index beacce1..0f5dfe0 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -158,11 +158,8 @@ static void ext4_end_io_work(struct work_struct *work)
+ 
+ ext4_io_end_t *ext4_init_io_end(struct inode *inode, gfp_t flags)
+ {
+-	ext4_io_end_t *io = NULL;
+-
+-	io = kmem_cache_alloc(io_end_cachep, flags);
++	ext4_io_end_t *io = kmem_cache_zalloc(io_end_cachep, flags);
+ 	if (io) {
+-		memset(io, 0, sizeof(*io));
+ 		atomic_inc(&EXT4_I(inode)->i_ioend_count);
+ 		io->inode = inode;
+ 		INIT_WORK(&io->work, ext4_end_io_work);
+
