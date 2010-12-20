@@ -1,0 +1,24 @@
+ext4: Add error checking to kmem_cache_alloc() call in ext4_free_blocks()
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    6 +++++-
+ 1 files changed, 5 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 731b6f7..46d5414 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4626,7 +4626,11 @@ do_more:
+ 		 * blocks being freed are metadata. these blocks shouldn't
+ 		 * be used until this transaction is committed
+ 		 */
+-		new_entry  = kmem_cache_alloc(ext4_free_ext_cachep, GFP_NOFS);
++		new_entry = kmem_cache_alloc(ext4_free_ext_cachep, GFP_NOFS);
++		if (!new_entry) {
++			err = -ENOMEM;
++			goto error_return;
++		}
+ 		new_entry->start_blk = bit;
+ 		new_entry->group  = block_group;
+ 		new_entry->count = count;
