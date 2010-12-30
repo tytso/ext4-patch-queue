@@ -1,0 +1,30 @@
+ext4: ext4_ext_migrate should use NULL not 0
+
+From: Eric Paris <eparis@redhat.com>
+
+ext4_ext_migrate() calls ext4_new_inode() and passes 0 instead of a pointer
+to a struct qstr.  This patch uses NULL, to make it obvious to the caller
+that this was a pointer.
+
+Signed-off-by: Eric Paris <eparis@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+ fs/ext4/migrate.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
+index 25f3a97..b0a126f 100644
+--- a/fs/ext4/migrate.c
++++ b/fs/ext4/migrate.c
+@@ -496,7 +496,7 @@ int ext4_ext_migrate(struct inode *inode)
+ 	goal = (((inode->i_ino - 1) / EXT4_INODES_PER_GROUP(inode->i_sb)) *
+ 		EXT4_INODES_PER_GROUP(inode->i_sb)) + 1;
+ 	tmp_inode = ext4_new_inode(handle, inode->i_sb->s_root->d_inode,
+-				   S_IFREG, 0, goal);
++				   S_IFREG, NULL, goal);
+ 	if (IS_ERR(tmp_inode)) {
+ 		retval = -ENOMEM;
+ 		ext4_journal_stop(handle);
+
+
