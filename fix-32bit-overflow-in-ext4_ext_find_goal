@@ -1,0 +1,95 @@
+ext4: Fix 32bit overflow in ext4_ext_find_goal()
+
+From: Kazuya Mio <k-mio@sx.jp.nec.com>
+
+ext4_ext_find_goal() returns an ideal physical block number that the block
+allocator tries to allocate first. However, if a required file offset is
+smaller than the existing extent's one, ext4_ext_find_goal() returns
+a wrong block number because it may overflow at
+"block - le32_to_cpu(ex->ee_block)". This patch fixes the problem.
+
+ext4_ext_find_goal() will also return a wrong block number in case
+a file offset of the existing extent is too big. In this case,
+the ideal physical block number is fixed in ext4_mb_initialize_context(),
+so it's no problem.
+
+reproduce:
+# dd if=/dev/zero of=/mnt/mp1/tmp bs=127M count=1 oflag=sync
+# dd if=/dev/zero of=/mnt/mp1/file bs=512K count=1 seek=1 oflag=sync
+# filefrag -v /mnt/mp1/file
+Filesystem type is: ef53
+File size of /mnt/mp1/file is 1048576 (256 blocks, blocksize 4096)
+ ext logical physical expected length flags
+   0     128    67456             128 eof
+/mnt/mp1/file: 2 extents found
+# rm -rf /mnt/mp1/tmp
+# echo $((512*4096)) > /sys/fs/ext4/loop0/mb_stream_req
+# dd if=/dev/zero of=/mnt/mp1/file bs=512K count=1 oflag=sync conv=notrunc
+
+result (linux-2.6.37-rc2 + ext4 patch queue):
+# filefrag -v /mnt/mp1/file
+Filesystem type is: ef53
+File size of /mnt/mp1/file is 1048576 (256 blocks, blocksize 4096)
+ ext logical physical expected length flags
+   0       0    33280             128 
+   1     128    67456    33407    128 eof
+/mnt/mp1/file: 2 extents found
+
+result(apply this patch):
+# filefrag -v /mnt/mp1/file
+Filesystem type is: ef53
+File size of /mnt/mp1/file is 1048576 (256 blocks, blocksize 4096)
+ ext logical physical expected length flags
+   0       0    66560             128 
+   1     128    67456    66687    128 eof
+/mnt/mp1/file: 2 extents found
+
+Signed-off-by: Kazuya Mio <k-mio@sx.jp.nec.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+---
+ fs/ext4/extents.c |   30 ++++++++++++++++++++++++++----
+ 1 files changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 0554c48..ed622e2 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -117,11 +117,33 @@ static ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
+ 		struct ext4_extent *ex;
+ 		depth = path->p_depth;
+ 
+-		/* try to predict block placement */
++		/*
++		 * Try to predict block placement assuming that we are
++		 * filling in a file which will eventually be
++		 * non-sparse --- i.e., in the case of libbfd writing
++		 * an ELF object sections out-of-order but in a way
++		 * the eventually results in a contiguous object or
++		 * executable file, or some database extending a table
++		 * space file.  However, this is actually somewhat
++		 * non-ideal if we are writing a sparse file such as
++		 * qemu or KVM writing a raw image file that is going
++		 * to stay fairly sparse, since it will end up
++		 * fragmenting the file system's free space.  Maybe we
++		 * should have some hueristics or some way to allow
++		 * userspace to pass a hint to file system,
++		 * especiially if the latter case turns out to be
++		 * common.
++		 */
+ 		ex = path[depth].p_ext;
+-		if (ex)
+-			return (ext4_ext_pblock(ex) +
+-				(block - le32_to_cpu(ex->ee_block)));
++		if (ex) {
++			ext4_fsblk_t ext_pblk = ext4_ext_pblock(ex);
++			ext4_lblk_t ext_block = le32_to_cpu(ex->ee_block);
++
++			if (block > ext_block)
++				return (ext_pblk + (block - ext_block));
++			else
++				return (ext_pblk - (ext_block - block));
++		}
+ 
+ 		/* it looks like index is empty;
+ 		 * try to find starting block from index itself */
