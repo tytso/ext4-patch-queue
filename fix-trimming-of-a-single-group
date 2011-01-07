@@ -1,0 +1,40 @@
+ext4: Fix trimming of a single group
+
+From: Jan Kara <jack@suse.cz>
+
+When ext4_trim_fs() is called to trim a part of a single group, the
+logic will wrongly set last block of the interval to 'len' instead
+of 'first_block + len'. Thus a shorter interval is possibly trimmed.
+Fix it.
+
+CC: Lukas Czerner <lczerner@redhat.com>
+Cc: stable@kernel.org
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+ I've already implemented this fix for ext3.
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 5b4d4e3..4c4766c 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4851,7 +4851,7 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ 		if (len >= EXT4_BLOCKS_PER_GROUP(sb))
+ 			len -= (EXT4_BLOCKS_PER_GROUP(sb) - first_block);
+ 		else
+-			last_block = len;
++			last_block = first_block + len;
+ 
+ 		if (e4b.bd_info->bb_free >= minlen) {
+ 			cnt = ext4_trim_all_free(sb, &e4b, first_block,
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
