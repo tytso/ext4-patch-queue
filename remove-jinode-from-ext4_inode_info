@@ -10,15 +10,15 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h       |    2 +-
  fs/ext4/ext4_jbd2.h  |    2 +-
- fs/ext4/file.c       |   19 +++++++++++++++++++
- fs/ext4/inode.c      |   15 +++++++++++----
+ fs/ext4/file.c       |   22 ++++++++++++++++++++++
+ fs/ext4/inode.c      |   17 ++++++++++++-----
  fs/ext4/super.c      |   16 +++++++---------
  fs/jbd2/journal.c    |   20 +++++++++++++-------
  include/linux/jbd2.h |   20 ++++++++++++++++++--
- 7 files changed, 70 insertions(+), 24 deletions(-)
+ 7 files changed, 74 insertions(+), 25 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 8a2603d..50f35e8 100644
+index 2569c23..2d20424 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -811,7 +811,7 @@ struct ext4_inode_info {
@@ -44,7 +44,7 @@ index b0bd792..d8b992e 100644
  }
  
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 5a5c55d..45a656f 100644
+index 5a5c55d..b1b4884 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
 @@ -104,6 +104,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
@@ -55,7 +55,7 @@ index 5a5c55d..45a656f 100644
  	struct vfsmount *mnt = filp->f_path.mnt;
  	struct path path;
  	char buf[64], *cp;
-@@ -127,6 +128,24 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+@@ -127,6 +128,27 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
  			ext4_mark_super_dirty(sb);
  		}
  	}
@@ -74,14 +74,17 @@ index 5a5c55d..45a656f 100644
 +			}
 +			ei->jinode = jinode;
 +			jbd2_journal_init_jbd_inode(ei->jinode, inode);
++			jinode = NULL;
 +		}
++		if (unlikely(jinode != NULL))
++			jbd2_free_inode(jinode);
 +		spin_unlock(&inode->i_lock);
 +	}
  	return dquot_file_open(inode, filp);
  }
  
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 2d60028..de3f2e3 100644
+index d34ddc6..fb5fe73 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -55,10 +55,17 @@ static inline int ext4_begin_ordered_truncate(struct inode *inode,
@@ -92,7 +95,7 @@ index 2d60028..de3f2e3 100644
 -					EXT4_SB(inode->i_sb)->s_journal,
 -					&EXT4_I(inode)->jinode,
 -					new_size);
-+	/* 
++	/*
 +	 * If jinode is zero, then we never opened the file for
 +	 * writing, so there's no need to call
 +	 * jbd2_journal_begin_ordered_truncate() since there's no
@@ -106,8 +109,17 @@ index 2d60028..de3f2e3 100644
  }
  
  static void ext4_invalidatepage(struct page *page, unsigned long offset);
+@@ -4054,7 +4061,7 @@ int ext4_block_truncate_page(handle_t *handle,
+ 	if (ext4_should_journal_data(inode)) {
+ 		err = ext4_handle_dirty_metadata(handle, inode, bh);
+ 	} else {
+-		if (ext4_should_order_data(inode))
++		if (ext4_should_order_data(inode) && EXT4_I(inode)->jinode)
+ 			err = ext4_jbd2_file_inode(handle, inode);
+ 		mark_buffer_dirty(bh);
+ 	}
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index f5960d6..7f99ac7 100644
+index f5960d6..1cd4326 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -818,12 +818,6 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
@@ -127,7 +139,7 @@ index f5960d6..7f99ac7 100644
  #ifdef CONFIG_QUOTA
  	ei->i_reserved_quota = 0;
  #endif
-+	ei->jinode = 0;
++	ei->jinode = NULL;
  	INIT_LIST_HEAD(&ei->i_completed_io_list);
  	spin_lock_init(&ei->i_completed_io_lock);
  	ei->cur_aio_dio = NULL;
@@ -138,11 +150,11 @@ index f5960d6..7f99ac7 100644
 -	if (EXT4_JOURNAL(inode))
 -		jbd2_journal_release_jbd_inode(EXT4_SB(inode->i_sb)->s_journal,
 -				       &EXT4_I(inode)->jinode);
-+	if (EXT4_JOURNAL(inode) && EXT4_I(inode)->jinode) {
++	if (EXT4_I(inode)->jinode) {
 +		jbd2_journal_release_jbd_inode(EXT4_JOURNAL(inode),
 +					       EXT4_I(inode)->jinode);
 +		jbd2_free_inode(EXT4_I(inode)->jinode);
-+		EXT4_I(inode)->jinode = 0;
++		EXT4_I(inode)->jinode = NULL;
 +	}
  }
  
