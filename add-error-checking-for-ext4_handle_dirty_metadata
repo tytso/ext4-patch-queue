@@ -5,13 +5,13 @@ cleanly, so the file system can be marked as in error.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c  |   21 +++++++++++++++---
- fs/ext4/namei.c  |   32 +++++++++++++++++++++++-----
- fs/ext4/resize.c |   60 ++++++++++++++++++++++++++++++++++++++++-------------
- 3 files changed, 88 insertions(+), 25 deletions(-)
+ fs/ext4/inode.c  |   21 ++++++++++++++---
+ fs/ext4/namei.c  |   32 ++++++++++++++++++++++-----
+ fs/ext4/resize.c |   64 ++++++++++++++++++++++++++++++++++++++---------------
+ 3 files changed, 89 insertions(+), 28 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index fb5fe73..c329c29 100644
+index 2693fcd..84b6162 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -4185,6 +4185,7 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
@@ -129,7 +129,7 @@ index 6dfc5b9..5485390 100644
  		if (new_inode) {
  			/* checked empty_dir above, can't have another parent,
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index dc96392..e5c9d49 100644
+index dc96392..7faf47d 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
 @@ -220,7 +220,11 @@ static int setup_new_group_blocks(struct super_block *sb,
@@ -220,7 +220,7 @@ index dc96392..e5c9d49 100644
  
  	o_group_desc = EXT4_SB(sb)->s_group_desc;
  	memcpy(n_group_desc, o_group_desc,
-@@ -465,9 +487,11 @@ static int add_new_gdb(handle_t *handle, struct inode *inode,
+@@ -465,19 +487,19 @@ static int add_new_gdb(handle_t *handle, struct inode *inode,
  	kfree(o_group_desc);
  
  	le16_add_cpu(&es->s_reserved_gdt_blocks, -1);
@@ -234,7 +234,18 @@ index dc96392..e5c9d49 100644
  
  exit_inode:
  	/* ext4_journal_release_buffer(handle, iloc.bh); */
-@@ -660,7 +684,9 @@ static void update_backups(struct super_block *sb,
+ 	brelse(iloc.bh);
+ exit_dindj:
+ 	/* ext4_journal_release_buffer(handle, dind); */
+-exit_primary:
+-	/* ext4_journal_release_buffer(handle, *primary); */
+ exit_sbh:
+-	/* ext4_journal_release_buffer(handle, *primary); */
++	/* ext4_journal_release_buffer(handle, EXT4_SB(sb)->s_sbh); */
+ exit_dind:
+ 	brelse(dind);
+ exit_bh:
+@@ -660,7 +682,9 @@ static void update_backups(struct super_block *sb,
  			memset(bh->b_data + size, 0, rest);
  		set_buffer_uptodate(bh);
  		unlock_buffer(bh);
@@ -245,7 +256,7 @@ index dc96392..e5c9d49 100644
  		brelse(bh);
  	}
  	if ((err2 = ext4_journal_stop(handle)) && !err)
-@@ -878,7 +904,11 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -878,7 +902,11 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  	/* Update the global fs size fields */
  	sbi->s_groups_count++;
  
