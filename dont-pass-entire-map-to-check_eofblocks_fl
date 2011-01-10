@@ -1,0 +1,72 @@
+ext4: don't pass entire map to check_eofblocks_fl
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+Since check_eofblocks_fl() only uses the m_lblk portion of the map
+structure, we may as well pass that directly, rather than passing the
+entire map, which IMHO obfuscates what parameters check_eofblocks_fl()
+cares about.  Not a big deal, but seems tidier and less confusing, to
+me.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 0554c48..b5bbb9f 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -3082,7 +3082,7 @@ static void unmap_underlying_metadata_blocks(struct block_device *bdev,
+  * Handle EOFBLOCKS_FL flag, clearing it if necessary
+  */
+ static int check_eofblocks_fl(handle_t *handle, struct inode *inode,
+-			      struct ext4_map_blocks *map,
++			      ext4_lblk_t lblk,
+ 			      struct ext4_ext_path *path,
+ 			      unsigned int len)
+ {
+@@ -3112,7 +3112,7 @@ static int check_eofblocks_fl(handle_t *handle, struct inode *inode,
+ 	 * this turns out to be false, we can bail out from this
+ 	 * function immediately.
+ 	 */
+-	if (map->m_lblk + len < le32_to_cpu(last_ex->ee_block) +
++	if (lblk + len < le32_to_cpu(last_ex->ee_block) +
+ 	    ext4_ext_get_actual_len(last_ex))
+ 		return 0;
+ 	/*
+@@ -3168,8 +3168,8 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+ 							path);
+ 		if (ret >= 0) {
+ 			ext4_update_inode_fsync_trans(handle, inode, 1);
+-			err = check_eofblocks_fl(handle, inode, map, path,
+-						 map->m_len);
++			err = check_eofblocks_fl(handle, inode, map->m_lblk,
++						 path, map->m_len);
+ 		} else
+ 			err = ret;
+ 		goto out2;
+@@ -3199,7 +3199,8 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+ 	ret = ext4_ext_convert_to_initialized(handle, inode, map, path);
+ 	if (ret >= 0) {
+ 		ext4_update_inode_fsync_trans(handle, inode, 1);
+-		err = check_eofblocks_fl(handle, inode, map, path, map->m_len);
++		err = check_eofblocks_fl(handle, inode, map->m_lblk, path,
++					 map->m_len);
+ 		if (err < 0)
+ 			goto out2;
+ 	}
+@@ -3456,7 +3457,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 			map->m_flags |= EXT4_MAP_UNINIT;
+ 	}
+ 
+-	err = check_eofblocks_fl(handle, inode, map, path, ar.len);
++	err = check_eofblocks_fl(handle, inode, map->m_lblk, path, ar.len);
+ 	if (err)
+ 		goto out2;
+ 
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
