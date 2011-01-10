@@ -14,14 +14,14 @@ Addresses-Google-Bug: #2507977
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h  |    2 ++
- fs/ext4/super.c |   24 +++++++++++++++---------
- 2 files changed, 17 insertions(+), 9 deletions(-)
+ fs/ext4/super.c |    2 ++
+ 2 files changed, 4 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 5d3d768..801faad 100644
+index bab2387..1b9adbb 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1036,6 +1036,7 @@ struct ext4_super_block {
+@@ -1066,6 +1066,7 @@ struct ext4_super_block {
   */
  #define EXT4_MF_MNTDIR_SAMPLED	0x0001
  #define EXT4_MF_FS_ABORTED	0x0002	/* Fatal error detected */
@@ -29,48 +29,19 @@ index 5d3d768..801faad 100644
  
  /*
   * fourth extended-fs super-block data in memory
-@@ -1207,6 +1208,7 @@ enum {
- 	EXT4_STATE_EXT_MIGRATE,		/* Inode is migrating */
+@@ -1239,6 +1240,7 @@ enum {
  	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
  	EXT4_STATE_NEWENTRY,		/* File just added to dir */
+ 	EXT4_STATE_DELALLOC_RESERVED,	/* blks already reserved for delalloc */
 +	EXT4_STATE_ERR_SQUELCHED,	/* squeched error */
  };
  
- #define EXT4_INODE_BIT_FNS(name, field)					\
+ #define EXT4_INODE_BIT_FNS(name, field, offset)				\
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index be2207d..9b57490 100644
+index a67e692..6540821 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -403,15 +403,19 @@ void ext4_error_inode(struct inode *inode, const char *function,
- 	es->s_last_error_ino = cpu_to_le32(inode->i_ino);
- 	es->s_last_error_block = cpu_to_le64(block);
- 	save_error_info(inode->i_sb, function, line);
--	va_start(args, fmt);
--	printk(KERN_CRIT "EXT4-fs error (device %s): %s:%d: inode #%lu: ",
--	       inode->i_sb->s_id, function, line, inode->i_ino);
--	if (block)
--		printk("block %llu: ", block);
--	printk("comm %s: ", current->comm);
--	vprintk(fmt, args);
--	printk("\n");
--	va_end(args);
-+	if (!ext4_test_inode_state(inode, EXT4_STATE_ERR_SQUELCHED) ||
-+	    !(EXT4_SB(inode->i_sb)->s_mount_flags & EXT4_MF_FS_SQUELCH)) {
-+		va_start(args, fmt);
-+		printk(KERN_CRIT "EXT4-fs error (device %s): %s:%d: "
-+		       "inode #%lu: ",
-+		       inode->i_sb->s_id, function, line, inode->i_ino);
-+		if (block)
-+			printk("block %llu: ", block);
-+		printk("comm %s: ", current->comm);
-+		vprintk(fmt, args);
-+		printk("\n");
-+		va_end(args);
-+	}
- 
- 	ext4_handle_error(inode->i_sb);
- }
-@@ -2417,6 +2421,7 @@ EXT4_RW_ATTR_SBI_UI(mb_order2_req, s_mb_order2_reqs);
+@@ -2493,6 +2493,7 @@ EXT4_RW_ATTR_SBI_UI(mb_order2_req, s_mb_order2_reqs);
  EXT4_RW_ATTR_SBI_UI(mb_stream_req, s_mb_stream_request);
  EXT4_RW_ATTR_SBI_UI(mb_group_prealloc, s_mb_group_prealloc);
  EXT4_RW_ATTR_SBI_UI(max_writeback_mb_bump, s_max_writeback_mb_bump);
@@ -78,7 +49,7 @@ index be2207d..9b57490 100644
  
  static struct attribute *ext4_attrs[] = {
  	ATTR_LIST(delayed_allocation_blocks),
-@@ -2431,6 +2436,7 @@ static struct attribute *ext4_attrs[] = {
+@@ -2507,6 +2508,7 @@ static struct attribute *ext4_attrs[] = {
  	ATTR_LIST(mb_stream_req),
  	ATTR_LIST(mb_group_prealloc),
  	ATTR_LIST(max_writeback_mb_bump),
