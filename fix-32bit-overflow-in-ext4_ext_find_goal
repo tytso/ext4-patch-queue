@@ -1,4 +1,4 @@
-ext4: Fix 32bit overflow in ext4_ext_find_goal()
+ext4: fix 32bit overflow in ext4_ext_find_goal()
 
 From: Kazuya Mio <k-mio@sx.jp.nec.com>
 
@@ -52,7 +52,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 26 insertions(+), 4 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 0554c48..ed622e2 100644
+index 0554c48..d53e20f 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -117,11 +117,33 @@ static ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
@@ -86,9 +86,9 @@ index 0554c48..ed622e2 100644
 +			ext4_lblk_t ext_block = le32_to_cpu(ex->ee_block);
 +
 +			if (block > ext_block)
-+				return (ext_pblk + (block - ext_block));
++				return ext_pblk + (block - ext_block);
 +			else
-+				return (ext_pblk - (ext_block - block));
++				return ext_pblk - (ext_block - block);
 +		}
  
  		/* it looks like index is empty;

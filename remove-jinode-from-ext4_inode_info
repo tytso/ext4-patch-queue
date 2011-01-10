@@ -1,4 +1,4 @@
-ext4: Dynamically allocate the jbd2_inode in ext4_inode_info as necessary
+ext4: dynamically allocate the jbd2_inode in ext4_inode_info as necessary
 
 Replace the jbd2_inode structure (which is 48 bytes) with a pointer
 and only allocate the jbd2_inode when it is needed --- that is, when
@@ -18,7 +18,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  7 files changed, 74 insertions(+), 25 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 2569c23..2d20424 100644
+index 2fb531c..32b7daa 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -811,7 +811,7 @@ struct ext4_inode_info {
@@ -84,7 +84,7 @@ index 5a5c55d..bb003dc 100644
  }
  
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index d34ddc6..fb5fe73 100644
+index 0801ee6..2693fcd 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -55,10 +55,17 @@ static inline int ext4_begin_ordered_truncate(struct inode *inode,
