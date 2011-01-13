@@ -1,0 +1,34 @@
+ext4: revert buggy trim overflow patch
+
+This reverts commit 4f531501e44: ext4: fix possible overflow in
+ext4_trim_fs()
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    6 ------
+ 1 files changed, 0 insertions(+), 6 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index cd5214f..cc1297e 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4804,7 +4804,6 @@ ext4_grpblk_t ext4_trim_all_free(struct super_block *sb, struct ext4_buddy *e4b,
+ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ {
+ 	struct ext4_buddy e4b;
+-	ext4_fsblk_t blocks_count = ext4_blocks_count(EXT4_SB(sb)->s_es);
+ 	ext4_group_t first_group, last_group;
+ 	ext4_group_t group, ngroups = ext4_get_groups_count(sb);
+ 	ext4_grpblk_t cnt = 0, first_block, last_block;
+@@ -4816,11 +4815,6 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ 	minlen = range->minlen >> sb->s_blocksize_bits;
+ 	trimmed = 0;
+ 
+-	if (start >= blocks_count)
+-		return -EINVAL;
+-	if (start + len > blocks_count)
+-		len = blocks_count - start;
+-
+ 	if (unlikely(minlen > EXT4_BLOCKS_PER_GROUP(sb)))
+ 		return -EINVAL;
+ 
