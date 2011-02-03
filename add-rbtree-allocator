@@ -1,0 +1,145 @@
+---
+ fs/ext4/Makefile  |    3 ++-
+ fs/ext4/ext4.h    |    3 +++
+ fs/ext4/mballoc.c |   30 ++++++++++++++++++++++++------
+ fs/ext4/mballoc.h |    6 ++++++
+ 4 files changed, 35 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
+index c947e36..45c20c0 100644
+--- a/fs/ext4/Makefile
++++ b/fs/ext4/Makefile
+@@ -6,7 +6,8 @@ obj-$(CONFIG_EXT4_FS) += ext4.o
+ 
+ ext4-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o page-io.o \
+ 		ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
+-		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o
++		ext4_jbd2.o migrate.o mballoc.o block_validity.o \
++		move_extent.o rb_alloc.o
+ 
+ ext4-$(CONFIG_EXT4_FS_XATTR)		+= xattr.o xattr_user.o xattr_trusted.o
+ ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 0c8d97b..af3bd1b 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -908,6 +908,8 @@ struct ext4_inode_info {
+ #define EXT4_MOUNT_DISCARD		0x40000000 /* Issue DISCARD requests */
+ #define EXT4_MOUNT_INIT_INODE_TABLE	0x80000000 /* Initialize uninitialized itables */
+ 
++#define EXT4_MOUNT2_RBALLOC		0x00000001 /* Use the rb allocator */
++
+ #define clear_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt &= \
+ 						~EXT4_MOUNT_##opt
+ #define set_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt |= \
+@@ -1955,6 +1957,7 @@ static inline void ext4_update_i_disksize(struct inode *inode, loff_t newsize)
+ struct ext4_group_info {
+ 	unsigned long   bb_state;
+ 	struct rb_root  bb_free_root;
++	struct rb_root	bb_rb_root;    /* for rb_alloc */
+ 	ext4_grpblk_t	bb_first_free;	/* first free block */
+ 	ext4_grpblk_t	bb_free;	/* total free blocks */
+ 	ext4_grpblk_t	bb_fragments;	/* nr of freespace fragments */
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 851f49b..f111be9 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -1143,6 +1143,9 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 	struct inode *inode = sbi->s_buddy_cache;
+ 
++	if (test_opt2(sb, RBALLOC))
++		return ext4_rb_load_buddy(sb, e4b);
++
+ 	mb_debug(1, "load group %u\n", group);
+ 
+ 	blocks_per_page = PAGE_CACHE_SIZE / sb->s_blocksize;
+@@ -1354,6 +1357,9 @@ static void mb_free_blocks(struct inode *inode, struct ext4_buddy *e4b,
+ 	void *buddy2;
+ 	struct super_block *sb = e4b->bd_sb;
+ 
++	if (test_opt2(sb, RBALLOC))
++		ext4_rb_mark_free(e4b, first, count, inode, GFP_ATOMIC);
++
+ 	BUG_ON(first + count > (sb->s_blocksize << 3));
+ 	assert_spin_locked(ext4_group_lock_ptr(sb, e4b->bd_group));
+ 	mb_check_buddy(e4b);
+@@ -2307,6 +2313,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+ 	INIT_LIST_HEAD(&meta_group_info[i]->bb_prealloc_list);
+ 	init_rwsem(&meta_group_info[i]->alloc_sem);
+ 	meta_group_info[i]->bb_free_root = RB_ROOT;
++	meta_group_info[i]->bb_rb_root = RB_ROOT;
+ 	meta_group_info[i]->bb_largest_free_order = -1;  /* uninit */
+ 
+ #ifdef DOUBLE_CHECK
+@@ -3600,6 +3607,7 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+ 	int err = 0;
+ 	int free = 0;
+ 
++	BUG_ON(!bitmap_bh);
+ 	BUG_ON(pa->pa_deleted == 0);
+ 	ext4_get_group_no_and_offset(sb, pa->pa_pstart, &group, &bit);
+ 	grp_blk_start = pa->pa_pstart - bit;
+@@ -3685,16 +3693,20 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+ 	if (list_empty(&grp->bb_prealloc_list))
+ 		return 0;
+ 
+-	bitmap_bh = ext4_read_block_bitmap(sb, group);
+-	if (bitmap_bh == NULL) {
+-		ext4_error(sb, "Error reading block bitmap for %u", group);
+-		return 0;
++	if (!test_opt2(sb, RBALLOC)) {
++		bitmap_bh = ext4_read_block_bitmap(sb, group);
++		if (bitmap_bh == NULL) {
++			ext4_error(sb, "Error reading block bitmap for %u",
++				   group);
++			return 0;
++		}
+ 	}
+ 
+ 	err = ext4_mb_load_buddy(sb, group, &e4b);
+ 	if (err) {
+ 		ext4_error(sb, "Error loading buddy information for %u", group);
+-		put_bh(bitmap_bh);
++		if (bitmap_bh)
++			put_bh(bitmap_bh);
+ 		return 0;
+ 	}
+ 
+@@ -3791,7 +3803,7 @@ void ext4_discard_preallocations(struct inode *inode)
+ 	struct ext4_buddy e4b;
+ 	int err;
+ 
+-	if (!S_ISREG(inode->i_mode)) {
++	if (!S_ISREG(inode->i_mode) || test_opt2(sb, RBALLOC)) {
+ 		/*BUG_ON(!list_empty(&ei->i_prealloc_list));*/
+ 		return;
+ 	}
+@@ -3979,6 +3991,12 @@ static void ext4_mb_group_or_file(struct ext4_allocation_context *ac)
+ 	size = max(size, isize);
+ 	if (size > sbi->s_mb_stream_request) {
+ 		ac->ac_flags |= EXT4_MB_STREAM_ALLOC;
++		/*
++		 * RBALLOC is not compatible with inode preallocation
++		 * (which is really grossly done!)
++		 */
++		if (test_opt2(ac->ac_sb, RBALLOC))
++			ac->ac_flags |= EXT4_MB_HINT_NOPREALLOC;
+ 		return;
+ 	}
+ 
+diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
+index b619322..5470056 100644
+--- a/fs/ext4/mballoc.h
++++ b/fs/ext4/mballoc.h
+@@ -225,4 +225,10 @@ static inline ext4_fsblk_t ext4_grp_offs_to_block(struct super_block *sb,
+ {
+ 	return ext4_group_first_block_no(sb, fex->fe_group) + fex->fe_start;
+ }
++
++/* rb_alloc.c function */
++extern int ext4_rb_load_buddy(struct super_block *sb, struct ext4_buddy *e4b);
++extern int ext4_rb_mark_free(struct ext4_buddy *e4b, ext4_grpblk_t start,
++			     ext4_grpblk_t len, struct inode *inode,
++			     gfp_t gfp_mask);
+ #endif
