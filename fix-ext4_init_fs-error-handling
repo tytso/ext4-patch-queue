@@ -1,0 +1,46 @@
+ext4: fix up ext4 error handling
+
+Make sure we the correct cleanup happens if we die while trying to
+load the ext4 file system.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 4898cb1..86b0548 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4810,13 +4810,17 @@ static int __init ext4_init_fs(void)
+ 		return err;
+ 	err = ext4_init_system_zone();
+ 	if (err)
+-		goto out5;
++		goto out7;
+ 	ext4_kset = kset_create_and_add("ext4", NULL, fs_kobj);
+ 	if (!ext4_kset)
+-		goto out4;
++		goto out6;
+ 	ext4_proc_root = proc_mkdir("fs/ext4", NULL);
++	if (!ext4_proc_root)
++		goto out5;
+ 
+ 	err = ext4_init_feat_adverts();
++	if (err)
++		goto out4;
+ 
+ 	err = ext4_init_mballoc();
+ 	if (err)
+@@ -4847,11 +4851,13 @@ out2:
+ 	ext4_exit_mballoc();
+ out3:
+ 	ext4_exit_feat_adverts();
++out4:
+ 	remove_proc_entry("fs/ext4", NULL);
++out5:
+ 	kset_unregister(ext4_kset);
+-out4:
++out6:
+ 	ext4_exit_system_zone();
+-out5:
++out7:
+ 	ext4_exit_pageio();
+ 	return err;
+ }
