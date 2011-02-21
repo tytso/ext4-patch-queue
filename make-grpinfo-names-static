@@ -24,6 +24,9 @@ a list of static names.
 (This might also possibly fix a race creating the caches with
 parallel mounts running).
 
+[Folded in a fix from Dan Carpenter which fixed an off-by-one error in
+the original patch]
+
 Cc: stable@kernel.org
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
@@ -32,7 +35,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 60 insertions(+), 40 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 851f49b..02cff4a 100644
+index 851f49b..d1fe09a 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -342,10 +342,15 @@ static struct kmem_cache *ext4_free_ext_cachep;
@@ -76,7 +79,7 @@ index 851f49b..02cff4a 100644
 +	int cache_index = blocksize_bits - EXT4_MIN_BLOCK_LOG_SIZE;
 +	struct kmem_cache *cachep;
 +
-+	if (cache_index > NR_GRPINFO_CACHES)
++	if (cache_index >= NR_GRPINFO_CACHES)
 +		return -EINVAL;
 +
 +	if (unlikely(cache_index < 0))

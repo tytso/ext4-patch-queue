@@ -1,9 +1,11 @@
 ---
- fs/ext4/Makefile  |    3 ++-
- fs/ext4/ext4.h    |    3 +++
- fs/ext4/mballoc.c |   30 ++++++++++++++++++++++++------
- fs/ext4/mballoc.h |    6 ++++++
- 4 files changed, 35 insertions(+), 7 deletions(-)
+ fs/ext4/Makefile   |    3 +-
+ fs/ext4/ext4.h     |    3 +
+ fs/ext4/mballoc.c  |  100 +++++++++--
+ fs/ext4/mballoc.h  |   28 +++
+ fs/ext4/rb_alloc.c |  498 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/super.c    |   15 ++-
+ 6 files changed, 625 insertions(+), 22 deletions(-)
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index c947e36..45c20c0 100644
@@ -20,10 +22,10 @@ index c947e36..45c20c0 100644
  ext4-$(CONFIG_EXT4_FS_XATTR)		+= xattr.o xattr_user.o xattr_trusted.o
  ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 0c8d97b..af3bd1b 100644
+index 3aa0b72..888dd74 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -908,6 +908,8 @@ struct ext4_inode_info {
+@@ -909,6 +909,8 @@ struct ext4_inode_info {
  #define EXT4_MOUNT_DISCARD		0x40000000 /* Issue DISCARD requests */
  #define EXT4_MOUNT_INIT_INODE_TABLE	0x80000000 /* Initialize uninitialized itables */
  
@@ -32,7 +34,7 @@ index 0c8d97b..af3bd1b 100644
  #define clear_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt &= \
  						~EXT4_MOUNT_##opt
  #define set_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt |= \
-@@ -1955,6 +1957,7 @@ static inline void ext4_update_i_disksize(struct inode *inode, loff_t newsize)
+@@ -1956,6 +1958,7 @@ static inline void ext4_update_i_disksize(struct inode *inode, loff_t newsize)
  struct ext4_group_info {
  	unsigned long   bb_state;
  	struct rb_root  bb_free_root;
@@ -41,20 +43,34 @@ index 0c8d97b..af3bd1b 100644
  	ext4_grpblk_t	bb_free;	/* total free blocks */
  	ext4_grpblk_t	bb_fragments;	/* nr of freespace fragments */
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 851f49b..f111be9 100644
+index d1fe09a..2ce864e 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -1143,6 +1143,9 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
+@@ -1050,6 +1050,13 @@ int ext4_mb_init_group(struct super_block *sb, ext4_group_t group)
+ 	struct page *page = NULL, *bitmap_page = NULL;
+ 
+ 	mb_debug(1, "init group %u\n", group);
++	if (test_opt2(sb, RBALLOC)) {
++		struct ext4_buddy	e4b;
++
++		/* rballoc doesn't require unloading... */
++		return ext4_rb_load_buddy(sb, group, &e4b);
++	}
++
+ 	blocks_per_page = PAGE_CACHE_SIZE / sb->s_blocksize;
+ 	this_grp = ext4_get_group_info(sb, group);
+ 	/*
+@@ -1148,6 +1155,9 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
  	struct inode *inode = sbi->s_buddy_cache;
  
 +	if (test_opt2(sb, RBALLOC))
-+		return ext4_rb_load_buddy(sb, e4b);
++		return ext4_rb_load_buddy(sb, group, e4b);
 +
  	mb_debug(1, "load group %u\n", group);
  
  	blocks_per_page = PAGE_CACHE_SIZE / sb->s_blocksize;
-@@ -1354,6 +1357,9 @@ static void mb_free_blocks(struct inode *inode, struct ext4_buddy *e4b,
+@@ -1359,6 +1369,9 @@ static void mb_free_blocks(struct inode *inode, struct ext4_buddy *e4b,
  	void *buddy2;
  	struct super_block *sb = e4b->bd_sb;
  
@@ -64,7 +80,82 @@ index 851f49b..f111be9 100644
  	BUG_ON(first + count > (sb->s_blocksize << 3));
  	assert_spin_locked(ext4_group_lock_ptr(sb, e4b->bd_group));
  	mb_check_buddy(e4b);
-@@ -2307,6 +2313,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
+@@ -1444,6 +1457,9 @@ static int mb_find_extent(struct ext4_buddy *e4b, int order, int block,
+ 	assert_spin_locked(ext4_group_lock_ptr(e4b->bd_sb, e4b->bd_group));
+ 	BUG_ON(ex == NULL);
+ 
++	if (test_opt2(e4b->bd_sb, RBALLOC))
++		return ext4_rb_find_extent(e4b, block, needed, ex);
++
+ 	buddy = mb_find_buddy(e4b, order, &max);
+ 	BUG_ON(buddy == NULL);
+ 	BUG_ON(block >= max);
+@@ -1580,7 +1596,12 @@ static void ext4_mb_use_best_found(struct ext4_allocation_context *ac,
+ 
+ 	ac->ac_b_ex.fe_len = min(ac->ac_b_ex.fe_len, ac->ac_g_ex.fe_len);
+ 	ac->ac_b_ex.fe_logical = ac->ac_g_ex.fe_logical;
+-	ret = mb_mark_used(e4b, &ac->ac_b_ex);
++	if (test_opt2(ac->ac_sb, RBALLOC))
++		ret = ext4_rb_mark_used(e4b, ac->ac_b_ex.fe_start,
++					ac->ac_b_ex.fe_len,
++					ac->ac_inode, GFP_NOFS);
++	else
++		ret = mb_mark_used(e4b, &ac->ac_b_ex);
+ 
+ 	/* preallocation can change ac_b_ex, thus we store actually
+ 	 * allocated blocks for history */
+@@ -1591,6 +1612,13 @@ static void ext4_mb_use_best_found(struct ext4_allocation_context *ac,
+ 	ac->ac_buddy = ret >> 16;
+ 
+ 	/*
++	 * For now we only support RBALLOC in nojournal mode, where we
++	 * update all of the bitmaps at unmount time.
++	 */
++	if (test_opt2(ac->ac_sb, RBALLOC))
++		return;
++
++	/*
+ 	 * take the page reference. We want the page to be pinned
+ 	 * so that we don't get a ext4_mb_init_cache_call for this
+ 	 * group until we update the bitmap. That would mean we
+@@ -1617,9 +1645,9 @@ static void ext4_mb_use_best_found(struct ext4_allocation_context *ac,
+  * regular allocator, for general purposes allocation
+  */
+ 
+-static void ext4_mb_check_limits(struct ext4_allocation_context *ac,
+-					struct ext4_buddy *e4b,
+-					int finish_group)
++void ext4_mb_check_limits(struct ext4_allocation_context *ac,
++			  struct ext4_buddy *e4b,
++			  int finish_group)
+ {
+ 	struct ext4_sb_info *sbi = EXT4_SB(ac->ac_sb);
+ 	struct ext4_free_extent *bex = &ac->ac_b_ex;
+@@ -1667,9 +1695,9 @@ static void ext4_mb_check_limits(struct ext4_allocation_context *ac,
+  *
+  * FIXME: real allocation policy is to be designed yet!
+  */
+-static void ext4_mb_measure_extent(struct ext4_allocation_context *ac,
+-					struct ext4_free_extent *ex,
+-					struct ext4_buddy *e4b)
++void ext4_mb_measure_extent(struct ext4_allocation_context *ac,
++			    struct ext4_free_extent *ex,
++			    struct ext4_buddy *e4b)
+ {
+ 	struct ext4_free_extent *bex = &ac->ac_b_ex;
+ 	struct ext4_free_extent *gex = &ac->ac_g_ex;
+@@ -2103,7 +2131,9 @@ repeat:
+ 			}
+ 
+ 			ac->ac_groups_scanned++;
+-			if (cr == 0)
++			if (test_opt2(ac->ac_sb, RBALLOC))
++				ext4_rb_scan_group(ac, &e4b, cr);
++			else if (cr == 0)
+ 				ext4_mb_simple_scan_group(ac, &e4b);
+ 			else if (cr == 1 && sbi->s_stripe &&
+ 					!(ac->ac_g_ex.fe_len % sbi->s_stripe))
+@@ -2312,6 +2342,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
  	INIT_LIST_HEAD(&meta_group_info[i]->bb_prealloc_list);
  	init_rwsem(&meta_group_info[i]->alloc_sem);
  	meta_group_info[i]->bb_free_root = RB_ROOT;
@@ -72,7 +163,65 @@ index 851f49b..f111be9 100644
  	meta_group_info[i]->bb_largest_free_order = -1;  /* uninit */
  
  #ifdef DOUBLE_CHECK
-@@ -3600,6 +3607,7 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+@@ -2757,6 +2788,12 @@ int __init ext4_init_mballoc(void)
+ 		kmem_cache_destroy(ext4_ac_cachep);
+ 		return -ENOMEM;
+ 	}
++	if (ext4_init_rballoc()) {
++		kmem_cache_destroy(ext4_free_ext_cachep);
++		kmem_cache_destroy(ext4_pspace_cachep);
++		kmem_cache_destroy(ext4_ac_cachep);
++		return -ENOMEM;
++	}
+ 	ext4_create_debugfs_entry();
+ 	return 0;
+ }
+@@ -2773,6 +2810,7 @@ void ext4_exit_mballoc(void)
+ 	kmem_cache_destroy(ext4_free_ext_cachep);
+ 	ext4_groupinfo_destroy_slabs();
+ 	ext4_remove_debugfs_entry();
++	ext4_init_rballoc();
+ }
+ 
+ 
+@@ -2799,6 +2837,16 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+ 	sbi = EXT4_SB(sb);
+ 
+ 	err = -EIO;
++	gdp = ext4_get_group_desc(sb, ac->ac_b_ex.fe_group, &gdp_bh);
++	if (!gdp)
++		goto out_err;
++
++	if (test_opt2(ac->ac_sb, RBALLOC)) {
++		ext4_lock_group(sb, ac->ac_b_ex.fe_group);
++		goto update_stats;
++	}
++
++	err = -EIO;
+ 	bitmap_bh = ext4_read_block_bitmap(sb, ac->ac_b_ex.fe_group);
+ 	if (!bitmap_bh)
+ 		goto out_err;
+@@ -2807,11 +2855,6 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+ 	if (err)
+ 		goto out_err;
+ 
+-	err = -EIO;
+-	gdp = ext4_get_group_desc(sb, ac->ac_b_ex.fe_group, &gdp_bh);
+-	if (!gdp)
+-		goto out_err;
+-
+ 	ext4_debug("using block group %u(%d)\n", ac->ac_b_ex.fe_group,
+ 			ext4_free_blks_count(sb, gdp));
+ 
+@@ -2856,6 +2899,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+ 					ext4_free_blocks_after_init(sb,
+ 					ac->ac_b_ex.fe_group, gdp));
+ 	}
++update_stats:
+ 	len = ext4_free_blks_count(sb, gdp) - ac->ac_b_ex.fe_len;
+ 	ext4_free_blks_set(sb, gdp, len);
+ 	gdp->bg_checksum = ext4_group_desc_csum(sbi, ac->ac_b_ex.fe_group, gdp);
+@@ -3620,6 +3664,7 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
  	int err = 0;
  	int free = 0;
  
@@ -80,7 +229,7 @@ index 851f49b..f111be9 100644
  	BUG_ON(pa->pa_deleted == 0);
  	ext4_get_group_no_and_offset(sb, pa->pa_pstart, &group, &bit);
  	grp_blk_start = pa->pa_pstart - bit;
-@@ -3685,16 +3693,20 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3705,16 +3750,20 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  	if (list_empty(&grp->bb_prealloc_list))
  		return 0;
  
@@ -106,7 +255,7 @@ index 851f49b..f111be9 100644
  		return 0;
  	}
  
-@@ -3791,7 +3803,7 @@ void ext4_discard_preallocations(struct inode *inode)
+@@ -3811,7 +3860,7 @@ void ext4_discard_preallocations(struct inode *inode)
  	struct ext4_buddy e4b;
  	int err;
  
@@ -115,7 +264,7 @@ index 851f49b..f111be9 100644
  		/*BUG_ON(!list_empty(&ei->i_prealloc_list));*/
  		return;
  	}
-@@ -3979,6 +3991,12 @@ static void ext4_mb_group_or_file(struct ext4_allocation_context *ac)
+@@ -3999,6 +4048,12 @@ static void ext4_mb_group_or_file(struct ext4_allocation_context *ac)
  	size = max(size, isize);
  	if (size > sbi->s_mb_stream_request) {
  		ac->ac_flags |= EXT4_MB_STREAM_ALLOC;
@@ -128,18 +277,612 @@ index 851f49b..f111be9 100644
  		return;
  	}
  
+@@ -4725,7 +4780,12 @@ static int ext4_trim_extent(struct super_block *sb, int start, int count,
+ 	 * Mark blocks used, so no one can reuse them while
+ 	 * being trimmed.
+ 	 */
+-	mb_mark_used(e4b, &ex);
++	if (test_opt2(sb, RBALLOC))
++		ret = ext4_rb_mark_used(e4b, start, count, NULL, GFP_NOFS);
++	else
++		ret = mb_mark_used(e4b, &ex);
++	if (ret)
++		return ret;
+ 	ext4_unlock_group(sb, group);
+ 
+ 	ret = ext4_issue_discard(sb, group, start, count);
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
-index b619322..5470056 100644
+index b619322..2258c80 100644
 --- a/fs/ext4/mballoc.h
 +++ b/fs/ext4/mballoc.h
-@@ -225,4 +225,10 @@ static inline ext4_fsblk_t ext4_grp_offs_to_block(struct super_block *sb,
+@@ -225,4 +225,32 @@ static inline ext4_fsblk_t ext4_grp_offs_to_block(struct super_block *sb,
  {
  	return ext4_group_first_block_no(sb, fex->fe_group) + fex->fe_start;
  }
 +
-+/* rb_alloc.c function */
-+extern int ext4_rb_load_buddy(struct super_block *sb, struct ext4_buddy *e4b);
++/* rb_alloc.c functions */
++extern int __init ext4_init_rballoc(void);
++extern void ext4_exit_rballoc(void);
++extern int ext4_rb_load_buddy(struct super_block *sb, ext4_group_t group,
++			      struct ext4_buddy *e4b);
 +extern int ext4_rb_mark_free(struct ext4_buddy *e4b, ext4_grpblk_t start,
 +			     ext4_grpblk_t len, struct inode *inode,
 +			     gfp_t gfp_mask);
++extern int ext4_rb_mark_used(struct ext4_buddy *e4b, ext4_grpblk_t start,
++			     ext4_grpblk_t len, struct inode *inode,
++			     gfp_t gfp_mask);
++extern int ext4_rb_find_extent(struct ext4_buddy *e4b, ext4_grpblk_t block,
++			       ext4_grpblk_t needed,
++			       struct ext4_free_extent *ex);
++extern void ext4_rb_scan_group(struct ext4_allocation_context *ac,
++			       struct ext4_buddy *e4b, int cr);
++extern void ext4_rb_write_bitmaps(struct super_block *sb);
++
++/* mballoc.c functions */
++extern void ext4_mb_check_limits(struct ext4_allocation_context *ac,
++			    struct ext4_buddy *e4b,
++			    int finish_group);
++extern void ext4_mb_measure_extent(struct ext4_allocation_context *ac,
++				   struct ext4_free_extent *ex,
++				   struct ext4_buddy *e4b);
++
++
  #endif
+diff --git a/fs/ext4/rb_alloc.c b/fs/ext4/rb_alloc.c
+new file mode 100644
+index 0000000..b7dd502
+--- /dev/null
++++ b/fs/ext4/rb_alloc.c
+@@ -0,0 +1,498 @@
++/*
++ * fs/ext4/rb_alloc.c
++ *
++ * Copyright (c) 2010, Google, Inc.
++ * Written by Theodore Ts'o <tytso@mit.edu>
++ *
++ * Manage allocation bitmaps using an tree data structure
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public Licens
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-
++ */
++
++#include "mballoc.h"
++#include <linux/debugfs.h>
++#include <linux/slab.h>
++#include <trace/events/ext4.h>
++
++struct ext4_alloc_node {
++	struct rb_node node;
++	ext4_grpblk_t  start;
++	ext4_grpblk_t  len;
++};
++
++static struct kmem_cache *alloc_node_cachep;
++
++int __init ext4_init_rballoc(void)
++{
++	alloc_node_cachep = KMEM_CACHE(ext4_alloc_node, SLAB_RECLAIM_ACCOUNT);
++	if (alloc_node_cachep == NULL)
++		return -ENOMEM;
++	return 0;
++}
++
++void ext4_exit_rballoc(void)
++{
++	kmem_cache_destroy(alloc_node_cachep);
++	alloc_node_cachep = 0;
++}
++
++extern int
++ext4_rb_mark_free(struct ext4_buddy *e4b, ext4_grpblk_t start,
++		  ext4_grpblk_t len, struct inode *inode, gfp_t gfp_mask)
++{
++	struct super_block *sb = e4b->bd_sb;
++	struct ext4_group_info *grp = e4b->bd_info;
++	struct ext4_alloc_node *entry, *new_entry;
++	struct rb_root *rb_root = &e4b->bd_info->bb_rb_root;
++	struct rb_node **n = &rb_root->rb_node, *node;
++	struct rb_node *parent = NULL, *new_node;
++	const char *errstring = "freeing already freed block (len %u)";
++	ext4_fsblk_t blocknr;
++	int	order;
++
++	BUG_ON(start + len > (sb->s_blocksize << 3));
++	if (gfp_mask == GFP_ATOMIC)
++		assert_spin_locked(ext4_group_lock_ptr(sb, e4b->bd_group));
++
++	new_entry = kmem_cache_alloc(alloc_node_cachep, gfp_mask);
++	if (!new_entry)
++		return -ENOMEM;
++
++	new_entry->start = start;
++	new_entry->len = len;
++	new_node = &new_entry->node;
++
++	while (*n) {
++		parent = *n;
++		entry = rb_entry(parent, struct ext4_alloc_node, node);
++		if (start < entry->start)
++			n = &(*n)->rb_left;
++		else if (start >= (entry->start + entry->len))
++			n = &(*n)->rb_right;
++		else
++			goto error_free;
++	}
++
++	rb_link_node(new_node, parent, n);
++	rb_insert_color(new_node, rb_root);
++
++	/* Now try to see the extent can be merged to left and right */
++	node = rb_prev(new_node);
++	if (node) {
++		entry = rb_entry(node, struct ext4_alloc_node, node);
++		if (entry->start + entry->len == new_entry->start) {
++			new_entry->start = entry->start;
++			new_entry->len += entry->len;
++			order = fls(entry->len) - 1;
++			grp->bb_counters[order]--;
++			grp->bb_fragments--;
++			rb_erase(node, rb_root);
++			kmem_cache_free(alloc_node_cachep, entry);
++		}
++	}
++
++	node = rb_next(new_node);
++	if (node) {
++		entry = rb_entry(node, struct ext4_alloc_node, node);
++		if (new_entry->start + new_entry->len == entry->start) {
++			new_entry->len += entry->len;
++			order = fls(entry->len) - 1;
++			grp->bb_counters[order]--;
++			grp->bb_fragments--;
++			rb_erase(node, rb_root);	
++		kmem_cache_free(alloc_node_cachep, entry);
++		}
++	}
++
++	order = fls(new_entry->len) - 1;
++	grp->bb_counters[order]++;
++	grp->bb_fragments++;
++	return 0;
++
++error_free:
++	blocknr = ext4_group_first_block_no(sb, e4b->bd_group);
++	blocknr += start;
++	if (gfp_mask == GFP_ATOMIC)
++		ext4_grp_locked_error(sb, e4b->bd_group, 
++				      inode ? inode->i_ino : 0, blocknr,
++				      errstring, len);
++	else if (inode)
++		EXT4_ERROR_INODE_BLOCK(inode, blocknr, errstring, len);
++	else
++		ext4_error(sb, errstring, len);
++	return 0;
++}
++
++extern int
++ext4_rb_mark_used(struct ext4_buddy *e4b, ext4_grpblk_t start,
++		  ext4_grpblk_t len, struct inode *inode, gfp_t gfp_mask)
++{
++	struct super_block *sb = e4b->bd_sb;
++	struct ext4_group_info *grp = e4b->bd_info;
++	struct ext4_alloc_node *entry;
++	struct rb_root *rb_root = &e4b->bd_info->bb_rb_root;
++	struct rb_node **n = &rb_root->rb_node, *node;
++	const char *errstring = "allocating already used block (len %u)";
++	ext4_grpblk_t keep;
++	ext4_fsblk_t blocknr;
++	int	order;
++
++	BUG_ON(start + len > (sb->s_blocksize << 3));
++	if (gfp_mask == GFP_ATOMIC)
++		assert_spin_locked(ext4_group_lock_ptr(sb, e4b->bd_group));
++
++restart:
++	if (len == 0)
++		return 0;
++	while (1) {
++		node = *n;
++		if (!node)
++			goto error_used;
++		entry = rb_entry(node, struct ext4_alloc_node, node);
++		if (start < entry->start)
++			n = &(*n)->rb_left;
++		else if (start >= (entry->start + entry->len))
++			n = &(*n)->rb_right;
++		else
++			break;
++	}
++
++	/* The current free entry will be changing no matter what */
++	order = fls(entry->len) - 1;
++	grp->bb_counters[order]--;
++
++	/* 
++	 * The case where the section we are using is aligned with the
++	 * beginning of the free region.
++	 *     |-----USED-------|------FREE------|
++	 *  entry->start   start+len  entry->start + entry->len
++	 *  start
++	 */
++	if (entry->start == start) {
++		entry->start += len;
++		if (len > entry->len) {
++			len -= entry->len;
++			start += entry->len;
++			entry->len = 0;
++		} else {
++			entry->len -= len;
++			len = 0;
++		}
++		if (entry->len == 0) {
++			grp->bb_fragments--;
++			rb_erase(node, rb_root);
++		} else {
++			order = fls(entry->len) - 1;
++			grp->bb_counters[order]++;
++		}
++		goto restart;
++	}
++	/*
++	 * The case where the section we are using uses all of the
++	 * blocks to the end of the free block (but which there is
++	 * space at the beginning of the free region which we are not
++	 * using.)
++	 *     |-- FREE ---|-------USED------|---------USED-------|
++	 *  entry->start start   entry->start+entry->len     start+len
++	 *
++	 */
++	keep = start - entry->start;
++	if (start+len >= entry->start+entry->len) {
++		start += entry->len - keep;
++		len -= entry->len - keep;
++		entry->len = keep;
++
++		order = fls(entry->len) - 1;
++		grp->bb_counters[order]++;
++		goto restart;
++	}
++	/*
++	 * This is the hard case, where we need to split a free region
++	 * into two pieces.
++	 *     |-- FREE ---|---USED---|---FREE---|
++	 *  entry->start start   start+len  entry->start + entry->len
++	 *
++	 * We are going to change start and len to be new, 2nd free
++	 * region.
++	 */
++	start += len;
++	len = entry->start + entry->len - start;
++	entry->len = keep;
++	order = fls(entry->len) - 1;
++	grp->bb_counters[order]++;
++
++	return ext4_rb_mark_free(e4b, start, len, inode, gfp_mask);
++
++error_used:
++	blocknr = ext4_group_first_block_no(sb, e4b->bd_group);
++	blocknr += start;
++	if (gfp_mask == GFP_ATOMIC)
++		ext4_grp_locked_error(sb, e4b->bd_group, 
++				      inode ? inode->i_ino : 0, blocknr,
++				      errstring, len);
++	else if (inode)
++		EXT4_ERROR_INODE_BLOCK(inode, blocknr, errstring, len);
++	else
++		ext4_error(sb, errstring, len);
++	return 0;
++}
++
++static struct ext4_alloc_node *find_node(struct rb_root *rb_root, __u16 start)
++{
++	struct ext4_alloc_node *entry;
++	struct rb_node **n = &rb_root->rb_node;
++	struct rb_node *parent = NULL;
++
++	while (*n) {
++		entry = rb_entry(parent, struct ext4_alloc_node, node);
++		if (start < entry->start)
++			n = &(*n)->rb_left;
++		else if (start >= (entry->start + entry->len))
++			n = &(*n)->rb_right;
++		else
++			return entry;
++	}
++	return 0;
++}
++
++
++/*
++ * The following functions are modified versions from mballoc.c;
++ * unfortunately the implementation of buddy bitmaps is embedded
++ * fairly deeply into mballoc.c, and it was too hard to modify all of
++ * the code to optionally use a red-black tree.  So for now, we're
++ * just going to fork copies of a number of mballoc functions.  For
++ * now these functions can only be used in no journal mode, but
++ * eventually, the long-term plan for this code is as follows: (1)
++ * change this code to use a cache-friendly b-tree, which should be
++ * both faster and also much more memory efficient, and then (2) make
++ * this code more general so it works with journalling enabled, so
++ * that (3) eventually the buddy bitmap portion of mballoc can be
++ * replaced by this code.  So consider this code the first in a
++ * long-term plan for incrementally rewriting portions of mballoc.c.
++ *
++ * Note: for now, we still use the struct ext4_buddy as the allocation
++ * context for allocating blocks within a block group.  The name of
++ * the function is a serious misnomer, but we minimize code changes by
++ * keeping this for now.
++ */
++
++/**
++ * ext4_rb_load_buddy: Initialize the rb_allocator
++ */
++int ext4_rb_load_buddy(struct super_block *sb, ext4_group_t group,
++		       struct ext4_buddy *e4b)
++{
++	struct ext4_group_info *grp = e4b->bd_info;
++	struct buffer_head *bh;
++	ext4_grpblk_t max = EXT4_BLOCKS_PER_GROUP(sb);
++	ext4_grpblk_t i = 0;
++	ext4_grpblk_t first, len, max_len = 0;
++	unsigned free = 0;
++	void *bitmap;
++
++	mb_debug(1, "load group %u\n", group);
++	pr_notice("rballoc loading group %d - %pF\n", group, _RET_IP_);
++
++	e4b->bd_blkbits = sb->s_blocksize_bits;
++	e4b->bd_info = ext4_get_group_info(sb, group);
++	e4b->bd_sb = sb;
++	e4b->bd_group = group;
++	e4b->bd_buddy_page = NULL;
++	e4b->bd_bitmap_page = NULL;
++	e4b->alloc_semp = NULL;
++
++	if (likely(!EXT4_MB_GRP_NEED_INIT(grp)))
++		return 0;
++
++	pr_notice("rballoc initializing group %d - %pF\n", group, _RET_IP_);
++	bh = ext4_read_block_bitmap(sb, group);
++	if (!bh)
++		return -EIO;
++	bitmap = bh->b_data;
++
++	ext4_lock_group(sb, group);
++	grp->bb_fragments = 0;
++	memset(grp->bb_counters, 0,
++	       sizeof(*grp->bb_counters) * (sb->s_blocksize_bits+2));
++	i = ext4_find_next_zero_bit(bitmap, max, 0);
++	grp->bb_first_free = i;
++	while (i < max) {
++		first = i;
++		i = ext4_find_next_bit(bitmap, max, i);
++		len = i - first;
++		free += len;
++		if (len > max_len)
++			max_len = len;
++		pr_notice("Marking region off %d, len %d free - %pF\n", first, len,
++			  _RET_IP_);
++		ext4_rb_mark_free(e4b, first, len, 0, GFP_NOFS);
++		if (i < max)
++			i = ext4_find_next_zero_bit(bitmap, max, i);
++	}
++	pr_notice("Done with loop - %pF\n", _RET_IP_);
++	grp->bb_largest_free_order = fls(max_len) - 1;
++	ext4_unlock_group(sb, group);
++
++	brelse(bh);
++	clear_bit(EXT4_GROUP_INFO_NEED_INIT_BIT, &(grp->bb_state));
++	pr_notice("rballoc done loading group %d - %pF\n", group, _RET_IP_);
++	return 0;
++}
++
++
++/**
++ * rb_find_extent: find a free extent
++ * @e4b:	e4b buddy structure
++ * @block:	starting block
++ * @needed:	number of desired free blocks
++ * @ex:		structure to return the free extent
++ * 
++ * This function tries to find a free extent starting at block in the
++ * block group pointed to by e4b.
++ *
++ * Returns size of the free extent found, or zero if no free extent
++ * starting at the indicated block could be found.
++ */
++int ext4_rb_find_extent(struct ext4_buddy *e4b, ext4_grpblk_t block,
++			ext4_grpblk_t needed, struct ext4_free_extent *ex)
++{
++	struct ext4_alloc_node *entry;
++
++	assert_spin_locked(ext4_group_lock_ptr(e4b->bd_sb, e4b->bd_group));
++	BUG_ON(ex == NULL);
++
++	entry = find_node(&e4b->bd_info->bb_rb_root, block);
++	if (!entry) {
++		ex->fe_len = 0;
++		ex->fe_start = 0;
++		ex->fe_group = 0;
++		return 0;
++	}
++
++	ex->fe_start = block;
++	ex->fe_len = entry->len - (entry->start - block);
++	ex->fe_group = e4b->bd_group;
++
++	if (ex->fe_len > needed)
++		ex->fe_len = needed;
++
++	return ex->fe_len;
++}
++
++/*
++ * The routine scans the group and measures all found extents.
++ * In order to optimize scanning, caller must pass number of
++ * free blocks in the group, so the routine can know upper limit.
++ */
++void ext4_rb_scan_group(struct ext4_allocation_context *ac,
++			struct ext4_buddy *e4b, int cr)
++{
++	struct super_block *sb = ac->ac_sb;
++	struct ext4_sb_info *sbi = EXT4_SB(sb);
++	struct ext4_alloc_node *entry;
++	struct ext4_free_extent ex;
++	struct rb_node *n;
++	int free;
++
++	free = e4b->bd_info->bb_free;
++	BUG_ON(free <= 0);
++
++	n = rb_first(&e4b->bd_info->bb_rb_root);
++
++	while (n) {
++		entry = rb_entry(n, struct ext4_alloc_node, node);
++
++		ex.fe_start = entry->start;
++		ex.fe_len = entry->len;
++		ex.fe_group = e4b->bd_group;
++
++		if ((cr == 1) && sbi->s_stripe &&
++		    !(ac->ac_g_ex.fe_len % sbi->s_stripe) &&
++		    (ex.fe_start % sbi->s_stripe) != 0) {
++			int adjust = ex.fe_start % sbi->s_stripe;
++
++			adjust = sbi->s_stripe - adjust;
++			if ((ex.fe_len < adjust) ||
++			    (ex.fe_len < sbi->s_stripe))
++				goto skip;
++			ex.fe_start += adjust;
++			ex.fe_len -= adjust;
++		}
++
++		ext4_mb_measure_extent(ac, &ex, e4b);
++	skip:
++		n = rb_next(n);
++	}
++
++	ext4_mb_check_limits(ac, e4b, 1);
++}
++
++void ext4_rb_write_bitmaps(struct super_block *sb)
++{
++	struct ext4_sb_info *sbi = EXT4_SB(sb);
++	struct ext4_group_info *grp;
++	struct ext4_group_desc *desc;
++	struct ext4_alloc_node *entry;
++	ext4_fsblk_t bitmap_blk;
++	struct buffer_head *bh;
++	struct rb_node *n;
++	int i;
++
++	for (i = 0; i < sbi->s_groups_count; i++) {
++		grp = ext4_get_group_info(sb, i);
++
++		if (EXT4_MB_GRP_NEED_INIT(grp))
++			continue;
++
++		desc = ext4_get_group_desc(sb, i, NULL);
++		if (unlikely(!desc)) {
++		get_bitmap_error:
++			ext4_error(sb, "Cannot get block bitmap - "
++				   "block_group = %u", i);
++			continue;
++		}
++		bitmap_blk = ext4_block_bitmap(sb, desc);
++		bh = sb_getblk(sb, bitmap_blk);
++		if (unlikely(!bh))
++			goto get_bitmap_error;
++
++		memset(bh->b_data, 0, sb->s_blocksize);
++		n = rb_first(&grp->bb_rb_root);
++
++		while (n) {
++			int cur, end;
++			__u32 *addr;
++
++			entry = rb_entry(n, struct ext4_alloc_node, node);
++
++			cur = entry->start;
++			end = entry->start + entry->len;
++			while (cur < end) {
++				if ((cur & 31) == 0 && (end - cur) >= 32) {
++					/* fast path: set whole word at once */
++					addr = ((void *) bh->b_data) + (cur >> 3);
++					*addr = 0xffffffff;
++					cur += 32;
++					continue;
++				}
++				ext4_set_bit(cur++, bh->b_data);
++			}
++			
++			n = rb_next(n);
++		}
++		mark_buffer_dirty(bh);
++		put_bh(bh);
++	}
++}
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index f6a318f..024804e 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -736,6 +736,9 @@ static void ext4_put_super(struct super_block *sb)
+ 			ext4_abort(sb, "Couldn't clean up the journal");
+ 	}
+ 
++	if (test_opt2(sb, RBALLOC))
++		ext4_rb_write_bitmaps(sb);
++
+ 	del_timer(&sbi->s_err_report);
+ 	ext4_release_system_zone(sb);
+ 	ext4_mb_release(sb);
+@@ -1260,7 +1263,7 @@ enum {
+ 	Opt_nomblk_io_submit, Opt_block_validity, Opt_noblock_validity,
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
+ 	Opt_dioread_nolock, Opt_dioread_lock,
+-	Opt_discard, Opt_nodiscard,
++	Opt_discard, Opt_nodiscard, Opt_rballoc,
+ 	Opt_init_inode_table, Opt_noinit_inode_table,
+ };
+ 
+@@ -1337,6 +1340,7 @@ static const match_table_t tokens = {
+ 	{Opt_init_inode_table, "init_itable=%u"},
+ 	{Opt_init_inode_table, "init_itable"},
+ 	{Opt_noinit_inode_table, "noinit_itable"},
++	{Opt_rballoc, "rballoc"},
+ 	{Opt_err, NULL},
+ };
+ 
+@@ -1827,6 +1831,9 @@ set_qf_format:
+ 		case Opt_noinit_inode_table:
+ 			clear_opt(sb, INIT_INODE_TABLE);
+ 			break;
++		case Opt_rballoc:
++			set_opt2(sb, RBALLOC);
++			break;
+ 		default:
+ 			ext4_msg(sb, KERN_ERR,
+ 			       "Unrecognized mount option \"%s\" "
+@@ -3508,6 +3515,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 			   ext4_count_dirs(sb));
+ 	percpu_counter_set(&sbi->s_dirtyblocks_counter, 0);
+ 
++	if (test_opt2(sb, RBALLOC)) {
++		ext4_msg(sb, KERN_WARNING, "Ignoring rballoc option - "
++			 "incompatible with journaling");
++		clear_opt2(sb, RBALLOC);
++	}
++
+ no_journal:
+ 	EXT4_SB(sb)->dio_unwritten_wq = create_workqueue("ext4-dio-unwritten");
+ 	if (!EXT4_SB(sb)->dio_unwritten_wq) {

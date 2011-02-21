@@ -46,15 +46,15 @@ unaligned AIO to nonsparse files won't take a perf hit.
 Signed-off-by: Eric Sandeen <sandeen@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h    |    8 +++++++
+ fs/ext4/ext4.h    |   10 ++++++++
  fs/ext4/extents.c |   10 +++++---
  fs/ext4/file.c    |   60 ++++++++++++++++++++++++++++++++++++++++++++++++++++-
  fs/ext4/page-io.c |   25 +++++++++++----------
  fs/ext4/super.c   |   13 ++++++++++-
- 5 files changed, 98 insertions(+), 18 deletions(-)
+ 5 files changed, 100 insertions(+), 18 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 0c8d97b..f8857d4 100644
+index 0c8d97b..3aa0b72 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -848,6 +848,7 @@ struct ext4_inode_info {
@@ -65,14 +65,16 @@ index 0c8d97b..f8857d4 100644
  
  	spinlock_t i_block_reservation_lock;
  
-@@ -2119,6 +2120,13 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
+@@ -2119,6 +2120,15 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
  
  #define in_range(b, first, len)	((b) >= (first) && (b) <= (first) + (len) - 1)
  
 +/* For ioend & aio unwritten conversion wait queues */
 +#define EXT4_WQ_HASH_SZ		37
-+#define ext4_ioend_wq(v)   (&ext4__ioend_wq[((unsigned)v) % EXT4_WQ_HASH_SZ])
-+#define ext4_aio_mutex(v)  (&ext4__aio_mutex[((unsigned)v) % EXT4_WQ_HASH_SZ])
++#define ext4_ioend_wq(v)   (&ext4__ioend_wq[((unsigned long)(v)) %\
++					    EXT4_WQ_HASH_SZ])
++#define ext4_aio_mutex(v)  (&ext4__aio_mutex[((unsigned long)(v)) %\
++					     EXT4_WQ_HASH_SZ])
 +extern wait_queue_head_t ext4__ioend_wq[EXT4_WQ_HASH_SZ];
 +extern struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
 +
@@ -110,7 +112,7 @@ index 63a7581..ccce8a7 100644
  						     EXT4_STATE_DIO_UNWRITTEN);
  		}
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 2e8322c..1278b6b 100644
+index 2e8322c..7b80d54 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
 @@ -55,11 +55,47 @@ static int ext4_release_file(struct inode *inode, struct file *filp)
@@ -133,7 +135,7 @@ index 2e8322c..1278b6b 100644
 + * threads are at work on the same unwritten block, they must be synchronized
 + * or one thread will zero the other's data, causing corruption.
 + */
-+static int 
++static int
 +ext4_unaligned_aio(struct inode *inode, const struct iovec *iov,
 +		   unsigned long nr_segs, loff_t pos)
 +{
@@ -183,7 +185,7 @@ index 2e8322c..1278b6b 100644
 +				 inode->i_ino, current->comm);
 +		mutex_lock(ext4_aio_mutex(inode));
 +		ext4_aiodio_wait(inode);
-+ 	}
++	}
 +
 +	ret = generic_file_aio_write(iocb, iov, nr_segs, pos);
 +
@@ -268,7 +270,7 @@ index 4e9b0a2..955cc30 100644
  }
  
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 86b0548..07e790b 100644
+index 86b0548..f6a318f 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -833,6 +833,7 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
@@ -294,7 +296,7 @@ index 86b0548..07e790b 100644
  
  	ext4_check_flag_values();
 +
-+	for (i=0; i < EXT4_WQ_HASH_SZ; i++) {
++	for (i = 0; i < EXT4_WQ_HASH_SZ; i++) {
 +		mutex_init(&ext4__aio_mutex[i]);
 +		init_waitqueue_head(&ext4__ioend_wq[i]);
 +	}
