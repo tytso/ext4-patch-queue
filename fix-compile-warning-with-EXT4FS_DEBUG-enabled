@@ -1,0 +1,44 @@
+ext4: fix compile warnings with EXT4FS_DEBUG enabled
+
+Compile 2.6.38-rc1 with turning EXT4FS_DEBUG on,
+we get following compile warnings. This patch fixes them.
+
+  CC      fs/ext4/hash.o
+  CC      fs/ext4/resize.o
+fs/ext4/resize.c: In function 'setup_new_group_blocks':
+fs/ext4/resize.c:233:2: warning: format '%#04llx' expects type 'long long
+unsigned int', but argument 3 has type 'long unsigned int'
+fs/ext4/resize.c:251:2: warning: format '%#04llx' expects type 'long long
+unsigned int', but argument 3 has type 'long unsigned int'
+  CC      fs/ext4/extents.o
+  CC      fs/ext4/ext4_jbd2.o
+  CC      fs/ext4/migrate.o
+
+Reported-by: Akira Fujita <a-fujita@rs.jp.nec.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/resize.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 3ecc6e4..66fec4e 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -230,7 +230,7 @@ static int setup_new_group_blocks(struct super_block *sb,
+ 	}
+ 
+ 	/* Zero out all of the reserved backup group descriptor table blocks */
+-	ext4_debug("clear inode table blocks %#04llx -> %#04llx\n",
++	ext4_debug("clear inode table blocks %#04llx -> %#04lx\n",
+ 			block, sbi->s_itb_per_group);
+ 	err = sb_issue_zeroout(sb, gdblocks + start + 1, reserved_gdb,
+ 			       GFP_NOFS);
+@@ -248,7 +248,7 @@ static int setup_new_group_blocks(struct super_block *sb,
+ 
+ 	/* Zero out all of the inode table blocks */
+ 	block = input->inode_table;
+-	ext4_debug("clear inode table blocks %#04llx -> %#04llx\n",
++	ext4_debug("clear inode table blocks %#04llx -> %#04lx\n",
+ 			block, sbi->s_itb_per_group);
+ 	err = sb_issue_zeroout(sb, block, sbi->s_itb_per_group, GFP_NOFS);
+ 	if (err)
