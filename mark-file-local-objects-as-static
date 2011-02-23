@@ -1,0 +1,46 @@
+ext4: mark file-local functions and variables as static
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    3 ++-
+ fs/ext4/super.c   |    6 +++---
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index d1fe09a..ae4d7f5 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4753,7 +4753,8 @@ static int ext4_trim_extent(struct super_block *sb, int start, int count,
+  * bitmap. Then issue a TRIM command on this extent and free the extent in
+  * the group buddy bitmap. This is done until whole group is scanned.
+  */
+-ext4_grpblk_t ext4_trim_all_free(struct super_block *sb, struct ext4_buddy *e4b,
++static ext4_grpblk_t
++ext4_trim_all_free(struct super_block *sb, struct ext4_buddy *e4b,
+ 		ext4_grpblk_t start, ext4_grpblk_t max, ext4_grpblk_t minblocks)
+ {
+ 	void *bitmap;
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index f6a318f..5fe6d1b 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -54,9 +54,9 @@
+ 
+ static struct proc_dir_entry *ext4_proc_root;
+ static struct kset *ext4_kset;
+-struct ext4_lazy_init *ext4_li_info;
+-struct mutex ext4_li_mtx;
+-struct ext4_features *ext4_feat;
++static struct ext4_lazy_init *ext4_li_info;
++static struct mutex ext4_li_mtx;
++static struct ext4_features *ext4_feat;
+ 
+ static int ext4_load_journal(struct super_block *, struct ext4_super_block *,
+ 			     unsigned long journal_devnum);
+-- 
+1.7.4
+
+
