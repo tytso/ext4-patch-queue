@@ -1,0 +1,186 @@
+ext4: Teach ext4_ext_map_blocks() about the bigalloc feature
+
+If we are need to allocate a new block in ext4_ext_map_blocks(), the
+function needs to see if the cluster has already been allocated.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+---
+ fs/ext4/Makefile  |    2 +
+ fs/ext4/extents.c |   73 +++++++++++++++++++++++++++++++++++++++++++++--------
+ 2 files changed, 64 insertions(+), 11 deletions(-)
+
+diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
+index c947e36..9c90788 100644
+--- a/fs/ext4/Makefile
++++ b/fs/ext4/Makefile
+@@ -4,6 +4,8 @@
+ 
+ obj-$(CONFIG_EXT4_FS) += ext4.o
+ 
++ccflags-y := -g -fno-inline-small-functions
++
+ ext4-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o page-io.o \
+ 		ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
+ 		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 9ea1bc6..6d53339 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -1273,7 +1273,8 @@ static int ext4_ext_search_left(struct inode *inode,
+  */
+ static int ext4_ext_search_right(struct inode *inode,
+ 				 struct ext4_ext_path *path,
+-				 ext4_lblk_t *logical, ext4_fsblk_t *phys)
++				 ext4_lblk_t *logical, ext4_fsblk_t *phys,
++				 struct ext4_extent **ret_ex)
+ {
+ 	struct buffer_head *bh = NULL;
+ 	struct ext4_extent_header *eh;
+@@ -1315,9 +1316,7 @@ static int ext4_ext_search_right(struct inode *inode,
+ 				return -EIO;
+ 			}
+ 		}
+-		*logical = le32_to_cpu(ex->ee_block);
+-		*phys = ext4_ext_pblock(ex);
+-		return 0;
++		goto found_extent;
+ 	}
+ 
+ 	if (unlikely(*logical < (le32_to_cpu(ex->ee_block) + ee_len))) {
+@@ -1330,9 +1329,7 @@ static int ext4_ext_search_right(struct inode *inode,
+ 	if (ex != EXT_LAST_EXTENT(path[depth].p_hdr)) {
+ 		/* next allocated block in this leaf */
+ 		ex++;
+-		*logical = le32_to_cpu(ex->ee_block);
+-		*phys = ext4_ext_pblock(ex);
+-		return 0;
++		goto found_extent;
+ 	}
+ 
+ 	/* go up and search for index to the right */
+@@ -1375,9 +1372,12 @@ got_index:
+ 		return -EIO;
+ 	}
+ 	ex = EXT_FIRST_EXTENT(eh);
++found_extent:
+ 	*logical = le32_to_cpu(ex->ee_block);
+ 	*phys = ext4_ext_pblock(ex);
+-	put_bh(bh);
++	*ret_ex = ex;
++	if (bh)
++		put_bh(bh);
+ 	return 0;
+ }
+ 
+@@ -3273,6 +3273,27 @@ out2:
+ 	return err ? err : allocated;
+ }
+ 
++/* 
++ * Check to see if the requested allocation (in the map structure)
++ * overlaps with a cluster implied by a given extent.
++ */
++static int get_implied_cluster_alloc(struct ext4_map_blocks *map, int c_offset,
++			      int c_len, struct ext4_extent *ex)
++{
++	ext4_lblk_t ee_block = le32_to_cpu(ex->ee_block);
++	ext4_fsblk_t ee_start = ext4_ext_pblock(ex);
++	unsigned short ee_len = ext4_ext_get_actual_len(ex);
++
++	if (in_range(map->m_lblk - c_offset, ee_block, ee_len) ||
++	    in_range(ee_block, map->m_lblk - c_offset, c_len)) {
++		map->m_pblk = ee_start + map->m_lblk - ee_block;
++		map->m_len = min(map->m_len, (unsigned) c_len - c_offset);
++		return 1;
++	}
++	return 0;
++}
++
++
+ /*
+  * Block allocation/map/preallocation routine for extents based files
+  *
+@@ -3296,12 +3317,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ {
+ 	struct ext4_ext_path *path = NULL;
+ 	struct ext4_extent_header *eh;
+-	struct ext4_extent newex, *ex;
++	struct ext4_extent newex, *ex, *ex2;
++	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+ 	ext4_fsblk_t newblock;
+ 	int err = 0, depth, ret;
+ 	unsigned int allocated = 0;
+ 	struct ext4_allocation_request ar;
+ 	ext4_io_end_t *io = EXT4_I(inode)->cur_aio_dio;
++	int cluster_offset;
+ 
+ 	ext_debug("blocks %u/%u requested for inode %lu\n",
+ 		  map->m_lblk, map->m_len, inode->i_ino);
+@@ -3398,9 +3421,22 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 		ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
+ 		goto out2;
+ 	}
++
+ 	/*
+ 	 * Okay, we need to do block allocation.
+ 	 */
++	cluster_offset = map->m_lblk & (sbi->s_cluster_ratio-1);
++	/* 
++	 * If we are doing bigalloc, check to see if the extent returned
++	 * by ext4_find_extent() implies a cluster we can use.
++	 */
++	if (cluster_offset && ex &&
++	    get_implied_cluster_alloc(map, cluster_offset,
++				      sbi->s_cluster_ratio, ex)) {
++		ar.len = allocated = map->m_len;
++		newblock = map->m_pblk;
++		goto got_allocated_blocks;
++	}
+ 
+ 	/* find neighbour allocated blocks */
+ 	ar.lleft = map->m_lblk;
+@@ -3408,10 +3444,21 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 	if (err)
+ 		goto out2;
+ 	ar.lright = map->m_lblk;
+-	err = ext4_ext_search_right(inode, path, &ar.lright, &ar.pright);
++	ex2 = 0;
++	err = ext4_ext_search_right(inode, path, &ar.lright, &ar.pright, &ex2);
+ 	if (err)
+ 		goto out2;
+ 
++	/* Check if the extent after searching to the right implies a
++	 * cluster we can use. */
++	if (cluster_offset && ex2 &&
++	    get_implied_cluster_alloc(map, cluster_offset,
++				      sbi->s_cluster_ratio, ex2)) {
++		ar.len = allocated = map->m_len;
++		newblock = map->m_pblk;
++		goto got_allocated_blocks;
++	}
++
+ 	/*
+ 	 * See if request is beyond maximum number of blocks we can have in
+ 	 * a single extent. For an initialized extent this limit is
+@@ -3438,7 +3485,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 	ar.inode = inode;
+ 	ar.goal = ext4_ext_find_goal(inode, path, map->m_lblk);
+ 	ar.logical = map->m_lblk;
+-	ar.len = allocated;
++	ar.len = (allocated + sbi->s_cluster_ratio - 1) / sbi->s_cluster_ratio;
+ 	if (S_ISREG(inode->i_mode))
+ 		ar.flags = EXT4_MB_HINT_DATA;
+ 	else
+@@ -3449,7 +3496,11 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 		goto out2;
+ 	ext_debug("allocate new block: goal %llu, found %llu/%u\n",
+ 		  ar.goal, newblock, allocated);
++	ar.len *= sbi->s_cluster_ratio;
++	if (ar.len > allocated)
++		ar.len = allocated;
+ 
++got_allocated_blocks:
+ 	/* try to insert new extent into found leaf and return */
+ 	ext4_ext_store_pblock(&newex, newblock);
+ 	newex.ee_len = cpu_to_le16(ar.len);

@@ -1,0 +1,174 @@
+ext4: bigalloc changes to block bitmap initialization functions
+
+Add bigalloc support to ext4_init_block_bitmap() and
+ext4_free_blocks_after_init().
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index eca276f..fcbdea3 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -56,34 +56,6 @@ static int ext4_block_in_group(struct super_block *sb, ext4_fsblk_t block,
+ 	return 0;
+ }
+ 
+-static int ext4_group_used_meta_blocks(struct super_block *sb,
+-				       ext4_group_t block_group,
+-				       struct ext4_group_desc *gdp)
+-{
+-	ext4_fsblk_t tmp;
+-	struct ext4_sb_info *sbi = EXT4_SB(sb);
+-	/* block bitmap, inode bitmap, and inode table blocks */
+-	int used_blocks = sbi->s_itb_per_group + 2;
+-
+-	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG)) {
+-		if (!ext4_block_in_group(sb, ext4_block_bitmap(sb, gdp),
+-					block_group))
+-			used_blocks--;
+-
+-		if (!ext4_block_in_group(sb, ext4_inode_bitmap(sb, gdp),
+-					block_group))
+-			used_blocks--;
+-
+-		tmp = ext4_inode_table(sb, gdp);
+-		for (; tmp < ext4_inode_table(sb, gdp) +
+-				sbi->s_itb_per_group; tmp++) {
+-			if (!ext4_block_in_group(sb, tmp, block_group))
+-				used_blocks -= 1;
+-		}
+-	}
+-	return used_blocks;
+-}
+-
+ static unsigned int num_blocks_in_group(struct super_block *sb,
+ 					ext4_group_t block_group)
+ {
+@@ -124,6 +96,7 @@ void ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
+ 	}
+ 	memset(bh->b_data, 0, sb->s_blocksize);
+ 
++	bit_max = (bit_max + sbi->s_cluster_ratio - 1) / sbi->s_cluster_ratio;
+ 	for (bit = 0; bit < bit_max; bit++)
+ 		ext4_set_bit(bit, bh->b_data);
+ 
+@@ -134,26 +107,38 @@ void ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
+ 
+ 	/* Set bits for block and inode bitmaps, and inode table */
+ 	tmp = ext4_block_bitmap(sb, gdp);
+-	if (!flex_bg || ext4_block_in_group(sb, tmp, block_group))
+-		ext4_set_bit(tmp - start, bh->b_data);
++	if (!flex_bg || ext4_block_in_group(sb, tmp, block_group)) {
++		bit = tmp - start;
++		bit = (bit + sbi->s_cluster_ratio - 1) / sbi->s_cluster_ratio;
++		ext4_set_bit(bit, bh->b_data);
++	}
+ 
+ 	tmp = ext4_inode_bitmap(sb, gdp);
+-	if (!flex_bg || ext4_block_in_group(sb, tmp, block_group))
+-		ext4_set_bit(tmp - start, bh->b_data);
++	if (!flex_bg || ext4_block_in_group(sb, tmp, block_group)) {
++		bit = tmp - start;
++		bit = (bit + sbi->s_cluster_ratio - 1) / sbi->s_cluster_ratio;
++		ext4_set_bit(bit, bh->b_data);
++	}
+ 
+ 	tmp = ext4_inode_table(sb, gdp);
+ 	for (; tmp < ext4_inode_table(sb, gdp) +
+ 		     sbi->s_itb_per_group; tmp++) {
+-		if (!flex_bg || ext4_block_in_group(sb, tmp, block_group))
+-			ext4_set_bit(tmp - start, bh->b_data);
++		if (!flex_bg || ext4_block_in_group(sb, tmp, block_group)) {
++			bit = tmp - start;
++			bit = (bit + sbi->s_cluster_ratio - 1) /
++				sbi->s_cluster_ratio;
++			ext4_set_bit(bit, bh->b_data);
++		}
+ 	}
++
+ 	/*
+ 	 * Also if the number of blocks within the group is less than
+ 	 * the blocksize * 8 ( which is the size of bitmap ), set rest
+ 	 * of the block bitmap to 1
+ 	 */
+-	ext4_mark_bitmap_end(num_blocks_in_group(sb, block_group),
+-			     sb->s_blocksize * 8, bh->b_data);
++	bit = num_blocks_in_group(sb, block_group);
++	bit = (bit + sbi->s_cluster_ratio - 1) / sbi->s_cluster_ratio;
++	ext4_mark_bitmap_end(bit, sb->s_blocksize * 8, bh->b_data);
+ }
+ 
+ /* Initializes an uninitialized block bitmap if given, and returns the
+@@ -162,9 +147,70 @@ unsigned ext4_free_blocks_after_init(struct super_block *sb,
+ 				     ext4_group_t block_group,
+ 				     struct ext4_group_desc *gdp)
+ {
+-	return num_blocks_in_group(sb, block_group) -
+-		num_base_meta_blocks(sb, block_group) -
+-		ext4_group_used_meta_blocks(sb, block_group, gdp);
++	unsigned num_clusters, base_clusters;
++	int block_cluster = -1, inode_cluster = -1, itbl_cluster = -1, i, c;
++	ext4_fsblk_t start = ext4_group_first_block_no(sb, block_group);
++	ext4_fsblk_t itbl_blk;
++	struct ext4_sb_info *sbi = EXT4_SB(sb);
++
++	/* Number of blocks/clusters in the group */
++	num_clusters = num_blocks_in_group(sb, block_group);
++	num_clusters = (num_clusters + sbi->s_cluster_ratio - 1) /
++		sbi->s_cluster_ratio;
++
++	base_clusters = num_base_meta_blocks(sb, block_group);
++	base_clusters = (base_clusters + sbi->s_cluster_ratio - 1) /
++		sbi->s_cluster_ratio;
++
++	if (ext4_block_in_group(sb, ext4_block_bitmap(sb, gdp), block_group)) {
++		block_cluster = start - ext4_block_bitmap(sb, gdp);
++		block_cluster = (block_cluster + sbi->s_cluster_ratio - 1 ) /
++			sbi->s_cluster_ratio;
++		if (block_cluster < base_clusters)
++			block_cluster = -1;
++		else if (block_cluster == base_clusters) {
++			base_clusters++;
++			block_cluster = -1;
++		}
++	}
++
++	if (ext4_block_in_group(sb, ext4_inode_bitmap(sb, gdp), block_group)) {
++		inode_cluster = start - ext4_inode_bitmap(sb, gdp);
++		inode_cluster = (inode_cluster + sbi->s_cluster_ratio - 1 ) /
++			sbi->s_cluster_ratio;
++		if (inode_cluster < base_clusters)
++			inode_cluster = -1;
++		else if (inode_cluster == base_clusters) {
++			base_clusters++;
++			inode_cluster = -1;
++		}
++	}
++
++	itbl_blk = ext4_inode_table(sb, gdp);
++	for (i = 0; i < sbi->s_itb_per_group; i++) {
++		if (ext4_block_in_group(sb, itbl_blk + i, block_group)) {
++			c = start - itbl_blk + i;
++			c = (c + sbi->s_cluster_ratio - 1) /
++				sbi->s_cluster_ratio;
++			if ((c < base_clusters) || (c == inode_cluster) ||
++			    (c == block_cluster) || (c == itbl_cluster))
++				continue;
++			if (c == base_clusters) {
++				base_clusters++;
++				continue;
++			}
++			num_clusters--;
++			itbl_cluster = c;
++		}
++	}
++
++	num_clusters -= base_clusters;
++	if (block_cluster != -1)
++		num_clusters--;
++	if (inode_cluster != -1)
++		num_clusters--;
++
++	return num_clusters;
+ }
+ 
+ /*
