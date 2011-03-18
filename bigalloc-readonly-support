@@ -7,12 +7,12 @@ group is too big.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h  |   12 ++++++++++--
- fs/ext4/super.c |   54 ++++++++++++++++++++++++++++++++++++++++++++++--------
- 2 files changed, 56 insertions(+), 10 deletions(-)
+ fs/ext4/ext4.h  |   13 ++++++++++-
+ fs/ext4/super.c |   58 +++++++++++++++++++++++++++++++++++++++++++++++-------
+ 2 files changed, 61 insertions(+), 10 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 3aa0b72..fe988a4 100644
+index 3aa0b72..84cd070 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -231,12 +231,16 @@ struct ext4_io_submit {
@@ -48,7 +48,7 @@ index 3aa0b72..fe988a4 100644
 +	__le32	s_log_cluster_size;	/* Allocation cluster size */
  /*20*/	__le32	s_blocks_per_group;	/* # Blocks per group */
 -	__le32	s_obso_frags_per_group;	/* Obsoleted fragments per group */
-+	__le32	s_clusters_per_group;	/* # Fragments per group */
++	__le32	s_clusters_per_group;	/* # Clusters per group */
  	__le32	s_inodes_per_group;	/* # Inodes per group */
  	__le32	s_mtime;		/* Mount time */
  /*30*/	__le32	s_wtime;		/* Write time */
@@ -60,15 +60,16 @@ index 3aa0b72..fe988a4 100644
  	unsigned long s_inodes_per_group;/* Number of inodes in a group */
  	unsigned long s_itb_per_group;	/* Number of inode table blocks per group */
  	unsigned long s_gdb_count;	/* Number of group descriptor blocks */
-@@ -1083,6 +1089,7 @@ struct ext4_sb_info {
+@@ -1083,6 +1089,8 @@ struct ext4_sb_info {
  	ext4_group_t s_blockfile_groups;/* Groups acceptable for non-extent files */
  	unsigned long s_overhead_last;  /* Last calculated overhead */
  	unsigned long s_blocks_last;    /* Last seen block count */
-+	unsigned int s_cluster_ratio;
++	unsigned int s_cluster_ratio;	/* Number of blocks per group */
++	unsigned int s_cluster_bits;	/* log2 of s_cluster_ratio */
  	loff_t s_bitmap_maxbytes;	/* max bytes for bitmap files */
  	struct buffer_head * s_sbh;	/* Buffer containing the super block */
  	struct ext4_super_block *s_es;	/* Pointer to the super block in the buffer */
-@@ -1338,6 +1345,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
+@@ -1338,6 +1346,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
  #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
  #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
  #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
@@ -77,7 +78,7 @@ index 3aa0b72..fe988a4 100644
  #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
  #define EXT4_FEATURE_INCOMPAT_FILETYPE		0x0002
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index b357c27..2491038 100644
+index b357c27..a7390a7 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1875,7 +1875,7 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
@@ -110,7 +111,7 @@ index b357c27..2491038 100644
  	__u64 blocks_count;
  	int err;
  	unsigned int journal_ioprio = DEFAULT_JOURNAL_IOPRIO;
-@@ -3276,12 +3277,49 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -3276,12 +3277,53 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		sb->s_dirt = 1;
  	}
  
@@ -130,6 +131,8 @@ index b357c27..2491038 100644
 +				 "block size (%d)", clustersize, blocksize);
 +			goto failed_mount;
 +		}
++		sbi->s_cluster_bits = le32_to_cpu(es->s_log_cluster_size) -
++			le32_to_cpu(es->s_log_block_size);
 +		sbi->s_clusters_per_group =
 +			le32_to_cpu(es->s_clusters_per_group);
 +		if (sbi->s_clusters_per_group > blocksize * 8) {
@@ -148,17 +151,19 @@ index b357c27..2491038 100644
 +		}
 +	} else {
 +		if (clustersize != blocksize) {
-+			ext4_warning(sb, "clustersize (%d) != blocksize (%d)",
++			ext4_warning(sb, "fragment/cluster size (%d) "
++				     "!= block size (%d)",
 +				     clustersize, blocksize);
 +			clustersize = blocksize;
-+			if (sbi->s_blocks_per_group > blocksize * 8) {
-+				ext4_msg(sb, KERN_ERR,
-+					 "#blocks per group too big: %lu",
-+					 sbi->s_blocks_per_group);
-+				goto failed_mount;
-+			}
++		}
++		if (sbi->s_blocks_per_group > blocksize * 8) {
++			ext4_msg(sb, KERN_ERR,
++				 "#blocks per group too big: %lu",
++				 sbi->s_blocks_per_group);
++			goto failed_mount;
 +		}
 +		sbi->s_clusters_per_group = sbi->s_blocks_per_group;
++		sbi->s_cluster_bits = 0;
  	}
 +	sbi->s_cluster_ratio = clustersize / blocksize;
 +

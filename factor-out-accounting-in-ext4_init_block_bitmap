@@ -6,11 +6,11 @@ the next commit.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/balloc.c |   79 ++++++++++++++++++++++++++++++++----------------------
- 1 files changed, 47 insertions(+), 32 deletions(-)
+ fs/ext4/balloc.c |   80 ++++++++++++++++++++++++++++++++---------------------
+ 1 files changed, 48 insertions(+), 32 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index adf96b8..5ed5125 100644
+index adf96b8..c608fda 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -21,6 +21,9 @@
@@ -23,7 +23,7 @@ index adf96b8..5ed5125 100644
  /*
   * balloc.c contains the blocks allocation and deallocation routines
   */
-@@ -81,14 +84,29 @@ static int ext4_group_used_meta_blocks(struct super_block *sb,
+@@ -81,14 +84,30 @@ static int ext4_group_used_meta_blocks(struct super_block *sb,
  	return used_blocks;
  }
  
@@ -32,15 +32,16 @@ index adf96b8..5ed5125 100644
 +{
 +	if (block_group == ext4_get_groups_count(sb) - 1) {
 +		/*
-+		 * Even though mke2fs always initialize first and last group
-+		 * if some other tool enabled the EXT4_BG_BLOCK_UNINIT we need
-+		 * to make sure we calculate the right free blocks
++		 * Even though mke2fs always initializes the first and
++		 * last group, just in case some other tool was used,
++		 * we need to make sure we calculate the right free
++		 * blocks.
 +		 */
 +		return ext4_blocks_count(EXT4_SB(sb)->s_es) -
 +			ext4_group_first_block_no(sb, block_group);
 +	} else
 +		return EXT4_BLOCKS_PER_GROUP(sb);
-+}	
++}
 +
  /* Initializes an uninitialized block bitmap if given, and returns the
   * number of blocks free in the group. */
@@ -55,7 +56,7 @@ index adf96b8..5ed5125 100644
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
  
  	if (bh) {
-@@ -108,35 +126,6 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
+@@ -108,35 +127,6 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
  		memset(bh->b_data, 0, sb->s_blocksize);
  	}
  
@@ -91,7 +92,7 @@ index adf96b8..5ed5125 100644
  	if (bh) {
  		ext4_fsblk_t start, tmp;
  		int flex_bg = 0;
-@@ -174,7 +163,8 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
+@@ -174,7 +164,8 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
  		ext4_mark_bitmap_end(group_blocks, sb->s_blocksize * 8,
  				     bh->b_data);
  	}
@@ -101,13 +102,13 @@ index adf96b8..5ed5125 100644
  }
  
  
-@@ -741,3 +731,28 @@ unsigned long ext4_bg_num_gdb(struct super_block *sb, ext4_group_t group)
+@@ -741,3 +732,28 @@ unsigned long ext4_bg_num_gdb(struct super_block *sb, ext4_group_t group)
  
  }
  
 +/*
-+ * This function returns the number of file system metadata blocks are
-+ * at the beginning of a block group, including the reserved gdt blocks.
++ * This function returns the number of file system metadata blocks at
++ * the beginning of a block group, including the reserved gdt blocks.
 + */
 +static unsigned int num_base_meta_blocks(struct super_block *sb,
 +					 ext4_group_t block_group)

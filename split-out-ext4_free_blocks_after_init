@@ -2,27 +2,30 @@ ext4: split out ext4_free_blocks_after_init()
 
 The function ext4_free_blocks_after_init() used to be a #define of
 ext4_init_block_bitmap().  This actually made it difficult to
-understand how the function worked, and made to change it to support
-clusters.  So as an initial cleanup, I've separated out the
+understand how the function worked, and made it hard make changes to
+support clusters.  So as an initial cleanup, I've separated out the
 functionality of initializing block bitmap from calculating the number
 of free blocks in the new block group.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/balloc.c |  101 ++++++++++++++++++++++++++---------------------------
+ fs/ext4/balloc.c |  105 ++++++++++++++++++++++++++---------------------------
  fs/ext4/ext4.h   |   13 ++++---
- 2 files changed, 57 insertions(+), 57 deletions(-)
+ 2 files changed, 59 insertions(+), 59 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 5ed5125..eca276f 100644
+index c608fda..675c1e0 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
-@@ -101,72 +101,71 @@ static unsigned int num_blocks_in_group(struct super_block *sb,
+@@ -100,74 +100,73 @@ static unsigned int num_blocks_in_group(struct super_block *sb,
+ 		return EXT4_BLOCKS_PER_GROUP(sb);
+ }
  
- /* Initializes an uninitialized block bitmap if given, and returns the
-  * number of blocks free in the group. */
+-/* Initializes an uninitialized block bitmap if given, and returns the
+- * number of blocks free in the group. */
 -unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
 -		 ext4_group_t block_group, struct ext4_group_desc *gdp)
++/* Initializes an uninitialized block bitmap */
 +void ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
 +			    ext4_group_t block_group,
 +			    struct ext4_group_desc *gdp)
@@ -127,8 +130,9 @@ index 5ed5125..eca276f 100644
 +			     sb->s_blocksize * 8, bh->b_data);
  }
  
-+/* Initializes an uninitialized block bitmap if given, and returns the
-+ * number of blocks free in the group. */
++/* Return the number of free blocks in a block group.  It is used when
++ * the block bitmap in uninitialized, so we can't just count the bits
++ * in the bitmap. */
 +unsigned ext4_free_blocks_after_init(struct super_block *sb,
 +				     ext4_group_t block_group,
 +				     struct ext4_group_desc *gdp)
@@ -141,10 +145,10 @@ index 5ed5125..eca276f 100644
  /*
   * The free blocks are managed by bitmaps.  A file system contains several
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index fe988a4..d995ac1 100644
+index 84cd070..c9e0076 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1658,12 +1658,13 @@ extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
+@@ -1659,12 +1659,13 @@ extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
  extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
  struct buffer_head *ext4_read_block_bitmap(struct super_block *sb,
  				      ext4_group_t block_group);

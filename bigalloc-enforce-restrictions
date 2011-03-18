@@ -1,18 +1,18 @@
 ext4: enforce bigalloc restrictions (e.g., no online resizing, etc.)
 
 At least initially if the bigalloc feature is enabled, we will not
-support direct/indirect mapped inodes, online reisizing, online
-defrag, or the FITRIM ioctl.  This simplifies the initial implementation.
+support non-extent mapped inodes, online reisizing, online defrag, or
+the FITRIM ioctl.  This simplifies the initial implementation.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/inode.c |    7 +++++++
  fs/ext4/ioctl.c |   33 +++++++++++++++++++++++++++++----
- fs/ext4/super.c |    7 +++++++
- 3 files changed, 43 insertions(+), 4 deletions(-)
+ fs/ext4/super.c |   13 ++++++++++---
+ 3 files changed, 46 insertions(+), 7 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 67e7a3c..eff699a 100644
+index 67e7a3c..3bf751c 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -1008,6 +1008,13 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
@@ -22,7 +22,7 @@ index 67e7a3c..eff699a 100644
 +	if (EXT4_HAS_RO_COMPAT_FEATURE(inode->i_sb,
 +				       EXT4_FEATURE_RO_COMPAT_BIGALLOC)) {
 +		EXT4_ERROR_INODE(inode, "Can't allocate blocks for "
-+				 "indirect mapped inode with bigalloc");
++				 "non-extent mapped inodes with bigalloc");
 +		return -ENOSPC;
 +	}
 +
@@ -130,7 +130,7 @@ index c052c9f..1231e25 100644
  		    sizeof(range)))
  			return -EFAULT;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index b2eaab2..e54b3ae 100644
+index 3f91a19..1a92b83 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -2593,6 +2593,13 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
@@ -147,3 +147,16 @@ index b2eaab2..e54b3ae 100644
  	return 1;
  }
  
+@@ -3306,9 +3313,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		}
+ 	} else {
+ 		if (clustersize != blocksize) {
+-			ext4_warning(sb, "fragment/cluster size (%d) "
+-				     "!= block size (%d)",
+-				     clustersize, blocksize);
++			ext4_warning(sb, "fragment/cluster size (%d) != "
++				     "block size (%d)", clustersize,
++				     blocksize);
+ 			clustersize = blocksize;
+ 		}
+ 		if (sbi->s_blocks_per_group > blocksize * 8) {

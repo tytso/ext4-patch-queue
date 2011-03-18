@@ -1,0 +1,56 @@
+ext4: teach ext4_statfs() to deal with clusters if bigalloc is enabled
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c |   18 ++++++------------
+ 1 files changed, 6 insertions(+), 12 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index f9b25cd..b9398c3 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4443,6 +4443,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+ 	struct super_block *sb = dentry->d_sb;
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 	struct ext4_super_block *es = sbi->s_es;
++	struct ext4_group_desc *gdp;
+ 	u64 fsid;
+ 
+ 	if (test_opt(sb, MINIX_DF)) {
+@@ -4461,24 +4462,16 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+ 		 * All of the blocks before first_data_block are
+ 		 * overhead
+ 		 */
+-		overhead = le32_to_cpu(es->s_first_data_block);
++		overhead = EXT4_B2C(sbi, le32_to_cpu(es->s_first_data_block));
+ 
+ 		/*
+-		 * Add the overhead attributed to the superblock and
+-		 * block group descriptors.  If the sparse superblocks
+-		 * feature is turned on, then not all groups have this.
++		 * Add the overhead found in each block group
+ 		 */
+ 		for (i = 0; i < ngroups; i++) {
+-			overhead += ext4_bg_has_super(sb, i) +
+-				ext4_bg_num_gdb(sb, i);
++			gdp = ext4_get_group_desc(sb, i, NULL);
++			overhead += ext4_num_overhead_clusters(sb, i, gdp);
+ 			cond_resched();
+ 		}
+-
+-		/*
+-		 * Every block group has an inode bitmap, a block
+-		 * bitmap, and an inode table.
+-		 */
+-		overhead += ngroups * (2 + sbi->s_itb_per_group);
+ 		sbi->s_overhead_last = overhead;
+ 		smp_wmb();
+ 		sbi->s_blocks_last = ext4_blocks_count(es);
+@@ -4489,6 +4482,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+ 	buf->f_blocks = ext4_blocks_count(es) - sbi->s_overhead_last;
+ 	buf->f_bfree = percpu_counter_sum_positive(&sbi->s_freeblocks_counter) -
+ 		       percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
++	buf->f_bfree = buf->f_bfree << sbi->s_cluster_bits;
+ 	buf->f_bavail = buf->f_bfree - ext4_r_blocks_count(es);
+ 	if (buf->f_bfree < ext4_r_blocks_count(es))
+ 		buf->f_bavail = 0;
