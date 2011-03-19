@@ -1,0 +1,36 @@
+ext4: tune mballoc's default group prealloc size for bigalloc file systems
+
+The default group preallocation size had been previously set to 512
+blocks/clusters, regardless of the block/cluster size.  This is
+probably too big for large cluster sizes.  So adjust the default so
+that it is 2 megabytes or 32 clusters, whichever is larger.
+---
+ fs/ext4/mballoc.c |   15 ++++++++++++++-
+ 1 files changed, 14 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 02f099f..ad4a6eb 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2529,7 +2529,20 @@ int ext4_mb_init(struct super_block *sb, int needs_recovery)
+ 	sbi->s_mb_stats = MB_DEFAULT_STATS;
+ 	sbi->s_mb_stream_request = MB_DEFAULT_STREAM_THRESHOLD;
+ 	sbi->s_mb_order2_reqs = MB_DEFAULT_ORDER2_REQS;
+-	sbi->s_mb_group_prealloc = MB_DEFAULT_GROUP_PREALLOC;
++	/*
++	 * The default group preallocation is 512, which for 4k block
++	 * sizes translates to 2 megabytes.  However for bigalloc file
++	 * systems, this is probably too big (i.e, if the cluster size
++	 * is 1 megabyte, then group preallocation size becomes half a
++	 * gigabyte!).  As a default, we will keep a two megabyte
++	 * group pralloc size for cluster sizes up to 64k, and after
++	 * that, we will force a minimum group preallocation size of
++	 * 32 clusters.  This translates to 8 megs when the cluster
++	 * size is 256k, and 32 megs when the cluster size is 1 meg,
++	 * which seems reasonable as a default.
++	 */
++	sbi->s_mb_group_prealloc = max(MB_DEFAULT_GROUP_PREALLOC >>
++				       sbi->s_cluster_bits, 32);
+ 
+ 	sbi->s_locality_groups = alloc_percpu(struct ext4_locality_group);
+ 	if (sbi->s_locality_groups == NULL) {
