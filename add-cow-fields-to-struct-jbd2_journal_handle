@@ -1,0 +1,67 @@
+jbd2: add COW fields to struct jbd2_journal_handle
+
+From: Amir Goldstein <amir73il@gmail.com>
+
+Add fields needed for the copy-on-write ext4 development work.
+
+The h_cowing flag is used by ext4 snapshots code to mark the task in
+COWING state.
+
+The h_XXX_credits fields are used to track buffer credits usage
+(accounted by COW and non-COW operations).
+
+The h_cow_XXX fields are used as per task debugging counters.
+
+Merging this commit into mainline will allow users to test ext4
+snapshots as a standalone module, without the need to patch and
+install a development kernel.
+
+Signed-off-by: Amir Goldstein <amir73il@users.sf.net>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ include/linux/jbd2.h |   28 +++++++++++++++++++++++++---
+ 1 files changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 27e79c2..a32dcae 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -432,13 +432,35 @@ struct jbd2_journal_handle
+ 	int			h_err;
+ 
+ 	/* Flags [no locking] */
+-	unsigned int	h_sync:		1;	/* sync-on-close */
+-	unsigned int	h_jdata:	1;	/* force data journaling */
+-	unsigned int	h_aborted:	1;	/* fatal error on handle */
++	unsigned int	h_sync:1;	/* sync-on-close */
++	unsigned int	h_jdata:1;	/* force data journaling */
++	unsigned int	h_aborted:1;	/* fatal error on handle */
++	unsigned int	h_cowing:1;	/* COWing block to snapshot */
++
++	/* Number of buffers requested by user:
++	 * (before adding the COW credits factor) */
++	unsigned int	h_base_credits:14;
++
++	/* Number of buffers the user is allowed to dirty:
++	 * (counts only buffers dirtied when !h_cowing) */
++	unsigned int	h_user_credits:14;
++
+ 
+ #ifdef CONFIG_DEBUG_LOCK_ALLOC
+ 	struct lockdep_map	h_lockdep_map;
+ #endif
++
++#ifdef CONFIG_JBD2_DEBUG
++	/* COW debugging counters: */
++	unsigned int h_cow_moved; /* blocks moved to snapshot */
++	unsigned int h_cow_copied; /* blocks copied to snapshot */
++	unsigned int h_cow_ok_jh; /* blocks already COWed during current
++				     transaction */
++	unsigned int h_cow_ok_bitmap; /* blocks not set in COW bitmap */
++	unsigned int h_cow_ok_mapped;/* blocks already mapped in snapshot */
++	unsigned int h_cow_bitmaps; /* COW bitmaps created */
++	unsigned int h_cow_excluded; /* blocks set in exclude bitmap */
++#endif
+ };
+ 
+ 
