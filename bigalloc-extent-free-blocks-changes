@@ -13,14 +13,14 @@ hits mainline.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents.c |  203 +++++++++++++++++++++++++++++++++++++++++++++++------
- 1 files changed, 182 insertions(+), 21 deletions(-)
+ fs/ext4/extents.c |   66 ++++++++++++++++++++++++++++++++++++++++++++++++-----
+ 1 files changed, 60 insertions(+), 6 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 9ea1bc6..200b2ab 100644
+index 4110462..2f30bc9 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2124,14 +2126,37 @@ int ext4_ext_index_trans_blocks(struct inode *inode, int nrblocks, int chunk)
+@@ -2126,14 +2126,37 @@ int ext4_ext_index_trans_blocks(struct inode *inode, int nrblocks, int chunk)
  }
  
  static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
@@ -56,11 +56,11 @@ index 9ea1bc6..200b2ab 100644
 +				 sbi->s_cluster_ratio, flags);
 +		*partial_cluster = 0;
 +	}
-+			
++
  #ifdef EXTENTS_STATS
  	{
  		struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
-@@ -2157,6 +2182,13 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -2159,6 +2182,13 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  		start = ext4_ext_pblock(ex) + ee_len - num;
  		ext_debug("free last %u blocks starting %llu\n", num, start);
  		ext4_free_blocks(handle, inode, NULL, start, num, flags);
@@ -74,7 +74,7 @@ index 9ea1bc6..200b2ab 100644
  	} else if (from == le32_to_cpu(ex->ee_block)
  		   && to <= le32_to_cpu(ex->ee_block) + ee_len - 1) {
  		printk(KERN_INFO "strange request: removal %u-%u from %u:%u\n",
-@@ -2171,8 +2203,10 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -2173,8 +2203,10 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  
  static int
  ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
@@ -86,7 +86,7 @@ index 9ea1bc6..200b2ab 100644
  	int err = 0, correct_index = 0;
  	int depth = ext_depth(inode), credits;
  	struct ext4_extent_header *eh;
-@@ -2259,7 +2293,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2261,7 +2293,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  		if (err)
  			goto out;
  
@@ -96,7 +96,7 @@ index 9ea1bc6..200b2ab 100644
  		if (err)
  			goto out;
  
-@@ -2267,7 +2302,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2269,7 +2302,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  			/* this extent is removed; mark slot entirely unused */
  			ext4_ext_store_pblock(ex, 0);
  			le16_add_cpu(&eh->eh_entries, -1);
@@ -106,7 +106,7 @@ index 9ea1bc6..200b2ab 100644
  
  		ex->ee_block = cpu_to_le32(block);
  		ex->ee_len = cpu_to_le16(num);
-@@ -2292,6 +2328,24 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2294,6 +2328,24 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  	if (correct_index && eh->eh_entries)
  		err = ext4_ext_correct_indexes(handle, inode, path);
  
@@ -131,7 +131,7 @@ index 9ea1bc6..200b2ab 100644
  	/* if this leaf is free, then we should
  	 * remove it from index block above */
  	if (err == 0 && eh->eh_entries == 0 && path[depth].p_bh != NULL)
-@@ -2327,6 +2381,7 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
+@@ -2329,6 +2381,7 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
  	struct super_block *sb = inode->i_sb;
  	int depth = ext_depth(inode);
  	struct ext4_ext_path *path;
@@ -139,7 +139,7 @@ index 9ea1bc6..200b2ab 100644
  	handle_t *handle;
  	int i, err;
  
-@@ -2361,7 +2416,8 @@ again:
+@@ -2363,7 +2416,8 @@ again:
  	while (i >= 0 && err == 0) {
  		if (i == depth) {
  			/* this is leaf block */
