@@ -12,7 +12,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 65 insertions(+), 11 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 3aa0b72..7749700 100644
+index 3aa0b72..2622257 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -231,12 +231,16 @@ struct ext4_io_submit {
@@ -21,9 +21,9 @@ index 3aa0b72..7749700 100644
  # define EXT4_BLOCK_SIZE(s)		((s)->s_blocksize)
 +# define EXT4_CLUSTER_SIZE(s)		(EXT4_SB(s)->s_clustersize)
  #else
+ # define EXT4_BLOCK_SIZE(s)		(EXT4_MIN_BLOCK_SIZE << (s)->s_log_block_size)
 +# define EXT2_CLUSTER_SIZE(s)		(EXT2_MIN_BLOCK_SIZE << \
 +						(s)->s_log_cluster_size)
- # define EXT4_BLOCK_SIZE(s)		(EXT4_MIN_BLOCK_SIZE << (s)->s_log_block_size)
  #endif
  #define	EXT4_ADDR_PER_BLOCK(s)		(EXT4_BLOCK_SIZE(s) / sizeof(__u32))
  #ifdef __KERNEL__
@@ -76,7 +76,7 @@ index 3aa0b72..7749700 100644
  	ext4_group_t s_blockfile_groups;/* Groups acceptable for non-extent files */
  	unsigned long s_overhead_last;  /* Last calculated overhead */
  	unsigned long s_blocks_last;    /* Last seen block count */
-+	unsigned int s_cluster_ratio;	/* Number of blocks per group */
++	unsigned int s_cluster_ratio;	/* Number of blocks per cluster */
 +	unsigned int s_cluster_bits;	/* log2 of s_cluster_ratio */
  	loff_t s_bitmap_maxbytes;	/* max bytes for bitmap files */
  	struct buffer_head * s_sbh;	/* Buffer containing the super block */
@@ -90,7 +90,7 @@ index 3aa0b72..7749700 100644
  #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
  #define EXT4_FEATURE_INCOMPAT_FILETYPE		0x0002
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index b357c27..7273728 100644
+index ccfa686..6e41250 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1875,7 +1875,7 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
