@@ -6,11 +6,11 @@ function needs to see if the cluster has already been allocated.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
- fs/ext4/extents.c |  137 +++++++++++++++++++++++++++++++++++++++++++++++------
- 1 files changed, 122 insertions(+), 15 deletions(-)
+ fs/ext4/extents.c |  142 +++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 files changed, 127 insertions(+), 15 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index f46f6e3..3666b3f 100644
+index f46f6e3..70c9596 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -1277,7 +1277,8 @@ static int ext4_ext_search_left(struct inode *inode,
@@ -77,15 +77,15 @@ index f46f6e3..3666b3f 100644
  
  	/*
  	 * get the next allocated block if the extent in the path
-@@ -3278,6 +3280,82 @@ out2:
+@@ -3278,6 +3280,87 @@ out2:
  }
  
  /*
 + * get_implied_cluster_alloc - check to see if the requested
 + * allocation (in the map structure) overlaps with a cluster already
 + * allocated in an extent.
++ *	@sbi	The ext4-specific superblock structure
 + *	@map	The requested lblk->pblk mapping
-+ *	@c_len	The number of blocks in a cluster
 + *	@ex	The extent structure which might contain an implied
 + *			cluster allocation
 + *
@@ -105,8 +105,14 @@ index f46f6e3..3666b3f 100644
 + *	   |--- requested region --|   |------- extent ----|
 + *	   |=======================|
 + *
-+ * In each case, we need to return the extent labelled as "|====|"
-+ * from cluster #N.
++ * In each of the above two cases, we need to set the map->m_pblk and
++ * map->m_len so it corresponds to the return the extent labelled as
++ * "|====|" from cluster #N, since it is already in use for data in
++ * cluster EXT4_B2C(sbi, map->m_lblk).	We will then return 1 to
++ * signal to ext4_ext_map_blocks() that map->m_pblk should be treated
++ * as a new "allocated" block region.  Otherwise, we will return 0 and
++ * ext4_ext_map_blocks() will then allocate one or more new clusters
++ * by calling ext4_mb_new_blocks().
 + */
 +static int get_implied_cluster_alloc(struct ext4_sb_info *sbi,
 +				     struct ext4_map_blocks *map,
@@ -119,8 +125,7 @@ index f46f6e3..3666b3f 100644
 +	ext4_fsblk_t ee_start = ext4_ext_pblock(ex);
 +	unsigned short ee_len = ext4_ext_get_actual_len(ex);
 +
-+	if (!c_offset)
-+		return 0;
++	BUG_ON(!c_offset);
 +
 +	/* The extent passed in that we are trying to match */
 +	ex_cluster_start = EXT4_B2C(sbi, ee_block);
@@ -160,7 +165,7 @@ index f46f6e3..3666b3f 100644
   * Block allocation/map/preallocation routine for extents based files
   *
   *
-@@ -3300,12 +3378,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3300,12 +3383,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  {
  	struct ext4_ext_path *path = NULL;
  	struct ext4_extent_header *eh;
@@ -177,7 +182,7 @@ index f46f6e3..3666b3f 100644
  
  	ext_debug("blocks %u/%u requested for inode %lu\n",
  		  map->m_lblk, map->m_len, inode->i_ino);
-@@ -3403,9 +3483,21 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3403,9 +3488,21 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
  		goto out2;
  	}
@@ -199,12 +204,12 @@ index f46f6e3..3666b3f 100644
  
  	/* find neighbour allocated blocks */
  	ar.lleft = map->m_lblk;
-@@ -3413,10 +3505,20 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3413,10 +3510,20 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	if (err)
  		goto out2;
  	ar.lright = map->m_lblk;
 -	err = ext4_ext_search_right(inode, path, &ar.lright, &ar.pright);
-+	ex2 = 0;
++	ex2 = NULL;
 +	err = ext4_ext_search_right(inode, path, &ar.lright, &ar.pright, &ex2);
  	if (err)
  		goto out2;
@@ -221,7 +226,7 @@ index f46f6e3..3666b3f 100644
  	/*
  	 * See if request is beyond maximum number of blocks we can have in
  	 * a single extent. For an initialized extent this limit is
-@@ -3433,7 +3535,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3433,7 +3540,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	/* Check if we can really insert (m_lblk)::(m_lblk + m_len) extent */
  	newex.ee_block = cpu_to_le32(map->m_lblk);
  	newex.ee_len = cpu_to_le16(map->m_len);
@@ -230,7 +235,7 @@ index f46f6e3..3666b3f 100644
  	if (err)
  		allocated = ext4_ext_get_actual_len(&newex);
  	else
-@@ -3443,7 +3545,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3443,7 +3550,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	ar.inode = inode;
  	ar.goal = ext4_ext_find_goal(inode, path, map->m_lblk);
  	ar.logical = map->m_lblk;
@@ -239,12 +244,12 @@ index f46f6e3..3666b3f 100644
  	if (S_ISREG(inode->i_mode))
  		ar.flags = EXT4_MB_HINT_DATA;
  	else
-@@ -3454,7 +3556,12 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3454,7 +3561,12 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		goto out2;
  	ext_debug("allocate new block: goal %llu, found %llu/%u\n",
  		  ar.goal, newblock, allocated);
 +	free_on_err = 1;
-+	ar.len <<= sbi->s_cluster_bits;
++	ar.len = EXT4_C2B(sbi, ar.len);
 +	if (ar.len > allocated)
 +		ar.len = allocated;
  
@@ -252,7 +257,7 @@ index f46f6e3..3666b3f 100644
  	/* try to insert new extent into found leaf and return */
  	ext4_ext_store_pblock(&newex, newblock);
  	newex.ee_len = cpu_to_le16(ar.len);
-@@ -3485,7 +3592,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3485,7 +3597,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		goto out2;
  
  	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
