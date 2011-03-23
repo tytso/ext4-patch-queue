@@ -1,0 +1,209 @@
+ext4: teach mballoc preallocation code about bigalloc clusters
+
+In most of mballoc.c, we do everything in units of clusters, since the
+block allocation bitmaps and buddy bitmaps are all denominated in
+clusters.  The once place where we do deal with absolute block numbers
+is in the code that handles the preallocation regions, since in the
+case of inode-based preallocation regions, the start of the
+preallocation region can't be relative to the beginning of the group.
+
+So this adds a bit of complexity, where pa_pstart and pa_lstart are
+block numbers, while pa_free, pa_len, and fe_len are denominated in
+units of clusters.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |   49 +++++++++++++++++++++++++++++--------------------
+ fs/ext4/mballoc.h |    4 ++--
+ 2 files changed, 31 insertions(+), 22 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index d195f19..202ec89 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -70,8 +70,8 @@
+  *
+  * pa_lstart -> the logical start block for this prealloc space
+  * pa_pstart -> the physical start block for this prealloc space
+- * pa_len    -> length for this prealloc space
+- * pa_free   ->  free space available in this prealloc space
++ * pa_len    -> length for this prealloc space (in clusters)
++ * pa_free   ->  free space available in this prealloc space (in clusters)
+  *
+  * The inode preallocation space is used looking at the _logical_ start
+  * block. If only the logical file block falls within the range of prealloc
+@@ -2826,7 +2826,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+ 
+ 	block = ext4_grp_offs_to_block(sb, &ac->ac_b_ex);
+ 
+-	len = ac->ac_b_ex.fe_len;
++	len = EXT4_C2B(sbi, ac->ac_b_ex.fe_len);
+ 	if (!ext4_data_block_valid(sbi, block, len)) {
+ 		ext4_error(sb, "Allocating blocks %llu-%llu which overlap "
+ 			   "fs metadata\n", block, block+len);
+@@ -2922,6 +2922,7 @@ static noinline_for_stack void
+ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 				struct ext4_allocation_request *ar)
+ {
++	struct ext4_sb_info *sbi = EXT4_SB(ac->ac_sb);
+ 	int bsbits, max;
+ 	ext4_lblk_t end;
+ 	loff_t size, orig_size, start_off;
+@@ -2952,7 +2953,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 
+ 	/* first, let's learn actual file size
+ 	 * given current request is allocated */
+-	size = ac->ac_o_ex.fe_logical + ac->ac_o_ex.fe_len;
++	size = ac->ac_o_ex.fe_logical + EXT4_C2B(sbi, ac->ac_o_ex.fe_len);
+ 	size = size << bsbits;
+ 	if (size < i_size_read(ac->ac_inode))
+ 		size = i_size_read(ac->ac_inode);
+@@ -3015,6 +3016,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 	rcu_read_lock();
+ 	list_for_each_entry_rcu(pa, &ei->i_prealloc_list, pa_inode_list) {
+ 		ext4_lblk_t pa_end;
++		ext4_lblk_t pa_len;
+ 
+ 		if (pa->pa_deleted)
+ 			continue;
+@@ -3024,7 +3026,8 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 			continue;
+ 		}
+ 
+-		pa_end = pa->pa_lstart + pa->pa_len;
++		pa_len = EXT4_C2B(EXT4_SB(ac->ac_sb), pa->pa_len);
++		pa_end = pa->pa_lstart + pa_len;
+ 
+ 		/* PA must not overlap original request */
+ 		BUG_ON(!(ac->ac_o_ex.fe_logical >= pa_end ||
+@@ -3054,9 +3057,12 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 	rcu_read_lock();
+ 	list_for_each_entry_rcu(pa, &ei->i_prealloc_list, pa_inode_list) {
+ 		ext4_lblk_t pa_end;
++		ext4_lblk_t pa_len;
++
+ 		spin_lock(&pa->pa_lock);
+ 		if (pa->pa_deleted == 0) {
+-			pa_end = pa->pa_lstart + pa->pa_len;
++			pa_len = EXT4_C2B(EXT4_SB(ac->ac_sb), pa->pa_len);
++			pa_end = pa->pa_lstart + pa_len;
+ 			BUG_ON(!(start >= pa_end || end <= pa->pa_lstart));
+ 		}
+ 		spin_unlock(&pa->pa_lock);
+@@ -3078,7 +3084,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 	/* XXX: is it better to align blocks WRT to logical
+ 	 * placement or satisfy big request as is */
+ 	ac->ac_g_ex.fe_logical = start;
+-	ac->ac_g_ex.fe_len = size;
++	ac->ac_g_ex.fe_len = EXT4_NUM_B2C(sbi, size);
+ 
+ 	/* define goal start in order to merge */
+ 	if (ar->pright && (ar->lright == (start + size))) {
+@@ -3147,14 +3153,16 @@ static void ext4_discard_allocated_blocks(struct ext4_allocation_context *ac)
+ static void ext4_mb_use_inode_pa(struct ext4_allocation_context *ac,
+ 				struct ext4_prealloc_space *pa)
+ {
++	struct ext4_sb_info *sbi = EXT4_SB(ac->ac_sb);
+ 	ext4_fsblk_t start;
+ 	ext4_fsblk_t end;
+ 	int len;
+ 
+ 	/* found preallocated blocks, use them */
+ 	start = pa->pa_pstart + (ac->ac_o_ex.fe_logical - pa->pa_lstart);
+-	end = min(pa->pa_pstart + pa->pa_len, start + ac->ac_o_ex.fe_len);
+-	len = end - start;
++	end = min(pa->pa_pstart + EXT4_C2B(sbi, pa->pa_len),
++		  start + EXT4_C2B(sbi, ac->ac_o_ex.fe_len));
++	len = EXT4_NUM_B2C(sbi, end - start);
+ 	ext4_get_group_no_and_offset(ac->ac_sb, start, &ac->ac_b_ex.fe_group,
+ 					&ac->ac_b_ex.fe_start);
+ 	ac->ac_b_ex.fe_len = len;
+@@ -3162,7 +3170,7 @@ static void ext4_mb_use_inode_pa(struct ext4_allocation_context *ac,
+ 	ac->ac_pa = pa;
+ 
+ 	BUG_ON(start < pa->pa_pstart);
+-	BUG_ON(start + len > pa->pa_pstart + pa->pa_len);
++	BUG_ON(end > pa->pa_pstart + EXT4_C2B(sbi, pa->pa_len));
+ 	BUG_ON(pa->pa_free < len);
+ 	pa->pa_free -= len;
+ 
+@@ -3228,6 +3236,7 @@ ext4_mb_check_group_pa(ext4_fsblk_t goal_block,
+ static noinline_for_stack int
+ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
+ {
++	struct ext4_sb_info *sbi = EXT4_SB(ac->ac_sb);
+ 	int order, i;
+ 	struct ext4_inode_info *ei = EXT4_I(ac->ac_inode);
+ 	struct ext4_locality_group *lg;
+@@ -3245,12 +3254,14 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
+ 		/* all fields in this condition don't change,
+ 		 * so we can skip locking for them */
+ 		if (ac->ac_o_ex.fe_logical < pa->pa_lstart ||
+-			ac->ac_o_ex.fe_logical >= pa->pa_lstart + pa->pa_len)
++		    ac->ac_o_ex.fe_logical >= (pa->pa_lstart +
++					       EXT4_C2B(sbi, pa->pa_len)))
+ 			continue;
+ 
+ 		/* non-extent files can't have physical blocks past 2^32 */
+ 		if (!(ext4_test_inode_flag(ac->ac_inode, EXT4_INODE_EXTENTS)) &&
+-			pa->pa_pstart + pa->pa_len > EXT4_MAX_BLOCK_FILE_PHYS)
++		    (pa->pa_pstart + EXT4_C2B(sbi, pa->pa_len) >
++		     EXT4_MAX_BLOCK_FILE_PHYS))
+ 			continue;
+ 
+ 		/* found preallocated blocks, use them */
+@@ -4051,18 +4062,15 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
+ 
+ 	/* set up allocation goals */
+ 	memset(ac, 0, sizeof(struct ext4_allocation_context));
+-	ac->ac_b_ex.fe_logical = ar->logical;
++	ac->ac_b_ex.fe_logical = ar->logical & ~(sbi->s_cluster_ratio - 1);
+ 	ac->ac_status = AC_STATUS_CONTINUE;
+ 	ac->ac_sb = sb;
+ 	ac->ac_inode = ar->inode;
+-	ac->ac_o_ex.fe_logical = ar->logical;
++	ac->ac_o_ex.fe_logical = ac->ac_b_ex.fe_logical;
+ 	ac->ac_o_ex.fe_group = group;
+ 	ac->ac_o_ex.fe_start = block;
+ 	ac->ac_o_ex.fe_len = len;
+-	ac->ac_g_ex.fe_logical = ar->logical;
+-	ac->ac_g_ex.fe_group = group;
+-	ac->ac_g_ex.fe_start = block;
+-	ac->ac_g_ex.fe_len = len;
++	ac->ac_g_ex = ac->ac_o_ex;
+ 	ac->ac_flags = ar->flags;
+ 
+ 	/* we have to define context: we'll we work with a file or
+@@ -4214,13 +4222,14 @@ static void ext4_mb_add_n_trim(struct ext4_allocation_context *ac)
+  */
+ static int ext4_mb_release_context(struct ext4_allocation_context *ac)
+ {
++	struct ext4_sb_info *sbi = EXT4_SB(ac->ac_sb);
+ 	struct ext4_prealloc_space *pa = ac->ac_pa;
+ 	if (pa) {
+ 		if (pa->pa_type == MB_GROUP_PA) {
+ 			/* see comment in ext4_mb_use_group_pa() */
+ 			spin_lock(&pa->pa_lock);
+-			pa->pa_pstart += ac->ac_b_ex.fe_len;
+-			pa->pa_lstart += ac->ac_b_ex.fe_len;
++			pa->pa_pstart += EXT4_C2B(sbi, ac->ac_b_ex.fe_len);
++			pa->pa_lstart += EXT4_C2B(sbi, ac->ac_b_ex.fe_len);
+ 			pa->pa_free -= ac->ac_b_ex.fe_len;
+ 			pa->pa_len -= ac->ac_b_ex.fe_len;
+ 			spin_unlock(&pa->pa_lock);
+diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
+index 1a75182..6990fb2 100644
+--- a/fs/ext4/mballoc.h
++++ b/fs/ext4/mballoc.h
+@@ -139,9 +139,9 @@ enum {
+ 
+ struct ext4_free_extent {
+ 	ext4_lblk_t fe_logical;
+-	ext4_grpblk_t fe_start;
++	ext4_grpblk_t fe_start;	/* In cluster units */
+ 	ext4_group_t fe_group;
+-	ext4_grpblk_t fe_len;
++	ext4_grpblk_t fe_len;	/* In cluster units */
+ };
+ 
+ /*
