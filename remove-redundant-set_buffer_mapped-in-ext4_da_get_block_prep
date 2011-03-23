@@ -1,0 +1,28 @@
+ext4: remove redundant set_buffer_mapped() in ext4_da_get_block_prep()
+
+From: Feng Tang <feng.tang@intel.com>
+
+The map_bh() call will have already set the buffer_head to mapped.
+
+Signed-off-by: Feng Tang <feng.tang@intel.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 9f7f9e4..6fe60f5 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2597,7 +2597,6 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+ 		 * for partial write.
+ 		 */
+ 		set_buffer_new(bh);
+-		set_buffer_mapped(bh);
+ 	}
+ 	return 0;
+ }
+-- 
+1.7.0.4
+
+
