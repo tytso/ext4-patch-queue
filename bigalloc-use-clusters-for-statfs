@@ -2,11 +2,11 @@ ext4: teach ext4_statfs() to deal with clusters if bigalloc is enabled
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/super.c |   35 +++++++++++++++++++++++------------
- 1 files changed, 23 insertions(+), 12 deletions(-)
+ fs/ext4/super.c |   38 +++++++++++++++++++++++++-------------
+ 1 files changed, 25 insertions(+), 13 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index f9b25cd..24964da 100644
+index e1a7944..3fc6bad 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -4438,15 +4438,33 @@ restore_opts:
@@ -22,7 +22,7 @@ index f9b25cd..24964da 100644
 + * requires either O(all block bitmaps) in memory or O(number of block
 + * groups**2) in time.  We will still calculate the superblock for
 + * older file systems --- and if we come across with a bigalloc file
-+ * system with zero in s_overhead_blocks the estimate will be close to
++ * system with zero in s_overhead_clusters the estimate will be close to
 + * correct especially for very large cluster sizes --- but for newer
 + * file systems, it's better to calculate this figure once at mkfs
 + * time, and store it in the superblock.  If the superblock value is
@@ -38,8 +38,8 @@ index f9b25cd..24964da 100644
  
  	if (test_opt(sb, MINIX_DF)) {
  		sbi->s_overhead_last = 0;
-+	} else if (es->s_overhead_blocks) {
-+		sbi->s_overhead_last = le32_to_cpu(es->s_overhead_blocks);
++	} else if (es->s_overhead_clusters) {
++		sbi->s_overhead_last = le32_to_cpu(es->s_overhead_clusters);
  	} else if (sbi->s_blocks_last != ext4_blocks_count(es)) {
  		ext4_group_t i, ngroups = ext4_get_groups_count(sb);
  		ext4_fsblk_t overhead = 0;
@@ -72,8 +72,13 @@ index f9b25cd..24964da 100644
  		sbi->s_overhead_last = overhead;
  		smp_wmb();
  		sbi->s_blocks_last = ext4_blocks_count(es);
-@@ -4489,6 +4499,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
- 	buf->f_blocks = ext4_blocks_count(es) - sbi->s_overhead_last;
+@@ -4486,9 +4496,11 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+ 
+ 	buf->f_type = EXT4_SUPER_MAGIC;
+ 	buf->f_bsize = sb->s_blocksize;
+-	buf->f_blocks = ext4_blocks_count(es) - sbi->s_overhead_last;
++	buf->f_blocks = (ext4_blocks_count(es) -
++			 EXT4_C2B(sbi, sbi->s_overhead_last));
  	buf->f_bfree = percpu_counter_sum_positive(&sbi->s_freeblocks_counter) -
  		       percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
 +	buf->f_bfree = buf->f_bfree << sbi->s_cluster_bits;
