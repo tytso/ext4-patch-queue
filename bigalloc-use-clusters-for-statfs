@@ -2,14 +2,14 @@ ext4: teach ext4_statfs() to deal with clusters if bigalloc is enabled
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/super.c |   38 +++++++++++++++++++++++++-------------
- 1 files changed, 25 insertions(+), 13 deletions(-)
+ fs/ext4/super.c |   37 ++++++++++++++++++++++++-------------
+ 1 files changed, 24 insertions(+), 13 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index e1a7944..3fc6bad 100644
+index dcda43a..2bac4c2 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -4438,15 +4438,33 @@ restore_opts:
+@@ -4439,15 +4439,33 @@ restore_opts:
  	return err;
  }
  
@@ -43,7 +43,7 @@ index e1a7944..3fc6bad 100644
  	} else if (sbi->s_blocks_last != ext4_blocks_count(es)) {
  		ext4_group_t i, ngroups = ext4_get_groups_count(sb);
  		ext4_fsblk_t overhead = 0;
-@@ -4461,24 +4479,16 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+@@ -4462,24 +4480,16 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
  		 * All of the blocks before first_data_block are
  		 * overhead
  		 */
@@ -72,16 +72,13 @@ index e1a7944..3fc6bad 100644
  		sbi->s_overhead_last = overhead;
  		smp_wmb();
  		sbi->s_blocks_last = ext4_blocks_count(es);
-@@ -4486,9 +4496,11 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+@@ -4487,7 +4497,8 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
  
  	buf->f_type = EXT4_SUPER_MAGIC;
  	buf->f_bsize = sb->s_blocksize;
 -	buf->f_blocks = ext4_blocks_count(es) - sbi->s_overhead_last;
 +	buf->f_blocks = (ext4_blocks_count(es) -
 +			 EXT4_C2B(sbi, sbi->s_overhead_last));
- 	buf->f_bfree = percpu_counter_sum_positive(&sbi->s_freeblocks_counter) -
- 		       percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
-+	buf->f_bfree = buf->f_bfree << sbi->s_cluster_bits;
- 	buf->f_bavail = buf->f_bfree - ext4_r_blocks_count(es);
- 	if (buf->f_bfree < ext4_r_blocks_count(es))
- 		buf->f_bavail = 0;
+ 	buf->f_bfree = EXT4_C2B(sbi,
+ 		percpu_counter_sum_positive(&sbi->s_freeclusters_counter)) -
+ 		percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
