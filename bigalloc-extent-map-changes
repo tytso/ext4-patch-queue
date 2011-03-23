@@ -6,11 +6,11 @@ function needs to see if the cluster has already been allocated.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
- fs/ext4/extents.c |  142 +++++++++++++++++++++++++++++++++++++++++++++++------
- 1 files changed, 127 insertions(+), 15 deletions(-)
+ fs/ext4/extents.c |  144 +++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 files changed, 128 insertions(+), 16 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index f46f6e3..70c9596 100644
+index f46f6e3..8d8e400 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -1277,7 +1277,8 @@ static int ext4_ext_search_left(struct inode *inode,
@@ -182,7 +182,7 @@ index f46f6e3..70c9596 100644
  
  	ext_debug("blocks %u/%u requested for inode %lu\n",
  		  map->m_lblk, map->m_len, inode->i_ino);
-@@ -3403,9 +3488,21 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3403,9 +3488,22 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
  		goto out2;
  	}
@@ -190,10 +190,11 @@ index f46f6e3..70c9596 100644
  	/*
  	 * Okay, we need to do block allocation.
  	 */
++	newex.ee_block = cpu_to_le32(map->m_lblk);
 +	cluster_offset = map->m_lblk & (sbi->s_cluster_ratio-1);
 +	/*
 +	 * If we are doing bigalloc, check to see if the extent returned
-+	 * by ext4_find_extent() implies a cluster we can use.
++	 * by ext4_ext_find_extent() implies a cluster we can use.
 +	 */
 +	if (cluster_offset && ex &&
 +	    get_implied_cluster_alloc(sbi, map, ex)) {
@@ -204,7 +205,7 @@ index f46f6e3..70c9596 100644
  
  	/* find neighbour allocated blocks */
  	ar.lleft = map->m_lblk;
-@@ -3413,10 +3510,20 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3413,10 +3511,20 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	if (err)
  		goto out2;
  	ar.lright = map->m_lblk;
@@ -226,9 +227,11 @@ index f46f6e3..70c9596 100644
  	/*
  	 * See if request is beyond maximum number of blocks we can have in
  	 * a single extent. For an initialized extent this limit is
-@@ -3433,7 +3540,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3431,9 +3539,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 		map->m_len = EXT_UNINIT_MAX_LEN;
+ 
  	/* Check if we can really insert (m_lblk)::(m_lblk + m_len) extent */
- 	newex.ee_block = cpu_to_le32(map->m_lblk);
+-	newex.ee_block = cpu_to_le32(map->m_lblk);
  	newex.ee_len = cpu_to_le16(map->m_len);
 -	err = ext4_ext_check_overlap(inode, &newex, path);
 +	err = ext4_ext_check_overlap(sbi, inode, &newex, path);
