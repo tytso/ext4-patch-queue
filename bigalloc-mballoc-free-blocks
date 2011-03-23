@@ -13,9 +13,9 @@ used by ext4_free_blocks().
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h    |    2 +
- fs/ext4/mballoc.c |   84 ++++++++++++++++++++++++++++++++++++++--------------
+ fs/ext4/mballoc.c |   86 ++++++++++++++++++++++++++++++++++++++---------------
  fs/ext4/mballoc.h |    2 +-
- 3 files changed, 64 insertions(+), 24 deletions(-)
+ 3 files changed, 65 insertions(+), 25 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 86fa37b..3d82a49 100644
@@ -31,7 +31,7 @@ index 86fa37b..3d82a49 100644
  /*
   * ioctl commands
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index d195f19..78d57dc 100644
+index d195f19..119db3e 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -2640,11 +2640,13 @@ int ext4_mb_release(struct super_block *sb)
@@ -236,7 +236,7 @@ index d195f19..78d57dc 100644
  		ext4_mb_free_metadata(handle, &e4b, new_entry);
  	} else {
  		/* need to update group_info->bb_free and bitmap
-@@ -4659,8 +4697,8 @@ do_more:
+@@ -4659,11 +4697,11 @@ do_more:
  		 * them with group lock_held
  		 */
  		ext4_lock_group(sb, block_group);
@@ -246,7 +246,11 @@ index d195f19..78d57dc 100644
 +		mb_free_blocks(inode, &e4b, bit, count_clusters);
  	}
  
- 	ret = ext4_free_blks_count(sb, gdp) + count;
+-	ret = ext4_free_blks_count(sb, gdp) + count;
++	ret = ext4_free_blks_count(sb, gdp) + count_clusters;
+ 	ext4_free_blks_set(sb, gdp, ret);
+ 	gdp->bg_checksum = ext4_group_desc_csum(sbi, block_group, gdp);
+ 	ext4_unlock_group(sb, block_group);
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
 index 1a75182..e1d764f 100644
 --- a/fs/ext4/mballoc.h
