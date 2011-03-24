@@ -6,11 +6,11 @@ function needs to see if the cluster has already been allocated.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
- fs/ext4/extents.c |  157 +++++++++++++++++++++++++++++++++++++++++++++++------
- 1 files changed, 139 insertions(+), 18 deletions(-)
+ fs/ext4/extents.c |  159 +++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 files changed, 141 insertions(+), 18 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 1763d1a..e80f5e3 100644
+index 1763d1a..f1f80e0 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -1277,7 +1277,8 @@ static int ext4_ext_search_left(struct inode *inode,
@@ -239,7 +239,7 @@ index 1763d1a..e80f5e3 100644
  	if (err)
  		allocated = ext4_ext_get_actual_len(&newex);
  	else
-@@ -3440,7 +3547,16 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3440,7 +3547,18 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	ar.inode = inode;
  	ar.goal = ext4_ext_find_goal(inode, path, map->m_lblk);
  	ar.logical = map->m_lblk;
@@ -254,10 +254,12 @@ index 1763d1a..e80f5e3 100644
 +	 */
 +	offset = map->m_lblk & (sbi->s_cluster_ratio - 1);
 +	ar.len = EXT4_NUM_B2C(sbi, offset+allocated);
++	ar.goal -= offset;
++	ar.logical -= offset;
  	if (S_ISREG(inode->i_mode))
  		ar.flags = EXT4_MB_HINT_DATA;
  	else
-@@ -3451,9 +3567,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3451,9 +3569,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		goto out2;
  	ext_debug("allocate new block: goal %llu, found %llu/%u\n",
  		  ar.goal, newblock, allocated);
@@ -273,7 +275,7 @@ index 1763d1a..e80f5e3 100644
  	newex.ee_len = cpu_to_le16(ar.len);
  	/* Mark uninitialized */
  	if (flags & EXT4_GET_BLOCKS_UNINIT_EXT){
-@@ -3482,7 +3603,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3482,7 +3605,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		goto out2;
  
  	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);

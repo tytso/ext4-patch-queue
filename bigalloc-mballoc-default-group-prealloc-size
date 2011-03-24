@@ -7,14 +7,24 @@ that it is 2 megabytes or 32 clusters, whichever is larger.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/mballoc.c |   15 ++++++++++++++-
- 1 files changed, 14 insertions(+), 1 deletions(-)
+ fs/ext4/mballoc.c |   18 ++++++++++++++++--
+ 1 files changed, 16 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 02f099f..ad4a6eb 100644
+index 43ed826..848f6d1 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -2529,7 +2529,20 @@ int ext4_mb_init(struct super_block *sb, int needs_recovery)
+@@ -126,7 +126,8 @@
+  * list. In case of inode preallocation we follow a list of heuristics
+  * based on file size. This can be found in ext4_mb_normalize_request. If
+  * we are doing a group prealloc we try to normalize the request to
+- * sbi->s_mb_group_prealloc. Default value of s_mb_group_prealloc is
++ * sbi->s_mb_group_prealloc.  The default value of s_mb_group_prealloc is
++ * dependent on the cluster size; for non-bigalloc file systems, it is
+  * 512 blocks. This can be tuned via
+  * /sys/fs/ext4/<partition/mb_group_prealloc. The value is represented in
+  * terms of number of blocks. If we have mounted the file system with -O
+@@ -2529,7 +2530,20 @@ int ext4_mb_init(struct super_block *sb, int needs_recovery)
  	sbi->s_mb_stats = MB_DEFAULT_STATS;
  	sbi->s_mb_stream_request = MB_DEFAULT_STREAM_THRESHOLD;
  	sbi->s_mb_order2_reqs = MB_DEFAULT_ORDER2_REQS;

@@ -13,12 +13,12 @@ units of clusters.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/mballoc.c |   49 +++++++++++++++++++++++++++++--------------------
- fs/ext4/mballoc.h |    4 ++--
- 2 files changed, 31 insertions(+), 22 deletions(-)
+ fs/ext4/mballoc.c |   62 ++++++++++++++++++++++++++++++----------------------
+ fs/ext4/mballoc.h |    4 +-
+ 2 files changed, 38 insertions(+), 28 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index d195f19..202ec89 100644
+index b76ad1b..df17ff0 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -70,8 +70,8 @@
@@ -58,39 +58,30 @@ index d195f19..202ec89 100644
  	size = size << bsbits;
  	if (size < i_size_read(ac->ac_inode))
  		size = i_size_read(ac->ac_inode);
-@@ -3015,6 +3016,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
- 	rcu_read_lock();
- 	list_for_each_entry_rcu(pa, &ei->i_prealloc_list, pa_inode_list) {
- 		ext4_lblk_t pa_end;
-+		ext4_lblk_t pa_len;
- 
- 		if (pa->pa_deleted)
- 			continue;
-@@ -3024,7 +3026,8 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+@@ -3024,7 +3025,8 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
  			continue;
  		}
  
 -		pa_end = pa->pa_lstart + pa->pa_len;
-+		pa_len = EXT4_C2B(EXT4_SB(ac->ac_sb), pa->pa_len);
-+		pa_end = pa->pa_lstart + pa_len;
++		pa_end = pa->pa_lstart + EXT4_C2B(EXT4_SB(ac->ac_sb),
++						  pa->pa_len);
  
  		/* PA must not overlap original request */
  		BUG_ON(!(ac->ac_o_ex.fe_logical >= pa_end ||
-@@ -3054,9 +3057,12 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+@@ -3054,9 +3056,11 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
  	rcu_read_lock();
  	list_for_each_entry_rcu(pa, &ei->i_prealloc_list, pa_inode_list) {
  		ext4_lblk_t pa_end;
-+		ext4_lblk_t pa_len;
 +
  		spin_lock(&pa->pa_lock);
  		if (pa->pa_deleted == 0) {
 -			pa_end = pa->pa_lstart + pa->pa_len;
-+			pa_len = EXT4_C2B(EXT4_SB(ac->ac_sb), pa->pa_len);
-+			pa_end = pa->pa_lstart + pa_len;
++			pa_end = pa->pa_lstart + EXT4_C2B(EXT4_SB(ac->ac_sb),
++							  pa->pa_len);
  			BUG_ON(!(start >= pa_end || end <= pa->pa_lstart));
  		}
  		spin_unlock(&pa->pa_lock);
-@@ -3078,7 +3084,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+@@ -3078,7 +3082,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
  	/* XXX: is it better to align blocks WRT to logical
  	 * placement or satisfy big request as is */
  	ac->ac_g_ex.fe_logical = start;
@@ -99,7 +90,7 @@ index d195f19..202ec89 100644
  
  	/* define goal start in order to merge */
  	if (ar->pright && (ar->lright == (start + size))) {
-@@ -3147,14 +3153,16 @@ static void ext4_discard_allocated_blocks(struct ext4_allocation_context *ac)
+@@ -3147,14 +3151,16 @@ static void ext4_discard_allocated_blocks(struct ext4_allocation_context *ac)
  static void ext4_mb_use_inode_pa(struct ext4_allocation_context *ac,
  				struct ext4_prealloc_space *pa)
  {
@@ -118,7 +109,7 @@ index d195f19..202ec89 100644
  	ext4_get_group_no_and_offset(ac->ac_sb, start, &ac->ac_b_ex.fe_group,
  					&ac->ac_b_ex.fe_start);
  	ac->ac_b_ex.fe_len = len;
-@@ -3162,7 +3170,7 @@ static void ext4_mb_use_inode_pa(struct ext4_allocation_context *ac,
+@@ -3162,7 +3168,7 @@ static void ext4_mb_use_inode_pa(struct ext4_allocation_context *ac,
  	ac->ac_pa = pa;
  
  	BUG_ON(start < pa->pa_pstart);
@@ -127,7 +118,7 @@ index d195f19..202ec89 100644
  	BUG_ON(pa->pa_free < len);
  	pa->pa_free -= len;
  
-@@ -3228,6 +3236,7 @@ ext4_mb_check_group_pa(ext4_fsblk_t goal_block,
+@@ -3228,6 +3234,7 @@ ext4_mb_check_group_pa(ext4_fsblk_t goal_block,
  static noinline_for_stack int
  ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
  {
@@ -135,7 +126,7 @@ index d195f19..202ec89 100644
  	int order, i;
  	struct ext4_inode_info *ei = EXT4_I(ac->ac_inode);
  	struct ext4_locality_group *lg;
-@@ -3245,12 +3254,14 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
+@@ -3245,12 +3252,14 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
  		/* all fields in this condition don't change,
  		 * so we can skip locking for them */
  		if (ac->ac_o_ex.fe_logical < pa->pa_lstart ||
@@ -152,7 +143,64 @@ index d195f19..202ec89 100644
  			continue;
  
  		/* found preallocated blocks, use them */
-@@ -4051,18 +4062,15 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
+@@ -3447,6 +3456,7 @@ static noinline_for_stack int
+ ext4_mb_new_inode_pa(struct ext4_allocation_context *ac)
+ {
+ 	struct super_block *sb = ac->ac_sb;
++	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 	struct ext4_prealloc_space *pa;
+ 	struct ext4_group_info *grp;
+ 	struct ext4_inode_info *ei;
+@@ -3478,16 +3488,18 @@ ext4_mb_new_inode_pa(struct ext4_allocation_context *ac)
+ 		winl = ac->ac_o_ex.fe_logical - ac->ac_g_ex.fe_logical;
+ 
+ 		/* also, we should cover whole original request */
+-		wins = ac->ac_b_ex.fe_len - ac->ac_o_ex.fe_len;
++		wins = EXT4_C2B(sbi, ac->ac_b_ex.fe_len - ac->ac_o_ex.fe_len);
+ 
+ 		/* the smallest one defines real window */
+ 		win = min(winl, wins);
+ 
+-		offs = ac->ac_o_ex.fe_logical % ac->ac_b_ex.fe_len;
++		offs = ac->ac_o_ex.fe_logical %
++			EXT4_C2B(sbi, ac->ac_b_ex.fe_len);
+ 		if (offs && offs < win)
+ 			win = offs;
+ 
+-		ac->ac_b_ex.fe_logical = ac->ac_o_ex.fe_logical - win;
++		ac->ac_b_ex.fe_logical = ac->ac_o_ex.fe_logical -
++			EXT4_B2C(sbi, win);
+ 		BUG_ON(ac->ac_o_ex.fe_logical < ac->ac_b_ex.fe_logical);
+ 		BUG_ON(ac->ac_o_ex.fe_len > ac->ac_b_ex.fe_len);
+ 	}
+@@ -3512,7 +3524,7 @@ ext4_mb_new_inode_pa(struct ext4_allocation_context *ac)
+ 	trace_ext4_mb_new_inode_pa(ac, pa);
+ 
+ 	ext4_mb_use_inode_pa(ac, pa);
+-	atomic_add(pa->pa_free, &EXT4_SB(sb)->s_mb_preallocated);
++	atomic_add(pa->pa_free, &sbi->s_mb_preallocated);
+ 
+ 	ei = EXT4_I(ac->ac_inode);
+ 	grp = ext4_get_group_info(sb, ac->ac_b_ex.fe_group);
+@@ -3627,7 +3639,7 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+ 
+ 	BUG_ON(pa->pa_deleted == 0);
+ 	ext4_get_group_no_and_offset(sb, pa->pa_pstart, &group, &bit);
+-	grp_blk_start = pa->pa_pstart - bit;
++	grp_blk_start = pa->pa_pstart - EXT4_C2B(sbi, bit);
+ 	BUG_ON(group != e4b->bd_group && pa->pa_len != 0);
+ 	end = bit + pa->pa_len;
+ 
+@@ -3643,7 +3655,7 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+ 
+ 		trace_ext4_mballoc_discard(sb, NULL, group, bit, next - bit);
+ 		trace_ext4_mb_release_inode_pa(sb, pa->pa_inode, pa,
+-					       grp_blk_start + bit, next - bit);
++			grp_blk_start + EXT4_C2B(sbi, bit), next - bit);
+ 		mb_free_blocks(pa->pa_inode, e4b, bit, next - bit);
+ 		bit = next + 1;
+ 	}
+@@ -4051,18 +4063,15 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
  
  	/* set up allocation goals */
  	memset(ac, 0, sizeof(struct ext4_allocation_context));
@@ -174,7 +222,7 @@ index d195f19..202ec89 100644
  	ac->ac_flags = ar->flags;
  
  	/* we have to define context: we'll we work with a file or
-@@ -4214,13 +4222,14 @@ static void ext4_mb_add_n_trim(struct ext4_allocation_context *ac)
+@@ -4214,13 +4223,14 @@ static void ext4_mb_add_n_trim(struct ext4_allocation_context *ac)
   */
  static int ext4_mb_release_context(struct ext4_allocation_context *ac)
  {
