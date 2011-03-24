@@ -17,7 +17,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 68 insertions(+), 10 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index e80f5e3..e34ec14 100644
+index f1f80e0..c2d9d35 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -2130,14 +2130,39 @@ int ext4_ext_index_trans_blocks(struct inode *inode, int nrblocks, int chunk)
@@ -27,7 +27,7 @@ index e80f5e3..e34ec14 100644
 -				struct ext4_extent *ex,
 -				ext4_lblk_t from, ext4_lblk_t to)
 +			      struct ext4_extent *ex,
-+			      ext4_lblk_t *partial_cluster,
++			      ext4_fsblk_t *partial_cluster,
 +			      ext4_lblk_t from, ext4_lblk_t to)
  {
 +	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
@@ -92,7 +92,7 @@ index e80f5e3..e34ec14 100644
  static int
  ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
 -		struct ext4_ext_path *path, ext4_lblk_t start)
-+		 struct ext4_ext_path *path, ext4_lblk_t *partial_cluster,
++		 struct ext4_ext_path *path, ext4_fsblk_t *partial_cluster,
 +		 ext4_lblk_t start)
  {
 +	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
@@ -149,7 +149,7 @@ index e80f5e3..e34ec14 100644
  	struct super_block *sb = inode->i_sb;
  	int depth = ext_depth(inode);
  	struct ext4_ext_path *path;
-+	ext4_lblk_t partial_cluster = 0;
++	ext4_fsblk_t partial_cluster = 0;
  	handle_t *handle;
  	int i, err;
  
