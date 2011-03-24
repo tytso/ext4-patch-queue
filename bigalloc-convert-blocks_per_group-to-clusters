@@ -10,11 +10,11 @@ These will need to be fixed before we can relax those restrictions.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/mballoc.c |   34 +++++++++++++++++-----------------
- 1 files changed, 17 insertions(+), 17 deletions(-)
+ fs/ext4/mballoc.c |   48 ++++++++++++++++++++++++------------------------
+ 1 files changed, 24 insertions(+), 24 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 2f6f0dd..02f099f 100644
+index a5837a8..b76ad1b 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -651,7 +651,7 @@ static void ext4_mb_mark_free_simple(struct super_block *sb,
@@ -106,6 +106,15 @@ index 2f6f0dd..02f099f 100644
  		count -= overflow;
  	}
  	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
+@@ -4833,7 +4833,7 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ 	struct ext4_buddy e4b;
+ 	ext4_group_t first_group, last_group;
+ 	ext4_group_t group, ngroups = ext4_get_groups_count(sb);
+-	ext4_grpblk_t cnt = 0, first_block, last_block;
++	ext4_grpblk_t cnt = 0, first_cluster, last_cluster;
+ 	uint64_t start, len, minlen, trimmed;
+ 	ext4_fsblk_t first_data_blk =
+ 			le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
 @@ -4844,7 +4844,7 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
  	minlen = range->minlen >> sb->s_blocksize_bits;
  	trimmed = 0;
@@ -115,23 +124,46 @@ index 2f6f0dd..02f099f 100644
  		return -EINVAL;
  	if (start < first_data_blk) {
  		len -= first_data_blk - start;
-@@ -4857,7 +4857,7 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+@@ -4853,11 +4853,11 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ 
+ 	/* Determine first and last group to examine based on start and len */
+ 	ext4_get_group_no_and_offset(sb, (ext4_fsblk_t) start,
+-				     &first_group, &first_block);
++				     &first_group, &first_cluster);
  	ext4_get_group_no_and_offset(sb, (ext4_fsblk_t) (start + len),
- 				     &last_group, &last_block);
+-				     &last_group, &last_block);
++				     &last_group, &last_cluster);
  	last_group = (last_group > ngroups - 1) ? ngroups - 1 : last_group;
 -	last_block = EXT4_BLOCKS_PER_GROUP(sb);
-+	last_block = EXT4_CLUSTERS_PER_GROUP(sb);
++	last_cluster = EXT4_CLUSTERS_PER_GROUP(sb);
  
  	if (first_group > last_group)
  		return -EINVAL;
-@@ -4870,8 +4870,8 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
- 			break;
- 		}
+@@ -4876,13 +4876,13 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ 		 * change it for the last group in which case start +
+ 		 * len < EXT4_BLOCKS_PER_GROUP(sb).
+ 		 */
+-		if (first_block + len < EXT4_BLOCKS_PER_GROUP(sb))
+-			last_block = first_block + len;
+-		len -= last_block - first_block;
++		if (first_cluster + len < EXT4_CLUSTERS_PER_GROUP(sb))
++			last_cluster = first_cluster + len;
++		len -= last_cluster - first_cluster;
  
--		if (len >= EXT4_BLOCKS_PER_GROUP(sb))
--			len -= (EXT4_BLOCKS_PER_GROUP(sb) - first_block);
-+		if (len >= EXT4_CLUSTERS_PER_GROUP(sb))
-+			len -= (EXT4_CLUSTERS_PER_GROUP(sb) - first_block);
- 		else
- 			last_block = first_block + len;
+ 		if (e4b.bd_info->bb_free >= minlen) {
+-			cnt = ext4_trim_all_free(sb, &e4b, first_block,
+-						last_block, minlen);
++			cnt = ext4_trim_all_free(sb, &e4b, first_cluster,
++						last_cluster, minlen);
+ 			if (cnt < 0) {
+ 				ret = cnt;
+ 				ext4_mb_unload_buddy(&e4b);
+@@ -4891,7 +4891,7 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ 		}
+ 		ext4_mb_unload_buddy(&e4b);
+ 		trimmed += cnt;
+-		first_block = 0;
++		first_cluster = 0;
+ 	}
+ 	range->len = trimmed * sb->s_blocksize;
  

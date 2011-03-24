@@ -6,11 +6,11 @@ function needs to see if the cluster has already been allocated.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
- fs/ext4/extents.c |  144 +++++++++++++++++++++++++++++++++++++++++++++++------
- 1 files changed, 128 insertions(+), 16 deletions(-)
+ fs/ext4/extents.c |  157 +++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 files changed, 139 insertions(+), 18 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index f46f6e3..8d8e400 100644
+index 1763d1a..e80f5e3 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -1277,7 +1277,8 @@ static int ext4_ext_search_left(struct inode *inode,
@@ -77,7 +77,7 @@ index f46f6e3..8d8e400 100644
  
  	/*
  	 * get the next allocated block if the extent in the path
-@@ -3278,6 +3280,87 @@ out2:
+@@ -3277,6 +3279,87 @@ out2:
  }
  
  /*
@@ -165,24 +165,25 @@ index f46f6e3..8d8e400 100644
   * Block allocation/map/preallocation routine for extents based files
   *
   *
-@@ -3300,12 +3383,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3298,12 +3381,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 			struct ext4_map_blocks *map, int flags)
  {
  	struct ext4_ext_path *path = NULL;
- 	struct ext4_extent_header *eh;
 -	struct ext4_extent newex, *ex;
 +	struct ext4_extent newex, *ex, *ex2;
 +	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
  	ext4_fsblk_t newblock = 0;
 -	int err = 0, depth, ret;
+-	unsigned int allocated = 0;
 +	int free_on_err = 0, err = 0, depth, ret;
- 	unsigned int allocated = 0;
++	unsigned int allocated = 0, offset = 0;
  	struct ext4_allocation_request ar;
  	ext4_io_end_t *io = EXT4_I(inode)->cur_aio_dio;
 +	ext4_lblk_t cluster_offset;
  
  	ext_debug("blocks %u/%u requested for inode %lu\n",
  		  map->m_lblk, map->m_len, inode->i_ino);
-@@ -3403,9 +3488,22 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3400,9 +3485,22 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
  		goto out2;
  	}
@@ -205,7 +206,7 @@ index f46f6e3..8d8e400 100644
  
  	/* find neighbour allocated blocks */
  	ar.lleft = map->m_lblk;
-@@ -3413,10 +3511,20 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3410,10 +3508,20 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	if (err)
  		goto out2;
  	ar.lright = map->m_lblk;
@@ -227,7 +228,7 @@ index f46f6e3..8d8e400 100644
  	/*
  	 * See if request is beyond maximum number of blocks we can have in
  	 * a single extent. For an initialized extent this limit is
-@@ -3431,9 +3539,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3428,9 +3536,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		map->m_len = EXT_UNINIT_MAX_LEN;
  
  	/* Check if we can really insert (m_lblk)::(m_lblk + m_len) extent */
@@ -238,29 +239,41 @@ index f46f6e3..8d8e400 100644
  	if (err)
  		allocated = ext4_ext_get_actual_len(&newex);
  	else
-@@ -3443,7 +3550,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3440,7 +3547,16 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	ar.inode = inode;
  	ar.goal = ext4_ext_find_goal(inode, path, map->m_lblk);
  	ar.logical = map->m_lblk;
 -	ar.len = allocated;
-+	ar.len = EXT4_NUM_B2C(sbi, allocated);
++	/*
++	 * We calculate the offset from the beginning of the cluster
++	 * for the logical block number, since when we allocate a
++	 * physical cluster, the physical block should start at the
++	 * same offset from the beginning of the cluster.  This is
++	 * needed so that future calls to get_implied_cluster_alloc()
++	 * work correctly.
++	 */
++	offset = map->m_lblk & (sbi->s_cluster_ratio - 1);
++	ar.len = EXT4_NUM_B2C(sbi, offset+allocated);
  	if (S_ISREG(inode->i_mode))
  		ar.flags = EXT4_MB_HINT_DATA;
  	else
-@@ -3454,7 +3561,12 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3451,9 +3567,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		goto out2;
  	ext_debug("allocate new block: goal %llu, found %llu/%u\n",
  		  ar.goal, newblock, allocated);
 +	free_on_err = 1;
-+	ar.len = EXT4_C2B(sbi, ar.len);
++	ar.len = EXT4_C2B(sbi, ar.len) - offset;
 +	if (ar.len > allocated)
 +		ar.len = allocated;
  
 +got_allocated_blocks:
  	/* try to insert new extent into found leaf and return */
- 	ext4_ext_store_pblock(&newex, newblock);
+-	ext4_ext_store_pblock(&newex, newblock);
++	ext4_ext_store_pblock(&newex, newblock + offset);
  	newex.ee_len = cpu_to_le16(ar.len);
-@@ -3485,7 +3597,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 	/* Mark uninitialized */
+ 	if (flags & EXT4_GET_BLOCKS_UNINIT_EXT){
+@@ -3482,7 +3603,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		goto out2;
  
  	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
