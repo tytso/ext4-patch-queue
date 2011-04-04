@@ -40,20 +40,20 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 68 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 96deaf6..c91f4f0 100644
+index fdfa8ef..d14b82d 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -562,6 +562,8 @@ struct ext4_new_group_data {
- #endif
- 
+@@ -579,6 +579,8 @@ struct ext4_new_group_data {
+ /* Max physical block we can address w/o extents */
+ #define EXT4_MAX_BLOCK_FILE_PHYS	0xFFFFFFFF
  
 +#define EXT4_IOC_DEBUG_DELALLOC		_IO('f', 42)
 +
  /*
-  *  Mount options
+  * Structure of an inode on the disk
   */
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index eb3bc2f..1aae42d 100644
+index dcd0916..ba92553 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
 @@ -15,9 +15,21 @@
@@ -78,7 +78,7 @@ index eb3bc2f..1aae42d 100644
  long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  {
  	struct inode *inode = filp->f_dentry->d_inode;
-@@ -355,6 +367,59 @@ mext_out:
+@@ -386,6 +398,59 @@ mext_out:
  		return 0;
  	}
  
@@ -138,10 +138,10 @@ index eb3bc2f..1aae42d 100644
  	default:
  		return -ENOTTY;
  	}
-@@ -421,6 +486,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
- 		return err;
+@@ -453,6 +518,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
  	}
  	case EXT4_IOC_MOVE_EXT:
+ 	case FITRIM:
 +	case EXT4_IOC_DEBUG_DELALLOC:
  		break;
  	default:
