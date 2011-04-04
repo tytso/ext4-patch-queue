@@ -2,7 +2,7 @@ ext4: teach mballoc preallocation code about bigalloc clusters
 
 In most of mballoc.c, we do everything in units of clusters, since the
 block allocation bitmaps and buddy bitmaps are all denominated in
-clusters.  The once place where we do deal with absolute block numbers
+clusters.  The one place where we do deal with absolute block numbers
 is in the code that handles the preallocation regions, since in the
 case of inode-based preallocation regions, the start of the
 preallocation region can't be relative to the beginning of the group.
@@ -13,12 +13,12 @@ units of clusters.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/mballoc.c |   62 ++++++++++++++++++++++++++++++----------------------
+ fs/ext4/mballoc.c |   81 ++++++++++++++++++++++++++++++-----------------------
  fs/ext4/mballoc.h |    4 +-
- 2 files changed, 38 insertions(+), 28 deletions(-)
+ 2 files changed, 48 insertions(+), 37 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index b76ad1b..df17ff0 100644
+index b76ad1b..988b0d6 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -70,8 +70,8 @@
@@ -32,6 +32,51 @@ index b76ad1b..df17ff0 100644
   *
   * The inode preallocation space is used looking at the _logical_ start
   * block. If only the logical file block falls within the range of prealloc
+@@ -458,7 +458,7 @@ static void mb_free_blocks_double(struct inode *inode, struct ext4_buddy *e4b,
+ 			ext4_fsblk_t blocknr;
+ 
+ 			blocknr = ext4_group_first_block_no(sb, e4b->bd_group);
+-			blocknr += first + i;
++			blocknr += EXT4_C2B(EXT4_SB(sb), first + i);
+ 			ext4_grp_locked_error(sb, e4b->bd_group,
+ 					      inode ? inode->i_ino : 0,
+ 					      blocknr,
+@@ -732,7 +732,7 @@ void ext4_mb_generate_buddy(struct super_block *sb,
+ 
+ 	if (free != grp->bb_free) {
+ 		ext4_grp_locked_error(sb, group, 0, 0,
+-				      "%u blocks in bitmap, %u in gd",
++				      "%u clusters in bitmap, %u in gd",
+ 				      free, grp->bb_free);
+ 		/*
+ 		 * If we intent to continue, we consider group descritor
+@@ -1392,7 +1392,7 @@ static void mb_free_blocks(struct inode *inode, struct ext4_buddy *e4b,
+ 			ext4_fsblk_t blocknr;
+ 
+ 			blocknr = ext4_group_first_block_no(sb, e4b->bd_group);
+-			blocknr += block;
++			blocknr += EXT4_C2B(EXT4_SB(sb), block);
+ 			ext4_grp_locked_error(sb, e4b->bd_group,
+ 					      inode ? inode->i_ino : 0,
+ 					      blocknr,
+@@ -1887,7 +1887,7 @@ void ext4_mb_complex_scan_group(struct ext4_allocation_context *ac,
+ 			 * we have free blocks
+ 			 */
+ 			ext4_grp_locked_error(sb, e4b->bd_group, 0, 0,
+-					"%d free blocks as per "
++					"%d free clusters as per "
+ 					"group info. But bitmap says 0",
+ 					free);
+ 			break;
+@@ -1897,7 +1897,7 @@ void ext4_mb_complex_scan_group(struct ext4_allocation_context *ac,
+ 		BUG_ON(ex.fe_len <= 0);
+ 		if (free < ex.fe_len) {
+ 			ext4_grp_locked_error(sb, e4b->bd_group, 0, 0,
+-					"%d free blocks as per "
++					"%d free clusters as per "
+ 					"group info. But got %d blocks",
+ 					free, ex.fe_len);
+ 			/*
 @@ -2826,7 +2826,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
  
  	block = ext4_grp_offs_to_block(sb, &ac->ac_b_ex);
@@ -200,6 +245,15 @@ index b76ad1b..df17ff0 100644
  		mb_free_blocks(pa->pa_inode, e4b, bit, next - bit);
  		bit = next + 1;
  	}
+@@ -3990,7 +4002,7 @@ static void ext4_mb_group_or_file(struct ext4_allocation_context *ac)
+ 	if (unlikely(ac->ac_flags & EXT4_MB_HINT_GOAL_ONLY))
+ 		return;
+ 
+-	size = ac->ac_o_ex.fe_logical + ac->ac_o_ex.fe_len;
++	size = ac->ac_o_ex.fe_logical + EXT4_C2B(sbi, ac->ac_o_ex.fe_len);
+ 	isize = (i_size_read(ac->ac_inode) + ac->ac_sb->s_blocksize - 1)
+ 		>> bsbits;
+ 
 @@ -4051,18 +4063,15 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
  
  	/* set up allocation goals */
@@ -239,6 +293,34 @@ index b76ad1b..df17ff0 100644
  			pa->pa_free -= ac->ac_b_ex.fe_len;
  			pa->pa_len -= ac->ac_b_ex.fe_len;
  			spin_unlock(&pa->pa_lock);
+@@ -4313,7 +4323,8 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+ 			return 0;
+ 		}
+ 		reserv_blks = ar->len;
+-		while (ar->len && dquot_alloc_block(ar->inode, ar->len)) {
++		while (ar->len && dquot_alloc_block(ar->inode,
++						    EXT4_C2B(sbi, ar->len))) {
+ 			ar->flags |= EXT4_MB_HINT_NOPREALLOC;
+ 			ar->len--;
+ 		}
+@@ -4391,7 +4402,7 @@ out:
+ 	if (ac)
+ 		kmem_cache_free(ext4_ac_cachep, ac);
+ 	if (inquota && ar->len < inquota)
+-		dquot_free_block(ar->inode, inquota - ar->len);
++		dquot_free_block(ar->inode, EXT4_C2B(sbi, inquota - ar->len));
+ 	if (!ar->len) {
+ 		if (!ext4_test_inode_state(ar->inode,
+ 					   EXT4_STATE_DELALLOC_RESERVED))
+@@ -4697,7 +4708,7 @@ do_more:
+ 	ext4_mark_super_dirty(sb);
+ error_return:
+ 	if (freed)
+-		dquot_free_block(inode, freed);
++		dquot_free_block(inode, EXT4_C2B(sbi, freed));
+ 	brelse(bitmap_bh);
+ 	ext4_std_error(sb, err);
+ 	return;
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
 index 1a75182..6990fb2 100644
 --- a/fs/ext4/mballoc.h

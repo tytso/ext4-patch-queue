@@ -1,4 +1,4 @@
-ext4: convert s_freeblocks_counter to s_freecounters_counter
+ext4: convert s_freeblocks_counter to s_freeclusters_counter
 
 Convert the percpu counter s_freeblocks_counter in struct
 ext4_super_info to be s_freeclusters_counter.
@@ -76,7 +76,7 @@ index 4d06f05..ce4e520 100644
  	do_div(avefreeb, ngroups);
  	ndirs = percpu_counter_read_positive(&sbi->s_dirs_counter);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 33ad7b2..22427f4 100644
+index 7e5ad10..9f9c7f0 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -2211,7 +2211,8 @@ static void ext4_print_free_blocks(struct inode *inode)
@@ -89,7 +89,7 @@ index 33ad7b2..22427f4 100644
  	printk(KERN_CRIT "dirty_blocks=%lld\n",
  	       (long long) percpu_counter_sum(&sbi->s_dirtyblocks_counter));
  	printk(KERN_CRIT "Block reservation details\n");
-@@ -3087,7 +3088,8 @@ static int ext4_nonda_switch(struct super_block *sb)
+@@ -3086,7 +3087,8 @@ static int ext4_nonda_switch(struct super_block *sb)
  	 * Delalloc need an accurate free block accounting. So switch
  	 * to non delalloc when we are near to error range.
  	 */
@@ -100,7 +100,7 @@ index 33ad7b2..22427f4 100644
  	if (2 * free_blocks < 3 * dirty_blocks ||
  		free_blocks < (dirty_blocks + EXT4_FREEBLOCKS_WATERMARK)) {
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 78d57dc..1dcb0ea 100644
+index 82a181e..e7eca4d 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -2868,7 +2868,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
@@ -112,7 +112,7 @@ index 78d57dc..1dcb0ea 100644
  	/*
  	 * Now reduce the dirty block count also. Should not go negative
  	 */
-@@ -4705,7 +4705,7 @@ do_more:
+@@ -4716,7 +4716,7 @@ do_more:
  	ext4_free_blks_set(sb, gdp, ret);
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, block_group, gdp);
  	ext4_unlock_group(sb, block_group);
