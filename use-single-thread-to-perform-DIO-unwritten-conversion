@@ -1,0 +1,28 @@
+From: Mingming Cao <cmm@us.ibm.com>
+
+ext4: Use single thread to perform DIO unwritten convertion
+
+While running ext4 testing on multiple core, we found there are per
+cpu ext4-dio-unwritten threads processing conversion from unwritten
+extents to written for IOs completed from async direct IO patch.  Per
+filesystem is enough, we don't need per cpu threads to work on
+conversion.
+
+Signed-off-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/super.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index f6a318f..c76a6a5 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3509,7 +3509,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	percpu_counter_set(&sbi->s_dirtyblocks_counter, 0);
+ 
+ no_journal:
+-	EXT4_SB(sb)->dio_unwritten_wq = create_workqueue("ext4-dio-unwritten");
++	EXT4_SB(sb)->dio_unwritten_wq = create_singlethread_workqueue("ext4-dio-unwritten");
+ 	if (!EXT4_SB(sb)->dio_unwritten_wq) {
+ 		printk(KERN_ERR "EXT4-fs: failed to create DIO workqueue\n");
+ 		goto failed_mount_wq;
