@@ -2,11 +2,12 @@ ext4: remove unnecessary [cm]time update of quota file
 
 From: Jan Kara <jack@suse.cz>
 
-It is not necessary to update [cm]time of quota file on each quota file
-write and it wastes journal space and IO throughput with inode writes. So
-just remove the updating from ext4_quota_write() and only update times when
-quotas are being turned off. Userspace cannot get anything reliable from
-quota files while they are used by the kernel anyway.
+It is not necessary to update [cm]time of quota file on each quota
+file write and it wastes journal space and IO throughput with inode
+writes. So just remove the updating from ext4_quota_write() and only
+update times when quotas are being turned off. Userspace cannot get
+anything reliable from quota files while they are used by the kernel
+anyway.
 
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
@@ -16,7 +17,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 16 insertions(+), 4 deletions(-)
 
 diff --git a/fs/ext4/ext4_jbd2.h b/fs/ext4/ext4_jbd2.h
-index d8b992e..3163583 100644
+index e25e99b..d0f5353 100644
 --- a/fs/ext4/ext4_jbd2.h
 +++ b/fs/ext4/ext4_jbd2.h
 @@ -86,8 +86,8 @@
@@ -31,10 +32,10 @@ index d8b992e..3163583 100644
   * but inode, sb and group updates are done only once */
  #define EXT4_QUOTA_INIT_BLOCKS(sb) (test_opt(sb, QUOTA) ? (DQUOT_INIT_ALLOC*\
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 1f0acd4..baee1b4 100644
+index 22546ad..35ff9fe 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -4608,11 +4608,24 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
+@@ -4614,11 +4614,24 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
  
  static int ext4_quota_off(struct super_block *sb, int type)
  {
@@ -59,7 +60,7 @@ index 1f0acd4..baee1b4 100644
  	return dquot_quota_off(sb, type);
  }
  
-@@ -4708,9 +4721,8 @@ out:
+@@ -4714,9 +4727,8 @@ out:
  	if (inode->i_size < off + len) {
  		i_size_write(inode, off + len);
  		EXT4_I(inode)->i_disksize = inode->i_size;
@@ -70,6 +71,3 @@ index 1f0acd4..baee1b4 100644
  	mutex_unlock(&inode->i_mutex);
  	return len;
  }
--- 
-1.7.1
-
