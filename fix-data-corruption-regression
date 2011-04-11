@@ -1,0 +1,26 @@
+ext4: fix data corruption regression by reverting commit 6de9843dab3f
+
+Revert commit 6de9843dab3f2a1d4d66d80aa9e5782f80977d20, since it
+caused a data corruption regression with BitTorrent downloads.  Thanks
+to Damien for discovering and bisecting to find the problem commit.
+
+https://bugzilla.kernel.org/show_bug.cgi?id=32972
+
+Reported-by: damien@grassart.com
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 5560f78..9c8cf81 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2502,6 +2502,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+ 		 * for partial write.
+ 		 */
+ 		set_buffer_new(bh);
++		set_buffer_mapped(bh);
+ 	}
+ 	return 0;
+ }
