@@ -13,11 +13,11 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/balloc.c  |   12 ++++++------
  fs/ext4/ext4.h    |    9 +++++----
- fs/ext4/ialloc.c  |   12 ++++++------
+ fs/ext4/ialloc.c  |   14 +++++++-------
  fs/ext4/mballoc.c |   18 +++++++++---------
  fs/ext4/resize.c  |    2 +-
  fs/ext4/super.c   |   10 +++++-----
- 6 files changed, 32 insertions(+), 31 deletions(-)
+ 6 files changed, 33 insertions(+), 32 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
 index 2bd4184..fdc437c 100644
@@ -71,7 +71,7 @@ index 2bd4184..fdc437c 100644
  
  	return desc_count;
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index e554eaa..d147732 100644
+index f9169d3..f70190e 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1836,8 +1836,8 @@ extern ext4_fsblk_t ext4_inode_bitmap(struct super_block *sb,
@@ -98,7 +98,7 @@ index e554eaa..d147732 100644
  				struct ext4_group_desc *bg, __u32 count);
  extern void ext4_used_dirs_set(struct super_block *sb,
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index f37bfaf..46662c7 100644
+index a22ad3f..23698a6 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -78,7 +78,7 @@ static unsigned ext4_init_inode_bitmap(struct super_block *sb,
@@ -148,8 +148,17 @@ index f37bfaf..46662c7 100644
  			return 0;
  	}
  
+@@ -960,7 +960,7 @@ got:
+ 		/* recheck and clear flag under lock if we still need to */
+ 		if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
+ 			gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
+-			ext4_free_blks_set(sb, gdp,
++			ext4_free_group_clusters_set(sb, gdp,
+ 				ext4_free_blocks_after_init(sb, group, gdp));
+ 			gdp->bg_checksum = ext4_group_desc_csum(sbi, group,
+ 								gdp);
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 6f19290..8a8b38c 100644
+index b2d800e..1400750 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -2312,7 +2312,7 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
@@ -188,7 +197,7 @@ index 6f19290..8a8b38c 100644
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, ac->ac_b_ex.fe_group, gdp);
  
  	ext4_unlock_group(sb, ac->ac_b_ex.fe_group);
-@@ -4725,8 +4725,8 @@ do_more:
+@@ -4726,8 +4726,8 @@ do_more:
  		mb_free_blocks(inode, &e4b, bit, count_clusters);
  	}
  
@@ -213,7 +222,7 @@ index cef49d3..14b66ba 100644
  	gdp->bg_flags = cpu_to_le16(EXT4_BG_INODE_ZEROED);
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, input->group, gdp);
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 2bac4c2..71a269f 100644
+index c8a8bf9..537e680 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -117,8 +117,8 @@ ext4_fsblk_t ext4_inode_table(struct super_block *sb,
@@ -238,7 +247,7 @@ index 2bac4c2..71a269f 100644
  {
  	bg->bg_free_blocks_count_lo = cpu_to_le16((__u16)count);
  	if (EXT4_DESC_SIZE(sb) >= EXT4_MIN_DESC_SIZE_64BIT)
-@@ -1959,7 +1959,7 @@ static int ext4_fill_flex_info(struct super_block *sb)
+@@ -1976,7 +1976,7 @@ static int ext4_fill_flex_info(struct super_block *sb)
  		flex_group = ext4_flex_group(sbi, i);
  		atomic_add(ext4_free_inodes_count(sb, gdp),
  			   &sbi->s_flex_groups[flex_group].free_inodes);
