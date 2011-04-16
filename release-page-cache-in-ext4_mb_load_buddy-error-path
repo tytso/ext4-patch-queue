@@ -1,0 +1,29 @@
+ext4: release page cache in ext4_mb_load_buddy error path
+
+From: Yang Ruirui <ruirui.r.yang@tieto.com>
+
+Add missing page_cache_release in the error path of ext4_mb_load_buddy
+
+Signed-off-by: Yang Ruirui <ruirui.r.yang@tieto.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@kernel.org
+---
+ fs/ext4/mballoc.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- linux-2.6.orig/fs/ext4/mballoc.c	2011-04-14 14:04:48.000000000 +0800
++++ linux-2.6/fs/ext4/mballoc.c	2011-04-14 14:33:28.702958245 +0800
+@@ -1273,6 +1273,8 @@ repeat_load_buddy:
+ 	return 0;
+ 
+ err:
++	if (page)
++		page_cache_release(page);
+ 	if (e4b->bd_bitmap_page)
+ 		page_cache_release(e4b->bd_bitmap_page);
+ 	if (e4b->bd_buddy_page)
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
