@@ -1,0 +1,60 @@
+jbd2: fix fsync() tid wraparound bug
+
+If an application program does not make any changes to the indirect
+blocks or extent tree, i_datasync_tid will not get updated.  If there
+are enough commits (i.e., 2**31) such that tid_geq()'s calculations
+wrap, and there isn't a currently active transaction at the time of
+the fdatasync() call, this can end up triggering a BUG_ON in
+fs/jbd2/commit.c:
+
+	J_ASSERT(journal->j_running_transaction != NULL);
+
+It's pretty rare that this can happen, since it requires the use of
+fdatasync() plus *very* frequent and excessive use of fsync().  But
+with the right workload, it can.
+
+We fix this by replacing the use of tid_geq() with an equality test,
+since there's only one valid transaction id that we is valid for us to
+wait until it is commited: namely, the currently running transaction
+(if it exists).
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/journal.c |   16 +++++++++++++---
+ 1 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index e0ec3db..8c10004 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -479,9 +479,12 @@ int __jbd2_log_space_left(journal_t *journal)
+ int __jbd2_log_start_commit(journal_t *journal, tid_t target)
+ {
+ 	/*
+-	 * Are we already doing a recent enough commit?
++	 * The only transaction we can possibly wait upon is the
++	 * currently running transaction (if it exists).  Otherwise,
++	 * the target tid must be an old one.
+ 	 */
+-	if (!tid_geq(journal->j_commit_request, target)) {
++	if (journal->j_running_transaction &&
++	    journal->j_running_transaction->t_tid == target) {
+ 		/*
+ 		 * We want a new commit: OK, mark the request and wakeup the
+ 		 * commit thread.  We do _not_ do the commit ourselves.
+@@ -493,7 +496,14 @@ int __jbd2_log_start_commit(journal_t *journal, tid_t target)
+ 			  journal->j_commit_sequence);
+ 		wake_up(&journal->j_wait_commit);
+ 		return 1;
+-	}
++	} else if (!tid_geq(journal->j_commit_request, target))
++		/* This should never happen, but if it does, preserve
++		   the evidence before kjournald goes into a loop and
++		   increments j_commit_sequence beyond all recognition. */
++		WARN(1, "jbd: bad log_start_commit: %u %u %u %u\n",
++		     journal->j_commit_request, journal->j_commit_sequence,
++		     target, journal->j_running_transaction ? 
++		     journal->j_running_transaction->t_tid : 0);
+ 	return 0;
+ }
+ 
