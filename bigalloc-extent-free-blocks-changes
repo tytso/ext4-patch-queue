@@ -13,14 +13,14 @@ hits mainline.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents.c |   78 ++++++++++++++++++++++++++++++++++++++++++++++-------
- 1 files changed, 68 insertions(+), 10 deletions(-)
+ fs/ext4/extents.c |   82 ++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 files changed, 72 insertions(+), 10 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index f1f80e0..c2d9d35 100644
+index 2730508..a051adf 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2130,14 +2130,39 @@ int ext4_ext_index_trans_blocks(struct inode *inode, int nrblocks, int chunk)
+@@ -2156,14 +2156,39 @@ int ext4_ext_index_trans_blocks(struct inode *inode, int nrblocks, int chunk)
  }
  
  static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
@@ -62,7 +62,7 @@ index f1f80e0..c2d9d35 100644
  #ifdef EXTENTS_STATS
  	{
  		struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
-@@ -2157,12 +2182,20 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -2183,12 +2208,24 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  	    && to == le32_to_cpu(ex->ee_block) + ee_len - 1) {
  		/* tail removal */
  		ext4_lblk_t num;
@@ -77,17 +77,21 @@ index f1f80e0..c2d9d35 100644
 +		ext4_free_blocks(handle, inode, NULL, pblk, num, flags);
 +		/*
 +		 * If the block range to be freed didn't start at the
-+		 * beginning of a cluster, save the partial cluster
-+		 * here.
++		 * beginning of a cluster, and we removed the entire
++		 * extent, save the partial cluster here, since we
++		 * might need to delete if we determine that the
++		 * truncate operation has removed all of the blocks in
++		 * the cluster.
 +		 */
-+		if (pblk & (sbi->s_cluster_ratio - 1))
++		if (pblk & (sbi->s_cluster_ratio - 1) &&
++		    (ee_len == num))
 +			*partial_cluster = EXT4_B2C(sbi, pblk);
 +		else
 +			*partial_cluster = 0;
  	} else if (from == le32_to_cpu(ex->ee_block)
  		   && to <= le32_to_cpu(ex->ee_block) + ee_len - 1) {
  		printk(KERN_INFO "strange request: removal %u-%u from %u:%u\n",
-@@ -2177,8 +2210,10 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -2203,8 +2240,10 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  
  static int
  ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
@@ -99,7 +103,7 @@ index f1f80e0..c2d9d35 100644
  	int err = 0, correct_index = 0;
  	int depth = ext_depth(inode), credits;
  	struct ext4_extent_header *eh;
-@@ -2265,7 +2300,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2291,7 +2330,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  		if (err)
  			goto out;
  
@@ -109,7 +113,7 @@ index f1f80e0..c2d9d35 100644
  		if (err)
  			goto out;
  
-@@ -2273,7 +2309,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2299,7 +2339,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  			/* this extent is removed; mark slot entirely unused */
  			ext4_ext_store_pblock(ex, 0);
  			le16_add_cpu(&eh->eh_entries, -1);
@@ -119,7 +123,7 @@ index f1f80e0..c2d9d35 100644
  
  		ex->ee_block = cpu_to_le32(block);
  		ex->ee_len = cpu_to_le16(num);
-@@ -2298,6 +2335,25 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2324,6 +2365,25 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  	if (correct_index && eh->eh_entries)
  		err = ext4_ext_correct_indexes(handle, inode, path);
  
@@ -145,7 +149,7 @@ index f1f80e0..c2d9d35 100644
  	/* if this leaf is free, then we should
  	 * remove it from index block above */
  	if (err == 0 && eh->eh_entries == 0 && path[depth].p_bh != NULL)
-@@ -2333,6 +2389,7 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
+@@ -2359,6 +2419,7 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
  	struct super_block *sb = inode->i_sb;
  	int depth = ext_depth(inode);
  	struct ext4_ext_path *path;
@@ -153,7 +157,7 @@ index f1f80e0..c2d9d35 100644
  	handle_t *handle;
  	int i, err;
  
-@@ -2367,7 +2424,8 @@ again:
+@@ -2393,7 +2454,8 @@ again:
  	while (i >= 0 && err == 0) {
  		if (i == depth) {
  			/* this is leaf block */
