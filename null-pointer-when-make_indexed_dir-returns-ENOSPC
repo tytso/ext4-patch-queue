@@ -1,0 +1,27 @@
+ext4: don't dereference null pointer when make_indexed_dir() fails
+
+From: Allison Henderson <achender@linux.vnet.ibm.com>
+
+Fix for a null pointer bug found while running punch hole tests
+
+Signed-off-by: Allison Henderson <achender@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+:100644 100644 3c7a06e... 3302a6c... M	fs/ext4/namei.c
+ fs/ext4/namei.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 3c7a06e..3302a6c 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1422,7 +1422,8 @@ static int make_indexed_dir(handle_t *handle, struct dentry *dentry,
+ 		 */
+ 		ext4_mark_inode_dirty(handle, dir);
+ 		ext4_handle_dirty_metadata(handle, dir, frame->bh);
+-		ext4_handle_dirty_metadata(handle, dir, bh);
++		if (bh)
++			ext4_handle_dirty_metadata(handle, dir, bh);
+ 		dx_release(frames);
+ 		return retval;
+ 	}
