@@ -12,10 +12,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  4 files changed, 14 insertions(+), 12 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index fdc437c..68e80eb 100644
+index a5fcd1b..ba302f8 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
-@@ -648,12 +648,12 @@ ext4_fsblk_t ext4_new_meta_blocks(handle_t *handle, struct inode *inode,
+@@ -518,12 +518,12 @@ ext4_fsblk_t ext4_new_meta_blocks(handle_t *handle, struct inode *inode,
  }
  
  /**
@@ -31,7 +31,7 @@ index fdc437c..68e80eb 100644
  {
  	ext4_fsblk_t desc_count;
  	struct ext4_group_desc *gdp;
-@@ -686,8 +686,9 @@ ext4_fsblk_t ext4_count_free_blocks(struct super_block *sb)
+@@ -556,8 +556,9 @@ ext4_fsblk_t ext4_count_free_blocks(struct super_block *sb)
  		bitmap_count += x;
  	}
  	brelse(bitmap_bh);
@@ -44,20 +44,20 @@ index fdc437c..68e80eb 100644
  	return bitmap_count;
  #else
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index d147732..97caf3c 100644
+index 6e4d5aa..73b4249 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1664,7 +1664,7 @@ extern ext4_fsblk_t ext4_new_meta_blocks(handle_t *handle, struct inode *inode,
+@@ -1678,7 +1678,7 @@ extern unsigned long ext4_bg_num_gdb(struct super_block *sb,
+ extern ext4_fsblk_t ext4_new_meta_blocks(handle_t *handle, struct inode *inode,
+ 			ext4_fsblk_t goal, unsigned long *count, int *errp);
  extern int ext4_claim_free_blocks(struct ext4_sb_info *sbi, s64 nblocks);
- extern void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
- 				ext4_fsblk_t block, unsigned long count);
 -extern ext4_fsblk_t ext4_count_free_blocks(struct super_block *);
 +extern ext4_fsblk_t ext4_count_free_clusters(struct super_block *);
  extern void ext4_check_blocks_bitmap(struct super_block *);
  extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
  						    ext4_group_t block_group,
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 9f9c7f0..87cd9d0 100644
+index c7ef84d..0fa03ff 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -2208,7 +2208,8 @@ static void ext4_print_free_blocks(struct inode *inode)
@@ -81,10 +81,10 @@ index 9f9c7f0..87cd9d0 100644
  			goto submit_io;
  		}
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 71a269f..fad8f48 100644
+index 28a9b4b..300b62d 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -2078,7 +2078,8 @@ static int ext4_check_descriptors(struct super_block *sb,
+@@ -2109,7 +2109,8 @@ static int ext4_check_descriptors(struct super_block *sb,
  	if (NULL != first_not_zeroed)
  		*first_not_zeroed = grp;
  
@@ -94,8 +94,8 @@ index 71a269f..fad8f48 100644
  	sbi->s_es->s_free_inodes_count =cpu_to_le32(ext4_count_free_inodes(sb));
  	return 1;
  }
-@@ -3435,7 +3436,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
- 	spin_lock_init(&sbi->s_next_gen_lock);
+@@ -3491,7 +3492,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	sbi->s_err_report.data = (unsigned long) sb;
  
  	err = percpu_counter_init(&sbi->s_freeclusters_counter,
 -			ext4_count_free_blocks(sb));
@@ -103,7 +103,7 @@ index 71a269f..fad8f48 100644
  	if (!err) {
  		err = percpu_counter_init(&sbi->s_freeinodes_counter,
  				ext4_count_free_inodes(sb));
-@@ -3555,7 +3556,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -3613,7 +3614,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	 * need to update the global counters.
  	 */
  	percpu_counter_set(&sbi->s_freeclusters_counter,
