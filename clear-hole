@@ -1,0 +1,90 @@
+ext4: add new function ext4_block_zero_page_range()
+
+From: Allison Henderson <achender@linux.vnet.ibm.com>
+
+This patch modifies the existing ext4_block_truncate_page() function
+which was used by the truncate code path, and which zeroes out block
+unaligned data, by adding a new length parameter, and renames it to
+ext4_block_zero_page_rage().  This function can now be used to zero out the
+head of a block, the tail of a block, or the middle
+of a block.
+
+The ext4_block_truncate_page() function is now a wrapper to
+ext4_block_zero_page_range().
+
+[ext4 punch hole patch series 2/5 v7] 
+
+Signed-off-by: Allison Henderson <achender@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/ext4.h  |    2 ++
+ fs/ext4/inode.c |   33 +++++++++++++++++++++++++++++++--
+ 2 files changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index dd5002c..49964c7 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1760,6 +1760,8 @@ extern int ext4_writepage_trans_blocks(struct inode *);
+ extern int ext4_chunk_trans_blocks(struct inode *, int nrblocks);
+ extern int ext4_block_truncate_page(handle_t *handle,
+ 		struct address_space *mapping, loff_t from);
++extern int ext4_block_zero_page_range(handle_t *handle,
++		struct address_space *mapping, loff_t from, loff_t length);
+ extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf);
+ extern qsize_t *ext4_get_reserved_space(struct inode *inode);
+ extern void ext4_da_update_reserve_space(struct inode *inode,
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index e665994..8287f6e 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3916,9 +3916,30 @@ void ext4_set_aops(struct inode *inode)
+ int ext4_block_truncate_page(handle_t *handle,
+ 		struct address_space *mapping, loff_t from)
+ {
++	unsigned offset = from & (PAGE_CACHE_SIZE-1);
++	unsigned length;
++	unsigned blocksize;
++	struct inode *inode = mapping->host;
++
++	blocksize = inode->i_sb->s_blocksize;
++	length = blocksize - (offset & (blocksize - 1));
++
++	return ext4_block_zero_page_range(handle, mapping, from, length);
++}
++
++/*
++ * ext4_block_zero_page_range() zeros out a mapping of length 'length'
++ * starting from file offset 'from'.  The range to be zero'd must
++ * be contained with in one block.  If the specified range exceeds
++ * the end of the block it will be shortened to end of the block
++ * that cooresponds to 'from'
++ */
++int ext4_block_zero_page_range(handle_t *handle,
++		struct address_space *mapping, loff_t from, loff_t length)
++{
+ 	ext4_fsblk_t index = from >> PAGE_CACHE_SHIFT;
+ 	unsigned offset = from & (PAGE_CACHE_SIZE-1);
+-	unsigned blocksize, length, pos;
++	unsigned blocksize, max, pos;
+ 	ext4_lblk_t iblock;
+ 	struct inode *inode = mapping->host;
+ 	struct buffer_head *bh;
+@@ -3931,7 +3952,15 @@ int ext4_block_truncate_page(handle_t *handle,
+ 		return -EINVAL;
+ 
+ 	blocksize = inode->i_sb->s_blocksize;
+-	length = blocksize - (offset & (blocksize - 1));
++	max = blocksize - (offset & (blocksize - 1));
++
++	/*
++	 * correct length if it does not fall between
++	 * 'from' and the end of the block
++	 */
++	if (length > max || length < 0)
++		length = max;
++
+ 	iblock = index << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
+ 
+ 	if (!page_has_buffers(page))
