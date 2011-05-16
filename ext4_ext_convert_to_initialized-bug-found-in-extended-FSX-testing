@@ -1,0 +1,59 @@
+ext4: ext4_ext_convert_to_initialized bug found in extended FSX testing
+
+From: Allison Henderson <achender@linux.vnet.ibm.com>
+
+This patch addresses bugs found while testing punch hole 
+with the fsx test.  The patch corrects the number of blocks
+that are zeroed out while splitting an extent, and also corrects
+the return value to return the number of blocks split out, instead
+of the number of blocks zeroed out.
+
+This patch has been tested in addition to the following patches: 
+[Ext4 punch hole v7]
+[XFS Tests Punch Hole 1/1 v2] Add Punch Hole Testing to FSX
+
+The test ran successfully for 24 hours.
+
+Signed-off-by: Allison Henderson <achender@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+:100644 100644 e363f21... 5f243da... M	fs/ext4/extents.c
+ fs/ext4/extents.c |    9 ++++-----
+ 1 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index e363f21..5f243da 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2818,8 +2818,8 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 		    (EXT4_EXT_MAY_ZEROOUT & split_flag)) {
+ 			/* case 3 */
+ 			zero_ex.ee_block =
+-					 cpu_to_le32(map->m_lblk + map->m_len);
+-			zero_ex.ee_len = cpu_to_le16(allocated - map->m_len);
++					 cpu_to_le32(map->m_lblk);
++			zero_ex.ee_len = cpu_to_le16(allocated);
+ 			ext4_ext_store_pblock(&zero_ex,
+ 				ext4_ext_pblock(ex) + map->m_lblk - ee_block);
+ 			err = ext4_ext_zeroout(inode, &zero_ex);
+@@ -2842,10 +2842,9 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 					goto out;
+ 			}
+ 
+-			allocated = map->m_lblk - ee_block + map->m_len;
+-
+ 			split_map.m_lblk = ee_block;
+-			split_map.m_len = allocated;
++			split_map.m_len = map->m_lblk - ee_block + map->m_len;
++			allocated = map->m_len;
+ 		}
+ 	}
+ 
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
