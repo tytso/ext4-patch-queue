@@ -1,0 +1,45 @@
+ext4: fix possible use-after-free in ext4_remove_li_request()
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+We need to take reference to the s_li_request after we take a mutex,
+because it might be freed since then, hence result in accessing old
+already freed memory. Also we should protect the whole
+ext4_remove_li_request() because ext4_li_info might be in the process of
+being freed in ext4_lazyinit_thread().
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c |   10 ++++++----
+ 1 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index c379af6..6a8e48f 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -2721,14 +2721,16 @@ static void ext4_remove_li_request(struct ext4_li_request *elr)
+ 
+ static void ext4_unregister_li_request(struct super_block *sb)
+ {
+-	struct ext4_li_request *elr = EXT4_SB(sb)->s_li_request;
+-
+-	if (!ext4_li_info)
++	mutex_lock(&ext4_li_mtx);
++	if (!ext4_li_info) {
++		mutex_unlock(&ext4_li_mtx);
+ 		return;
++	}
+ 
+ 	mutex_lock(&ext4_li_info->li_list_mtx);
+-	ext4_remove_li_request(elr);
++	ext4_remove_li_request(EXT4_SB(sb)->s_li_request);
+ 	mutex_unlock(&ext4_li_info->li_list_mtx);
++	mutex_unlock(&ext4_li_mtx);
+ }
+ 
+ static struct task_struct *ext4_lazyinit_task;
+-- 
+1.7.4.4
+
+
