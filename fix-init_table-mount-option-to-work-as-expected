@@ -1,25 +1,26 @@
-ext4: fix init_itable=n mount option to work as expected for n=0
+ext4: fix the mount option "init_itable=n" to work as expected for n=0
 
 From: Lukas Czerner <lczerner@redhat.com>
 
-For some reason, when we set mount option init_itable=0 it behaves as
-we would set init_itable=20 which is not right at all. Basically when we
-set it to zero we are saying to lazyinit thread not to wait between
-zeroing the inode table (except of cond_resched()) so this commit fixes
-that and removes the unnecessary condition. The 'n' should be also
-properly used on remount.
+For some reason, when we set the mount option "init_itable=0" it
+behaves as we would set init_itable=20 which is not right at all.
+Basically when we set it to zero we are saying to lazyinit thread not
+to wait between zeroing the inode table (except of cond_resched()) so
+this commit fixes that and removes the unnecessary condition.  The 'n'
+should be also properly used on remount.
 
 When the n is not set at all, it means that the default miltiplier
 EXT4_DEF_LI_WAIT_MULT is set instead.
 
 Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Reported-by: Eric Sandeen <sandeen@redhat.com>
 ---
  fs/ext4/super.c |   23 ++++++++++++++++-------
  1 files changed, 16 insertions(+), 7 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 41cd434..e1929c0 100644
+index d7756bd..fd51a4a 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1112,7 +1112,7 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
