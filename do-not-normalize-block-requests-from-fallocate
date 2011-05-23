@@ -1,0 +1,65 @@
+ext4: do not normalize block requests from fallocate()
+
+From: Vivek Haldar <haldar@google.com>
+
+Currently, an fallocate request of size slightly larger than a power of
+2 is turned into two block requests, each a power of 2, with the extra
+blocks pre-allocated for future use. When an application calls
+fallocate, it already has an idea about how large the file may grow so
+there is usually little benefit to reserve extra blocks on the
+preallocation list. This reduces disk fragmentation.
+
+Tested: fsstress. Also verified manually that fallocat'ed files are
+contiguously laid out with this change (whereas without it they begin at
+power-of-2 boundaries, leaving blocks in between). CPU usage of
+fallocate is not appreciably higher.  In a tight fallocate loop, CPU
+usage hovers between 5%-8% with this change, and 5%-7% without it.
+
+Using a simulated file system aging program which the file system to
+70%, the percentage of free extents larger than 8MB (as measured by
+e2freefrag) increased from 38.8% without this change, to 69.4% with
+this change.
+
+Signed-off-by: Vivek Haldar <haldar@google.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h    |    2 ++
+ fs/ext4/extents.c |    5 ++++-
+ 2 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index d66549d..ba71d46 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -515,6 +515,8 @@ struct ext4_new_group_data {
+ 					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
+ 	/* Punch out blocks of an extent */
+ #define EXT4_GET_BLOCKS_PUNCH_OUT_EXT		0x0020
++	/* Don't normalize allocation size (used for fallocate) */
++#define EXT4_GET_BLOCKS_NO_NORMALIZE		0x0040
+ 
+ /*
+  * Flags used by ext4_free_blocks
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index ee48132..9275e63 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -3571,6 +3571,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 	else
+ 		/* disable in-core preallocation for non-regular files */
+ 		ar.flags = 0;
++	if (flags & EXT4_GET_BLOCKS_NO_NORMALIZE)
++		ar.flags |= EXT4_MB_HINT_NOPREALLOC;
+ 	newblock = ext4_mb_new_blocks(handle, &ar, &err);
+ 	if (!newblock)
+ 		goto out2;
+@@ -3823,7 +3825,8 @@ retry:
+ 			break;
+ 		}
+ 		ret = ext4_map_blocks(handle, inode, &map,
+-				      EXT4_GET_BLOCKS_CREATE_UNINIT_EXT);
++				      EXT4_GET_BLOCKS_CREATE_UNINIT_EXT |
++				      EXT4_GET_BLOCKS_NO_NORMALIZE);
+ 		if (ret <= 0) {
+ #ifdef EXT4FS_DEBUG
+ 			WARN_ON(ret <= 0);
