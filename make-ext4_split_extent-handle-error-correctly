@@ -1,0 +1,29 @@
+ext4: make ext4_split_extent() handle error correctly
+
+From: Yongqiang Yang <xiaoqiangnk@gmail.com>
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Mingming Cao <cmm@us.ibm.com>
+---
+ fs/ext4/extents.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index e363f21..b7b667f 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2716,6 +2716,8 @@ static int ext4_split_extent(handle_t *handle,
+ 				       EXT4_EXT_MARK_UNINIT2;
+ 		err = ext4_split_extent_at(handle, inode, path,
+ 				map->m_lblk + map->m_len, split_flag1, flags1);
++		if (err)
++			goto out;
+ 	}
+
+ 	ext4_ext_drop_refs(path);
+-- 
+1.7.5.1
+
+--
+
