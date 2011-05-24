@@ -1,4 +1,4 @@
-ext4: add support for "hole punch" out in the truncate routines for extents
+ext4: punch out extents
 
 From: Allison Henderson <achender@linux.vnet.ibm.com>
 
@@ -21,17 +21,17 @@ Below is a brief summary of the patches changes:
         This function has been modified to accept a stop parameter, which
         is passed through to ext4_ext_rm_leaf.
 
-[ext4 punch hole patch series 3/5 v7] 
+[ext4 punch hole patch series 3/5 v6] 
 
 Signed-off-by: Allison Henderson <achender@us.ibm.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-Reviewed-by: Mingming Cao <cmm@us.ibm.com>
 ---
- fs/ext4/extents.c |  189 ++++++++++++++++++++++++++++++++++++++++++++++------
- 1 files changed, 167 insertions(+), 22 deletions(-)
+:100644 100644 7398a59... 0afb746... M	fs/ext4/extents.c
+ fs/ext4/extents.c |  160 ++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 files changed, 141 insertions(+), 19 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 88f564c..a3a47ad 100644
+index 7398a59..0afb746 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -46,6 +46,13 @@
@@ -48,7 +48,7 @@ index 88f564c..a3a47ad 100644
  static int ext4_ext_truncate_extend_restart(handle_t *handle,
  					    struct inode *inode,
  					    int needed)
-@@ -2197,8 +2204,16 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -2198,8 +2205,16 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  		ext4_free_blocks(handle, inode, NULL, start, num, flags);
  	} else if (from == le32_to_cpu(ex->ee_block)
  		   && to <= le32_to_cpu(ex->ee_block) + ee_len - 1) {
@@ -67,7 +67,7 @@ index 88f564c..a3a47ad 100644
  	} else {
  		printk(KERN_INFO "strange request: removal(2) "
  				"%u-%u from %u:%u\n",
-@@ -2207,9 +2222,22 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -2208,9 +2223,22 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  	return 0;
  }
  
@@ -91,7 +91,7 @@ index 88f564c..a3a47ad 100644
  {
  	int err = 0, correct_index = 0;
  	int depth = ext_depth(inode), credits;
-@@ -2220,6 +2248,7 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2221,6 +2249,7 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  	unsigned short ex_ee_len;
  	unsigned uninitialized = 0;
  	struct ext4_extent *ex;
@@ -99,7 +99,7 @@ index 88f564c..a3a47ad 100644
  
  	/* the header must be checked already in ext4_ext_remove_space() */
  	ext_debug("truncate since %u in leaf\n", start);
-@@ -2249,31 +2278,95 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2250,31 +2279,95 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  		path[depth].p_ext = ex;
  
  		a = ex_ee_block > start ? ex_ee_block : start;
@@ -207,7 +207,7 @@ index 88f564c..a3a47ad 100644
  		}
  
  		/*
-@@ -2304,7 +2397,13 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2305,7 +2398,13 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  		if (num == 0) {
  			/* this extent is removed; mark slot entirely unused */
  			ext4_ext_store_pblock(ex, 0);
@@ -222,7 +222,7 @@ index 88f564c..a3a47ad 100644
  		}
  
  		ex->ee_block = cpu_to_le32(block);
-@@ -2320,6 +2419,27 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2321,6 +2420,27 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  		if (err)
  			goto out;
  
@@ -250,7 +250,7 @@ index 88f564c..a3a47ad 100644
  		ext_debug("new extent: %u:%u:%llu\n", block, num,
  				ext4_ext_pblock(ex));
  		ex--;
-@@ -2360,13 +2480,16 @@ ext4_ext_more_to_rm(struct ext4_ext_path *path)
+@@ -2361,7 +2481,8 @@ ext4_ext_more_to_rm(struct ext4_ext_path *path)
  	return 1;
  }
  
@@ -260,62 +260,17 @@ index 88f564c..a3a47ad 100644
  {
  	struct super_block *sb = inode->i_sb;
  	int depth = ext_depth(inode);
- 	struct ext4_ext_path *path;
-+	struct ext4_extent_header *eh;
-+	struct ext4_extent *ex;
- 	handle_t *handle;
--	int i, err;
-+	int i, err, last_extent;
- 
- 	ext_debug("truncate since %u\n", start);
- 
-@@ -2399,12 +2522,32 @@ again:
+@@ -2400,7 +2521,8 @@ again:
  	while (i >= 0 && err == 0) {
  		if (i == depth) {
  			/* this is leaf block */
 -			err = ext4_ext_rm_leaf(handle, inode, path, start);
-+
-+			eh = path[depth].p_hdr;
-+			if (!eh)
-+				eh = ext_block_hdr(path[depth].p_bh);
-+			if (unlikely(eh == NULL)) {
-+				EXT4_ERROR_INODE(inode,
-+					"path[%d].p_hdr == NULL", depth);
-+				err = -EIO;
-+				break;
-+			}
-+
-+			ex = EXT_FIRST_EXTENT(eh);
-+			last_extent = ex != NULL ?
-+				le32_to_cpu(ex->ee_block) >= start : 0;
-+
 +			err = ext4_ext_rm_leaf(handle, inode, path,
 +					start, end);
  			/* root level has p_bh == NULL, brelse() eats this */
  			brelse(path[i].p_bh);
  			path[i].p_bh = NULL;
- 			i--;
--			continue;
-+
-+			if (last_extent)
-+				break;
-+			else
-+				continue;
- 		}
- 
- 		/* this is index block */
-@@ -2428,7 +2571,9 @@ again:
- 		ext_debug("level %d - index, first 0x%p, cur 0x%p\n",
- 				i, EXT_FIRST_INDEX(path[i].p_hdr),
- 				path[i].p_idx);
--		if (ext4_ext_more_to_rm(path + i)) {
-+		if (ext4_ext_more_to_rm(path + i) &&
-+			(path[i].p_idx->ei_block < end)) {
-+
- 			struct buffer_head *bh;
- 			/* go to the next level */
- 			ext_debug("move to level %d (block %llu)\n",
-@@ -3443,7 +3588,7 @@ void ext4_ext_truncate(struct inode *inode)
+@@ -3443,7 +3565,7 @@ void ext4_ext_truncate(struct inode *inode)
  
  	last_block = (inode->i_size + sb->s_blocksize - 1)
  			>> EXT4_BLOCK_SIZE_BITS(sb);
@@ -324,3 +279,11 @@ index 88f564c..a3a47ad 100644
  
  	/* In a multi-transaction truncate, we only make the final
  	 * transaction synchronous.
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
