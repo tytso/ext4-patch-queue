@@ -20,11 +20,11 @@ ext4_truncate() twice.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inode.c |   12 +++++-------
- 1 files changed, 5 insertions(+), 7 deletions(-)
+ fs/ext4/inode.c |   16 ++++++++--------
+ 1 files changed, 8 insertions(+), 8 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index df3fb20..4ca8411 100644
+index df3fb20..2e95819 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -5363,8 +5363,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
@@ -37,7 +37,7 @@ index df3fb20..4ca8411 100644
  		handle_t *handle;
  
  		handle = ext4_journal_start(inode, 3);
-@@ -5398,14 +5397,13 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
+@@ -5398,14 +5397,15 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
  				goto err_out;
  			}
  		}
@@ -46,12 +46,15 @@ index df3fb20..4ca8411 100644
 -			ext4_truncate(inode);
  	}
  
- 	if ((attr->ia_valid & ATTR_SIZE) &&
+-	if ((attr->ia_valid & ATTR_SIZE) &&
 -	    attr->ia_size != i_size_read(inode))
 -		rc = vmtruncate(inode, attr->ia_size);
-+	    attr->ia_size != i_size_read(inode)) {
-+		truncate_setsize(inode, attr->ia_size);
-+		ext4_truncate(inode);
++	if (attr->ia_valid & ATTR_SIZE) {
++		if (attr->ia_size != i_size_read(inode)) {
++			truncate_setsize(inode, attr->ia_size);
++			ext4_truncate(inode);
++		} else if (ext4_test_inode_flag(inode, EXT4_INODE_EOFBLOCKS))
++			ext4_truncate(inode);
 +	}
  
  	if (!rc) {
