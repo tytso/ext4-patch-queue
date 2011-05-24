@@ -1,0 +1,72 @@
+ext4: ensure f_bfree returned by ext4_statfs() is non-negative
+
+From: Kazuya Mio <k-mio@sx.jp.nec.com>
+
+I found the issue that the number of free blocks went negative.
+# stat -f /mnt/mp1/
+  File: "/mnt/mp1/"
+    ID: e175ccb83a872efe Namelen: 255     Type: ext2/ext3
+Block size: 4096       Fundamental block size: 4096
+Blocks: Total: 258022     Free: -15        Available: -13122
+Inodes: Total: 65536      Free: 63029
+
+f_bfree in struct statfs will go negative when the filesystem has
+few free blocks. Because the number of dirty blocks is bigger than
+the number of free blocks in the following two cases.
+
+CASE 1:
+ext4_da_writepages
+  mpage_da_map_and_submit
+    ext4_map_blocks
+      ext4_ext_map_blocks
+        ext4_mb_new_blocks
+          ext4_mb_diskspace_used
+            percpu_counter_sub(&sbi->s_freeblocks_counter, ac->ac_b_ex.fe_len);
+        <--- interrupt statfs systemcall --->
+        ext4_da_update_reserve_space
+            percpu_counter_sub(&sbi->s_dirtyblocks_counter,
+                            used + ei->i_allocated_meta_blocks);
+
+CASE 2:
+ext4_write_begin
+  __block_write_begin
+    ext4_map_blocks
+      ext4_ext_map_blocks
+        ext4_mb_new_blocks
+          ext4_mb_diskspace_used
+            percpu_counter_sub(&sbi->s_freeblocks_counter, ac->ac_b_ex.fe_len);
+            <--- interrupt statfs systemcall --->
+            percpu_counter_sub(&sbi->s_dirtyblocks_counter, reserv_blks);
+
+To avoid the issue, this patch ensures that f_bfree is non-negative.
+
+Signed-off-by: Kazuya Mio <k-mio@sx.jp.nec.com>
+---
+ fs/ext4/super.c |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 8553dfb..2e8ce57 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4432,6 +4432,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 	struct ext4_super_block *es = sbi->s_es;
+ 	u64 fsid;
++	s64 bfree;
+ 
+ 	if (test_opt(sb, MINIX_DF)) {
+ 		sbi->s_overhead_last = 0;
+@@ -4475,8 +4476,10 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+ 	buf->f_type = EXT4_SUPER_MAGIC;
+ 	buf->f_bsize = sb->s_blocksize;
+ 	buf->f_blocks = ext4_blocks_count(es) - sbi->s_overhead_last;
+-	buf->f_bfree = percpu_counter_sum_positive(&sbi->s_freeblocks_counter) -
++	bfree = percpu_counter_sum_positive(&sbi->s_freeblocks_counter) -
+ 		       percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
++	/* prevent underflow in case that few free space is available */
++	buf->f_bfree = max_t(s64, bfree, 0);
+ 	buf->f_bavail = buf->f_bfree - ext4_r_blocks_count(es);
+ 	if (buf->f_bfree < ext4_r_blocks_count(es))
+ 		buf->f_bavail = 0;
+
+
