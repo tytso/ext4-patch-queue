@@ -14,12 +14,28 @@ Signed-off-by: Andreas Dilger <adilger@whamcloud.com>
 Signed-off-by: Johann Lombardi <johann@whamcloud.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h  |   73 +++++++++++-
- fs/ext4/super.c |  363 ++++++++++++++++++++++++++++++++++++++++++++++++++++++-
- 2 files changed, 433 insertions(+), 3 deletions(-)
+ fs/ext4/Makefile |    3 +-
+ fs/ext4/ext4.h   |   76 ++++++++++++-
+ fs/ext4/mmp.c    |  351 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/super.c  |   18 +++-
+ 4 files changed, 444 insertions(+), 4 deletions(-)
 
+diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
+index c947e36..0410946 100644
+--- a/fs/ext4/Makefile
++++ b/fs/ext4/Makefile
+@@ -6,7 +6,8 @@ obj-$(CONFIG_EXT4_FS) += ext4.o
+ 
+ ext4-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o page-io.o \
+ 		ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
+-		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o
++		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o \
++		mmp.o
+ 
+ ext4-$(CONFIG_EXT4_FS_XATTR)		+= xattr.o xattr_user.o xattr_trusted.o
+ ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 2d736d9..ca1dcc0 100644
+index c9d8385..6f736f3 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1033,7 +1033,7 @@ struct ext4_super_block {
@@ -119,7 +135,7 @@ index 2d736d9..ca1dcc0 100644
   * Function prototypes
   */
  
-@@ -1812,6 +1877,10 @@ extern void __ext4_warning(struct super_block *, const char *, unsigned int,
+@@ -1811,6 +1876,10 @@ extern void __ext4_warning(struct super_block *, const char *, unsigned int,
  						       __LINE__, ## message)
  extern void ext4_msg(struct super_block *, const char *, const char *, ...)
  	__attribute__ ((format (printf, 3, 4)));
@@ -130,32 +146,29 @@ index 2d736d9..ca1dcc0 100644
  extern void __ext4_grp_locked_error(const char *, unsigned int, \
  				    struct super_block *, ext4_group_t, \
  				    unsigned long, ext4_fsblk_t, \
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 874dd25..c00d38a 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -39,6 +39,8 @@
- #include <linux/log2.h>
- #include <linux/crc16.h>
- #include <asm/uaccess.h>
-+#include <linux/kthread.h>
+@@ -2115,6 +2184,9 @@ extern int ext4_bio_write_page(struct ext4_io_submit *io,
+ 			       int len,
+ 			       struct writeback_control *wbc);
+ 
++/* mmp.c */
++extern int ext4_multi_mount_protect(struct super_block *, ext4_fsblk_t);
++
+ /* BH_Uninit flag: blocks are allocated but uninitialized on disk */
+ enum ext4_state_bits {
+ 	BH_Uninit	/* blocks are allocated but uninitialized on disk */
+diff --git a/fs/ext4/mmp.c b/fs/ext4/mmp.c
+new file mode 100644
+index 0000000..0832fd3
+--- /dev/null
++++ b/fs/ext4/mmp.c
+@@ -0,0 +1,351 @@
++#include <linux/fs.h>
++#include <linux/random.h>
++#include <linux/buffer_head.h>
 +#include <linux/utsname.h>
- 
- #include <linux/kthread.h>
- #include <linux/freezer.h>
-@@ -822,6 +824,8 @@ static void ext4_put_super(struct super_block *sb)
- 		invalidate_bdev(sbi->journal_bdev);
- 		ext4_blkdev_remove(sbi);
- 	}
-+	if (sbi->s_mmp_tsk)
-+		kthread_stop(sbi->s_mmp_tsk);
- 	sb->s_fs_info = NULL;
- 	/*
- 	 * Now that we are completely done shutting down the
-@@ -1121,6 +1125,349 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
- 	return 0;
- }
- 
++#include <linux/kthread.h>
++
++#include "ext4.h"
 +
 +/*
 + * Write the MMP block using WRITE_SYNC to try to get the block on-disk
@@ -205,7 +218,7 @@ index 874dd25..c00d38a 100644
 +	}
 +	if (!*bh) {
 +		ext4_warning(sb, "Error while reading MMP block %llu",
-+			     mmp_block);
++		             mmp_block);
 +		return -EIO;
 +	}
 +
@@ -376,7 +389,7 @@ index 874dd25..c00d38a 100644
 +/*
 + * Protect the filesystem from being mounted more than once.
 + */
-+static int ext4_multi_mount_protect(struct super_block *sb,
++int ext4_multi_mount_protect(struct super_block *sb,
 +				    ext4_fsblk_t mmp_block)
 +{
 +	struct ext4_super_block *es = EXT4_SB(sb)->s_es;
@@ -425,7 +438,7 @@ index 874dd25..c00d38a 100644
 +	/* Print MMP interval if more than 20 secs. */
 +	if (wait_time > EXT4_MMP_MIN_CHECK_INTERVAL * 4)
 +		ext4_warning(sb, "MMP interval %u higher than expected, please"
-+			     " wait.\n", wait_time * 2);
++		             " wait.\n", wait_time * 2);
 +
 +	if (schedule_timeout_interruptible(HZ * wait_time) != 0) {
 +		ext4_warning(sb, "MMP startup interrupted, failing mount\n");
@@ -499,10 +512,21 @@ index 874dd25..c00d38a 100644
 +	return 1;
 +}
 +
- static struct inode *ext4_nfs_get_inode(struct super_block *sb,
- 					u64 ino, u32 generation)
- {
-@@ -3486,6 +3833,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
++
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 874dd25..be6ae23 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -822,6 +822,8 @@ static void ext4_put_super(struct super_block *sb)
+ 		invalidate_bdev(sbi->journal_bdev);
+ 		ext4_blkdev_remove(sbi);
+ 	}
++	if (sbi->s_mmp_tsk)
++		kthread_stop(sbi->s_mmp_tsk);
+ 	sb->s_fs_info = NULL;
+ 	/*
+ 	 * Now that we are completely done shutting down the
+@@ -3486,6 +3488,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  			  EXT4_HAS_INCOMPAT_FEATURE(sb,
  				    EXT4_FEATURE_INCOMPAT_RECOVER));
  
@@ -514,7 +538,7 @@ index 874dd25..c00d38a 100644
  	/*
  	 * The first inode we look at is the journal inode.  Don't try
  	 * root first: it may be modified in the journal!
-@@ -3733,6 +4085,8 @@ failed_mount3:
+@@ -3733,6 +3740,8 @@ failed_mount3:
  	percpu_counter_destroy(&sbi->s_freeinodes_counter);
  	percpu_counter_destroy(&sbi->s_dirs_counter);
  	percpu_counter_destroy(&sbi->s_dirtyblocks_counter);
@@ -523,7 +547,7 @@ index 874dd25..c00d38a 100644
  failed_mount2:
  	for (i = 0; i < db_count; i++)
  		brelse(sbi->s_group_desc[i]);
-@@ -4268,7 +4622,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -4268,7 +4277,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  	int enable_quota = 0;
  	ext4_group_t g;
  	unsigned int journal_ioprio = DEFAULT_JOURNAL_IOPRIO;
@@ -532,7 +556,7 @@ index 874dd25..c00d38a 100644
  #ifdef CONFIG_QUOTA
  	int i;
  #endif
-@@ -4394,6 +4748,13 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -4394,6 +4403,13 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  				goto restore_opts;
  			if (!ext4_setup_super(sb, es, 0))
  				sb->s_flags &= ~MS_RDONLY;
