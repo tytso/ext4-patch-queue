@@ -35,7 +35,7 @@ index c947e36..0410946 100644
  ext4-$(CONFIG_EXT4_FS_XATTR)		+= xattr.o xattr_user.o xattr_trusted.o
  ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index c9d8385..6f736f3 100644
+index 2d736d9..134aea3 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1033,7 +1033,7 @@ struct ext4_super_block {
@@ -135,7 +135,7 @@ index c9d8385..6f736f3 100644
   * Function prototypes
   */
  
-@@ -1811,6 +1876,10 @@ extern void __ext4_warning(struct super_block *, const char *, unsigned int,
+@@ -1812,6 +1877,10 @@ extern void __ext4_warning(struct super_block *, const char *, unsigned int,
  						       __LINE__, ## message)
  extern void ext4_msg(struct super_block *, const char *, const char *, ...)
  	__attribute__ ((format (printf, 3, 4)));
@@ -146,7 +146,7 @@ index c9d8385..6f736f3 100644
  extern void __ext4_grp_locked_error(const char *, unsigned int, \
  				    struct super_block *, ext4_group_t, \
  				    unsigned long, ext4_fsblk_t, \
-@@ -2115,6 +2184,9 @@ extern int ext4_bio_write_page(struct ext4_io_submit *io,
+@@ -2118,6 +2187,9 @@ extern int ext4_bio_write_page(struct ext4_io_submit *io,
  			       int len,
  			       struct writeback_control *wbc);
  
@@ -158,7 +158,7 @@ index c9d8385..6f736f3 100644
  	BH_Uninit	/* blocks are allocated but uninitialized on disk */
 diff --git a/fs/ext4/mmp.c b/fs/ext4/mmp.c
 new file mode 100644
-index 0000000..0832fd3
+index 0000000..9bdef3f
 --- /dev/null
 +++ b/fs/ext4/mmp.c
 @@ -0,0 +1,351 @@
@@ -218,7 +218,7 @@ index 0000000..0832fd3
 +	}
 +	if (!*bh) {
 +		ext4_warning(sb, "Error while reading MMP block %llu",
-+		             mmp_block);
++			     mmp_block);
 +		return -EIO;
 +	}
 +
@@ -438,7 +438,7 @@ index 0000000..0832fd3
 +	/* Print MMP interval if more than 20 secs. */
 +	if (wait_time > EXT4_MMP_MIN_CHECK_INTERVAL * 4)
 +		ext4_warning(sb, "MMP interval %u higher than expected, please"
-+		             " wait.\n", wait_time * 2);
++			     " wait.\n", wait_time * 2);
 +
 +	if (schedule_timeout_interruptible(HZ * wait_time) != 0) {
 +		ext4_warning(sb, "MMP startup interrupted, failing mount\n");
@@ -514,7 +514,7 @@ index 0000000..0832fd3
 +
 +
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 874dd25..be6ae23 100644
+index 266174b..d9937df 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -822,6 +822,8 @@ static void ext4_put_super(struct super_block *sb)
