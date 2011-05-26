@@ -10,10 +10,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 140 insertions(+), 19 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 4890d6f..c355646 100644
+index 5199bac..ead8f96 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -1277,7 +1277,8 @@ static int ext4_ext_search_left(struct inode *inode,
+@@ -1298,7 +1298,8 @@ static int ext4_ext_search_left(struct inode *inode,
   */
  static int ext4_ext_search_right(struct inode *inode,
  				 struct ext4_ext_path *path,
@@ -23,7 +23,7 @@ index 4890d6f..c355646 100644
  {
  	struct buffer_head *bh = NULL;
  	struct ext4_extent_header *eh;
-@@ -1319,9 +1320,7 @@ static int ext4_ext_search_right(struct inode *inode,
+@@ -1340,9 +1341,7 @@ static int ext4_ext_search_right(struct inode *inode,
  				return -EIO;
  			}
  		}
@@ -34,7 +34,7 @@ index 4890d6f..c355646 100644
  	}
  
  	if (unlikely(*logical < (le32_to_cpu(ex->ee_block) + ee_len))) {
-@@ -1334,9 +1333,7 @@ static int ext4_ext_search_right(struct inode *inode,
+@@ -1355,9 +1354,7 @@ static int ext4_ext_search_right(struct inode *inode,
  	if (ex != EXT_LAST_EXTENT(path[depth].p_hdr)) {
  		/* next allocated block in this leaf */
  		ex++;
@@ -45,7 +45,7 @@ index 4890d6f..c355646 100644
  	}
  
  	/* go up and search for index to the right */
-@@ -1379,9 +1376,12 @@ got_index:
+@@ -1400,9 +1397,12 @@ got_index:
  		return -EIO;
  	}
  	ex = EXT_FIRST_EXTENT(eh);
@@ -59,7 +59,7 @@ index 4890d6f..c355646 100644
  	return 0;
  }
  
-@@ -1610,7 +1610,8 @@ static int ext4_ext_try_to_merge(struct inode *inode,
+@@ -1656,7 +1656,8 @@ static int ext4_ext_try_to_merge(struct inode *inode,
   * such that there will be no overlap, and then returns 1.
   * If there is no overlap found, it returns 0.
   */
@@ -69,7 +69,7 @@ index 4890d6f..c355646 100644
  					   struct ext4_extent *newext,
  					   struct ext4_ext_path *path)
  {
-@@ -1624,6 +1625,7 @@ static unsigned int ext4_ext_check_overlap(struct inode *inode,
+@@ -1670,6 +1671,7 @@ static unsigned int ext4_ext_check_overlap(struct inode *inode,
  	if (!path[depth].p_ext)
  		goto out;
  	b2 = le32_to_cpu(path[depth].p_ext->ee_block);
@@ -77,7 +77,7 @@ index 4890d6f..c355646 100644
  
  	/*
  	 * get the next allocated block if the extent in the path
-@@ -1633,6 +1635,7 @@ static unsigned int ext4_ext_check_overlap(struct inode *inode,
+@@ -1679,6 +1681,7 @@ static unsigned int ext4_ext_check_overlap(struct inode *inode,
  		b2 = ext4_ext_next_allocated_block(path);
  		if (b2 == EXT_MAX_BLOCK)
  			goto out;
@@ -85,7 +85,7 @@ index 4890d6f..c355646 100644
  	}
  
  	/* check for wrap through zero on extent logical start block*/
-@@ -3277,6 +3280,85 @@ out2:
+@@ -3321,6 +3324,85 @@ out2:
  }
  
  /*
@@ -171,7 +171,7 @@ index 4890d6f..c355646 100644
   * Block allocation/map/preallocation routine for extents based files
   *
   *
-@@ -3298,12 +3380,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3342,14 +3424,16 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  			struct ext4_map_blocks *map, int flags)
  {
  	struct ext4_ext_path *path = NULL;
@@ -183,13 +183,15 @@ index 4890d6f..c355646 100644
 -	unsigned int allocated = 0;
 +	int free_on_err = 0, err = 0, depth, ret;
 +	unsigned int allocated = 0, offset = 0;
+ 	unsigned int punched_out = 0;
+ 	unsigned int result = 0;
  	struct ext4_allocation_request ar;
  	ext4_io_end_t *io = EXT4_I(inode)->cur_aio_dio;
 +	ext4_lblk_t cluster_offset;
+ 	struct ext4_map_blocks punch_map;
  
  	ext_debug("blocks %u/%u requested for inode %lu\n",
- 		  map->m_lblk, map->m_len, inode->i_ino);
-@@ -3400,9 +3484,22 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3516,9 +3600,22 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
  		goto out2;
  	}
@@ -212,7 +214,7 @@ index 4890d6f..c355646 100644
  
  	/* find neighbour allocated blocks */
  	ar.lleft = map->m_lblk;
-@@ -3410,10 +3507,20 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3526,10 +3623,20 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	if (err)
  		goto out2;
  	ar.lright = map->m_lblk;
@@ -234,7 +236,7 @@ index 4890d6f..c355646 100644
  	/*
  	 * See if request is beyond maximum number of blocks we can have in
  	 * a single extent. For an initialized extent this limit is
-@@ -3428,9 +3535,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3544,9 +3651,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		map->m_len = EXT_UNINIT_MAX_LEN;
  
  	/* Check if we can really insert (m_lblk)::(m_lblk + m_len) extent */
@@ -245,7 +247,7 @@ index 4890d6f..c355646 100644
  	if (err)
  		allocated = ext4_ext_get_actual_len(&newex);
  	else
-@@ -3440,7 +3546,18 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3556,7 +3662,18 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	ar.inode = inode;
  	ar.goal = ext4_ext_find_goal(inode, path, map->m_lblk);
  	ar.logical = map->m_lblk;
@@ -265,7 +267,7 @@ index 4890d6f..c355646 100644
  	if (S_ISREG(inode->i_mode))
  		ar.flags = EXT4_MB_HINT_DATA;
  	else
-@@ -3451,9 +3568,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3569,9 +3686,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		goto out2;
  	ext_debug("allocate new block: goal %llu, found %llu/%u\n",
  		  ar.goal, newblock, allocated);
@@ -281,7 +283,7 @@ index 4890d6f..c355646 100644
  	newex.ee_len = cpu_to_le16(ar.len);
  	/* Mark uninitialized */
  	if (flags & EXT4_GET_BLOCKS_UNINIT_EXT){
-@@ -3482,7 +3604,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3600,7 +3722,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		goto out2;
  
  	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
@@ -290,8 +292,11 @@ index 4890d6f..c355646 100644
  		/* free data blocks we just allocated */
  		/* not a good idea to call discard here directly,
  		 * but otherwise we'd need to call it every free() */
-@@ -4042,4 +4164,3 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
- 
- 	return error;
+@@ -4115,7 +4237,6 @@ found_delayed_extent:
+ 		return EXT_BREAK;
+ 	return EXT_CONTINUE;
  }
 -
+ /* fiemap flags we can handle specified here */
+ #define EXT4_FIEMAP_FLAGS	(FIEMAP_FLAG_SYNC|FIEMAP_FLAG_XATTR)
+ 

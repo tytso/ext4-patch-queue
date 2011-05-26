@@ -6,18 +6,18 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 34 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 3d1a056..1d23b65 100644
+index 4fb5106..94c862c 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -2213,6 +2213,7 @@ struct ext4_attr {
- 	ssize_t (*store)(struct ext4_attr *, struct ext4_sb_info *, 
+@@ -2395,6 +2395,7 @@ struct ext4_attr {
+ 	ssize_t (*store)(struct ext4_attr *, struct ext4_sb_info *,
  			 const char *, size_t);
  	int offset;
 +	unsigned int mask;
  };
  
  static int parse_strtoul(const char *buf,
-@@ -2294,12 +2295,40 @@ static ssize_t sbi_ui_store(struct ext4_attr *a,
+@@ -2492,12 +2493,40 @@ static ssize_t sbi_ui_store(struct ext4_attr *a,
  	return count;
  }
  
@@ -59,7 +59,7 @@ index 3d1a056..1d23b65 100644
  }
  #define EXT4_ATTR(name, mode, show, store) \
  static struct ext4_attr ext4_attr_##name = __ATTR(name, mode, show, store)
-@@ -2307,14 +2336,16 @@ static struct ext4_attr ext4_attr_##name = __ATTR(name, mode, show, store)
+@@ -2506,7 +2535,9 @@ static struct ext4_attr ext4_attr_##name = __ATTR(name, mode, show, store)
  #define EXT4_RO_ATTR(name) EXT4_ATTR(name, 0444, name##_show, NULL)
  #define EXT4_RW_ATTR(name) EXT4_ATTR(name, 0644, name##_show, name##_store)
  #define EXT4_RW_ATTR_SBI_UI(name, elname)	\
@@ -70,8 +70,9 @@ index 3d1a056..1d23b65 100644
  #define ATTR_LIST(name) &ext4_attr_##name.attr
  
  EXT4_RO_ATTR(delayed_allocation_blocks);
- EXT4_RO_ATTR(session_write_kbytes);
- EXT4_RO_ATTR(lifetime_write_kbytes);
+@@ -2515,7 +2546,7 @@ EXT4_RO_ATTR(lifetime_write_kbytes);
+ EXT4_RO_ATTR(extent_cache_hits);
+ EXT4_RO_ATTR(extent_cache_misses);
  EXT4_ATTR_OFFSET(inode_readahead_blks, 0644, sbi_ui_show,
 -		 inode_readahead_blks_store, s_inode_readahead_blks);
 +		 inode_readahead_blks_store, s_inode_readahead_blks, 0);

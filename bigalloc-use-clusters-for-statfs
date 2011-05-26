@@ -6,10 +6,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 24 insertions(+), 13 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index dcda43a..2bac4c2 100644
+index fdec2ba..a9ece6a 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -4439,15 +4439,33 @@ restore_opts:
+@@ -4518,16 +4518,34 @@ restore_opts:
  	return err;
  }
  
@@ -35,6 +35,7 @@ index dcda43a..2bac4c2 100644
  	struct ext4_super_block *es = sbi->s_es;
 +	struct ext4_group_desc *gdp;
  	u64 fsid;
+ 	s64 bfree;
  
  	if (test_opt(sb, MINIX_DF)) {
  		sbi->s_overhead_last = 0;
@@ -43,7 +44,7 @@ index dcda43a..2bac4c2 100644
  	} else if (sbi->s_blocks_last != ext4_blocks_count(es)) {
  		ext4_group_t i, ngroups = ext4_get_groups_count(sb);
  		ext4_fsblk_t overhead = 0;
-@@ -4462,24 +4480,16 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+@@ -4542,24 +4560,16 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
  		 * All of the blocks before first_data_block are
  		 * overhead
  		 */
@@ -72,13 +73,13 @@ index dcda43a..2bac4c2 100644
  		sbi->s_overhead_last = overhead;
  		smp_wmb();
  		sbi->s_blocks_last = ext4_blocks_count(es);
-@@ -4487,7 +4497,8 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+@@ -4567,7 +4577,8 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
  
  	buf->f_type = EXT4_SUPER_MAGIC;
  	buf->f_bsize = sb->s_blocksize;
 -	buf->f_blocks = ext4_blocks_count(es) - sbi->s_overhead_last;
 +	buf->f_blocks = (ext4_blocks_count(es) -
 +			 EXT4_C2B(sbi, sbi->s_overhead_last));
- 	buf->f_bfree = EXT4_C2B(sbi,
- 		percpu_counter_sum_positive(&sbi->s_freeclusters_counter)) -
- 		percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
+ 	bfree = percpu_counter_sum_positive(&sbi->s_freeclusters_counter) -
+ 		       percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
+ 	/* prevent underflow in case that few free space is available */

@@ -11,15 +11,15 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/inode.c   |    6 ++++--
  fs/ext4/mballoc.c |    7 ++++---
  fs/ext4/resize.c  |    4 ++--
- fs/ext4/super.c   |   18 ++++++++++--------
- 7 files changed, 26 insertions(+), 20 deletions(-)
+ fs/ext4/super.c   |   17 +++++++++--------
+ 7 files changed, 25 insertions(+), 20 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 7de66f4..0f32586 100644
+index 854b007..fe36f5d 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
-@@ -413,16 +413,16 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
- static int ext4_has_free_blocks(struct ext4_sb_info *sbi, s64 nblocks)
+@@ -414,16 +414,16 @@ static int ext4_has_free_blocks(struct ext4_sb_info *sbi,
+ 				s64 nblocks, unsigned int flags)
  {
  	s64 free_blocks, dirty_blocks, root_blocks;
 -	struct percpu_counter *fbc = &sbi->s_freeblocks_counter;
@@ -39,10 +39,10 @@ index 7de66f4..0f32586 100644
  	}
  	/* Check whether we have space after
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 05e2871..12359d4 100644
+index e01d4d6..708d05d 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1127,7 +1127,7 @@ struct ext4_sb_info {
+@@ -1134,7 +1134,7 @@ struct ext4_sb_info {
  	u32 s_hash_seed[4];
  	int s_def_hash_version;
  	int s_hash_unsigned;	/* 3 if hash should be signed, 0 if not */
@@ -66,7 +66,7 @@ index d0770b6..d95a157 100644
  	do_div(avefreeb, ngroups);
  	ndirs = percpu_counter_read_positive(&sbi->s_dirs_counter);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 9095717..c7ef84d 100644
+index aa16cd2..84767bb 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -2211,7 +2211,8 @@ static void ext4_print_free_blocks(struct inode *inode)
@@ -79,7 +79,7 @@ index 9095717..c7ef84d 100644
  	printk(KERN_CRIT "dirty_blocks=%lld\n",
  	       (long long) percpu_counter_sum(&sbi->s_dirtyblocks_counter));
  	printk(KERN_CRIT "Block reservation details\n");
-@@ -3087,7 +3088,8 @@ static int ext4_nonda_switch(struct super_block *sb)
+@@ -3085,7 +3086,8 @@ static int ext4_nonda_switch(struct super_block *sb)
  	 * Delalloc need an accurate free block accounting. So switch
  	 * to non delalloc when we are near to error range.
  	 */
@@ -90,7 +90,7 @@ index 9095717..c7ef84d 100644
  	if (2 * free_blocks < 3 * dirty_blocks ||
  		free_blocks < (dirty_blocks + EXT4_FREEBLOCKS_WATERMARK)) {
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 919610c..62624eb 100644
+index 75706ac..d897075 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -2804,7 +2804,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
@@ -102,7 +102,7 @@ index 919610c..62624eb 100644
  	/*
  	 * Now reduce the dirty block count also. Should not go negative
  	 */
-@@ -4649,7 +4649,7 @@ do_more:
+@@ -4658,7 +4658,7 @@ do_more:
  	ext4_free_blks_set(sb, gdp, ret);
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, block_group, gdp);
  	ext4_unlock_group(sb, block_group);
@@ -111,7 +111,7 @@ index 919610c..62624eb 100644
  
  	if (sbi->s_log_groups_per_flex) {
  		ext4_group_t flex_group = ext4_flex_group(sbi, block_group);
-@@ -4780,7 +4780,8 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
+@@ -4789,7 +4789,8 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
  	ext4_free_blks_set(sb, desc, blk_free_count);
  	desc->bg_checksum = ext4_group_desc_csum(sbi, block_group, desc);
  	ext4_unlock_group(sb, block_group);
@@ -137,7 +137,7 @@ index 80bbc9c..405c1cb 100644
  			   EXT4_INODES_PER_GROUP(sb));
  
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 73fce13..0e80195 100644
+index abb555f..a20daa0 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -793,7 +793,7 @@ static void ext4_put_super(struct super_block *sb)
@@ -158,7 +158,7 @@ index 73fce13..0e80195 100644
  			ext4_count_free_blocks(sb));
  	if (!err) {
  		err = percpu_counter_init(&sbi->s_freeinodes_counter,
-@@ -3612,7 +3612,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -3616,7 +3616,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	 * The journal may have updated the bg summary counts, so we
  	 * need to update the global counters.
  	 */
@@ -167,7 +167,7 @@ index 73fce13..0e80195 100644
  			   ext4_count_free_blocks(sb));
  	percpu_counter_set(&sbi->s_freeinodes_counter,
  			   ext4_count_free_inodes(sb));
-@@ -3781,7 +3781,7 @@ failed_mount3:
+@@ -3785,7 +3785,7 @@ failed_mount3:
  		else
  			kfree(sbi->s_flex_groups);
  	}
@@ -176,7 +176,7 @@ index 73fce13..0e80195 100644
  	percpu_counter_destroy(&sbi->s_freeinodes_counter);
  	percpu_counter_destroy(&sbi->s_dirs_counter);
  	percpu_counter_destroy(&sbi->s_dirtyblocks_counter);
-@@ -4105,8 +4105,9 @@ static int ext4_commit_super(struct super_block *sb, int sync)
+@@ -4111,8 +4111,9 @@ static int ext4_commit_super(struct super_block *sb, int sync)
  	else
  		es->s_kbytes_written =
  			cpu_to_le64(EXT4_SB(sb)->s_kbytes_written);
@@ -188,15 +188,16 @@ index 73fce13..0e80195 100644
  	es->s_free_inodes_count =
  		cpu_to_le32(percpu_counter_sum_positive(
  				&EXT4_SB(sb)->s_freeinodes_counter));
-@@ -4553,8 +4554,9 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+@@ -4567,10 +4568,10 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
  	buf->f_type = EXT4_SUPER_MAGIC;
  	buf->f_bsize = sb->s_blocksize;
  	buf->f_blocks = ext4_blocks_count(es) - sbi->s_overhead_last;
--	buf->f_bfree = percpu_counter_sum_positive(&sbi->s_freeblocks_counter) -
--		       percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
-+	buf->f_bfree = EXT4_C2B(sbi,
-+		percpu_counter_sum_positive(&sbi->s_freeclusters_counter)) -
-+		percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
+-	bfree = percpu_counter_sum_positive(&sbi->s_freeblocks_counter) -
++	bfree = percpu_counter_sum_positive(&sbi->s_freeclusters_counter) -
+ 		       percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
+ 	/* prevent underflow in case that few free space is available */
+-	buf->f_bfree = max_t(s64, bfree, 0);
++	buf->f_bfree = EXT4_C2B(sbi, max_t(s64, bfree, 0));
  	buf->f_bavail = buf->f_bfree - ext4_r_blocks_count(es);
  	if (buf->f_bfree < ext4_r_blocks_count(es))
  		buf->f_bavail = 0;

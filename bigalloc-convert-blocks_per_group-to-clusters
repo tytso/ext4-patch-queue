@@ -14,7 +14,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 24 insertions(+), 24 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index a5837a8..b76ad1b 100644
+index 859f2ae..c5e75df 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -651,7 +651,7 @@ static void ext4_mb_mark_free_simple(struct super_block *sb,
@@ -35,7 +35,7 @@ index a5837a8..b76ad1b 100644
  	ext4_grpblk_t i = 0;
  	ext4_grpblk_t first;
  	ext4_grpblk_t len;
-@@ -1680,8 +1680,8 @@ static void ext4_mb_measure_extent(struct ext4_allocation_context *ac,
+@@ -1622,8 +1622,8 @@ static void ext4_mb_measure_extent(struct ext4_allocation_context *ac,
  	struct ext4_free_extent *gex = &ac->ac_g_ex;
  
  	BUG_ON(ex->fe_len <= 0);
@@ -46,7 +46,7 @@ index a5837a8..b76ad1b 100644
  	BUG_ON(ac->ac_status != AC_STATUS_CONTINUE);
  
  	ac->ac_found++;
-@@ -1879,8 +1879,8 @@ void ext4_mb_complex_scan_group(struct ext4_allocation_context *ac,
+@@ -1821,8 +1821,8 @@ void ext4_mb_complex_scan_group(struct ext4_allocation_context *ac,
  
  	while (free && ac->ac_status == AC_STATUS_CONTINUE) {
  		i = mb_find_next_zero_bit(bitmap,
@@ -57,7 +57,7 @@ index a5837a8..b76ad1b 100644
  			/*
  			 * IF we have corrupt bitmap, we won't find any
  			 * free blocks even though group info says we
-@@ -1943,7 +1943,7 @@ void ext4_mb_scan_aligned(struct ext4_allocation_context *ac,
+@@ -1885,7 +1885,7 @@ void ext4_mb_scan_aligned(struct ext4_allocation_context *ac,
  	do_div(a, sbi->s_stripe);
  	i = (a * sbi->s_stripe) - first_group_block;
  
@@ -66,7 +66,7 @@ index a5837a8..b76ad1b 100644
  		if (!mb_test_bit(i, bitmap)) {
  			max = mb_find_extent(e4b, 0, i, sbi->s_stripe, &ex);
  			if (max >= sbi->s_stripe) {
-@@ -3071,7 +3071,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+@@ -3007,7 +3007,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
  	}
  	BUG_ON(start + size <= ac->ac_o_ex.fe_logical &&
  			start > ac->ac_o_ex.fe_logical);
@@ -75,7 +75,7 @@ index a5837a8..b76ad1b 100644
  
  	/* now prepare goal request */
  
-@@ -3724,7 +3724,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3660,7 +3660,7 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  	}
  
  	if (needed == 0)
@@ -84,7 +84,7 @@ index a5837a8..b76ad1b 100644
  
  	INIT_LIST_HEAD(&list);
  repeat:
-@@ -4039,8 +4039,8 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
+@@ -3975,8 +3975,8 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
  	len = ar->len;
  
  	/* just a dirty hack to filter too big requests  */
@@ -95,7 +95,7 @@ index a5837a8..b76ad1b 100644
  
  	/* start searching from the goal */
  	goal = ar->goal;
-@@ -4579,8 +4579,8 @@ do_more:
+@@ -4520,8 +4520,8 @@ do_more:
  	 * Check to see if we are freeing blocks across a group
  	 * boundary.
  	 */
@@ -106,25 +106,25 @@ index a5837a8..b76ad1b 100644
  		count -= overflow;
  	}
  	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
-@@ -4833,7 +4833,7 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
- 	struct ext4_buddy e4b;
+@@ -4892,7 +4892,7 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ 	struct ext4_group_info *grp;
  	ext4_group_t first_group, last_group;
  	ext4_group_t group, ngroups = ext4_get_groups_count(sb);
 -	ext4_grpblk_t cnt = 0, first_block, last_block;
 +	ext4_grpblk_t cnt = 0, first_cluster, last_cluster;
- 	uint64_t start, len, minlen, trimmed;
+ 	uint64_t start, len, minlen, trimmed = 0;
  	ext4_fsblk_t first_data_blk =
  			le32_to_cpu(EXT4_SB(sb)->s_es->s_first_data_block);
-@@ -4844,7 +4844,7 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+@@ -4902,7 +4902,7 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ 	len = range->len >> sb->s_blocksize_bits;
  	minlen = range->minlen >> sb->s_blocksize_bits;
- 	trimmed = 0;
  
 -	if (unlikely(minlen > EXT4_BLOCKS_PER_GROUP(sb)))
 +	if (unlikely(minlen > EXT4_CLUSTERS_PER_GROUP(sb)))
  		return -EINVAL;
  	if (start < first_data_blk) {
  		len -= first_data_blk - start;
-@@ -4853,11 +4853,11 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+@@ -4911,11 +4911,11 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
  
  	/* Determine first and last group to examine based on start and len */
  	ext4_get_group_no_and_offset(sb, (ext4_fsblk_t) start,
@@ -139,7 +139,7 @@ index a5837a8..b76ad1b 100644
  
  	if (first_group > last_group)
  		return -EINVAL;
-@@ -4876,13 +4876,13 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+@@ -4935,20 +4935,20 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
  		 * change it for the last group in which case start +
  		 * len < EXT4_BLOCKS_PER_GROUP(sb).
  		 */
@@ -150,17 +150,16 @@ index a5837a8..b76ad1b 100644
 +			last_cluster = first_cluster + len;
 +		len -= last_cluster - first_cluster;
  
- 		if (e4b.bd_info->bb_free >= minlen) {
--			cnt = ext4_trim_all_free(sb, &e4b, first_block,
+ 		if (grp->bb_free >= minlen) {
+-			cnt = ext4_trim_all_free(sb, group, first_block,
 -						last_block, minlen);
-+			cnt = ext4_trim_all_free(sb, &e4b, first_cluster,
++			cnt = ext4_trim_all_free(sb, group, first_cluster,
 +						last_cluster, minlen);
  			if (cnt < 0) {
  				ret = cnt;
- 				ext4_mb_unload_buddy(&e4b);
-@@ -4891,7 +4891,7 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ 				break;
+ 			}
  		}
- 		ext4_mb_unload_buddy(&e4b);
  		trimmed += cnt;
 -		first_block = 0;
 +		first_cluster = 0;
