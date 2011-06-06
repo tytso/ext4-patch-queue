@@ -1,21 +1,22 @@
-ext4: convert s_freeblocks_counter to s_freeclusters_counter
+ext4: convert s_{dirty,free}blocks_counter to s_{dirty,free}clusters_counter
 
-Convert the percpu counter s_freeblocks_counter in struct
-ext4_super_info to be s_freeclusters_counter.
+Convert the percpu counters s_dirtyblocks_counter and
+s_freeblocks_counter in struct ext4_super_info to be
+s_dirtyblocks_counter and s_freeclusters_counter.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/balloc.c  |    6 +++---
- fs/ext4/ext4.h    |    2 +-
+ fs/ext4/balloc.c  |   10 +++++-----
+ fs/ext4/ext4.h    |    5 +++--
  fs/ext4/ialloc.c  |    3 ++-
- fs/ext4/inode.c   |    6 ++++--
- fs/ext4/mballoc.c |    7 ++++---
+ fs/ext4/inode.c   |   18 ++++++++++--------
+ fs/ext4/mballoc.c |   12 +++++++-----
  fs/ext4/resize.c  |    4 ++--
- fs/ext4/super.c   |   17 +++++++++--------
- 7 files changed, 25 insertions(+), 20 deletions(-)
+ fs/ext4/super.c   |   29 +++++++++++++++--------------
+ 7 files changed, 44 insertions(+), 37 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 854b007..fe36f5d 100644
+index 854b007..af68c40 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -414,16 +414,16 @@ static int ext4_has_free_blocks(struct ext4_sb_info *sbi,
@@ -23,11 +24,12 @@ index 854b007..fe36f5d 100644
  {
  	s64 free_blocks, dirty_blocks, root_blocks;
 -	struct percpu_counter *fbc = &sbi->s_freeblocks_counter;
+-	struct percpu_counter *dbc = &sbi->s_dirtyblocks_counter;
 +	struct percpu_counter *fcc = &sbi->s_freeclusters_counter;
- 	struct percpu_counter *dbc = &sbi->s_dirtyblocks_counter;
++	struct percpu_counter *dbc = &sbi->s_dirtyclusters_counter;
  
 -	free_blocks  = percpu_counter_read_positive(fbc);
-+	free_blocks  = EXT4_C2B(sbi, percpu_counter_read_positive(fcc));
++	free_blocks  = percpu_counter_read_positive(fcc);
  	dirty_blocks = percpu_counter_read_positive(dbc);
  	root_blocks = ext4_r_blocks_count(sbi->s_es);
  
@@ -38,11 +40,28 @@ index 854b007..fe36f5d 100644
  		dirty_blocks = percpu_counter_sum_positive(dbc);
  	}
  	/* Check whether we have space after
+@@ -449,7 +449,7 @@ int ext4_claim_free_blocks(struct ext4_sb_info *sbi,
+ 			   s64 nblocks, unsigned int flags)
+ {
+ 	if (ext4_has_free_blocks(sbi, nblocks, flags)) {
+-		percpu_counter_add(&sbi->s_dirtyblocks_counter, nblocks);
++		percpu_counter_add(&sbi->s_dirtyclusters_counter, nblocks);
+ 		return 0;
+ 	} else
+ 		return -ENOSPC;
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index e01d4d6..708d05d 100644
+index 9ee7fb1..207bb64 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1134,7 +1134,7 @@ struct ext4_sb_info {
+@@ -849,6 +849,7 @@ struct ext4_inode_info {
+ 	ext4_group_t	i_last_alloc_group;
+ 
+ 	/* allocation reservation info for delalloc */
++	/* In case of bigalloc, these refer to clusters rather than blocks */
+ 	unsigned int i_reserved_data_blocks;
+ 	unsigned int i_reserved_meta_blocks;
+ 	unsigned int i_allocated_meta_blocks;
+@@ -1133,10 +1134,10 @@ struct ext4_sb_info {
  	u32 s_hash_seed[4];
  	int s_def_hash_version;
  	int s_hash_unsigned;	/* 3 if hash should be signed, 0 if not */
@@ -50,7 +69,11 @@ index e01d4d6..708d05d 100644
 +	struct percpu_counter s_freeclusters_counter;
  	struct percpu_counter s_freeinodes_counter;
  	struct percpu_counter s_dirs_counter;
- 	struct percpu_counter s_dirtyblocks_counter;
+-	struct percpu_counter s_dirtyblocks_counter;
++	struct percpu_counter s_dirtyclusters_counter;
+ 	struct blockgroup_lock *s_blockgroup_lock;
+ 	struct proc_dir_entry *s_proc;
+ 	struct kobject s_kobj;
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
 index d0770b6..d95a157 100644
 --- a/fs/ext4/ialloc.c
@@ -66,10 +89,45 @@ index d0770b6..d95a157 100644
  	do_div(avefreeb, ngroups);
  	ndirs = percpu_counter_read_positive(&sbi->s_dirs_counter);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index aa16cd2..84767bb 100644
+index 57f2a11..c917329 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -2211,7 +2211,8 @@ static void ext4_print_free_blocks(struct inode *inode)
+@@ -1141,7 +1141,7 @@ void ext4_da_update_reserve_space(struct inode *inode,
+ 	/* Update per-inode reservations */
+ 	ei->i_reserved_data_blocks -= used;
+ 	ei->i_reserved_meta_blocks -= ei->i_allocated_meta_blocks;
+-	percpu_counter_sub(&sbi->s_dirtyblocks_counter,
++	percpu_counter_sub(&sbi->s_dirtyclusters_counter,
+ 			   used + ei->i_allocated_meta_blocks);
+ 	ei->i_allocated_meta_blocks = 0;
+ 
+@@ -1151,7 +1151,7 @@ void ext4_da_update_reserve_space(struct inode *inode,
+ 		 * only when we have written all of the delayed
+ 		 * allocation blocks.
+ 		 */
+-		percpu_counter_sub(&sbi->s_dirtyblocks_counter,
++		percpu_counter_sub(&sbi->s_dirtyclusters_counter,
+ 				   ei->i_reserved_meta_blocks);
+ 		ei->i_reserved_meta_blocks = 0;
+ 		ei->i_da_metadata_calc_len = 0;
+@@ -1986,14 +1986,14 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
+ 		 * only when we have written all of the delayed
+ 		 * allocation blocks.
+ 		 */
+-		percpu_counter_sub(&sbi->s_dirtyblocks_counter,
++		percpu_counter_sub(&sbi->s_dirtyclusters_counter,
+ 				   ei->i_reserved_meta_blocks);
+ 		ei->i_reserved_meta_blocks = 0;
+ 		ei->i_da_metadata_calc_len = 0;
+ 	}
+ 
+ 	/* update fs dirty data blocks counter */
+-	percpu_counter_sub(&sbi->s_dirtyblocks_counter, to_free);
++	percpu_counter_sub(&sbi->s_dirtyclusters_counter, to_free);
+ 
+ 	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
+ 
+@@ -2211,9 +2211,10 @@ static void ext4_print_free_blocks(struct inode *inode)
  	       ext4_count_free_blocks(inode->i_sb));
  	printk(KERN_CRIT "Free/Dirty block details\n");
  	printk(KERN_CRIT "free_blocks=%lld\n",
@@ -77,23 +135,28 @@ index aa16cd2..84767bb 100644
 +	       (long long) EXT4_C2B(EXT4_SB(inode->i_sb),
 +		percpu_counter_sum(&sbi->s_freeclusters_counter)));
  	printk(KERN_CRIT "dirty_blocks=%lld\n",
- 	       (long long) percpu_counter_sum(&sbi->s_dirtyblocks_counter));
+-	       (long long) percpu_counter_sum(&sbi->s_dirtyblocks_counter));
++	       (long long) percpu_counter_sum(&sbi->s_dirtyclusters_counter));
  	printk(KERN_CRIT "Block reservation details\n");
-@@ -3085,7 +3086,8 @@ static int ext4_nonda_switch(struct super_block *sb)
+ 	printk(KERN_CRIT "i_reserved_data_blocks=%u\n",
+ 	       EXT4_I(inode)->i_reserved_data_blocks);
+@@ -3085,8 +3086,9 @@ static int ext4_nonda_switch(struct super_block *sb)
  	 * Delalloc need an accurate free block accounting. So switch
  	 * to non delalloc when we are near to error range.
  	 */
 -	free_blocks  = percpu_counter_read_positive(&sbi->s_freeblocks_counter);
+-	dirty_blocks = percpu_counter_read_positive(&sbi->s_dirtyblocks_counter);
 +	free_blocks  = EXT4_C2B(sbi,
 +		percpu_counter_read_positive(&sbi->s_freeclusters_counter));
- 	dirty_blocks = percpu_counter_read_positive(&sbi->s_dirtyblocks_counter);
++	dirty_blocks = percpu_counter_read_positive(&sbi->s_dirtyclusters_counter);
  	if (2 * free_blocks < 3 * dirty_blocks ||
  		free_blocks < (dirty_blocks + EXT4_FREEBLOCKS_WATERMARK)) {
+ 		/*
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 75706ac..d897075 100644
+index 7a8a7c1..66ee50d 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -2804,7 +2804,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+@@ -2804,13 +2804,14 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, ac->ac_b_ex.fe_group, gdp);
  
  	ext4_unlock_group(sb, ac->ac_b_ex.fe_group);
@@ -102,7 +165,24 @@ index 75706ac..d897075 100644
  	/*
  	 * Now reduce the dirty block count also. Should not go negative
  	 */
-@@ -4658,7 +4658,7 @@ do_more:
+ 	if (!(ac->ac_flags & EXT4_MB_DELALLOC_RESERVED))
+ 		/* release all the reserved blocks if non delalloc */
+-		percpu_counter_sub(&sbi->s_dirtyblocks_counter, reserv_clstrs);
++		percpu_counter_sub(&sbi->s_dirtyclusters_counter,
++				   reserv_clstrs);
+ 
+ 	if (sbi->s_log_groups_per_flex) {
+ 		ext4_group_t flex_group = ext4_flex_group(sbi,
+@@ -4352,7 +4353,7 @@ out:
+ 		if (!ext4_test_inode_state(ar->inode,
+ 					   EXT4_STATE_DELALLOC_RESERVED))
+ 			/* release all the reserved blocks if non delalloc */
+-			percpu_counter_sub(&sbi->s_dirtyblocks_counter,
++			percpu_counter_sub(&sbi->s_dirtyclusters_counter,
+ 						reserv_clstrs);
+ 	}
+ 
+@@ -4659,7 +4660,7 @@ do_more:
  	ext4_free_blks_set(sb, gdp, ret);
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, block_group, gdp);
  	ext4_unlock_group(sb, block_group);
@@ -111,7 +191,7 @@ index 75706ac..d897075 100644
  
  	if (sbi->s_log_groups_per_flex) {
  		ext4_group_t flex_group = ext4_flex_group(sbi, block_group);
-@@ -4789,7 +4789,8 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
+@@ -4790,7 +4791,8 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
  	ext4_free_blks_set(sb, desc, blk_free_count);
  	desc->bg_checksum = ext4_group_desc_csum(sbi, block_group, desc);
  	ext4_unlock_group(sb, block_group);
@@ -137,10 +217,10 @@ index 80bbc9c..405c1cb 100644
  			   EXT4_INODES_PER_GROUP(sb));
  
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index abb555f..a20daa0 100644
+index 231aac2..307e453 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -793,7 +793,7 @@ static void ext4_put_super(struct super_block *sb)
+@@ -794,10 +794,10 @@ static void ext4_put_super(struct super_block *sb)
  		vfree(sbi->s_flex_groups);
  	else
  		kfree(sbi->s_flex_groups);
@@ -148,8 +228,21 @@ index abb555f..a20daa0 100644
 +	percpu_counter_destroy(&sbi->s_freeclusters_counter);
  	percpu_counter_destroy(&sbi->s_freeinodes_counter);
  	percpu_counter_destroy(&sbi->s_dirs_counter);
- 	percpu_counter_destroy(&sbi->s_dirtyblocks_counter);
-@@ -3490,7 +3490,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+-	percpu_counter_destroy(&sbi->s_dirtyblocks_counter);
++	percpu_counter_destroy(&sbi->s_dirtyclusters_counter);
+ 	brelse(sbi->s_sbh);
+ #ifdef CONFIG_QUOTA
+ 	for (i = 0; i < MAXQUOTAS; i++)
+@@ -2425,7 +2425,7 @@ static ssize_t delayed_allocation_blocks_show(struct ext4_attr *a,
+ 					      char *buf)
+ {
+ 	return snprintf(buf, PAGE_SIZE, "%llu\n",
+-			(s64) percpu_counter_sum(&sbi->s_dirtyblocks_counter));
++		(s64) percpu_counter_sum(&sbi->s_dirtyclusters_counter));
+ }
+ 
+ static ssize_t session_write_kbytes_show(struct ext4_attr *a,
+@@ -3501,7 +3501,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	sbi->s_err_report.function = print_daily_error_info;
  	sbi->s_err_report.data = (unsigned long) sb;
  
@@ -158,7 +251,16 @@ index abb555f..a20daa0 100644
  			ext4_count_free_blocks(sb));
  	if (!err) {
  		err = percpu_counter_init(&sbi->s_freeinodes_counter,
-@@ -3616,7 +3616,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -3512,7 +3512,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 				ext4_count_dirs(sb));
+ 	}
+ 	if (!err) {
+-		err = percpu_counter_init(&sbi->s_dirtyblocks_counter, 0);
++		err = percpu_counter_init(&sbi->s_dirtyclusters_counter, 0);
+ 	}
+ 	if (err) {
+ 		ext4_msg(sb, KERN_ERR, "insufficient memory");
+@@ -3627,13 +3627,13 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	 * The journal may have updated the bg summary counts, so we
  	 * need to update the global counters.
  	 */
@@ -167,7 +269,14 @@ index abb555f..a20daa0 100644
  			   ext4_count_free_blocks(sb));
  	percpu_counter_set(&sbi->s_freeinodes_counter,
  			   ext4_count_free_inodes(sb));
-@@ -3785,7 +3785,7 @@ failed_mount3:
+ 	percpu_counter_set(&sbi->s_dirs_counter,
+ 			   ext4_count_dirs(sb));
+-	percpu_counter_set(&sbi->s_dirtyblocks_counter, 0);
++	percpu_counter_set(&sbi->s_dirtyclusters_counter, 0);
+ 
+ no_journal:
+ 	/*
+@@ -3796,10 +3796,10 @@ failed_mount3:
  		else
  			kfree(sbi->s_flex_groups);
  	}
@@ -175,8 +284,12 @@ index abb555f..a20daa0 100644
 +	percpu_counter_destroy(&sbi->s_freeclusters_counter);
  	percpu_counter_destroy(&sbi->s_freeinodes_counter);
  	percpu_counter_destroy(&sbi->s_dirs_counter);
- 	percpu_counter_destroy(&sbi->s_dirtyblocks_counter);
-@@ -4111,8 +4111,9 @@ static int ext4_commit_super(struct super_block *sb, int sync)
+-	percpu_counter_destroy(&sbi->s_dirtyblocks_counter);
++	percpu_counter_destroy(&sbi->s_dirtyclusters_counter);
+ 	if (sbi->s_mmp_tsk)
+ 		kthread_stop(sbi->s_mmp_tsk);
+ failed_mount2:
+@@ -4122,8 +4122,9 @@ static int ext4_commit_super(struct super_block *sb, int sync)
  	else
  		es->s_kbytes_written =
  			cpu_to_le64(EXT4_SB(sb)->s_kbytes_written);
@@ -188,13 +301,14 @@ index abb555f..a20daa0 100644
  	es->s_free_inodes_count =
  		cpu_to_le32(percpu_counter_sum_positive(
  				&EXT4_SB(sb)->s_freeinodes_counter));
-@@ -4567,10 +4568,10 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+@@ -4578,10 +4579,10 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
  	buf->f_type = EXT4_SUPER_MAGIC;
  	buf->f_bsize = sb->s_blocksize;
  	buf->f_blocks = ext4_blocks_count(es) - sbi->s_overhead_last;
 -	bfree = percpu_counter_sum_positive(&sbi->s_freeblocks_counter) -
+-		       percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
 +	bfree = percpu_counter_sum_positive(&sbi->s_freeclusters_counter) -
- 		       percpu_counter_sum_positive(&sbi->s_dirtyblocks_counter);
++		percpu_counter_sum_positive(&sbi->s_dirtyclusters_counter);
  	/* prevent underflow in case that few free space is available */
 -	buf->f_bfree = max_t(s64, bfree, 0);
 +	buf->f_bfree = EXT4_C2B(sbi, max_t(s64, bfree, 0));

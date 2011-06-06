@@ -1,0 +1,61 @@
+ext4: Teach the delalloc paths about bigalloc and clusters
+
+(This is a placeholder; it's not done yet.)
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/balloc.c |    2 +-
+ fs/ext4/inode.c  |    5 +++--
+ fs/ext4/super.c  |    3 ++-
+ 3 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index 902abff..b75a4ec 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -486,7 +486,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+  * @handle:             handle to this transaction
+  * @inode:              file inode
+  * @goal:               given target block(filesystem wide)
+- * @count:		pointer to total number of blocks needed
++ * @count:		pointer to total number of clusters needed
+  * @errp:               error code
+  *
+  * Return 1st allocated block number on success, *count stores total account
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 6cc4e97..9e45026 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1904,7 +1904,7 @@ static int ext4_journalled_write_end(struct file *file,
+ }
+ 
+ /*
+- * Reserve a single block located at lblock
++ * Reserve a single cluster located at lblock
+  */
+ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
+ {
+@@ -2215,7 +2215,8 @@ static void ext4_print_free_blocks(struct inode *inode)
+ 	       (long long) EXT4_C2B(EXT4_SB(inode->i_sb),
+ 		percpu_counter_sum(&sbi->s_freeclusters_counter)));
+ 	printk(KERN_CRIT "dirty_blocks=%lld\n",
+-	       (long long) percpu_counter_sum(&sbi->s_dirtyclusters_counter));
++	       (long long) EXT4_C2B(EXT4_SB(inode->i_sb),
++		percpu_counter_sum(&sbi->s_dirtyclusters_counter)));
+ 	printk(KERN_CRIT "Block reservation details\n");
+ 	printk(KERN_CRIT "i_reserved_data_blocks=%u\n",
+ 	       EXT4_I(inode)->i_reserved_data_blocks);
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 07c41a2..1d7dc89 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -2426,7 +2426,8 @@ static ssize_t delayed_allocation_blocks_show(struct ext4_attr *a,
+ 					      char *buf)
+ {
+ 	return snprintf(buf, PAGE_SIZE, "%llu\n",
+-		(s64) percpu_counter_sum(&sbi->s_dirtyclusters_counter));
++		(s64) EXT4_C2B(sbi,
++			percpu_counter_sum(&sbi->s_dirtyclusters_counter)));
+ }
+ 
+ static ssize_t session_write_kbytes_show(struct ext4_attr *a,
