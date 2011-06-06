@@ -13,12 +13,12 @@ units of clusters.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/mballoc.c |   84 ++++++++++++++++++++++++++++++----------------------
+ fs/ext4/mballoc.c |   83 ++++++++++++++++++++++++++++++----------------------
  fs/ext4/mballoc.h |    4 +-
- 2 files changed, 50 insertions(+), 38 deletions(-)
+ 2 files changed, 50 insertions(+), 37 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index c5e75df..a4e1d20 100644
+index 0520dae..cfcecd3 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -70,8 +70,8 @@
@@ -236,16 +236,17 @@ index c5e75df..a4e1d20 100644
  	BUG_ON(group != e4b->bd_group && pa->pa_len != 0);
  	end = bit + pa->pa_len;
  
-@@ -3579,7 +3591,7 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+@@ -3578,7 +3590,8 @@ ext4_mb_release_inode_pa(struct ext4_buddy *e4b, struct buffer_head *bitmap_bh,
+ 		free += next - bit;
  
  		trace_ext4_mballoc_discard(sb, NULL, group, bit, next - bit);
- 		trace_ext4_mb_release_inode_pa(sb, pa->pa_inode, pa,
--					       grp_blk_start + bit, next - bit);
-+			grp_blk_start + EXT4_C2B(sbi, bit), next - bit);
+-		trace_ext4_mb_release_inode_pa(pa, grp_blk_start + bit,
++		trace_ext4_mb_release_inode_pa(pa, (grp_blk_start +
++						    EXT4_C2B(sbi, bit)),
+ 					       next - bit);
  		mb_free_blocks(pa->pa_inode, e4b, bit, next - bit);
  		bit = next + 1;
- 	}
-@@ -3926,7 +3938,7 @@ static void ext4_mb_group_or_file(struct ext4_allocation_context *ac)
+@@ -3926,7 +3939,7 @@ static void ext4_mb_group_or_file(struct ext4_allocation_context *ac)
  	if (unlikely(ac->ac_flags & EXT4_MB_HINT_GOAL_ONLY))
  		return;
  
@@ -254,7 +255,7 @@ index c5e75df..a4e1d20 100644
  	isize = (i_size_read(ac->ac_inode) + ac->ac_sb->s_blocksize - 1)
  		>> bsbits;
  
-@@ -3987,18 +3999,15 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
+@@ -3987,18 +4000,15 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
  
  	/* set up allocation goals */
  	memset(ac, 0, sizeof(struct ext4_allocation_context));
@@ -276,7 +277,7 @@ index c5e75df..a4e1d20 100644
  	ac->ac_flags = ar->flags;
  
  	/* we have to define context: we'll we work with a file or
-@@ -4150,13 +4159,14 @@ static void ext4_mb_add_n_trim(struct ext4_allocation_context *ac)
+@@ -4150,13 +4160,14 @@ static void ext4_mb_add_n_trim(struct ext4_allocation_context *ac)
   */
  static int ext4_mb_release_context(struct ext4_allocation_context *ac)
  {
@@ -293,7 +294,7 @@ index c5e75df..a4e1d20 100644
  			pa->pa_free -= ac->ac_b_ex.fe_len;
  			pa->pa_len -= ac->ac_b_ex.fe_len;
  			spin_unlock(&pa->pa_lock);
-@@ -4249,10 +4259,12 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+@@ -4249,10 +4260,12 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  		}
  		reserv_blks = ar->len;
  		if (ar->flags & EXT4_MB_USE_ROOT_BLOCKS) {
@@ -308,7 +309,7 @@ index c5e75df..a4e1d20 100644
  
  				ar->flags |= EXT4_MB_HINT_NOPREALLOC;
  				ar->len--;
-@@ -4332,7 +4344,7 @@ out:
+@@ -4332,7 +4345,7 @@ out:
  	if (ac)
  		kmem_cache_free(ext4_ac_cachep, ac);
  	if (inquota && ar->len < inquota)
@@ -317,15 +318,6 @@ index c5e75df..a4e1d20 100644
  	if (!ar->len) {
  		if (!ext4_test_inode_state(ar->inode,
  					   EXT4_STATE_DELALLOC_RESERVED))
-@@ -4638,7 +4650,7 @@ do_more:
- 	ext4_mark_super_dirty(sb);
- error_return:
- 	if (freed)
--		dquot_free_block(inode, freed);
-+		dquot_free_block(inode, EXT4_C2B(sbi, freed));
- 	brelse(bitmap_bh);
- 	ext4_std_error(sb, err);
- 	return;
 diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
 index 4423c6f..cd93532 100644
 --- a/fs/ext4/mballoc.h
