@@ -11,11 +11,11 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/balloc.c |  105 ++++++++++++++++++++++++++---------------------------
  fs/ext4/ext4.h   |   13 ++++---
- fs/ext4/ialloc.c |   19 +++-------
- 3 files changed, 65 insertions(+), 72 deletions(-)
+ fs/ext4/ialloc.c |   20 ++++-------
+ 3 files changed, 66 insertions(+), 72 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 702a8bb..fb81b32 100644
+index 7438265..57cef63 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -102,74 +102,73 @@ static unsigned int num_blocks_in_group(struct super_block *sb,
@@ -146,10 +146,10 @@ index 702a8bb..fb81b32 100644
  /*
   * The free blocks are managed by bitmaps.  A file system contains several
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index b0ec36b..86905ff 100644
+index 880a551..8cad89a 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1662,12 +1662,13 @@ extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
+@@ -1748,12 +1748,13 @@ extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
  extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
  struct buffer_head *ext4_read_block_bitmap(struct super_block *sb,
  				      ext4_group_t block_group);
@@ -170,7 +170,7 @@ index b0ec36b..86905ff 100644
  /* dir.c */
  extern int __ext4_check_dir_entry(const char *, unsigned int, struct inode *,
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index 21bb2f6..d0770b6 100644
+index 21bb2f6..c176cf4 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -816,7 +816,6 @@ struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, int mode,
@@ -181,7 +181,7 @@ index 21bb2f6..d0770b6 100644
  	static int once = 1;
  	ext4_group_t flex_group;
  
-@@ -950,26 +949,20 @@ got:
+@@ -950,26 +949,21 @@ got:
  			goto fail;
  		}
  
@@ -192,6 +192,7 @@ index 21bb2f6..d0770b6 100644
 +		brelse(block_bitmap_bh);
 +
  		/* recheck and clear flag under lock if we still need to */
++		ext4_lock_group(sb, group);
  		if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
 -			free = ext4_free_blocks_after_init(sb, group, gdp);
  			gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
