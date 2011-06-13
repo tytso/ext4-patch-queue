@@ -5,6 +5,7 @@ From: Jan Kara <jack@suse.cz>
 jbd2_journal_remove_journal_head() can oops when trying to access
 journal_head returned by bh2jh(). This is caused for example by the
 following race:
+
 	TASK1					TASK2
   jbd2_journal_commit_transaction()
     ...
@@ -19,43 +20,36 @@ following race:
 					  jbd2_journal_put_journal_head(jh)
         jbd2_journal_remove_journal_head(bh);
 
-jbd2_journal_put_journal_head() in TASK2 sees that b_jcount == 0 and buffer
-is not part of any transaction and thus frees journal_head before TASK1 gets
-to doing so. Note that even buffer_head can be released by
-try_to_free_buffers() after jbd2_journal_put_journal_head() which adds even
-larger opportunity for oops (but I didn't see this happen in reality).
+jbd2_journal_put_journal_head() in TASK2 sees that b_jcount == 0 and
+buffer is not part of any transaction and thus frees journal_head
+before TASK1 gets to doing so. Note that even buffer_head can be
+released by try_to_free_buffers() after
+jbd2_journal_put_journal_head() which adds even larger opportunity for
+oops (but I didn't see this happen in reality).
 
-Fix the problem by making transactions hold their own journal_head reference
-(in b_jcount). That way we don't have to remove journal_head explicitely via
-jbd2_journal_remove_journal_head() and instead just remove journal_head when
-b_jcount drops to zero. The result of this is that
-[__]jbd2_journal_refile_buffer(), [__]jbd2_journal_unfile_buffer(), and
+Fix the problem by making transactions hold their own journal_head
+reference (in b_jcount). That way we don't have to remove journal_head
+explicitely via jbd2_journal_remove_journal_head() and instead just
+remove journal_head when b_jcount drops to zero. The result of this is
+that [__]jbd2_journal_refile_buffer(),
+[__]jbd2_journal_unfile_buffer(), and
 __jdb2_journal_remove_checkpoint() can free journal_head which needs
 modification of a few callers. Also we have to be careful because once
-journal_head is removed, buffer_head might be freed as well. So we have to get
-our own buffer_head reference where it matters.
+journal_head is removed, buffer_head might be freed as well. So we
+have to get our own buffer_head reference where it matters.
 
 Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/jbd2/checkpoint.c  |   25 +++++++------
+ fs/jbd2/checkpoint.c  |   28 +++++++++------
  fs/jbd2/commit.c      |   33 ++++++++++-------
- fs/jbd2/journal.c     |   94 +++++++++++++++++--------------------------------
- fs/jbd2/transaction.c |   70 +++++++++++++++++++++---------------
+ fs/jbd2/journal.c     |   91 +++++++++++++++---------------------------------
+ fs/jbd2/transaction.c |   67 +++++++++++++++++++-----------------
  include/linux/jbd2.h  |    2 -
- 5 files changed, 105 insertions(+), 119 deletions(-)
-
- This has survived some testing but really it would use another pair of
-eyes in review since if there are bugs, they would be hard to trigger. The
-logic should not be hard to follow, there are just quite a few places that
-need to be updated...
-
-PS: Alternative, less intrusive fix would be to make
-jbd2_journal_remove_journal_head() tolerate NULL journal_head (I might go this
-route for JBD) but it really seems just cleaner for transactions to hold their
-references when they really reference the journal_head...
+ 5 files changed, 99 insertions(+), 122 deletions(-)
 
 diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
-index 3436d53..b14a53d 100644
+index 6a79fd0..2c62c5a 100644
 --- a/fs/jbd2/checkpoint.c
 +++ b/fs/jbd2/checkpoint.c
 @@ -97,10 +97,14 @@ static int __try_to_free_cp_buf(struct journal_head *jh)
@@ -115,7 +109,17 @@ index 3436d53..b14a53d 100644
  		__brelse(bh);
  	} else {
  		/*
-@@ -663,8 +666,8 @@ out:
+@@ -554,7 +557,8 @@ int jbd2_cleanup_journal_tail(journal_t *journal)
+ /*
+  * journal_clean_one_cp_list
+  *
+- * Find all the written-back checkpoint buffers in the given list and release them.
++ * Find all the written-back checkpoint buffers in the given list and
++ * release them.
+  *
+  * Called with the journal locked.
+  * Called with j_list_lock held.
+@@ -663,8 +667,8 @@ out:
   * checkpoint lists.
   *
   * The function returns 1 if it frees the transaction, 0 otherwise.
@@ -125,7 +129,7 @@ index 3436d53..b14a53d 100644
   * This function is called with j_list_lock held.
   * This function is called with jbd_lock_bh_state(jh2bh(jh))
   */
-@@ -684,13 +687,14 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
+@@ -684,13 +688,14 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
  	}
  	journal = transaction->t_journal;
  
@@ -141,7 +145,7 @@ index 3436d53..b14a53d 100644
  
  	/*
  	 * There is one special case to worry about: if we have just pulled the
-@@ -701,10 +705,8 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
+@@ -701,10 +706,8 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
  	 * The locking here around t_state is a bit sleazy.
  	 * See the comment at the end of jbd2_journal_commit_transaction().
  	 */
@@ -153,7 +157,7 @@ index 3436d53..b14a53d 100644
  
  	/* OK, that was the last buffer for the transaction: we can now
  	   safely remove this transaction from the log */
-@@ -723,7 +725,6 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
+@@ -723,7 +726,6 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
  	wake_up(&journal->j_wait_logspace);
  	ret = 1;
  out:
@@ -161,7 +165,7 @@ index 3436d53..b14a53d 100644
  	return ret;
  }
  
-@@ -742,6 +743,8 @@ void __jbd2_journal_insert_checkpoint(struct journal_head *jh,
+@@ -742,6 +744,8 @@ void __jbd2_journal_insert_checkpoint(struct journal_head *jh,
  	J_ASSERT_JH(jh, buffer_dirty(jh2bh(jh)) || buffer_jbddirty(jh2bh(jh)));
  	J_ASSERT_JH(jh, jh->b_cp_transaction == NULL);
  
@@ -171,10 +175,10 @@ index 3436d53..b14a53d 100644
  
  	if (!transaction->t_checkpoint_list) {
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index 6dd6515..4b2f482 100644
+index 7f21cf3..eef6979 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
-@@ -856,10 +856,16 @@ restart_loop:
+@@ -848,10 +848,16 @@ restart_loop:
  	while (commit_transaction->t_forget) {
  		transaction_t *cp_transaction;
  		struct buffer_head *bh;
@@ -191,7 +195,7 @@ index 6dd6515..4b2f482 100644
  		jbd_lock_bh_state(bh);
  		J_ASSERT_JH(jh,	jh->b_transaction == commit_transaction);
  
-@@ -922,28 +928,27 @@ restart_loop:
+@@ -914,28 +920,27 @@ restart_loop:
  			__jbd2_journal_insert_checkpoint(jh, commit_transaction);
  			if (is_journal_aborted(journal))
  				clear_buffer_jbddirty(bh);
@@ -234,10 +238,10 @@ index 6dd6515..4b2f482 100644
  	}
  	spin_unlock(&journal->j_list_lock);
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 728f7d3..ce1c76d 100644
+index 9a78269..0dfa5b5 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
-@@ -2079,10 +2079,9 @@ static void journal_free_journal_head(struct journal_head *jh)
+@@ -2078,10 +2078,9 @@ static void journal_free_journal_head(struct journal_head *jh)
   * When a buffer has its BH_JBD bit set it is immune from being released by
   * core kernel code, mainly via ->b_count.
   *
@@ -251,7 +255,7 @@ index 728f7d3..ce1c76d 100644
   *
   * Various places in the kernel want to attach a journal_head to a buffer_head
   * _before_ attaching the journal_head to a transaction.  To protect the
-@@ -2095,17 +2094,16 @@ static void journal_free_journal_head(struct journal_head *jh)
+@@ -2094,17 +2093,16 @@ static void journal_free_journal_head(struct journal_head *jh)
   *	(Attach a journal_head if needed.  Increments b_jcount)
   *	struct journal_head *jh = jbd2_journal_add_journal_head(bh);
   *	...
@@ -272,7 +276,7 @@ index 728f7d3..ce1c76d 100644
   * May sleep.
   */
  struct journal_head *jbd2_journal_add_journal_head(struct buffer_head *bh)
-@@ -2169,62 +2167,33 @@ static void __journal_remove_journal_head(struct buffer_head *bh)
+@@ -2168,61 +2166,29 @@ static void __journal_remove_journal_head(struct buffer_head *bh)
  	struct journal_head *jh = bh2jh(bh);
  
  	J_ASSERT_JH(jh, jh->b_jcount >= 0);
@@ -351,13 +355,9 @@ index 728f7d3..ce1c76d 100644
 - * Drop a reference on the passed journal_head.  If it fell to zero then try to
 + * Drop a reference on the passed journal_head.  If it fell to zero then
   * release the journal_head from the buffer_head.
-+ *
-+ * Returns 1 if journal_head was released and in such case return with
-+ * buffer_head reference that must be released by the caller.
   */
  void jbd2_journal_put_journal_head(struct journal_head *jh)
- {
-@@ -2233,11 +2202,12 @@ void jbd2_journal_put_journal_head(struct journal_head *jh)
+@@ -2232,11 +2198,12 @@ void jbd2_journal_put_journal_head(struct journal_head *jh)
  	jbd_lock_bh_journal_head(bh);
  	J_ASSERT_JH(jh, jh->b_jcount > 0);
  	--jh->b_jcount;
@@ -374,7 +374,7 @@ index 728f7d3..ce1c76d 100644
  
  /*
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index 49646cc..b26bd21 100644
+index 547b101..2d71094 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
 @@ -30,6 +30,7 @@
@@ -393,7 +393,7 @@ index 49646cc..b26bd21 100644
  		JBUFFER_TRACE(jh, "file as BJ_Reserved");
  		spin_lock(&journal->j_list_lock);
  		__jbd2_journal_file_buffer(jh, transaction, BJ_Reserved);
-@@ -896,8 +896,6 @@ int jbd2_journal_get_create_access(handle_t *handle, struct buffer_head *bh)
+@@ -895,8 +895,6 @@ int jbd2_journal_get_create_access(handle_t *handle, struct buffer_head *bh)
  		 * committed and so it's safe to clear the dirty bit.
  		 */
  		clear_buffer_dirty(jh2bh(jh));
@@ -402,7 +402,7 @@ index 49646cc..b26bd21 100644
  		/* first access by this transaction */
  		jh->b_modified = 0;
  
-@@ -1232,8 +1230,6 @@ int jbd2_journal_forget (handle_t *handle, struct buffer_head *bh)
+@@ -1230,8 +1228,6 @@ int jbd2_journal_forget (handle_t *handle, struct buffer_head *bh)
  			__jbd2_journal_file_buffer(jh, transaction, BJ_Forget);
  		} else {
  			__jbd2_journal_unfile_buffer(jh);
@@ -411,7 +411,7 @@ index 49646cc..b26bd21 100644
  			if (!buffer_jbd(bh)) {
  				spin_unlock(&journal->j_list_lock);
  				jbd_unlock_bh_state(bh);
-@@ -1555,19 +1551,32 @@ void __jbd2_journal_temp_unlink_buffer(struct journal_head *jh)
+@@ -1554,19 +1550,32 @@ void __jbd2_journal_temp_unlink_buffer(struct journal_head *jh)
  		mark_buffer_dirty(bh);	/* Expose it to the VM */
  }
  
@@ -447,7 +447,7 @@ index 49646cc..b26bd21 100644
  }
  
  /*
-@@ -1594,8 +1603,6 @@ __journal_try_to_free_buffer(journal_t *journal, struct buffer_head *bh)
+@@ -1593,8 +1602,6 @@ __journal_try_to_free_buffer(journal_t *journal, struct buffer_head *bh)
  		if (jh->b_jlist == BJ_None) {
  			JBUFFER_TRACE(jh, "remove from checkpoint list");
  			__jbd2_journal_remove_checkpoint(jh);
@@ -456,7 +456,7 @@ index 49646cc..b26bd21 100644
  		}
  	}
  	spin_unlock(&journal->j_list_lock);
-@@ -1658,7 +1665,6 @@ int jbd2_journal_try_to_free_buffers(journal_t *journal,
+@@ -1657,7 +1664,6 @@ int jbd2_journal_try_to_free_buffers(journal_t *journal,
  		/*
  		 * We take our own ref against the journal_head here to avoid
  		 * having to add tons of locking around each instance of
@@ -464,7 +464,7 @@ index 49646cc..b26bd21 100644
  		 * jbd2_journal_put_journal_head().
  		 */
  		jh = jbd2_journal_grab_journal_head(bh);
-@@ -1696,10 +1702,9 @@ static int __dispose_buffer(struct journal_head *jh, transaction_t *transaction)
+@@ -1695,10 +1701,9 @@ static int __dispose_buffer(struct journal_head *jh, transaction_t *transaction)
  	int may_free = 1;
  	struct buffer_head *bh = jh2bh(jh);
  
@@ -476,7 +476,7 @@ index 49646cc..b26bd21 100644
  		/*
  		 * We don't want to write the buffer anymore, clear the
  		 * bit so that we don't confuse checks in
-@@ -1710,8 +1715,7 @@ static int __dispose_buffer(struct journal_head *jh, transaction_t *transaction)
+@@ -1709,8 +1714,7 @@ static int __dispose_buffer(struct journal_head *jh, transaction_t *transaction)
  		may_free = 0;
  	} else {
  		JBUFFER_TRACE(jh, "on running transaction");
@@ -486,7 +486,7 @@ index 49646cc..b26bd21 100644
  	}
  	return may_free;
  }
-@@ -1989,6 +1993,8 @@ void __jbd2_journal_file_buffer(struct journal_head *jh,
+@@ -1988,6 +1992,8 @@ void __jbd2_journal_file_buffer(struct journal_head *jh,
  
  	if (jh->b_transaction)
  		__jbd2_journal_temp_unlink_buffer(jh);
@@ -495,7 +495,7 @@ index 49646cc..b26bd21 100644
  	jh->b_transaction = transaction;
  
  	switch (jlist) {
-@@ -2040,9 +2046,10 @@ void jbd2_journal_file_buffer(struct journal_head *jh,
+@@ -2039,9 +2045,10 @@ void jbd2_journal_file_buffer(struct journal_head *jh,
   * already started to be used by a subsequent transaction, refile the
   * buffer on that transaction's metadata list.
   *
@@ -508,7 +508,7 @@ index 49646cc..b26bd21 100644
   */
  void __jbd2_journal_refile_buffer(struct journal_head *jh)
  {
-@@ -2066,6 +2073,11 @@ void __jbd2_journal_refile_buffer(struct journal_head *jh)
+@@ -2065,6 +2072,11 @@ void __jbd2_journal_refile_buffer(struct journal_head *jh)
  
  	was_dirty = test_clear_buffer_jbddirty(bh);
  	__jbd2_journal_temp_unlink_buffer(jh);
@@ -520,15 +520,14 @@ index 49646cc..b26bd21 100644
  	jh->b_transaction = jh->b_next_transaction;
  	jh->b_next_transaction = NULL;
  	if (buffer_freed(bh))
-@@ -2082,30 +2094,28 @@ void __jbd2_journal_refile_buffer(struct journal_head *jh)
+@@ -2081,30 +2093,21 @@ void __jbd2_journal_refile_buffer(struct journal_head *jh)
  }
  
  /*
 - * For the unlocked version of this call, also make sure that any
 - * hanging journal_head is cleaned up if necessary.
-+ * For the unlocked version of this call, also drop buffer_head reference.
-  *
-  * __jbd2_journal_refile_buffer is usually called as part of a single locked
+- *
+- * __jbd2_journal_refile_buffer is usually called as part of a single locked
 - * operation on a buffer_head, in which the caller is probably going to
 - * be hooking the journal_head onto other lists.  In that case it is up
 - * to the caller to remove the journal_head if necessary.  For the
@@ -537,12 +536,8 @@ index 49646cc..b26bd21 100644
 - * ourselves to avoid a jh leak.
 - *
 - * *** The journal_head may be freed by this call! ***
-+ * operation on a buffer_head, in which the caller is probably going to use
-+ * buffer_head further (at least for jbd_unlock_bh_state).  In that case it is
-+ * up to the caller to drop buffer_head reference. For the unlocked
-+ * jbd2_journal_refile_buffer call, the caller isn't going to be doing anything
-+ * else to the buffer so we need to do the cleanup ourselves to avoid a bh
-+ * leak.
++ * __jbd2_journal_refile_buffer() with necessary locking added. We take our
++ * bh reference so that we can safely unlock bh.
 + *
 + * The jh and bh may be freed by this call.
   */
@@ -563,10 +558,10 @@ index 49646cc..b26bd21 100644
  	__brelse(bh);
  }
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 309cc49..54eb7f9 100644
+index 4ecb7b1..d087c2e 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
-@@ -1027,7 +1027,6 @@ struct journal_s
+@@ -1024,7 +1024,6 @@ struct journal_s
  
  /* Filing buffers */
  extern void jbd2_journal_unfile_buffer(journal_t *, struct journal_head *);
@@ -574,7 +569,7 @@ index 309cc49..54eb7f9 100644
  extern void __jbd2_journal_refile_buffer(struct journal_head *);
  extern void jbd2_journal_refile_buffer(journal_t *, struct journal_head *);
  extern void __jbd2_journal_file_buffer(struct journal_head *, transaction_t *, int);
-@@ -1168,7 +1167,6 @@ extern void	   jbd2_journal_release_jbd_inode(journal_t *journal, struct jbd2_in
+@@ -1165,7 +1164,6 @@ extern void	   jbd2_journal_release_jbd_inode(journal_t *journal, struct jbd2_in
   */
  struct journal_head *jbd2_journal_add_journal_head(struct buffer_head *bh);
  struct journal_head *jbd2_journal_grab_journal_head(struct buffer_head *bh);
@@ -582,7 +577,3 @@ index 309cc49..54eb7f9 100644
  void jbd2_journal_put_journal_head(struct journal_head *jh);
  
  /*
--- 
-1.7.1
-
-
