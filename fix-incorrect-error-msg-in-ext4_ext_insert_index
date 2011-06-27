@@ -1,0 +1,30 @@
+ext4: fix incorrect error msg in ext4_ext_insert_index
+
+From: Robin Dong <hao.bigrat@gmail.com>
+
+In function ext4_ext_insert_index when eh_entries of curp is
+bigger than eh_max, error messages will be printed out, but the content
+is about logical and ei_block, that's incorret.
+
+Signed-off-by: Robin Dong <sanbai@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 5199bac..25be6e0 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -808,8 +808,9 @@ static int ext4_ext_insert_index(handle_t *handle, struct inode *inode,
+ 	if (unlikely(le16_to_cpu(curp->p_hdr->eh_entries)
+ 			     > le16_to_cpu(curp->p_hdr->eh_max))) {
+ 		EXT4_ERROR_INODE(inode,
+-				 "logical %d == ei_block %d!",
+-				 logical, le32_to_cpu(curp->p_idx->ei_block));
++				 "eh_entries %d > eh_max %d!",
++				 le16_to_cpu(curp->p_hdr->eh_entries),
++				 le16_to_cpu(curp->p_hdr->eh_max));
+ 		return -EIO;
+ 	}
+ 	if (unlikely(ix > EXT_LAST_INDEX(curp->p_hdr))) {
