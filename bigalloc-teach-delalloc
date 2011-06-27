@@ -1,19 +1,19 @@
-ext4: Teach the delalloc paths about bigalloc and clusters
+ext4: teach the i_blocks/quota code about bigalloc and clusters
 
 (This is a placeholder; it's not done yet.)
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/balloc.c |    2 +-
- fs/ext4/inode.c  |    5 +++--
+ fs/ext4/balloc.c |    5 +++--
+ fs/ext4/inode.c  |   18 ++++++++++--------
  fs/ext4/super.c  |    3 ++-
- 3 files changed, 6 insertions(+), 4 deletions(-)
+ 3 files changed, 15 insertions(+), 11 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 902abff..b75a4ec 100644
+index af68c40..26d5a8d 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
-@@ -486,7 +486,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+@@ -485,7 +485,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
   * @handle:             handle to this transaction
   * @inode:              file inode
   * @goal:               given target block(filesystem wide)
@@ -22,10 +22,37 @@ index 902abff..b75a4ec 100644
   * @errp:               error code
   *
   * Return 1st allocated block number on success, *count stores total account
+@@ -517,7 +517,8 @@ ext4_fsblk_t ext4_new_meta_blocks(handle_t *handle, struct inode *inode,
+ 		spin_lock(&EXT4_I(inode)->i_block_reservation_lock);
+ 		EXT4_I(inode)->i_allocated_meta_blocks += ar.len;
+ 		spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
+-		dquot_alloc_block_nofail(inode, ar.len);
++		dquot_alloc_block_nofail(inode,
++				EXT4_C2B(EXT4_SB(inode->i_sb), ar.len));
+ 	}
+ 	return ret;
+ }
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 6cc4e97..9e45026 100644
+index c917329..e5f19d9 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
+@@ -1160,14 +1160,14 @@ void ext4_da_update_reserve_space(struct inode *inode,
+ 
+ 	/* Update quota subsystem for data blocks */
+ 	if (quota_claim)
+-		dquot_claim_block(inode, used);
++		dquot_claim_block(inode, EXT4_C2B(sbi, used));
+ 	else {
+ 		/*
+ 		 * We did fallocate with an offset that is already delayed
+ 		 * allocated. So on delayed allocated writeback we should
+ 		 * not re-claim the quota for fallocated blocks.
+ 		 */
+-		dquot_release_reservation_block(inode, used);
++		dquot_release_reservation_block(inode, EXT4_C2B(sbi, used));
+ 	}
+ 
+ 	/*
 @@ -1904,7 +1904,7 @@ static int ext4_journalled_write_end(struct file *file,
  }
  
@@ -35,7 +62,44 @@ index 6cc4e97..9e45026 100644
   */
  static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
  {
-@@ -2215,7 +2215,8 @@ static void ext4_print_free_blocks(struct inode *inode)
+@@ -1921,7 +1921,8 @@ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
+ 	 */
+ repeat:
+ 	spin_lock(&ei->i_block_reservation_lock);
+-	md_needed = ext4_calc_metadata_amount(inode, lblock);
++	md_needed = EXT4_NUM_B2C(sbi,
++				 ext4_calc_metadata_amount(inode, lblock));
+ 	trace_ext4_da_reserve_space(inode, md_needed);
+ 	spin_unlock(&ei->i_block_reservation_lock);
+ 
+@@ -1930,7 +1931,7 @@ repeat:
+ 	 * us from metadata over-estimation, though we may go over by
+ 	 * a small amount in the end.  Here we just reserve for data.
+ 	 */
+-	ret = dquot_reserve_block(inode, 1);
++	ret = dquot_reserve_block(inode, EXT4_C2B(sbi, 1));
+ 	if (ret)
+ 		return ret;
+ 	/*
+@@ -1938,7 +1939,7 @@ repeat:
+ 	 * we cannot afford to run out of free blocks.
+ 	 */
+ 	if (ext4_claim_free_blocks(sbi, md_needed + 1, 0)) {
+-		dquot_release_reservation_block(inode, 1);
++		dquot_release_reservation_block(inode, EXT4_C2B(sbi, 1));
+ 		if (ext4_should_retry_alloc(inode->i_sb, &retries)) {
+ 			yield();
+ 			goto repeat;
+@@ -1997,7 +1998,7 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
+ 
+ 	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
+ 
+-	dquot_release_reservation_block(inode, to_free);
++	dquot_release_reservation_block(inode, EXT4_C2B(sbi, to_free));
+ }
+ 
+ static void ext4_da_page_release_reservation(struct page *page,
+@@ -2214,7 +2215,8 @@ static void ext4_print_free_blocks(struct inode *inode)
  	       (long long) EXT4_C2B(EXT4_SB(inode->i_sb),
  		percpu_counter_sum(&sbi->s_freeclusters_counter)));
  	printk(KERN_CRIT "dirty_blocks=%lld\n",
@@ -46,10 +110,10 @@ index 6cc4e97..9e45026 100644
  	printk(KERN_CRIT "i_reserved_data_blocks=%u\n",
  	       EXT4_I(inode)->i_reserved_data_blocks);
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 07c41a2..1d7dc89 100644
+index 7a4d54e..e10062d 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -2426,7 +2426,8 @@ static ssize_t delayed_allocation_blocks_show(struct ext4_attr *a,
+@@ -2425,7 +2425,8 @@ static ssize_t delayed_allocation_blocks_show(struct ext4_attr *a,
  					      char *buf)
  {
  	return snprintf(buf, PAGE_SIZE, "%llu\n",
