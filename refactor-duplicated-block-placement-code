@@ -1,0 +1,191 @@
+ext4: refactor duplicated block placement code
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+I found that ext4_ext_find_goal() and ext4_find_near()
+share the same code for returning a coloured start block
+based on i_block_group.
+
+We can refactor this into a common function so that they
+don't diverge in the future.
+
+Thanks to adilger for suggesting the new function name.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/balloc.c   |   48 ++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/ext4.h     |    1 +
+ fs/ext4/extents.c  |   37 +------------------------------------
+ fs/ext4/indirect.c |   28 +---------------------------
+ 4 files changed, 51 insertions(+), 63 deletions(-)
+
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index 264f694..f8224ad 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -620,3 +620,51 @@ unsigned long ext4_bg_num_gdb(struct super_block *sb, ext4_group_t group)
+ 
+ }
+ 
++/**
++ *	ext4_inode_to_goal_block - return a hint for block allocation
++ *	@inode: inode for block allocation
++ *
++ *	Return the ideal location to start allocating blocks for a
++ *	newly created inode.
++ */
++ext4_fsblk_t ext4_inode_to_goal_block(struct inode *inode)
++{
++	struct ext4_inode_info *ei = EXT4_I(inode);
++	ext4_group_t block_group;
++	ext4_grpblk_t colour;
++	int flex_size = ext4_flex_bg_size(EXT4_SB(inode->i_sb));
++	ext4_fsblk_t bg_start;
++	ext4_fsblk_t last_block;
++
++	block_group = ei->i_block_group;
++	if (flex_size >= EXT4_FLEX_SIZE_DIR_ALLOC_SCHEME) {
++		/*
++		 * If there are at least EXT4_FLEX_SIZE_DIR_ALLOC_SCHEME
++		 * block groups per flexgroup, reserve the first block
++		 * group for directories and special files.  Regular
++		 * files will start at the second block group.  This
++		 * tends to speed up directory access and improves
++		 * fsck times.
++		 */
++		block_group &= ~(flex_size-1);
++		if (S_ISREG(inode->i_mode))
++			block_group++;
++	}
++	bg_start = ext4_group_first_block_no(inode->i_sb, block_group);
++	last_block = ext4_blocks_count(EXT4_SB(inode->i_sb)->s_es) - 1;
++
++	/*
++	 * If we are doing delayed allocation, we don't need take
++	 * colour into account.
++	 */
++	if (test_opt(inode->i_sb, DELALLOC))
++		return bg_start;
++
++	if (bg_start + EXT4_BLOCKS_PER_GROUP(inode->i_sb) <= last_block)
++		colour = (current->pid % 16) *
++			(EXT4_BLOCKS_PER_GROUP(inode->i_sb) / 16);
++	else
++		colour = (current->pid % 16) * ((last_block - bg_start) / 16);
++	return bg_start + colour;
++}
++
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index ddaf504..49d2cea 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1743,6 +1743,7 @@ extern unsigned ext4_init_block_bitmap(struct super_block *sb,
+ 				       struct ext4_group_desc *desc);
+ #define ext4_free_blocks_after_init(sb, group, desc)			\
+ 		ext4_init_block_bitmap(sb, NULL, group, desc)
++ext4_fsblk_t ext4_inode_to_goal_block(struct inode *);
+ 
+ /* dir.c */
+ extern int __ext4_check_dir_entry(const char *, unsigned int, struct inode *,
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index eb63c7b..f331e50 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -114,12 +114,6 @@ static ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
+ 			      struct ext4_ext_path *path,
+ 			      ext4_lblk_t block)
+ {
+-	struct ext4_inode_info *ei = EXT4_I(inode);
+-	ext4_fsblk_t bg_start;
+-	ext4_fsblk_t last_block;
+-	ext4_grpblk_t colour;
+-	ext4_group_t block_group;
+-	int flex_size = ext4_flex_bg_size(EXT4_SB(inode->i_sb));
+ 	int depth;
+ 
+ 	if (path) {
+@@ -161,36 +155,7 @@ static ext4_fsblk_t ext4_ext_find_goal(struct inode *inode,
+ 	}
+ 
+ 	/* OK. use inode's group */
+-	block_group = ei->i_block_group;
+-	if (flex_size >= EXT4_FLEX_SIZE_DIR_ALLOC_SCHEME) {
+-		/*
+-		 * If there are at least EXT4_FLEX_SIZE_DIR_ALLOC_SCHEME
+-		 * block groups per flexgroup, reserve the first block
+-		 * group for directories and special files.  Regular
+-		 * files will start at the second block group.  This
+-		 * tends to speed up directory access and improves
+-		 * fsck times.
+-		 */
+-		block_group &= ~(flex_size-1);
+-		if (S_ISREG(inode->i_mode))
+-			block_group++;
+-	}
+-	bg_start = ext4_group_first_block_no(inode->i_sb, block_group);
+-	last_block = ext4_blocks_count(EXT4_SB(inode->i_sb)->s_es) - 1;
+-
+-	/*
+-	 * If we are doing delayed allocation, we don't need take
+-	 * colour into account.
+-	 */
+-	if (test_opt(inode->i_sb, DELALLOC))
+-		return bg_start;
+-
+-	if (bg_start + EXT4_BLOCKS_PER_GROUP(inode->i_sb) <= last_block)
+-		colour = (current->pid % 16) *
+-			(EXT4_BLOCKS_PER_GROUP(inode->i_sb) / 16);
+-	else
+-		colour = (current->pid % 16) * ((last_block - bg_start) / 16);
+-	return bg_start + colour + block;
++	return ext4_inode_to_goal_block(inode);
+ }
+ 
+ /*
+diff --git a/fs/ext4/indirect.c b/fs/ext4/indirect.c
+index c3e85a8..6c27111 100644
+--- a/fs/ext4/indirect.c
++++ b/fs/ext4/indirect.c
+@@ -207,11 +207,6 @@ static ext4_fsblk_t ext4_find_near(struct inode *inode, Indirect *ind)
+ 	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	__le32 *start = ind->bh ? (__le32 *) ind->bh->b_data : ei->i_data;
+ 	__le32 *p;
+-	ext4_fsblk_t bg_start;
+-	ext4_fsblk_t last_block;
+-	ext4_grpblk_t colour;
+-	ext4_group_t block_group;
+-	int flex_size = ext4_flex_bg_size(EXT4_SB(inode->i_sb));
+ 
+ 	/* Try to find previous block */
+ 	for (p = ind->p - 1; p >= start; p--) {
+@@ -227,28 +222,7 @@ static ext4_fsblk_t ext4_find_near(struct inode *inode, Indirect *ind)
+ 	 * It is going to be referred to from the inode itself? OK, just put it
+ 	 * into the same cylinder group then.
+ 	 */
+-	block_group = ei->i_block_group;
+-	if (flex_size >= EXT4_FLEX_SIZE_DIR_ALLOC_SCHEME) {
+-		block_group &= ~(flex_size-1);
+-		if (S_ISREG(inode->i_mode))
+-			block_group++;
+-	}
+-	bg_start = ext4_group_first_block_no(inode->i_sb, block_group);
+-	last_block = ext4_blocks_count(EXT4_SB(inode->i_sb)->s_es) - 1;
+-
+-	/*
+-	 * If we are doing delayed allocation, we don't need take
+-	 * colour into account.
+-	 */
+-	if (test_opt(inode->i_sb, DELALLOC))
+-		return bg_start;
+-
+-	if (bg_start + EXT4_BLOCKS_PER_GROUP(inode->i_sb) <= last_block)
+-		colour = (current->pid % 16) *
+-			(EXT4_BLOCKS_PER_GROUP(inode->i_sb) / 16);
+-	else
+-		colour = (current->pid % 16) * ((last_block - bg_start) / 16);
+-	return bg_start + colour;
++	return ext4_inode_to_goal_block(inode);
+ }
+ 
+ /**
