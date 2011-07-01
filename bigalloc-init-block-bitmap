@@ -10,12 +10,12 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 103 insertions(+), 41 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 675c1e0..4a66fde 100644
+index 735d9fc..1c6d777 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
-@@ -21,9 +21,6 @@
- #include "ext4_jbd2.h"
- #include "mballoc.h"
+@@ -23,9 +23,6 @@
+ 
+ #include <trace/events/ext4.h>
  
 -static unsigned int num_base_meta_blocks(struct super_block *sb,
 -					 ext4_group_t block_group);
@@ -23,7 +23,7 @@ index 675c1e0..4a66fde 100644
  /*
   * balloc.c contains the blocks allocation and deallocation routines
   */
-@@ -56,37 +53,87 @@ static int ext4_block_in_group(struct super_block *sb, ext4_fsblk_t block,
+@@ -58,37 +55,87 @@ static int ext4_block_in_group(struct super_block *sb, ext4_fsblk_t block,
  	return 0;
  }
  
@@ -134,7 +134,7 @@ index 675c1e0..4a66fde 100644
  	if (block_group == ext4_get_groups_count(sb) - 1) {
  		/*
  		 * Even though mke2fs always initializes the first and
-@@ -94,10 +141,11 @@ static unsigned int num_blocks_in_group(struct super_block *sb,
+@@ -96,10 +143,11 @@ static unsigned int num_blocks_in_group(struct super_block *sb,
  		 * we need to make sure we calculate the right free
  		 * blocks.
  		 */
@@ -148,7 +148,7 @@ index 675c1e0..4a66fde 100644
  }
  
  /* Initializes an uninitialized block bitmap */
-@@ -105,7 +153,7 @@ void ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
+@@ -107,7 +155,7 @@ void ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
  			    ext4_group_t block_group,
  			    struct ext4_group_desc *gdp)
  {
@@ -157,7 +157,7 @@ index 675c1e0..4a66fde 100644
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
  	ext4_fsblk_t start, tmp;
  	int flex_bg = 0;
-@@ -124,6 +172,7 @@ void ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
+@@ -126,6 +174,7 @@ void ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
  	}
  	memset(bh->b_data, 0, sb->s_blocksize);
  
@@ -165,7 +165,7 @@ index 675c1e0..4a66fde 100644
  	for (bit = 0; bit < bit_max; bit++)
  		ext4_set_bit(bit, bh->b_data);
  
-@@ -135,24 +184,25 @@ void ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
+@@ -137,24 +186,25 @@ void ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
  	/* Set bits for block and inode bitmaps, and inode table */
  	tmp = ext4_block_bitmap(sb, gdp);
  	if (!flex_bg || ext4_block_in_group(sb, tmp, block_group))
@@ -195,7 +195,7 @@ index 675c1e0..4a66fde 100644
  			     sb->s_blocksize * 8, bh->b_data);
  }
  
-@@ -163,9 +213,8 @@ unsigned ext4_free_blocks_after_init(struct super_block *sb,
+@@ -165,9 +215,8 @@ unsigned ext4_free_blocks_after_init(struct super_block *sb,
  				     ext4_group_t block_group,
  				     struct ext4_group_desc *gdp)
  {
@@ -207,7 +207,7 @@ index 675c1e0..4a66fde 100644
  }
  
  /*
-@@ -732,14 +781,14 @@ unsigned long ext4_bg_num_gdb(struct super_block *sb, ext4_group_t group)
+@@ -611,14 +660,14 @@ unsigned long ext4_bg_num_gdb(struct super_block *sb, ext4_group_t group)
  }
  
  /*
@@ -226,18 +226,20 @@ index 675c1e0..4a66fde 100644
  
  	/* Check for superblock and gdt backups in this group */
  	num = ext4_bg_has_super(sb, block_group);
-@@ -754,5 +803,5 @@ static unsigned int num_base_meta_blocks(struct super_block *sb,
+@@ -633,7 +682,7 @@ static unsigned int num_base_meta_blocks(struct super_block *sb,
  	} else { /* For META_BG_BLOCK_GROUPS */
  		num += ext4_bg_num_gdb(sb, block_group);
  	}
 -	return num;
 +	return EXT4_NUM_B2C(sbi, num);
  }
+ /**
+  *	ext4_inode_to_goal_block - return a hint for block allocation
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index c9e0076..674e97f 100644
+index db090e7..d404288 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -258,6 +258,14 @@ struct ext4_io_submit {
+@@ -260,6 +260,14 @@ struct ext4_io_submit {
  #endif
  #define EXT4_BLOCK_ALIGN(size, blkbits)		ALIGN((size), (1 << (blkbits)))
  
@@ -252,7 +254,7 @@ index c9e0076..674e97f 100644
  /*
   * Structure of a blocks group descriptor
   */
-@@ -1666,6 +1674,11 @@ extern void ext4_init_block_bitmap(struct super_block *sb,
+@@ -1755,6 +1763,11 @@ extern void ext4_init_block_bitmap(struct super_block *sb,
  extern unsigned ext4_free_blocks_after_init(struct super_block *sb,
  					    ext4_group_t block_group,
  					    struct ext4_group_desc *gdp);
@@ -261,6 +263,6 @@ index c9e0076..674e97f 100644
 +extern unsigned ext4_num_overhead_clusters(struct super_block *sb,
 +					   ext4_group_t block_group,
 +					   struct ext4_group_desc *gdp);
+ ext4_fsblk_t ext4_inode_to_goal_block(struct inode *);
  
  /* dir.c */
- extern int __ext4_check_dir_entry(const char *, unsigned int, struct inode *,

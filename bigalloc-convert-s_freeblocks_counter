@@ -16,7 +16,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  7 files changed, 44 insertions(+), 37 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 854b007..af68c40 100644
+index 89abf1f..9080a85 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -414,16 +414,16 @@ static int ext4_has_free_blocks(struct ext4_sb_info *sbi,
@@ -50,7 +50,7 @@ index 854b007..af68c40 100644
  	} else
  		return -ENOSPC;
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 9ee7fb1..207bb64 100644
+index e77df83..cabc9fd 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -849,6 +849,7 @@ struct ext4_inode_info {
@@ -75,7 +75,7 @@ index 9ee7fb1..207bb64 100644
  	struct proc_dir_entry *s_proc;
  	struct kobject s_kobj;
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index d0770b6..d95a157 100644
+index c176cf4..31a4dc3 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -490,7 +490,8 @@ static int find_group_orlov(struct super_block *sb, struct inode *parent,
@@ -89,10 +89,10 @@ index d0770b6..d95a157 100644
  	do_div(avefreeb, ngroups);
  	ndirs = percpu_counter_read_positive(&sbi->s_dirs_counter);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 57f2a11..c917329 100644
+index de50b16..2089da4 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1141,7 +1141,7 @@ void ext4_da_update_reserve_space(struct inode *inode,
+@@ -251,7 +251,7 @@ void ext4_da_update_reserve_space(struct inode *inode,
  	/* Update per-inode reservations */
  	ei->i_reserved_data_blocks -= used;
  	ei->i_reserved_meta_blocks -= ei->i_allocated_meta_blocks;
@@ -101,7 +101,7 @@ index 57f2a11..c917329 100644
  			   used + ei->i_allocated_meta_blocks);
  	ei->i_allocated_meta_blocks = 0;
  
-@@ -1151,7 +1151,7 @@ void ext4_da_update_reserve_space(struct inode *inode,
+@@ -261,7 +261,7 @@ void ext4_da_update_reserve_space(struct inode *inode,
  		 * only when we have written all of the delayed
  		 * allocation blocks.
  		 */
@@ -110,7 +110,7 @@ index 57f2a11..c917329 100644
  				   ei->i_reserved_meta_blocks);
  		ei->i_reserved_meta_blocks = 0;
  		ei->i_da_metadata_calc_len = 0;
-@@ -1986,14 +1986,14 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
+@@ -1086,14 +1086,14 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
  		 * only when we have written all of the delayed
  		 * allocation blocks.
  		 */
@@ -127,7 +127,7 @@ index 57f2a11..c917329 100644
  
  	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
  
-@@ -2211,9 +2211,10 @@ static void ext4_print_free_blocks(struct inode *inode)
+@@ -1311,9 +1311,10 @@ static void ext4_print_free_blocks(struct inode *inode)
  	       ext4_count_free_blocks(inode->i_sb));
  	printk(KERN_CRIT "Free/Dirty block details\n");
  	printk(KERN_CRIT "free_blocks=%lld\n",
@@ -140,7 +140,7 @@ index 57f2a11..c917329 100644
  	printk(KERN_CRIT "Block reservation details\n");
  	printk(KERN_CRIT "i_reserved_data_blocks=%u\n",
  	       EXT4_I(inode)->i_reserved_data_blocks);
-@@ -3085,8 +3086,9 @@ static int ext4_nonda_switch(struct super_block *sb)
+@@ -2185,8 +2186,9 @@ static int ext4_nonda_switch(struct super_block *sb)
  	 * Delalloc need an accurate free block accounting. So switch
  	 * to non delalloc when we are near to error range.
  	 */
@@ -153,7 +153,7 @@ index 57f2a11..c917329 100644
  		free_blocks < (dirty_blocks + EXT4_FREEBLOCKS_WATERMARK)) {
  		/*
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 7a8a7c1..66ee50d 100644
+index 635cc9f..a0f92c0 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -2804,13 +2804,14 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
@@ -191,7 +191,7 @@ index 7a8a7c1..66ee50d 100644
  
  	if (sbi->s_log_groups_per_flex) {
  		ext4_group_t flex_group = ext4_flex_group(sbi, block_group);
-@@ -4790,7 +4791,8 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
+@@ -4788,7 +4789,8 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
  	ext4_free_blks_set(sb, desc, blk_free_count);
  	desc->bg_checksum = ext4_group_desc_csum(sbi, block_group, desc);
  	ext4_unlock_group(sb, block_group);

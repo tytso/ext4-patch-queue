@@ -12,7 +12,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  4 files changed, 8 insertions(+), 8 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index e31e5d6..68dbb54 100644
+index 3d07c35..af0c535 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -445,11 +445,11 @@ static int ext4_has_free_blocks(struct ext4_sb_info *sbi,
@@ -32,7 +32,7 @@ index e31e5d6..68dbb54 100644
  	} else
  		return -ENOSPC;
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index bb97712..ec1de9a 100644
+index c78ff98..11afd15 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1750,8 +1750,8 @@ extern ext4_fsblk_t ext4_new_meta_blocks(handle_t *handle, struct inode *inode,
@@ -47,23 +47,23 @@ index bb97712..ec1de9a 100644
  extern void ext4_check_blocks_bitmap(struct super_block *);
  extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index c736294..2fde13d 100644
+index 293659b..28cde19 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1937,7 +1937,7 @@ repeat:
+@@ -1038,7 +1038,7 @@ repeat:
  	 * We do still charge estimated metadata to the sb though;
  	 * we cannot afford to run out of free blocks.
  	 */
 -	if (ext4_claim_free_blocks(sbi, md_needed + 1, 0)) {
 +	if (ext4_claim_free_clusters(sbi, md_needed + 1, 0)) {
- 		dquot_release_reservation_block(inode, 1);
+ 		dquot_release_reservation_block(inode, EXT4_C2B(sbi, 1));
  		if (ext4_should_retry_alloc(inode->i_sb, &retries)) {
  			yield();
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 8cf12e4..216f171 100644
+index 1fb609b..4324770 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -4264,7 +4264,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+@@ -4265,7 +4265,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
  		 * and verify allocation doesn't exceed the quota limits.
  		 */
  		while (ar->len &&
