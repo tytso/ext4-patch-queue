@@ -7,9 +7,10 @@ the FITRIM ioctl.  This simplifies the initial implementation.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/indirect.c |    7 +++++++
+ fs/ext4/inode.c    |    5 +++++
  fs/ext4/ioctl.c    |   33 +++++++++++++++++++++++++++++----
  fs/ext4/super.c    |    7 +++++++
- 3 files changed, 43 insertions(+), 4 deletions(-)
+ 4 files changed, 48 insertions(+), 4 deletions(-)
 
 diff --git a/fs/ext4/indirect.c b/fs/ext4/indirect.c
 index 6c27111..9572827 100644
@@ -29,6 +30,22 @@ index 6c27111..9572827 100644
  	goal = ext4_find_goal(inode, map->m_lblk, partial);
  
  	/* the number of blocks need to allocate for [d,t]indirect blocks */
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index de50b16..7d1e9e0 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3060,6 +3060,11 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
+ 		return -ENOTSUPP;
+ 	}
+ 
++	if (EXT4_SB(inode->i_sb)->s_cluster_ratio > 1) {
++		/* TODO: Add support for bigalloc file systems */
++		return -ENOTSUPP;
++	}
++
+ 	return ext4_ext_punch_hole(file, offset, length);
+ }
+ 
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
 index 808c554..dcd0916 100644
 --- a/fs/ext4/ioctl.c
