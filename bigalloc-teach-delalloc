@@ -5,12 +5,12 @@ ext4: teach the i_blocks/quota code about bigalloc and clusters
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/balloc.c |    5 +++--
- fs/ext4/inode.c  |   18 ++++++++++--------
+ fs/ext4/inode.c  |   22 +++++++++++++---------
  fs/ext4/super.c  |    3 ++-
- 3 files changed, 15 insertions(+), 11 deletions(-)
+ 3 files changed, 18 insertions(+), 12 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index af68c40..26d5a8d 100644
+index 9080a85..bf42b32 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -485,7 +485,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
@@ -33,10 +33,10 @@ index af68c40..26d5a8d 100644
  	return ret;
  }
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index c917329..e5f19d9 100644
+index 2089da4..59aaf9f 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1160,14 +1160,14 @@ void ext4_da_update_reserve_space(struct inode *inode,
+@@ -270,14 +270,14 @@ void ext4_da_update_reserve_space(struct inode *inode,
  
  	/* Update quota subsystem for data blocks */
  	if (quota_claim)
@@ -53,7 +53,7 @@ index c917329..e5f19d9 100644
  	}
  
  	/*
-@@ -1904,7 +1904,7 @@ static int ext4_journalled_write_end(struct file *file,
+@@ -1004,14 +1004,14 @@ static int ext4_journalled_write_end(struct file *file,
  }
  
  /*
@@ -62,7 +62,15 @@ index c917329..e5f19d9 100644
   */
  static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
  {
-@@ -1921,7 +1921,8 @@ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
+ 	int retries = 0;
+ 	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+ 	struct ext4_inode_info *ei = EXT4_I(inode);
+-	unsigned long md_needed;
++	unsigned int md_needed;
+ 	int ret;
+ 
+ 	/*
+@@ -1021,7 +1021,8 @@ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
  	 */
  repeat:
  	spin_lock(&ei->i_block_reservation_lock);
@@ -72,7 +80,7 @@ index c917329..e5f19d9 100644
  	trace_ext4_da_reserve_space(inode, md_needed);
  	spin_unlock(&ei->i_block_reservation_lock);
  
-@@ -1930,7 +1931,7 @@ repeat:
+@@ -1030,7 +1031,7 @@ repeat:
  	 * us from metadata over-estimation, though we may go over by
  	 * a small amount in the end.  Here we just reserve for data.
  	 */
@@ -81,7 +89,7 @@ index c917329..e5f19d9 100644
  	if (ret)
  		return ret;
  	/*
-@@ -1938,7 +1939,7 @@ repeat:
+@@ -1038,7 +1039,7 @@ repeat:
  	 * we cannot afford to run out of free blocks.
  	 */
  	if (ext4_claim_free_blocks(sbi, md_needed + 1, 0)) {
@@ -90,7 +98,16 @@ index c917329..e5f19d9 100644
  		if (ext4_should_retry_alloc(inode->i_sb, &retries)) {
  			yield();
  			goto repeat;
-@@ -1997,7 +1998,7 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
+@@ -1085,6 +1086,8 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
+ 		 * We can release all of the reserved metadata blocks
+ 		 * only when we have written all of the delayed
+ 		 * allocation blocks.
++		 * Note that in case of bigalloc, i_reserved_meta_blocks,
++		 * i_reserved_data_blocks, etc. refer to number of clusters.
+ 		 */
+ 		percpu_counter_sub(&sbi->s_dirtyclusters_counter,
+ 				   ei->i_reserved_meta_blocks);
+@@ -1097,7 +1100,7 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
  
  	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
  
@@ -99,7 +116,7 @@ index c917329..e5f19d9 100644
  }
  
  static void ext4_da_page_release_reservation(struct page *page,
-@@ -2214,7 +2215,8 @@ static void ext4_print_free_blocks(struct inode *inode)
+@@ -1314,7 +1317,8 @@ static void ext4_print_free_blocks(struct inode *inode)
  	       (long long) EXT4_C2B(EXT4_SB(inode->i_sb),
  		percpu_counter_sum(&sbi->s_freeclusters_counter)));
  	printk(KERN_CRIT "dirty_blocks=%lld\n",
