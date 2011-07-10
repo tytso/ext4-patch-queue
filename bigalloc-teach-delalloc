@@ -99,7 +99,7 @@ index 095c36f..a52db3a 100644
  #endif /* _EXT4_EXTENTS */
  
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 8fc735f..11bd617 100644
+index 8fc735f..068919e 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -2676,6 +2676,21 @@ again:
@@ -306,7 +306,7 @@ index 8fc735f..11bd617 100644
 +
 +	/* Now check towards right. */
 +	c_offset = (lblk_start + num_blks) & (sbi->s_cluster_ratio - 1);
-+	if (c_offset) {
++	if (allocated_clusters && c_offset) {
 +		lblk_from = lblk_start + num_blks;
 +		lblk_to = lblk_from + (sbi->s_cluster_ratio - c_offset) - 1;
 +
@@ -493,7 +493,7 @@ index 8fc735f..11bd617 100644
  	/*
  	 * Cache the extent and update transaction to commit on fdatasync only
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 2089da4..40fb20e 100644
+index 2c0150c..513f4e6 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -270,14 +270,14 @@ void ext4_da_update_reserve_space(struct inode *inode,

@@ -13,16 +13,38 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
     
 
 ---
- fs/ext4/extents.c           |   46 +++++-
- fs/ext4/inode.c             |    2 +-
- include/trace/events/ext4.h |  415 +++++++++++++++++++++++++++++++++++++++++--
- 3 files changed, 443 insertions(+), 20 deletions(-)
+ fs/ext4/ext4.h              |    2 +
+ fs/ext4/extents.c           |   44 ++++-
+ fs/ext4/inode.c             |    3 +-
+ fs/ext4/migrate.c           |    1 -
+ fs/ext4/move_extent.c       |    1 -
+ include/trace/events/ext4.h |  414 +++++++++++++++++++++++++++++++++++++++++--
+ 6 files changed, 441 insertions(+), 24 deletions(-)
 
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index b11ee7e..f452ba5 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2303,4 +2303,6 @@ extern struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
+ 
+ #endif	/* __KERNEL__ */
+ 
++#include "ext4_extents.h"
++
+ #endif	/* _EXT4_H */
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 11bd617..0d3ba59 100644
+index 068919e..fd7cdd3 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -1964,6 +1964,7 @@ ext4_ext_put_in_cache(struct inode *inode, ext4_lblk_t block,
+@@ -42,7 +42,6 @@
+ #include <asm/uaccess.h>
+ #include <linux/fiemap.h>
+ #include "ext4_jbd2.h"
+-#include "ext4_extents.h"
+ 
+ #include <trace/events/ext4.h>
+ 
+@@ -1964,6 +1963,7 @@ ext4_ext_put_in_cache(struct inode *inode, ext4_lblk_t block,
  	struct ext4_ext_cache *cex;
  	BUG_ON(len == 0);
  	spin_lock(&EXT4_I(inode)->i_block_reservation_lock);
@@ -30,7 +52,7 @@ index 11bd617..0d3ba59 100644
  	cex = &EXT4_I(inode)->i_cached_extent;
  	cex->ec_block = block;
  	cex->ec_len = len;
-@@ -2065,6 +2066,7 @@ errout:
+@@ -2065,6 +2065,7 @@ errout:
  		sbi->extent_cache_misses++;
  	else
  		sbi->extent_cache_hits++;
@@ -38,7 +60,7 @@ index 11bd617..0d3ba59 100644
  	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
  	return ret;
  }
-@@ -2127,6 +2129,8 @@ static int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
+@@ -2127,6 +2128,8 @@ static int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
  	if (err)
  		return err;
  	ext_debug("index is empty, remove it, free block %llu\n", leaf);
@@ -47,27 +69,24 @@ index 11bd617..0d3ba59 100644
  	ext4_free_blocks(handle, inode, NULL, leaf, 1,
  			 EXT4_FREE_BLOCKS_METADATA | EXT4_FREE_BLOCKS_FORGET);
  	return err;
-@@ -2212,6 +2216,9 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -2212,6 +2215,7 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  	 */
  	flags |= EXT4_FREE_BLOCKS_NOFREE_FIRST_CLUSTER;
  
-+	trace_ext4_remove_blocks(inode, cpu_to_le32(ex->ee_block),
-+				 ext4_ext_pblock(ex), ee_len, from,
-+				 to, *partial_cluster);
++	trace_ext4_remove_blocks(inode, ex, from, to, *partial_cluster);
  	/*
  	 * If we have a partial cluster, and it's different from the
  	 * cluster of the last block, we need to explicitly free the
-@@ -2326,6 +2333,9 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2326,6 +2330,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  	ex_ee_block = le32_to_cpu(ex->ee_block);
  	ex_ee_len = ext4_ext_get_actual_len(ex);
  
-+	trace_ext4_ext_rm_leaf(inode, start, ex_ee_block, ext4_ext_pblock(ex),
-+			       ex_ee_len, *partial_cluster);
++	trace_ext4_ext_rm_leaf(inode, start, ex, *partial_cluster);
 +
  	while (ex >= EXT_FIRST_EXTENT(eh) &&
  			ex_ee_block + ex_ee_len > start) {
  
-@@ -2582,6 +2592,8 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start,
+@@ -2582,6 +2588,8 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start,
  again:
  	ext4_ext_invalidate_cache(inode);
  
@@ -76,7 +95,7 @@ index 11bd617..0d3ba59 100644
  	/*
  	 * We start scanning from right side, freeing all the blocks
  	 * after i_size and walking into the tree depth-wise.
-@@ -2676,6 +2688,9 @@ again:
+@@ -2676,6 +2684,9 @@ again:
  		}
  	}
  
@@ -86,7 +105,7 @@ index 11bd617..0d3ba59 100644
  	/* If we still have something in the partial cluster and we have removed
  	 * even the first extent, then we should free the blocks in the partial
  	 * cluster as well. */
-@@ -3290,6 +3305,10 @@ static int ext4_find_delalloc_range(struct inode *inode,
+@@ -3290,6 +3301,10 @@ static int ext4_find_delalloc_range(struct inode *inode,
  			 * detect that here.
  			 */
  			page_cache_release(page);
@@ -97,7 +116,7 @@ index 11bd617..0d3ba59 100644
  			return 0;
  		}
  
-@@ -3317,6 +3336,10 @@ static int ext4_find_delalloc_range(struct inode *inode,
+@@ -3317,6 +3332,10 @@ static int ext4_find_delalloc_range(struct inode *inode,
  
  			if (buffer_delay(bh)) {
  				page_cache_release(page);
@@ -108,7 +127,7 @@ index 11bd617..0d3ba59 100644
  				return 1;
  			}
  			if (search_hint_reverse)
-@@ -3339,6 +3362,8 @@ nextpage:
+@@ -3339,6 +3358,8 @@ nextpage:
  		i = index << (PAGE_CACHE_SHIFT - inode->i_blkbits);
  	}
  
@@ -117,7 +136,7 @@ index 11bd617..0d3ba59 100644
  	return 0;
  }
  
-@@ -3404,6 +3429,8 @@ get_reserved_cluster_alloc(struct inode *inode, ext4_lblk_t lblk_start,
+@@ -3404,6 +3425,8 @@ get_reserved_cluster_alloc(struct inode *inode, ext4_lblk_t lblk_start,
  	/* max possible clusters for this allocation */
  	allocated_clusters = alloc_cluster_end - alloc_cluster_start + 1;
  
@@ -126,7 +145,7 @@ index 11bd617..0d3ba59 100644
  	/* Check towards left side */
  	c_offset = lblk_start & (sbi->s_cluster_ratio - 1);
  	if (c_offset) {
-@@ -3443,6 +3470,9 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+@@ -3443,6 +3466,9 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  		  flags, allocated);
  	ext4_ext_show_leaf(inode, path);
  
@@ -136,7 +155,7 @@ index 11bd617..0d3ba59 100644
  	/* get_block() before submit the IO, split the extent */
  	if ((flags & EXT4_GET_BLOCKS_PRE_IO)) {
  		ret = ext4_split_unwritten_extents(handle, inode, map,
-@@ -3562,7 +3592,7 @@ out2:
+@@ -3562,7 +3588,7 @@ out2:
   * get_implied_cluster_alloc - check to see if the requested
   * allocation (in the map structure) overlaps with a cluster already
   * allocated in an extent.
@@ -145,7 +164,7 @@ index 11bd617..0d3ba59 100644
   *	@map	The requested lblk->pblk mapping
   *	@ex	The extent structure which might contain an implied
   *			cluster allocation
-@@ -3599,11 +3629,12 @@ out2:
+@@ -3599,11 +3625,12 @@ out2:
   * ext4_ext_map_blocks() will then allocate one or more new clusters
   * by calling ext4_mb_new_blocks().
   */
@@ -159,7 +178,7 @@ index 11bd617..0d3ba59 100644
  	ext4_lblk_t c_offset = map->m_lblk & (sbi->s_cluster_ratio-1);
  	ext4_lblk_t ex_cluster_start, ex_cluster_end;
  	ext4_lblk_t rr_cluster_start, rr_cluster_end;
-@@ -3652,8 +3683,12 @@ static int get_implied_cluster_alloc(struct ext4_sb_info *sbi,
+@@ -3652,8 +3679,12 @@ static int get_implied_cluster_alloc(struct ext4_sb_info *sbi,
  			ext4_lblk_t next = ext4_ext_next_allocated_block(path);
  			map->m_len = min(map->m_len, next - map->m_lblk);
  		}
@@ -172,7 +191,7 @@ index 11bd617..0d3ba59 100644
  	return 0;
  }
  
-@@ -3762,6 +3797,9 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3762,6 +3793,9 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		 * we split out initialized portions during a write.
  		 */
  		ee_len = ext4_ext_get_actual_len(ex);
@@ -182,7 +201,7 @@ index 11bd617..0d3ba59 100644
  		/* if found extent covers block, simply return it */
  		if (in_range(map->m_lblk, ee_block, ee_len)) {
  			newblock = map->m_lblk - ee_block + ee_start;
-@@ -3880,7 +3918,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3880,7 +3914,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	 * by ext4_ext_find_extent() implies a cluster we can use.
  	 */
  	if (cluster_offset && ex &&
@@ -191,7 +210,7 @@ index 11bd617..0d3ba59 100644
  		ar.len = allocated = map->m_len;
  		newblock = map->m_pblk;
  		map->m_flags |= EXT4_MAP_FROM_CLUSTER;
-@@ -3901,7 +3939,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3901,7 +3935,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	/* Check if the extent after searching to the right implies a
  	 * cluster we can use. */
  	if ((sbi->s_cluster_ratio > 1) && ex2 &&
@@ -201,10 +220,18 @@ index 11bd617..0d3ba59 100644
  		newblock = map->m_pblk;
  		map->m_flags |= EXT4_MAP_FROM_CLUSTER;
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index b2fb366..4331024 100644
+index 7ae8dec..483c445 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -238,7 +238,7 @@ void ext4_da_update_reserve_space(struct inode *inode,
+@@ -42,7 +42,6 @@
+ #include "ext4_jbd2.h"
+ #include "xattr.h"
+ #include "acl.h"
+-#include "ext4_extents.h"
+ #include "truncate.h"
+ 
+ #include <trace/events/ext4.h>
+@@ -238,7 +237,7 @@ void ext4_da_update_reserve_space(struct inode *inode,
  	struct ext4_inode_info *ei = EXT4_I(inode);
  
  	spin_lock(&ei->i_block_reservation_lock);
@@ -213,19 +240,44 @@ index b2fb366..4331024 100644
  	if (unlikely(used > ei->i_reserved_data_blocks)) {
  		ext4_msg(inode->i_sb, KERN_NOTICE, "%s: ino %lu, used %d "
  			 "with only %d reserved data blocks\n",
+diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
+index b57b98f..6f07a06 100644
+--- a/fs/ext4/migrate.c
++++ b/fs/ext4/migrate.c
+@@ -15,7 +15,6 @@
+ #include <linux/module.h>
+ #include <linux/slab.h>
+ #include "ext4_jbd2.h"
+-#include "ext4_extents.h"
+ 
+ /*
+  * The contiguous blocks details which can be
+diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
+index f57455a..c5826c6 100644
+--- a/fs/ext4/move_extent.c
++++ b/fs/ext4/move_extent.c
+@@ -17,7 +17,6 @@
+ #include <linux/quotaops.h>
+ #include <linux/slab.h>
+ #include "ext4_jbd2.h"
+-#include "ext4_extents.h"
+ #include "ext4.h"
+ 
+ /**
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index 5ce2b2f..3368399 100644
+index 5ce2b2f..f46e075 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
-@@ -12,6 +12,7 @@ struct ext4_allocation_request;
+@@ -12,6 +12,8 @@ struct ext4_allocation_request;
  struct ext4_prealloc_space;
  struct ext4_inode_info;
  struct mpage_da_data;
 +struct ext4_map_blocks;
++struct ext4_extent;
  
  #define EXT4_I(inode) (container_of(inode, struct ext4_inode_info, vfs_inode))
  
-@@ -1034,19 +1035,20 @@ TRACE_EVENT(ext4_forget,
+@@ -1034,19 +1036,20 @@ TRACE_EVENT(ext4_forget,
  );
  
  TRACE_EVENT(ext4_da_update_reserve_space,
@@ -256,7 +308,7 @@ index 5ce2b2f..3368399 100644
  	),
  
  	TP_fast_assign(
-@@ -1055,19 +1057,24 @@ TRACE_EVENT(ext4_da_update_reserve_space,
+@@ -1055,19 +1058,24 @@ TRACE_EVENT(ext4_da_update_reserve_space,
  		__entry->mode	= inode->i_mode;
  		__entry->i_blocks = inode->i_blocks;
  		__entry->used_blocks = used_blocks;
@@ -286,7 +338,7 @@ index 5ce2b2f..3368399 100644
  );
  
  TRACE_EVENT(ext4_da_reserve_space,
-@@ -1520,6 +1527,384 @@ TRACE_EVENT(ext4_load_inode,
+@@ -1520,6 +1528,382 @@ TRACE_EVENT(ext4_load_inode,
  		  (unsigned long) __entry->ino)
  );
  
@@ -506,12 +558,11 @@ index 5ce2b2f..3368399 100644
 +);
 +
 +TRACE_EVENT(ext4_remove_blocks,
-+	TP_PROTO(struct inode *inode, ext4_lblk_t ex_lblk,
-+		ext4_fsblk_t ex_pblk, unsigned short ex_len,
++	    TP_PROTO(struct inode *inode, struct ext4_extent *ex,
 +		ext4_lblk_t from, ext4_fsblk_t to,
 +		ext4_fsblk_t partial_cluster),
 +
-+	TP_ARGS(inode, ex_lblk, ex_pblk, ex_len, from, to, partial_cluster),
++	TP_ARGS(inode, ex, from, to, partial_cluster),
 +
 +	TP_STRUCT__entry(
 +		__field(	ino_t,		ino	)
@@ -527,9 +578,9 @@ index 5ce2b2f..3368399 100644
 +	TP_fast_assign(
 +		__entry->ino		= inode->i_ino;
 +		__entry->dev		= inode->i_sb->s_dev;
-+		__entry->ee_lblk	= ex_lblk;
-+		__entry->ee_pblk	= ex_pblk;
-+		__entry->ee_len		= ex_len;
++		__entry->ee_lblk	= cpu_to_le32(ex->ee_block);
++		__entry->ee_pblk	= ext4_ext_pblock(ex);
++		__entry->ee_len		= ext4_ext_get_actual_len(ex);
 +		__entry->from		= from;
 +		__entry->to		= to;
 +		__entry->partial	= partial_cluster;
@@ -549,10 +600,9 @@ index 5ce2b2f..3368399 100644
 +
 +TRACE_EVENT(ext4_ext_rm_leaf,
 +	TP_PROTO(struct inode *inode, ext4_lblk_t start,
-+		 ext4_lblk_t ex_lblk, ext4_fsblk_t ex_pblk,
-+		 unsigned short ex_len, ext4_fsblk_t partial_cluster),
++		 struct ext4_extent *ex, ext4_fsblk_t partial_cluster),
 +
-+	TP_ARGS(inode, start, ex_lblk, ex_pblk, ex_len, partial_cluster),
++	TP_ARGS(inode, start, ex, partial_cluster),
 +
 +	TP_STRUCT__entry(
 +		__field(	ino_t,		ino	)
@@ -568,9 +618,9 @@ index 5ce2b2f..3368399 100644
 +		__entry->ino		= inode->i_ino;
 +		__entry->dev		= inode->i_sb->s_dev;
 +		__entry->start		= start;
-+		__entry->ee_lblk	= ex_lblk;
-+		__entry->ee_pblk	= ex_pblk;
-+		__entry->ee_len		= ex_len;
++		__entry->ee_lblk	= le32_to_cpu(ex->ee_block);
++		__entry->ee_pblk	= ext4_ext_pblock(ex);
++		__entry->ee_len		= ext4_ext_get_actual_len(ex);
 +		__entry->partial	= partial_cluster;
 +	),
 +
