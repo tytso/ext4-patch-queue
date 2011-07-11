@@ -1,0 +1,44 @@
+ext4: remove redundant goto in ext4_ext_insert_extent()
+
+From: Robin Dong <sanbai@taobao.com>
+
+If eh->eh_entries is smaller than eh->eh_max, the routine will
+go to the "repeat" and then go to "has_space" directlly ,
+since argument "depth" and "eh" are not even changed.
+
+Therefore, goto "has_space" directly and remove redundant "repeat" tag.
+
+Signed-off-by: Robin Dong <sanbai@taobao.com>
+---
+ fs/ext4/extents.c |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index eb63c7b..dc5ef91 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -1758,7 +1758,6 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
+ 		goto merge;
+ 	}
+ 
+-repeat:
+ 	depth = ext_depth(inode);
+ 	eh = path[depth].p_hdr;
+ 	if (le16_to_cpu(eh->eh_entries) < le16_to_cpu(eh->eh_max))
+@@ -1780,7 +1779,7 @@ repeat:
+ 			ext_debug("next leaf isn't full(%d)\n",
+ 				  le16_to_cpu(eh->eh_entries));
+ 			path = npath;
+-			goto repeat;
++			goto has_space;
+ 		}
+ 		ext_debug("next leaf has no free space(%d,%d)\n",
+ 			  le16_to_cpu(eh->eh_entries), le16_to_cpu(eh->eh_max));
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
