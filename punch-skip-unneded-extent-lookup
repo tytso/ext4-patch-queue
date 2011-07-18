@@ -1,0 +1,61 @@
+ext4: punch hole optimizations: skip un-needed extent lookup
+
+From: Allison Henderson <achender@linux.vnet.ibm.com>
+
+This patch optimizes the punch hole operation by skipping the
+tree walking code that is used by truncate.  Since punch hole
+is done through map blocks, the path to the extent is already
+known in this function, so we do not need to look it up again.
+
+Signed-off-by: Allison Henderson <achender@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+v2->v3
+Rebased to apply onto latest ext4 code
+
+:100644 100644 f815cc8... dc5a077... M	fs/ext4/extents.c
+ fs/ext4/extents.c |   23 +++++++++++++++++++++--
+ 1 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index f815cc8..dc5a077 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -3497,8 +3497,27 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 
+ 			ext4_ext_mark_uninitialized(ex);
+ 
+-			err = ext4_ext_remove_space(inode, map->m_lblk,
+-				map->m_lblk + punched_out);
++			ext4_ext_invalidate_cache(inode);
++
++			err = ext4_ext_rm_leaf(handle, inode, path,
++				map->m_lblk, map->m_lblk + punched_out);
++
++			if (!err && path->p_hdr->eh_entries == 0) {
++				/*
++				 * Punch hole freed all of this sub tree,
++				 * so we need to correct eh_depth
++				 */
++				err = ext4_ext_get_access(handle, inode, path);
++				if (err == 0) {
++					ext_inode_hdr(inode)->eh_depth = 0;
++					ext_inode_hdr(inode)->eh_max =
++					cpu_to_le16(ext4_ext_space_root(
++						inode, 0));
++
++					err = ext4_ext_dirty(
++						handle, inode, path);
++				}
++			}
+ 
+ 			goto out2;
+ 		}
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
