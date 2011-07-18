@@ -1,0 +1,63 @@
+ext4: avoid eh_entries overflow before insert extent_idx
+
+From: Robin Dong <hao.bigrat@gmail.com>
+
+If eh_entries is equal to (or greater than) eh_max, the operation of
+inserting new extent_idx will make number of entries overflow.
+So check eh_entries before inserting the new extent_idx.
+
+Although there is no bug case according the code (function
+ext4_ext_insert_index is called by ext4_ext_split and ext4_ext_split
+is called only if the index block has free space), the right logic
+should be "lookup the capacity before insertion".
+
+Signed-off-by: Robin Dong <sanbai@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c |   18 ++++++++++--------
+ 1 files changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index eb63c7b..792e77e 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -776,6 +776,16 @@ static int ext4_ext_insert_index(handle_t *handle, struct inode *inode,
+ 				 logical, le32_to_cpu(curp->p_idx->ei_block));
+ 		return -EIO;
+ 	}
++
++	if (unlikely(le16_to_cpu(curp->p_hdr->eh_entries)
++			     >= le16_to_cpu(curp->p_hdr->eh_max))) {
++		EXT4_ERROR_INODE(inode,
++				 "eh_entries %d >= eh_max %d!",
++				 le16_to_cpu(curp->p_hdr->eh_entries),
++				 le16_to_cpu(curp->p_hdr->eh_max));
++		return -EIO;
++	}
++
+ 	len = EXT_MAX_INDEX(curp->p_hdr) - curp->p_idx;
+ 	if (logical > le32_to_cpu(curp->p_idx->ei_block)) {
+ 		/* insert after */
+@@ -805,14 +815,6 @@ static int ext4_ext_insert_index(handle_t *handle, struct inode *inode,
+ 	ext4_idx_store_pblock(ix, ptr);
+ 	le16_add_cpu(&curp->p_hdr->eh_entries, 1);
+ 
+-	if (unlikely(le16_to_cpu(curp->p_hdr->eh_entries)
+-			     > le16_to_cpu(curp->p_hdr->eh_max))) {
+-		EXT4_ERROR_INODE(inode,
+-				 "eh_entries %d > eh_max %d!",
+-				 le16_to_cpu(curp->p_hdr->eh_entries),
+-				 le16_to_cpu(curp->p_hdr->eh_max));
+-		return -EIO;
+-	}
+ 	if (unlikely(ix > EXT_LAST_INDEX(curp->p_hdr))) {
+ 		EXT4_ERROR_INODE(inode, "ix > EXT_LAST_INDEX!");
+ 		return -EIO;
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
