@@ -1,0 +1,46 @@
+ext4: Fix overflow caused by missing cast in ext4_fallocate()
+
+From: Utako Kusaka <u-kusaka@wm.jp.nec.com>
+
+The logical block number in map.l_blk is a __u32, and so before we
+shift it left, by the block size, we neeed cast it to a 64-bit size.
+
+Otherwise i_size can be corrupted on an ENOSPC.
+
+# df -T /mnt/mp1
+Filesystem    Type   1K-blocks      Used Available Use% Mounted on
+/dev/sda6     ext4     9843276    153056   9190200   2% /mnt/mp1
+# fallocate -o 0 -l 2199023251456 /mnt/mp1/testfile
+fallocate: /mnt/mp1/testfile: fallocate failed: No space left on device
+# stat /mnt/mp1/testfile
+  File: `/mnt/mp1/testfile'
+  Size: 4293656576	Blocks: 19380440   IO Block: 4096   regular file
+Device: 806h/2054d	Inode: 12          Links: 1
+Access: (0644/-rw-r--r--)  Uid: (    0/    root)   Gid: (    0/    root)
+Access: 2011-07-25 13:01:31.414490496 +0900
+Modify: 2011-07-25 13:01:31.414490496 +0900
+Change: 2011-07-25 13:01:31.454490495 +0900
+
+Signed-off-by: Utako Kusaka <u-kusaka@wm.jp.nec.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+--
+ fs/ext4/extents.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+---
+ fs/ext4/extents.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index a25bbdc..57cf568 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -3824,7 +3824,7 @@ retry:
+ 						blkbits) >> blkbits))
+ 			new_size = offset + len;
+ 		else
+-			new_size = (map.m_lblk + ret) << blkbits;
++			new_size = ((loff_t) map.m_lblk + ret) << blkbits;
+ 
+ 		ext4_falloc_update_inode(inode, mode, new_size,
+ 					 (map.m_flags & EXT4_MAP_NEW));
