@@ -30,14 +30,14 @@ as pointed out by Al Viro in his own inimitable way:
 Reported-by: Al Viro <viro@ZenIV.linux.org.uk>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/fsync.c |   17 ++++++++++++-----
- 1 files changed, 12 insertions(+), 5 deletions(-)
+ fs/ext4/fsync.c |   26 +++++++++++++++++++++-----
+ 1 files changed, 21 insertions(+), 5 deletions(-)
 
 diff --git a/fs/ext4/fsync.c b/fs/ext4/fsync.c
-index ce66d2f..5dd17d5 100644
+index ce66d2f..f9dbe33 100644
 --- a/fs/ext4/fsync.c
 +++ b/fs/ext4/fsync.c
-@@ -129,15 +129,21 @@ static int ext4_sync_parent(struct inode *inode)
+@@ -129,15 +129,30 @@ static int ext4_sync_parent(struct inode *inode)
  {
  	struct writeback_control wbc;
  	struct dentry *dentry = NULL;
@@ -53,9 +53,18 @@ index ce66d2f..5dd17d5 100644
 -		dentry = list_entry(inode->i_dentry.next,
 -				    struct dentry, d_alias);
 -		if (!dentry || !dentry->d_parent || !dentry->d_parent->d_inode)
-+		dentry = list_first_entry(&inode->i_dentry,
-+					  struct dentry, d_alias);
++		dentry = NULL;
++		spin_lock(&inode->i_lock);
++		if (!list_empty(&inode->i_dentry)) {
++			dentry = list_first_entry(&inode->i_dentry,
++						  struct dentry, d_alias);
++			dget(dentry);
++		}
++		spin_unlock(&inode->i_lock);
++		if (!dentry)
++			break;
 +		next = igrab(dentry->d_parent->d_inode);
++		dput(dentry);
 +		if (!next)
  			break;
 -		inode = dentry->d_parent->d_inode;
@@ -64,7 +73,7 @@ index ce66d2f..5dd17d5 100644
  		ret = sync_mapping_buffers(inode->i_mapping);
  		if (ret)
  			break;
-@@ -148,6 +154,7 @@ static int ext4_sync_parent(struct inode *inode)
+@@ -148,6 +163,7 @@ static int ext4_sync_parent(struct inode *inode)
  		if (ret)
  			break;
  	}
