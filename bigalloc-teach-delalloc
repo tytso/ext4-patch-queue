@@ -16,9 +16,9 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  fs/ext4/ext4_extents.h |    2 +
  fs/ext4/extents.c      |  306 +++++++++++++++++++++++++++++++++++++++++++++++-
  fs/ext4/inode.c        |   54 ++++++---
- fs/ext4/mballoc.c      |    4 +-
+ fs/ext4/mballoc.c      |    5 +-
  fs/ext4/super.c        |    3 +-
- 7 files changed, 365 insertions(+), 25 deletions(-)
+ 7 files changed, 366 insertions(+), 25 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
 index 9080a85..bf42b32 100644
@@ -44,7 +44,7 @@ index 9080a85..bf42b32 100644
  	return ret;
  }
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index ca5ab11..78ac8ed 100644
+index 834bd49..8438a38 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -144,9 +144,17 @@ struct ext4_allocation_request {
@@ -66,7 +66,7 @@ index ca5ab11..78ac8ed 100644
  
  struct ext4_map_blocks {
  	ext4_fsblk_t m_pblk;
-@@ -1863,6 +1871,7 @@ extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf);
+@@ -1870,6 +1878,7 @@ extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf);
  extern qsize_t *ext4_get_reserved_space(struct inode *inode);
  extern void ext4_da_update_reserve_space(struct inode *inode,
  					int used, int quota_claim);
@@ -74,7 +74,7 @@ index ca5ab11..78ac8ed 100644
  
  /* indirect.c */
  extern int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
-@@ -2252,6 +2261,11 @@ extern int ext4_multi_mount_protect(struct super_block *, ext4_fsblk_t);
+@@ -2270,6 +2279,11 @@ extern int ext4_multi_mount_protect(struct super_block *, ext4_fsblk_t);
  enum ext4_state_bits {
  	BH_Uninit	/* blocks are allocated but uninitialized on disk */
  	  = BH_JBDPrivateStart,
@@ -99,10 +99,10 @@ index 095c36f..a52db3a 100644
  #endif /* _EXT4_EXTENTS */
  
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 8fc735f..068919e 100644
+index f56e1ef..818bf3a 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2676,6 +2676,21 @@ again:
+@@ -2682,6 +2682,21 @@ again:
  		}
  	}
  
@@ -124,7 +124,7 @@ index 8fc735f..068919e 100644
  	/* TODO: flexible tree reduction should be here */
  	if (path->p_hdr->eh_entries == 0) {
  		/*
-@@ -3223,6 +3238,195 @@ static int check_eofblocks_fl(handle_t *handle, struct inode *inode,
+@@ -3229,6 +3244,195 @@ static int check_eofblocks_fl(handle_t *handle, struct inode *inode,
  	return ext4_mark_inode_dirty(handle, inode);
  }
  
@@ -320,7 +320,7 @@ index 8fc735f..068919e 100644
  static int
  ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  			struct ext4_map_blocks *map,
-@@ -3328,8 +3532,15 @@ out:
+@@ -3334,8 +3538,15 @@ out:
  	 * But fallocate would have already updated quota and block
  	 * count for this offset. So cancel these reservation
  	 */
@@ -338,7 +338,7 @@ index 8fc735f..068919e 100644
  
  map_out:
  	map->m_flags |= EXT4_MAP_MAPPED;
-@@ -3474,6 +3685,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3480,6 +3691,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	ext4_fsblk_t newblock = 0;
  	int free_on_err = 0, err = 0, depth, ret;
  	unsigned int allocated = 0, offset = 0;
@@ -346,9 +346,9 @@ index 8fc735f..068919e 100644
  	unsigned int punched_out = 0;
  	unsigned int result = 0;
  	struct ext4_allocation_request ar;
-@@ -3489,6 +3701,10 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
- 	if (ext4_ext_in_cache(inode, map->m_lblk, &newex) &&
- 		((flags & EXT4_GET_BLOCKS_PUNCH_OUT_EXT) == 0)) {
+@@ -3495,6 +3707,10 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 	if (!(flags & EXT4_GET_BLOCKS_PUNCH_OUT_EXT) &&
+ 		ext4_ext_in_cache(inode, map->m_lblk, &newex)) {
  		if (!newex.ee_start_lo && !newex.ee_start_hi) {
 +			if ((sbi->s_cluster_ratio > 1) &&
 +			    ext4_find_delalloc_cluster(inode, map->m_lblk, 0))
@@ -357,7 +357,7 @@ index 8fc735f..068919e 100644
  			if ((flags & EXT4_GET_BLOCKS_CREATE) == 0) {
  				/*
  				 * block isn't allocated yet and
-@@ -3499,6 +3715,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3505,6 +3721,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  			/* we should allocate requested block */
  		} else {
  			/* block is already allocated */
@@ -366,7 +366,7 @@ index 8fc735f..068919e 100644
  			newblock = map->m_lblk
  				   - le32_to_cpu(newex.ee_block)
  				   + ext4_ext_pblock(&newex);
-@@ -3633,6 +3851,10 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3658,6 +3876,10 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		}
  	}
  
@@ -377,7 +377,7 @@ index 8fc735f..068919e 100644
  	/*
  	 * requested block isn't allocated yet;
  	 * we couldn't try to create block if create flag is zero
-@@ -3649,6 +3871,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3674,6 +3896,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	/*
  	 * Okay, we need to do block allocation.
  	 */
@@ -385,7 +385,7 @@ index 8fc735f..068919e 100644
  	newex.ee_block = cpu_to_le32(map->m_lblk);
  	cluster_offset = map->m_lblk & (sbi->s_cluster_ratio-1);
  
-@@ -3660,6 +3883,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3685,6 +3908,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	    get_implied_cluster_alloc(sbi, map, ex, path)) {
  		ar.len = allocated = map->m_len;
  		newblock = map->m_pblk;
@@ -393,7 +393,7 @@ index 8fc735f..068919e 100644
  		goto got_allocated_blocks;
  	}
  
-@@ -3680,6 +3904,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3705,6 +3929,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	    get_implied_cluster_alloc(sbi, map, ex2, path)) {
  		ar.len = allocated = map->m_len;
  		newblock = map->m_pblk;
@@ -401,7 +401,7 @@ index 8fc735f..068919e 100644
  		goto got_allocated_blocks;
  	}
  
-@@ -3733,6 +3958,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3758,6 +3983,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	ext_debug("allocate new block: goal %llu, found %llu/%u\n",
  		  ar.goal, newblock, allocated);
  	free_on_err = 1;
@@ -409,7 +409,7 @@ index 8fc735f..068919e 100644
  	ar.len = EXT4_C2B(sbi, ar.len) - offset;
  	if (ar.len > allocated)
  		ar.len = allocated;
-@@ -3789,8 +4015,80 @@ got_allocated_blocks:
+@@ -3815,8 +4041,80 @@ got_allocated_blocks:
  	 * Update reserved blocks/metadata blocks after successful
  	 * block allocation which had been deferred till now.
  	 */
@@ -493,10 +493,10 @@ index 8fc735f..068919e 100644
  	/*
  	 * Cache the extent and update transaction to commit on fdatasync only
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 2c0150c..513f4e6 100644
+index f3e2df5..90dc60d 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -270,14 +270,14 @@ void ext4_da_update_reserve_space(struct inode *inode,
+@@ -297,14 +297,14 @@ void ext4_da_update_reserve_space(struct inode *inode,
  
  	/* Update quota subsystem for data blocks */
  	if (quota_claim)
@@ -513,7 +513,7 @@ index 2c0150c..513f4e6 100644
  	}
  
  	/*
-@@ -1004,14 +1004,14 @@ static int ext4_journalled_write_end(struct file *file,
+@@ -1032,14 +1032,14 @@ static int ext4_journalled_write_end(struct file *file,
  }
  
  /*
@@ -531,7 +531,7 @@ index 2c0150c..513f4e6 100644
  	int ret;
  
  	/*
-@@ -1021,7 +1021,8 @@ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
+@@ -1049,7 +1049,8 @@ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
  	 */
  repeat:
  	spin_lock(&ei->i_block_reservation_lock);
@@ -541,7 +541,7 @@ index 2c0150c..513f4e6 100644
  	trace_ext4_da_reserve_space(inode, md_needed);
  	spin_unlock(&ei->i_block_reservation_lock);
  
-@@ -1030,7 +1031,7 @@ repeat:
+@@ -1058,7 +1059,7 @@ repeat:
  	 * us from metadata over-estimation, though we may go over by
  	 * a small amount in the end.  Here we just reserve for data.
  	 */
@@ -550,7 +550,7 @@ index 2c0150c..513f4e6 100644
  	if (ret)
  		return ret;
  	/*
-@@ -1038,7 +1039,7 @@ repeat:
+@@ -1066,7 +1067,7 @@ repeat:
  	 * we cannot afford to run out of free blocks.
  	 */
  	if (ext4_claim_free_blocks(sbi, md_needed + 1, 0)) {
@@ -559,7 +559,7 @@ index 2c0150c..513f4e6 100644
  		if (ext4_should_retry_alloc(inode->i_sb, &retries)) {
  			yield();
  			goto repeat;
-@@ -1085,6 +1086,8 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
+@@ -1113,6 +1114,8 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
  		 * We can release all of the reserved metadata blocks
  		 * only when we have written all of the delayed
  		 * allocation blocks.
@@ -568,7 +568,7 @@ index 2c0150c..513f4e6 100644
  		 */
  		percpu_counter_sub(&sbi->s_dirtyclusters_counter,
  				   ei->i_reserved_meta_blocks);
-@@ -1097,7 +1100,7 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
+@@ -1125,7 +1128,7 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
  
  	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
  
@@ -577,7 +577,7 @@ index 2c0150c..513f4e6 100644
  }
  
  static void ext4_da_page_release_reservation(struct page *page,
-@@ -1106,6 +1109,9 @@ static void ext4_da_page_release_reservation(struct page *page,
+@@ -1134,6 +1137,9 @@ static void ext4_da_page_release_reservation(struct page *page,
  	int to_release = 0;
  	struct buffer_head *head, *bh;
  	unsigned int curr_off = 0;
@@ -587,7 +587,7 @@ index 2c0150c..513f4e6 100644
  
  	head = page_buffers(page);
  	bh = head;
-@@ -1118,7 +1124,20 @@ static void ext4_da_page_release_reservation(struct page *page,
+@@ -1146,7 +1152,20 @@ static void ext4_da_page_release_reservation(struct page *page,
  		}
  		curr_off = next_off;
  	} while ((bh = bh->b_this_page) != head);
@@ -609,7 +609,7 @@ index 2c0150c..513f4e6 100644
  }
  
  /*
-@@ -1314,7 +1333,8 @@ static void ext4_print_free_blocks(struct inode *inode)
+@@ -1342,7 +1361,8 @@ static void ext4_print_free_blocks(struct inode *inode)
  	       (long long) EXT4_C2B(EXT4_SB(inode->i_sb),
  		percpu_counter_sum(&sbi->s_freeclusters_counter)));
  	printk(KERN_CRIT "dirty_blocks=%lld\n",
@@ -619,7 +619,7 @@ index 2c0150c..513f4e6 100644
  	printk(KERN_CRIT "Block reservation details\n");
  	printk(KERN_CRIT "i_reserved_data_blocks=%u\n",
  	       EXT4_I(inode)->i_reserved_data_blocks);
-@@ -1588,10 +1608,14 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+@@ -1616,10 +1636,14 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  		/*
  		 * XXX: __block_write_begin() unmaps passed block, is it OK?
  		 */
@@ -639,32 +639,33 @@ index 2c0150c..513f4e6 100644
  		map_bh(bh, inode->i_sb, invalid_block);
  		set_buffer_new(bh);
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 2d23d0a..73fbb99 100644
+index 63dd567..5e1215d 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -4686,6 +4686,8 @@ do_more:
+@@ -4718,6 +4718,9 @@ do_more:
  
  	freed += count;
  
-+	dquot_free_block(inode, EXT4_C2B(sbi, count_clusters));
++	if (!(flags & EXT4_FREE_BLOCKS_NO_QUOT_UPDATE))
++		dquot_free_block(inode, EXT4_C2B(sbi, count_clusters));
 +
  	/* We dirtied the bitmap block */
  	BUFFER_TRACE(bitmap_bh, "dirtied bitmap block");
  	err = ext4_handle_dirty_metadata(handle, NULL, bitmap_bh);
-@@ -4704,8 +4706,6 @@ do_more:
+@@ -4736,8 +4739,6 @@ do_more:
  	}
  	ext4_mark_super_dirty(sb);
  error_return:
--	if (freed)
+-	if (freed && !(flags & EXT4_FREE_BLOCKS_NO_QUOT_UPDATE))
 -		dquot_free_block(inode, freed);
  	brelse(bitmap_bh);
  	ext4_std_error(sb, err);
  	return;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 7a4d54e..e10062d 100644
+index 47fb69f..43a8e3a 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -2425,7 +2425,8 @@ static ssize_t delayed_allocation_blocks_show(struct ext4_attr *a,
+@@ -2456,7 +2456,8 @@ static ssize_t delayed_allocation_blocks_show(struct ext4_attr *a,
  					      char *buf)
  {
  	return snprintf(buf, PAGE_SIZE, "%llu\n",

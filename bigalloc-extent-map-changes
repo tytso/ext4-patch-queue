@@ -10,10 +10,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 162 insertions(+), 19 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 31ae5fb..9458586 100644
+index 935060a..dc9184a 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -1264,7 +1264,8 @@ static int ext4_ext_search_left(struct inode *inode,
+@@ -1266,7 +1266,8 @@ static int ext4_ext_search_left(struct inode *inode,
   */
  static int ext4_ext_search_right(struct inode *inode,
  				 struct ext4_ext_path *path,
@@ -23,7 +23,7 @@ index 31ae5fb..9458586 100644
  {
  	struct buffer_head *bh = NULL;
  	struct ext4_extent_header *eh;
-@@ -1306,9 +1307,7 @@ static int ext4_ext_search_right(struct inode *inode,
+@@ -1308,9 +1309,7 @@ static int ext4_ext_search_right(struct inode *inode,
  				return -EIO;
  			}
  		}
@@ -34,7 +34,7 @@ index 31ae5fb..9458586 100644
  	}
  
  	if (unlikely(*logical < (le32_to_cpu(ex->ee_block) + ee_len))) {
-@@ -1321,9 +1320,7 @@ static int ext4_ext_search_right(struct inode *inode,
+@@ -1323,9 +1322,7 @@ static int ext4_ext_search_right(struct inode *inode,
  	if (ex != EXT_LAST_EXTENT(path[depth].p_hdr)) {
  		/* next allocated block in this leaf */
  		ex++;
@@ -45,7 +45,7 @@ index 31ae5fb..9458586 100644
  	}
  
  	/* go up and search for index to the right */
-@@ -1366,9 +1363,12 @@ got_index:
+@@ -1368,9 +1365,12 @@ got_index:
  		return -EIO;
  	}
  	ex = EXT_FIRST_EXTENT(eh);
@@ -59,7 +59,7 @@ index 31ae5fb..9458586 100644
  	return 0;
  }
  
-@@ -1622,7 +1622,8 @@ static int ext4_ext_try_to_merge(struct inode *inode,
+@@ -1623,7 +1623,8 @@ static int ext4_ext_try_to_merge(struct inode *inode,
   * such that there will be no overlap, and then returns 1.
   * If there is no overlap found, it returns 0.
   */
@@ -69,7 +69,7 @@ index 31ae5fb..9458586 100644
  					   struct ext4_extent *newext,
  					   struct ext4_ext_path *path)
  {
-@@ -1636,6 +1637,7 @@ static unsigned int ext4_ext_check_overlap(struct inode *inode,
+@@ -1637,6 +1638,7 @@ static unsigned int ext4_ext_check_overlap(struct inode *inode,
  	if (!path[depth].p_ext)
  		goto out;
  	b2 = le32_to_cpu(path[depth].p_ext->ee_block);
@@ -77,7 +77,7 @@ index 31ae5fb..9458586 100644
  
  	/*
  	 * get the next allocated block if the extent in the path
-@@ -1645,6 +1647,7 @@ static unsigned int ext4_ext_check_overlap(struct inode *inode,
+@@ -1646,6 +1648,7 @@ static unsigned int ext4_ext_check_overlap(struct inode *inode,
  		b2 = ext4_ext_next_allocated_block(path);
  		if (b2 == EXT_MAX_BLOCKS)
  			goto out;
@@ -85,7 +85,7 @@ index 31ae5fb..9458586 100644
  	}
  
  	/* check for wrap through zero on extent logical start block*/
-@@ -3285,6 +3288,106 @@ out2:
+@@ -3290,6 +3293,106 @@ out2:
  }
  
  /*
@@ -192,7 +192,7 @@ index 31ae5fb..9458586 100644
   * Block allocation/map/preallocation routine for extents based files
   *
   *
-@@ -3306,14 +3409,16 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3311,14 +3414,16 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  			struct ext4_map_blocks *map, int flags)
  {
  	struct ext4_ext_path *path = NULL;
@@ -212,7 +212,7 @@ index 31ae5fb..9458586 100644
  	struct ext4_map_blocks punch_map;
  
  	ext_debug("blocks %u/%u requested for inode %lu\n",
-@@ -3480,9 +3585,23 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3504,9 +3609,23 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
  		goto out2;
  	}
@@ -236,7 +236,7 @@ index 31ae5fb..9458586 100644
  
  	/* find neighbour allocated blocks */
  	ar.lleft = map->m_lblk;
-@@ -3490,10 +3609,20 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3514,10 +3633,20 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	if (err)
  		goto out2;
  	ar.lright = map->m_lblk;
@@ -258,7 +258,7 @@ index 31ae5fb..9458586 100644
  	/*
  	 * See if request is beyond maximum number of blocks we can have in
  	 * a single extent. For an initialized extent this limit is
-@@ -3508,9 +3637,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3532,9 +3661,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		map->m_len = EXT_UNINIT_MAX_LEN;
  
  	/* Check if we can really insert (m_lblk)::(m_lblk + m_len) extent */
@@ -269,7 +269,7 @@ index 31ae5fb..9458586 100644
  	if (err)
  		allocated = ext4_ext_get_actual_len(&newex);
  	else
-@@ -3520,7 +3648,18 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3544,7 +3672,18 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	ar.inode = inode;
  	ar.goal = ext4_ext_find_goal(inode, path, map->m_lblk);
  	ar.logical = map->m_lblk;
@@ -289,7 +289,7 @@ index 31ae5fb..9458586 100644
  	if (S_ISREG(inode->i_mode))
  		ar.flags = EXT4_MB_HINT_DATA;
  	else
-@@ -3533,9 +3672,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3557,9 +3696,14 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		goto out2;
  	ext_debug("allocate new block: goal %llu, found %llu/%u\n",
  		  ar.goal, newblock, allocated);
@@ -305,16 +305,16 @@ index 31ae5fb..9458586 100644
  	newex.ee_len = cpu_to_le16(ar.len);
  	/* Mark uninitialized */
  	if (flags & EXT4_GET_BLOCKS_UNINIT_EXT){
-@@ -3564,7 +3708,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
- 		goto out2;
- 
- 	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
+@@ -3587,7 +3731,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 	if (!err)
+ 		err = ext4_ext_insert_extent(handle, inode, path,
+ 					     &newex, flags);
 -	if (err) {
 +	if (err && free_on_err) {
+ 		int fb_flags = flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE ?
+ 			EXT4_FREE_BLOCKS_NO_QUOT_UPDATE : 0;
  		/* free data blocks we just allocated */
- 		/* not a good idea to call discard here directly,
- 		 * but otherwise we'd need to call it every free() */
-@@ -4077,7 +4221,6 @@ found_delayed_extent:
+@@ -4102,7 +4246,6 @@ found_delayed_extent:
  		return EXT_BREAK;
  	return EXT_CONTINUE;
  }

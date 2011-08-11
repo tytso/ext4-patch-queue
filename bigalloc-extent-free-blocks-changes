@@ -13,14 +13,14 @@ hits mainline.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents.c |   82 +++++++++++++++++++++++++++++++++++++++++++++-------
- 1 files changed, 71 insertions(+), 11 deletions(-)
+ fs/ext4/extents.c |   88 +++++++++++++++++++++++++++++++++++++++++++++-------
+ 1 files changed, 76 insertions(+), 12 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index ead8f96..28893ae 100644
+index dc9184a..a8fd70c 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2226,14 +2226,39 @@ int ext4_ext_index_trans_blocks(struct inode *inode, int nrblocks, int chunk)
+@@ -2198,14 +2198,39 @@ int ext4_ext_index_trans_blocks(struct inode *inode, int nrblocks, int chunk)
  }
  
  static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
@@ -62,7 +62,7 @@ index ead8f96..28893ae 100644
  #ifdef EXTENTS_STATS
  	{
  		struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
-@@ -2253,12 +2278,24 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -2225,12 +2250,24 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
  	    && to == le32_to_cpu(ex->ee_block) + ee_len - 1) {
  		/* tail removal */
  		ext4_lblk_t num;
@@ -91,7 +91,7 @@ index ead8f96..28893ae 100644
  	} else if (from == le32_to_cpu(ex->ee_block)
  		   && to <= le32_to_cpu(ex->ee_block) + ee_len - 1) {
  		/* head removal */
-@@ -2293,9 +2330,10 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+@@ -2265,9 +2302,10 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
   */
  static int
  ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
@@ -104,7 +104,7 @@ index ead8f96..28893ae 100644
  	int err = 0, correct_index = 0;
  	int depth = ext_depth(inode), credits;
  	struct ext4_extent_header *eh;
-@@ -2447,7 +2485,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2419,7 +2457,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  		if (err)
  			goto out;
  
@@ -114,7 +114,7 @@ index ead8f96..28893ae 100644
  		if (err)
  			goto out;
  
-@@ -2495,7 +2534,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2467,7 +2506,8 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  					sizeof(struct ext4_extent));
  			}
  			le16_add_cpu(&eh->eh_entries, -1);
@@ -124,7 +124,7 @@ index ead8f96..28893ae 100644
  
  		ext_debug("new extent: %u:%u:%llu\n", block, num,
  				ext4_ext_pblock(ex));
-@@ -2507,6 +2547,25 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+@@ -2479,6 +2519,25 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
  	if (correct_index && eh->eh_entries)
  		err = ext4_ext_correct_indexes(handle, inode, path);
  
@@ -150,7 +150,7 @@ index ead8f96..28893ae 100644
  	/* if this leaf is free, then we should
  	 * remove it from index block above */
  	if (err == 0 && eh->eh_entries == 0 && path[depth].p_bh != NULL)
-@@ -2543,6 +2602,7 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start,
+@@ -2514,6 +2573,7 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start)
  	struct super_block *sb = inode->i_sb;
  	int depth = ext_depth(inode);
  	struct ext4_ext_path *path;
@@ -158,12 +158,32 @@ index ead8f96..28893ae 100644
  	handle_t *handle;
  	int i, err;
  
-@@ -2578,7 +2638,7 @@ again:
+@@ -2549,7 +2609,8 @@ again:
  		if (i == depth) {
  			/* this is leaf block */
  			err = ext4_ext_rm_leaf(handle, inode, path,
--					start, end);
-+					       &partial_cluster, start, end);
+-					start, EXT_MAX_BLOCKS - 1);
++					       &partial_cluster, start,
++					       EXT_MAX_BLOCKS - 1);
  			/* root level has p_bh == NULL, brelse() eats this */
  			brelse(path[i].p_bh);
  			path[i].p_bh = NULL;
+@@ -3491,6 +3552,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 		ee_len = ext4_ext_get_actual_len(ex);
+ 		/* if found extent covers block, simply return it */
+ 		if (in_range(map->m_lblk, ee_block, ee_len)) {
++			ext4_fsblk_t partial_cluster = 0;
++
+ 			newblock = map->m_lblk - ee_block + ee_start;
+ 			/* number of remaining blocks in the extent */
+ 			allocated = ee_len - (map->m_lblk - ee_block);
+@@ -3574,7 +3637,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 			ext4_ext_invalidate_cache(inode);
+ 
+ 			err = ext4_ext_rm_leaf(handle, inode, path,
+-				map->m_lblk, map->m_lblk + punched_out);
++					       &partial_cluster, map->m_lblk,
++					       map->m_lblk + punched_out);
+ 
+ 			if (!err && path->p_hdr->eh_entries == 0) {
+ 				/*

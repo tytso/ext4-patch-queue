@@ -11,7 +11,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 files changed, 16 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 43ed826..848f6d1 100644
+index f8e37cf..63dd567 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -126,7 +126,8 @@
@@ -22,9 +22,9 @@ index 43ed826..848f6d1 100644
 + * sbi->s_mb_group_prealloc.  The default value of s_mb_group_prealloc is
 + * dependent on the cluster size; for non-bigalloc file systems, it is
   * 512 blocks. This can be tuned via
-  * /sys/fs/ext4/<partition/mb_group_prealloc. The value is represented in
+  * /sys/fs/ext4/<partition>/mb_group_prealloc. The value is represented in
   * terms of number of blocks. If we have mounted the file system with -O
-@@ -2529,7 +2530,20 @@ int ext4_mb_init(struct super_block *sb, int needs_recovery)
+@@ -2473,7 +2474,20 @@ int ext4_mb_init(struct super_block *sb, int needs_recovery)
  	sbi->s_mb_stats = MB_DEFAULT_STATS;
  	sbi->s_mb_stream_request = MB_DEFAULT_STREAM_THRESHOLD;
  	sbi->s_mb_order2_reqs = MB_DEFAULT_ORDER2_REQS;
@@ -43,6 +43,6 @@ index 43ed826..848f6d1 100644
 +	 */
 +	sbi->s_mb_group_prealloc = max(MB_DEFAULT_GROUP_PREALLOC >>
 +				       sbi->s_cluster_bits, 32);
- 
- 	sbi->s_locality_groups = alloc_percpu(struct ext4_locality_group);
- 	if (sbi->s_locality_groups == NULL) {
+ 	/*
+ 	 * If there is a s_stripe > 1, then we set the s_mb_group_prealloc
+ 	 * to the lowest multiple of s_stripe which is bigger than
