@@ -1,0 +1,222 @@
+ext4: fix xfstests 75, 112, 127 punch hole failure
+
+From: Allison Henderson <achender@linux.vnet.ibm.com>
+
+This patch corrects a punch hole bug found by xfstests
+when the block size is set to 1k.  Test 127 runs longer
+before it fails, but that appears to be a separate bug.
+
+This bug happens because the punch hole code only zeros
+out non block aligned blocks, and then releases the pages
+for data that is page aligned.  This means that if the
+blocks are smaller than a page, then the blocks contained
+in the non page aligned regions (but still block aligned)
+are left unzeroed and mapped.
+
+This patch adds a new ext4_unmap_partial_page_buffers routine
+that unmapps the block aligned buffers in a page that are
+contained in a specified range.
+
+Signed-off-by: Allison Henderson <achender@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+v1 -> v2
+Added EXT4_BLOCK_ZERO_DISCARD_BUFFER flag
+
+v2 -> v3
+Moved code out of ext4_zero_block_page_range and in
+to new ext4_unmap_page_range function
+
+v3 -> v4
+Renamed ext4_unmap_page_range to ext4_unmap_partial_page_buffers
+Moved ext4_unmap_partial_page_buffers from inode.c to extents.c
+Corrected comments for non block/page aligned handling
+Added checks to avoid unnecessary page unmaps
+Removed unneeded journaling and mapping from new routine
+
+:100644 100644 4d73e11... a946023... M	fs/ext4/extents.c
+ fs/ext4/extents.c |  142 +++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 1 files changed, 138 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 4d73e11..a946023 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4137,6 +4137,107 @@ static int ext4_xattr_fiemap(struct inode *inode,
+ }
+ 
+ /*
++ * ext4_unmap_partial_page_buffers()
++ * Unmaps a page range of length 'length' starting from offset
++ * 'from'.  The range to be unmaped must be contained with in
++ * one page.  If the specified range exceeds the end of the page
++ * it will be shortened to end of the page that cooresponds to
++ * 'from'.  Only block aligned buffers will be unmapped and unblock
++ * aligned buffers are skipped
++ */
++static int ext4_unmap_partial_page_buffers(handle_t *handle,
++		struct address_space *mapping, loff_t from, loff_t length)
++{
++	ext4_fsblk_t index = from >> PAGE_CACHE_SHIFT;
++	unsigned int offset = from & (PAGE_CACHE_SIZE-1);
++	unsigned int blocksize, max, pos;
++	unsigned int end_of_block, range_to_unmap;
++	ext4_lblk_t iblock;
++	struct inode *inode = mapping->host;
++	struct buffer_head *bh;
++	struct page *page;
++	int err = 0;
++
++	page = find_or_create_page(mapping, from >> PAGE_CACHE_SHIFT,
++				   mapping_gfp_mask(mapping) & ~__GFP_FS);
++	if (!page)
++		return -EINVAL;
++
++	blocksize = inode->i_sb->s_blocksize;
++	max = PAGE_CACHE_SIZE - offset;
++
++	/*
++	 * correct length if it does not fall between
++	 * 'from' and the end of the page
++	 */
++	if (length > max || length < 0)
++		length = max;
++
++	iblock = index << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
++
++	if (!page_has_buffers(page))
++		goto unlock;
++
++	/* Find the buffer that contains "offset" */
++	bh = page_buffers(page);
++	pos = blocksize;
++	while (offset >= pos) {
++		bh = bh->b_this_page;
++		iblock++;
++		pos += blocksize;
++	}
++
++	pos = offset;
++	while (pos < offset + length) {
++		err = 0;
++
++		/* The length of space left to zero */
++		range_to_unmap = offset + length - pos;
++
++		/* The length of space until the end of the block */
++		end_of_block = blocksize - (pos & (blocksize-1));
++
++		/* Do not unmap past end of block */
++		if (range_to_unmap > end_of_block)
++			range_to_unmap = end_of_block;
++
++		if (buffer_freed(bh)) {
++			BUFFER_TRACE(bh, "freed: skip");
++			goto next;
++		}
++
++		if (!buffer_mapped(bh)) {
++			BUFFER_TRACE(bh, "unmapped: skip");
++			goto next;
++		}
++
++		/* If the range is not block aligned, skip */
++		if (range_to_unmap != blocksize)
++			goto next;
++
++		clear_buffer_dirty(bh);
++		bh->b_bdev = NULL;
++		clear_buffer_mapped(bh);
++		clear_buffer_req(bh);
++		clear_buffer_new(bh);
++		clear_buffer_delay(bh);
++		clear_buffer_unwritten(bh);
++		clear_buffer_uptodate(bh);
++		ClearPageUptodate(page);
++
++		BUFFER_TRACE(bh, "buffer unmapped");
++next:
++		bh = bh->b_this_page;
++		iblock++;
++		pos += range_to_unmap;
++	}
++unlock:
++	unlock_page(page);
++	page_cache_release(page);
++	return err;
++}
++
++/*
+  * ext4_ext_punch_hole
+  *
+  * Punches a hole of "length" bytes in a file starting
+@@ -4157,7 +4258,7 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
+ 	struct address_space *mapping = inode->i_mapping;
+ 	struct ext4_map_blocks map;
+ 	handle_t *handle;
+-	loff_t first_block_offset, last_block_offset, block_len;
++	loff_t first_block_offset, last_block_offset, block_len, page_len;
+ 	loff_t first_page, last_page, first_page_offset, last_page_offset;
+ 	int ret, credits, blocks_released, err = 0;
+ 
+@@ -4206,9 +4307,9 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
+ 		goto out;
+ 
+ 	/*
+-	 * Now we need to zero out the un block aligned data.
+-	 * If the file is smaller than a block, just
+-	 * zero out the middle
++	 * Now we need to zero out the non-block-aligned data.
++	 * If the file space being truncated is smaller than
++	 * than a block, just zero out the middle
+ 	 */
+ 	if (first_block > last_block)
+ 		ext4_block_zero_page_range(handle, mapping, offset, length);
+@@ -4227,6 +4328,39 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
+ 		}
+ 	}
+ 
++	/*
++	 * Now we need to unmap the non-page-aligned buffers.
++	 * If the block size is smaller than the page size
++	 * and the file space being truncated is not
++	 * page aligned, then unmap the buffers
++	 */
++	if (inode->i_sb->s_blocksize < PAGE_CACHE_SIZE &&
++	   !((offset % PAGE_CACHE_SIZE == 0) &&
++	   (length % PAGE_CACHE_SIZE == 0))) {
++
++		/*
++		* If the file space being truncated is smaller
++		* than a page, just unmap the middle
++		*/
++		if (first_page > last_page) {
++			ext4_unmap_partial_page_buffers(handle,
++				mapping, offset, length);
++		} else {
++			/* unmap page buffers before the first aligned page */
++			page_len = first_page_offset - offset;
++			if (page_len > 0)
++				ext4_unmap_partial_page_buffers(handle,
++					mapping, offset, page_len);
++
++			/* unmap the page buffers after the last aligned page */
++			page_len = offset + length - last_page_offset;
++			if (page_len > 0) {
++				ext4_unmap_partial_page_buffers(handle,
++					mapping, last_page_offset, page_len);
++			}
++		}
++	}
++
+ 	/* If there are no blocks to remove, return now */
+ 	if (first_block >= last_block)
+ 		goto out;
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

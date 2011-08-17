@@ -6,14 +6,14 @@ so we get more information about what might be going on.
 Cc: curtw@google.com
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/jbd2/transaction.c |   42 +++++++++++++++++++++++++++++++++++++-----
- 1 files changed, 37 insertions(+), 5 deletions(-)
+ fs/jbd2/transaction.c |   46 +++++++++++++++++++++++++++++++++++++++++-----
+ 1 files changed, 41 insertions(+), 5 deletions(-)
 
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index 2d71094..693fe63 100644
+index 2d71094..a242f6f 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
-@@ -1093,8 +1093,19 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
+@@ -1093,8 +1093,20 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
  	 */
  	if (jh->b_transaction == transaction && jh->b_jlist == BJ_Metadata) {
  		JBUFFER_TRACE(jh, "fastpath");
@@ -27,15 +27,16 @@ index 2d71094..693fe63 100644
 +			       journal->j_devname,
 +			       (unsigned long long) bh->b_blocknr,
 +			       jh->b_transaction,
-+			       jh->b_transaction->t_tid,
++			       jh->b_transaction ? jh->b_transaction->t_tid : 0,
 +			       journal->j_running_transaction,
-+			       journal->j_running_transaction->t_tid);
++			       journal->j_running_transaction ?
++			         journal->j_running_transaction->t_tid : 0);
 +			BUG_ON(1);
 +		}
  		goto out_unlock_bh;
  	}
  
-@@ -1108,9 +1119,30 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
+@@ -1108,9 +1120,33 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
  	 */
  	if (jh->b_transaction != transaction) {
  		JBUFFER_TRACE(jh, "already on other transaction");
@@ -50,9 +51,10 @@ index 2d71094..693fe63 100644
 +			       journal->j_devname,
 +			       (unsigned long long) bh->b_blocknr,
 +			       jh->b_transaction,
-+			       jh->b_transaction->t_tid,
++			       jh->b_transaction ? jh->b_transaction->t_tid : 0,
 +			       journal->j_committing_transaction,
-+			       journal->j_committing_transaction->t_tid);
++			       journal->j_committing_transaction ?
++			         journal->j_committing_transaction->t_tid : 0);
 +			BUG_ON(1);
 +		}
 +		if (unlikely(jh->b_next_transaction != transaction)) {
@@ -62,8 +64,10 @@ index 2d71094..693fe63 100644
 +			       journal->j_devname,
 +			       (unsigned long long) bh->b_blocknr,
 +			       jh->b_next_transaction,
-+			       jh->b_next_transaction->t_tid,
-+			       transaction, transaction->t_tid);
++			       jh->b_next_transaction ?
++			         jh->b_next_transaction->t_tid : 0,
++			       transaction,
++			       transaction ? transaction->t_tid : 0);
 +			BUG_ON(1);
 +		}
  		/* And this case is illegal: we can't reuse another
