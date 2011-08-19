@@ -1,0 +1,43 @@
+ext4: fix nomblk_io_submit option so it correctly converts uninit blocks
+
+Bug discovered by Jan Kara:
+
+Finally, commit 1449032be17abb69116dbc393f67ceb8bd034f92 returned back
+the old IO submission code but apparently it forgot to return the old
+handling of uninitialized buffers so we unconditionnaly call
+block_write_full_page() without specifying end_io function. So AFAICS
+we never convert unwritten extents to written in some cases. For
+example when I mount the fs as: mount -t ext4 -o
+nomblk_io_submit,dioread_nolock /dev/ubdb /mnt and do
+        int fd = open(argv[1], O_RDWR | O_CREAT | O_TRUNC, 0600);
+        char buf[1024];
+        memset(buf, 'a', sizeof(buf));
+        fallocate(fd, 0, 0, 16384);
+        write(fd, buf, sizeof(buf));
+
+I get a file full of zeros (after remounting the filesystem so that
+pagecache is dropped) instead of seeing the first KB contain 'a's.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index ae24bf8..b77f20b 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1291,7 +1291,12 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
+ 			else if (test_opt(inode->i_sb, MBLK_IO_SUBMIT))
+ 				err = ext4_bio_write_page(&io_submit, page,
+ 							  len, mpd->wbc);
+-			else
++			else if (buffer_uninit(page_bufs)) {
++				ext4_set_bh_endio(page_bufs, inode);
++				err = block_write_full_page_endio(page,
++					noalloc_get_block_write,
++					mpd->wbc, ext4_end_io_buffer_write);
++			} else
+ 				err = block_write_full_page(page,
+ 					noalloc_get_block_write, mpd->wbc);
+ 
