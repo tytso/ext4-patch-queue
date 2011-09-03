@@ -8,18 +8,63 @@ This won't change anything for ocfs2, which will BUG_ON() the non-zero
 exit code.
 
 For ext4, the caller of this function is ext4_handle_dirty_metadata(),
-and on seeing a non-zero return code, will call
-ext4_journal_abort_handle(), which will print the function and line
-number of the calling function that screwed up and abort the journal.
-This will allow us to recover instead of bug halting, which is better
-from a robustness and reliability point of view.
+and on seeing a non-zero return code, will call __ext4_journal_stop(),
+which will print the function and line number of the (buggy) calling
+function and abort the journal.  This will allow us to recover instead
+of bug halting, which is better from a robustness and reliability
+point of view.
 
-Cc: curtw@google.com
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
+ fs/ext4/ext4_jbd2.c   |    8 ++++--
+ fs/ext4/extents.c     |   10 +++++--
  fs/jbd2/transaction.c |   59 ++++++++++++++++++++++++++++++++++++++++++++-----
- 1 files changed, 53 insertions(+), 6 deletions(-)
+ 3 files changed, 65 insertions(+), 12 deletions(-)
 
+diff --git a/fs/ext4/ext4_jbd2.c b/fs/ext4/ext4_jbd2.c
+index f5240aa..aca1790 100644
+--- a/fs/ext4/ext4_jbd2.c
++++ b/fs/ext4/ext4_jbd2.c
+@@ -109,9 +109,11 @@ int __ext4_handle_dirty_metadata(const char *where, unsigned int line,
+ 
+ 	if (ext4_handle_valid(handle)) {
+ 		err = jbd2_journal_dirty_metadata(handle, bh);
+-		if (err)
+-			ext4_journal_abort_handle(where, line, __func__,
+-						  bh, handle, err);
++		if (err) {
++			/* Errors can only happen if there is a bug */
++			handle->h_err = err;
++			__ext4_journal_stop(where, line, handle);
++		}
+ 	} else {
+ 		if (inode)
+ 			mark_buffer_dirty_inode(bh, inode);
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 57cf568..d0ed41a 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -96,13 +96,17 @@ static int ext4_ext_get_access(handle_t *handle, struct inode *inode,
+  *  - ENOMEM
+  *  - EIO
+  */
+-static int ext4_ext_dirty(handle_t *handle, struct inode *inode,
+-				struct ext4_ext_path *path)
++#define ext4_ext_dirty(handle, inode, path) \
++		__ext4_ext_dirty(__func__, __LINE__, (handle), (inode), (path))
++static int __ext4_ext_dirty(const char *where, unsigned int line,
++			    handle_t *handle, struct inode *inode,
++			    struct ext4_ext_path *path)
+ {
+ 	int err;
+ 	if (path->p_bh) {
+ 		/* path points to block */
+-		err = ext4_handle_dirty_metadata(handle, inode, path->p_bh);
++		err = __ext4_handle_dirty_metadata(where, line, handle,
++						   inode, path->p_bh);
+ 	} else {
+ 		/* path points to leaf/index in inode body */
+ 		err = ext4_mark_inode_dirty(handle, inode);
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
 index 2d71094..8c640f0 100644
 --- a/fs/jbd2/transaction.c
