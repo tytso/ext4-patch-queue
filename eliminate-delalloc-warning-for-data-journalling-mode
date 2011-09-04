@@ -16,10 +16,10 @@ printing a warning message and ignoring the mount option.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- Documentation/filesystems/ext4.txt |    8 ++++--
+ Documentation/filesystems/ext4.txt |    8 +++--
  fs/ext4/ext4.h                     |    3 ++
- fs/ext4/super.c                    |   46 +++++++++++++++++++++---------------
- 3 files changed, 35 insertions(+), 22 deletions(-)
+ fs/ext4/super.c                    |   50 +++++++++++++++++++++---------------
+ 3 files changed, 37 insertions(+), 24 deletions(-)
 
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
 index 232a575..168242b 100644
@@ -48,10 +48,10 @@ index 232a575..168242b 100644
  /proc entries
  =============
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index e717dfd..062c668 100644
+index ccfa81f..48ae988 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -917,6 +917,9 @@ struct ext4_inode_info {
+@@ -922,6 +922,9 @@ struct ext4_inode_info {
  #define EXT4_MOUNT_DISCARD		0x40000000 /* Issue DISCARD requests */
  #define EXT4_MOUNT_INIT_INODE_TABLE	0x80000000 /* Initialize uninitialized itables */
  
@@ -62,7 +62,7 @@ index e717dfd..062c668 100644
  						~EXT4_MOUNT_##opt
  #define set_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt |= \
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 44d0c8d..c3e3a80 100644
+index 44d0c8d..ee2f74a 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1801,6 +1801,7 @@ set_qf_format:
@@ -81,7 +81,7 @@ index 44d0c8d..c3e3a80 100644
  			break;
  		case Opt_block_validity:
  			set_opt(sb, BLOCK_VALIDITY);
-@@ -3224,6 +3226,31 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -3224,6 +3226,33 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  			   &journal_ioprio, NULL, 0))
  		goto failed_mount;
  
@@ -102,8 +102,10 @@ index 44d0c8d..c3e3a80 100644
 +		if (test_opt(sb, DELALLOC))
 +			clear_opt(sb, DELALLOC);
 +	}
++
++	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 +	if (test_opt(sb, DIOREAD_NOLOCK)) {
-+		if (sb->s_blocksize < PAGE_SIZE) {
++		if (blocksize < PAGE_SIZE) {
 +			ext4_msg(sb, KERN_ERR, "can't mount with "
 +				 "dioread_nolock if block size != PAGE_SIZE");
 +			goto failed_mount;
@@ -113,6 +115,15 @@ index 44d0c8d..c3e3a80 100644
  	sb->s_flags = (sb->s_flags & ~MS_POSIXACL) |
  		(test_opt(sb, POSIX_ACL) ? MS_POSIXACL : 0);
  
+@@ -3265,8 +3294,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	if (!ext4_feature_set_ok(sb, (sb->s_flags & MS_RDONLY)))
+ 		goto failed_mount;
+ 
+-	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
+-
+ 	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
+ 	    blocksize > EXT4_MAX_BLOCK_SIZE) {
+ 		ext4_msg(sb, KERN_ERR,
 @@ -3679,25 +3706,6 @@ no_journal:
  			 "available");
  	}
