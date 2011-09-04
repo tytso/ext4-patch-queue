@@ -17,9 +17,9 @@ point of view.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4_jbd2.c   |    8 ++++--
- fs/ext4/extents.c     |   10 +++++--
- fs/jbd2/transaction.c |   59 ++++++++++++++++++++++++++++++++++++++++++++-----
- 3 files changed, 65 insertions(+), 12 deletions(-)
+ fs/ext4/extents.c     |   10 ++++++--
+ fs/jbd2/transaction.c |   58 +++++++++++++++++++++++++++++++++++++++++++-----
+ 3 files changed, 64 insertions(+), 12 deletions(-)
 
 diff --git a/fs/ext4/ext4_jbd2.c b/fs/ext4/ext4_jbd2.c
 index f5240aa..aca1790 100644
@@ -41,7 +41,7 @@ index f5240aa..aca1790 100644
  		if (inode)
  			mark_buffer_dirty_inode(bh, inode);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 57cf568..d0ed41a 100644
+index 9124cd2..2c5216a 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -96,13 +96,17 @@ static int ext4_ext_get_access(handle_t *handle, struct inode *inode,
@@ -66,7 +66,7 @@ index 57cf568..d0ed41a 100644
  		/* path points to leaf/index in inode body */
  		err = ext4_mark_inode_dirty(handle, inode);
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index 2d71094..8c640f0 100644
+index 2d71094..cb56fe9 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
 @@ -1049,6 +1049,10 @@ void jbd2_buffer_abort_trigger(struct journal_head *jh,
@@ -114,13 +114,13 @@ index 2d71094..8c640f0 100644
 +			       jh->b_transaction ? jh->b_transaction->t_tid : 0,
 +			       journal->j_running_transaction,
 +			       journal->j_running_transaction ?
-+			         journal->j_running_transaction->t_tid : 0);
++			       journal->j_running_transaction->t_tid : 0);
 +			ret = -EINVAL;
 +		}
  		goto out_unlock_bh;
  	}
  
-@@ -1108,9 +1129,33 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
+@@ -1108,9 +1129,32 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
  	 */
  	if (jh->b_transaction != transaction) {
  		JBUFFER_TRACE(jh, "already on other transaction");
@@ -138,7 +138,7 @@ index 2d71094..8c640f0 100644
 +			       jh->b_transaction ? jh->b_transaction->t_tid : 0,
 +			       journal->j_committing_transaction,
 +			       journal->j_committing_transaction ?
-+			         journal->j_committing_transaction->t_tid : 0);
++			       journal->j_committing_transaction->t_tid : 0);
 +			ret = -EINVAL;
 +		}
 +		if (unlikely(jh->b_next_transaction != transaction)) {
@@ -149,15 +149,14 @@ index 2d71094..8c640f0 100644
 +			       (unsigned long long) bh->b_blocknr,
 +			       jh->b_next_transaction,
 +			       jh->b_next_transaction ?
-+			         jh->b_next_transaction->t_tid : 0,
-+			       transaction,
-+			       transaction ? transaction->t_tid : 0);
++			       jh->b_next_transaction->t_tid : 0,
++			       transaction, transaction->t_tid);
 +			ret = -EINVAL;
 +		}
  		/* And this case is illegal: we can't reuse another
  		 * transaction's data buffer, ever. */
  		goto out_unlock_bh;
-@@ -1127,7 +1172,9 @@ out_unlock_bh:
+@@ -1127,7 +1171,9 @@ out_unlock_bh:
  	jbd_unlock_bh_state(bh);
  out:
  	JBUFFER_TRACE(jh, "exit");
