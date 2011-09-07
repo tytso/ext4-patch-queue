@@ -1,0 +1,89 @@
+ext4: only call ext4_jbd2_file_inode when an inode has been extended
+
+In delayed allocation mode, it's important to only call
+ext4_jbd2_file_inode when the file has been extended.  This is
+necessary to avoid a race which first got introduced in commit
+678aaf481, but which was made much more common with the introduction
+of the "punch hole" functionality.  (Especially when dioread_nolock
+was enabled; when I could reliably reproduce this problem with
+xfstests #74.)
+
+The race is this: If while trying to writeback a delayed allocation
+inode, there is a need to map delalloc blocks, and we run out of space
+in the journal, *and* at the same time the inode is already on the
+committing transaction's t_inode_list (because for example while doing
+the punch hole operation, ext4_jbd2_file_inode() is called), then the
+commit operation will wait for the inode to finish all of its pending
+writebacks by calling filemap_fdatawait(), but since that inode has
+one or more pages with the PageWriteback flag set, the commit
+operation will wait forever, and the so the writeback of the inode can
+never take place, and the kjournald thread and the writeback thread
+end up waiting for each other --- forever.
+
+It's important at this point to recall why an inode is placed on the
+t_inode_list; it is to provide the data=ordered guarantees that we
+don't end up exposing stale data.  In the case where we are truncating
+or punching a hole in the inode, there is no possibility that stale
+data could be exposed in the first place, so we don't need to put the
+inode on the t_inode_list!
+
+The right long-term fix is to get rid of data=ordered mode altogether,
+and only update the extent tree or indirect blocks after the data has
+been written.  Until then, this change will also avoid some
+unnecessary waiting in the commit operation.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Allison Henderson <achender@linux.vnet.ibm.com>
+Cc: Jan Kara <jack@suse.cz>
+---
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index d1b1ef7..f86b149 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1471,13 +1471,13 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
+ 
+ 		for (i = 0; i < map.m_len; i++)
+ 			unmap_underlying_metadata(bdev, map.m_pblk + i);
+-	}
+ 
+-	if (ext4_should_order_data(mpd->inode)) {
+-		err = ext4_jbd2_file_inode(handle, mpd->inode);
+-		if (err)
+-			/* This only happens if the journal is aborted */
+-			return;
++		if (ext4_should_order_data(mpd->inode)) {
++			err = ext4_jbd2_file_inode(handle, mpd->inode);
++			if (err)
++				/* Only if the journal is aborted */
++				return;
++		}
+ 	}
+ 
+ 	/*
+@@ -3173,12 +3173,8 @@ int ext4_discard_partial_page_buffers_no_lock(handle_t *handle,
+ 		err = 0;
+ 		if (ext4_should_journal_data(inode)) {
+ 			err = ext4_handle_dirty_metadata(handle, inode, bh);
+-		} else {
+-			if (ext4_should_order_data(inode) &&
+-			   EXT4_I(inode)->jinode)
+-				err = ext4_jbd2_file_inode(handle, inode);
++		} else
+ 			mark_buffer_dirty(bh);
+-		}
+ 
+ 		BUFFER_TRACE(bh, "Partial buffer zeroed");
+ next:
+@@ -3301,11 +3297,8 @@ int ext4_block_zero_page_range(handle_t *handle,
+ 	err = 0;
+ 	if (ext4_should_journal_data(inode)) {
+ 		err = ext4_handle_dirty_metadata(handle, inode, bh);
+-	} else {
+-		if (ext4_should_order_data(inode) && EXT4_I(inode)->jinode)
+-			err = ext4_jbd2_file_inode(handle, inode);
++	} else
+ 		mark_buffer_dirty(bh);
+-	}
+ 
+ unlock:
+ 	unlock_page(page);
