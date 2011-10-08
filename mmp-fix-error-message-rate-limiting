@@ -1,0 +1,38 @@
+ext4: MMP: fix error message rate-limiting logic in kmmpd
+
+From: Nikitas Angelinas <nikitasangelinas@gmail.com>
+
+Current logic would print an error message only once, and then
+'failed_writes' would stay at 1.  Rework the loop to increment
+'failed_writes' and print the error message every
+s_mmp_update_interval * 60 seconds, as intended according to the
+comment.
+
+Signed-off-by: Nikitas Angelinas <nikitas_angelinas@xyratex.com>
+Signed-off-by: Andrew Perepechko <andrew_perepechko@xyratex.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Acked-by: Andreas Dilger <adilger@dilger.ca>
+---
+ fs/ext4/mmp.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/mmp.c b/fs/ext4/mmp.c
+index 2fca64e..6b32742 100644
+--- a/fs/ext4/mmp.c
++++ b/fs/ext4/mmp.c
+@@ -125,8 +125,9 @@ static int kmmpd(void *data)
+ 		 * Don't spew too many error messages. Print one every
+ 		 * (s_mmp_update_interval * 60) seconds.
+ 		 */
+-		if (retval && (failed_writes % 60) == 0) {
+-			ext4_error(sb, "Error writing to MMP block");
++		if (retval) {
++			if ((failed_writes % 60) == 0)
++				ext4_error(sb, "Error writing to MMP block");
+ 			failed_writes++;
+ 		}
+ 
+-- 
+1.7.4.4
+
+
