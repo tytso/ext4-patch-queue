@@ -1,0 +1,46 @@
+ext4: avoid stamping on other memories in ext4_ext_insert_index()
+
+From: Tao Ma <boyu.mt@taobao.com>
+
+In ext4_ext_insert_index, we initialize 'ix' before checking its
+validity, so we have a chance to stamp on memories out of the block.
+Move the check before we do the work.
+
+Signed-off-by: Tao Ma <boyu.mt@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c |    8 ++++----
+ 1 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 57cf568..37a1b4d 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -776,15 +776,15 @@ static int ext4_ext_insert_index(handle_t *handle, struct inode *inode,
+ 		ix = curp->p_idx;
+ 	}
+ 
+-	ix->ei_block = cpu_to_le32(logical);
+-	ext4_idx_store_pblock(ix, ptr);
+-	le16_add_cpu(&curp->p_hdr->eh_entries, 1);
+-
+ 	if (unlikely(ix > EXT_LAST_INDEX(curp->p_hdr))) {
+ 		EXT4_ERROR_INODE(inode, "ix > EXT_LAST_INDEX!");
+ 		return -EIO;
+ 	}
+ 
++	ix->ei_block = cpu_to_le32(logical);
++	ext4_idx_store_pblock(ix, ptr);
++	le16_add_cpu(&curp->p_hdr->eh_entries, 1);
++
+ 	err = ext4_ext_dirty(handle, inode, curp);
+ 	ext4_std_error(inode->i_sb, err);
+ 
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
