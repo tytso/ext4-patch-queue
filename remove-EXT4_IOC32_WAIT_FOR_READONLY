@@ -1,0 +1,96 @@
+ext4: remove the obsolete/broken EXT4_IOC_WAIT_FOR_READONLY ioctl
+
+From: Tao Ma <boyu.mt@taobao.com>
+
+There are no users of the EXT4_IOC_WAIT_FOR_READONLY ioctl, and it is
+also broken.  No one sets the set_ro_timer, no one wakes up us and our
+state is set to TASK_INTERRUPTIBLE not RUNNING.  So remove it.
+
+Signed-off-by: Tao Ma <boyu.mt@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h  |   10 ----------
+ fs/ext4/ioctl.c |   28 ----------------------------
+ 2 files changed, 0 insertions(+), 38 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 61b0b5c..4546da4 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -564,9 +564,6 @@ struct ext4_new_group_data {
+ #define	EXT4_IOC_SETVERSION		_IOW('f', 4, long)
+ #define	EXT4_IOC_GETVERSION_OLD		FS_IOC_GETVERSION
+ #define	EXT4_IOC_SETVERSION_OLD		FS_IOC_SETVERSION
+-#ifdef CONFIG_JBD2_DEBUG
+-#define EXT4_IOC_WAIT_FOR_READONLY	_IOR('f', 99, long)
+-#endif
+ #define EXT4_IOC_GETRSVSZ		_IOR('f', 5, long)
+ #define EXT4_IOC_SETRSVSZ		_IOW('f', 6, long)
+ #define EXT4_IOC_GROUP_EXTEND		_IOW('f', 7, unsigned long)
+@@ -589,9 +586,6 @@ struct ext4_new_group_data {
+ #define EXT4_IOC32_SETRSVSZ		_IOW('f', 6, int)
+ #define EXT4_IOC32_GROUP_EXTEND		_IOW('f', 7, unsigned int)
+ #define EXT4_IOC32_GROUP_ADD		_IOW('f', 8, struct compat_ext4_new_group_input)
+-#ifdef CONFIG_JBD2_DEBUG
+-#define EXT4_IOC32_WAIT_FOR_READONLY	_IOR('f', 99, int)
+-#endif
+ #define EXT4_IOC32_GETVERSION_OLD	FS_IOC32_GETVERSION
+ #define EXT4_IOC32_SETVERSION_OLD	FS_IOC32_SETVERSION
+ #endif
+@@ -1171,10 +1165,6 @@ struct ext4_sb_info {
+ 	u32 s_max_batch_time;
+ 	u32 s_min_batch_time;
+ 	struct block_device *journal_bdev;
+-#ifdef CONFIG_JBD2_DEBUG
+-	struct timer_list turn_ro_timer;	/* For turning read-only (crash simulation) */
+-	wait_queue_head_t ro_wait_queue;	/* For people waiting for the fs to go read-only */
+-#endif
+ #ifdef CONFIG_QUOTA
+ 	char *s_qf_names[MAXQUOTAS];		/* Names of quota files with journalled quota */
+ 	int s_jquota_fmt;			/* Format of quota to use */
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 2046d69..8f7ea69 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -174,29 +174,6 @@ setversion_out:
+ 		mnt_drop_write(filp->f_path.mnt);
+ 		return err;
+ 	}
+-#ifdef CONFIG_JBD2_DEBUG
+-	case EXT4_IOC_WAIT_FOR_READONLY:
+-		/*
+-		 * This is racy - by the time we're woken up and running,
+-		 * the superblock could be released.  And the module could
+-		 * have been unloaded.  So sue me.
+-		 *
+-		 * Returns 1 if it slept, else zero.
+-		 */
+-		{
+-			DECLARE_WAITQUEUE(wait, current);
+-			int ret = 0;
+-
+-			set_current_state(TASK_INTERRUPTIBLE);
+-			add_wait_queue(&EXT4_SB(sb)->ro_wait_queue, &wait);
+-			if (timer_pending(&EXT4_SB(sb)->turn_ro_timer)) {
+-				schedule();
+-				ret = 1;
+-			}
+-			remove_wait_queue(&EXT4_SB(sb)->ro_wait_queue, &wait);
+-			return ret;
+-		}
+-#endif
+ 	case EXT4_IOC_GROUP_EXTEND: {
+ 		ext4_fsblk_t n_blocks_count;
+ 		int err, err2=0;
+@@ -421,11 +398,6 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ 	case EXT4_IOC32_SETVERSION_OLD:
+ 		cmd = EXT4_IOC_SETVERSION_OLD;
+ 		break;
+-#ifdef CONFIG_JBD2_DEBUG
+-	case EXT4_IOC32_WAIT_FOR_READONLY:
+-		cmd = EXT4_IOC_WAIT_FOR_READONLY;
+-		break;
+-#endif
+ 	case EXT4_IOC32_GETRSVSZ:
+ 		cmd = EXT4_IOC_GETRSVSZ;
+ 		break;
