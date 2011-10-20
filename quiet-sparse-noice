@@ -1,0 +1,30 @@
+ext4: quiet sparse noise about plain integer as NULL pointer
+
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+
+The third parameter to ext4_free_blocks is a struct buffer_head *.  This
+parameter should be NULL not 0.
+
+This quiets the sparse noise:
+
+warning: Using plain integer as NULL pointer
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 2dff31e..0969366 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2286,7 +2286,7 @@ static int ext4_remove_blocks(handle_t *handle, struct inode *inode,
+ 		start = ext4_ext_pblock(ex);
+ 
+ 		ext_debug("free first %u blocks starting %llu\n", num, start);
+-		ext4_free_blocks(handle, inode, 0, start, num, flags);
++		ext4_free_blocks(handle, inode, NULL, start, num, flags);
+ 
+ 	} else {
+ 		printk(KERN_INFO "strange request: removal(2) "
