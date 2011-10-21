@@ -1,0 +1,36 @@
+ext4: Allow quota file use root reservation
+
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+
+Quota file is fs's metadata, so it is reasonable  to permit use
+root resevation if necessary. This patch fix 265'th xfstest failure
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 17a5a57..5a7b3b4 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4256,6 +4256,10 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+ 
+ 	trace_ext4_request_blocks(ar);
+ 
++	/* Allow to use superuser reservation for quota file */
++	if (IS_NOQUOTA(ar->inode))
++		ar->flags |= EXT4_MB_USE_ROOT_BLOCKS;
++
+ 	/*
+ 	 * For delayed allocation, we could skip the ENOSPC and
+ 	 * EDQUOT check, as blocks and quotas have been already
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
