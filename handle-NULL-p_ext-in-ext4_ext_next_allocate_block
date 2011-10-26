@@ -1,0 +1,35 @@
+ext4: handle NULL p_ext in ext4_ext_next_allocated_block()
+
+From: Curt Wohlgemuth <curtw@google.com>
+
+In ext4_ext_next_allocated_block(), the path[depth] might
+have a p_ext that is NULL -- see ext4_ext_binsearch().  In
+such a case, dereferencing it will crash the machine.
+
+This patch checks for p_ext == NULL in
+ext4_ext_next_allocated_block() before dereferencinging it.
+
+Tested using a hand-crafted an inode with eh_entries == 0 in
+an extent block, verified that running FIEMAP on it crashes
+without this patch, works fine with it.
+
+Signed-off-by: Curt Wohlgemuth <curtw@google.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 02a4d80..797b63b 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -1392,7 +1392,8 @@ ext4_ext_next_allocated_block(struct ext4_ext_path *path)
+ 	while (depth >= 0) {
+ 		if (depth == path->p_depth) {
+ 			/* leaf */
+-			if (path[depth].p_ext !=
++			if (path[depth].p_ext &&
++				path[depth].p_ext !=
+ 					EXT_LAST_EXTENT(path[depth].p_hdr))
+ 			  return le32_to_cpu(path[depth].p_ext[1].ee_block);
+ 		} else {
