@@ -1,0 +1,44 @@
+ext4: remove unused variable in mb_find_extent()
+
+From: Robin Dong <sanbai@taobao.com>
+
+The variable 'ord' in function mb_find_extent() is redundant, so
+remove it.
+
+Signed-off-by: Robin Dong <sanbai@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    4 +---
+ 1 files changed, 1 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index d0fc76e..99d123a 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -1390,7 +1390,6 @@ static int mb_find_extent(struct ext4_buddy *e4b, int order, int block,
+ {
+ 	int next = block;
+ 	int max;
+-	int ord;
+ 	void *buddy;
+ 
+ 	assert_spin_locked(ext4_group_lock_ptr(e4b->bd_sb, e4b->bd_group));
+@@ -1432,9 +1431,8 @@ static int mb_find_extent(struct ext4_buddy *e4b, int order, int block,
+ 		if (mb_test_bit(next, EXT4_MB_BITMAP(e4b)))
+ 			break;
+ 
+-		ord = mb_find_order_for_block(e4b, next);
++		order = mb_find_order_for_block(e4b, next);
+ 
+-		order = ord;
+ 		block = next >> order;
+ 		ex->fe_len += 1 << order;
+ 	}
+-- 
+1.7.4.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
