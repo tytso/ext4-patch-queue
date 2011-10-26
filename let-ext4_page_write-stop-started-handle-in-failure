@@ -1,0 +1,26 @@
+ext4: let ext4_page_mkwrite stop started handle in failure
+
+From: Yongqiang Yang <xiaoqiangnk@gmail.com>
+
+The started journal handle should be stopped in failure case.
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Acked-by: Jan Kara <jack@suse.cz>
+Cc: stable@kernel.org
+---
+ fs/ext4/inode.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 87ec615..e4b26fa 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4791,6 +4791,7 @@ retry_alloc:
+ 			  PAGE_CACHE_SIZE, NULL, do_journal_get_write_access)) {
+ 			unlock_page(page);
+ 			ret = VM_FAULT_SIGBUS;
++			ext4_journal_stop(handle);
+ 			goto out;
+ 		}
+ 		ext4_set_inode_state(inode, EXT4_STATE_JDATA);
