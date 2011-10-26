@@ -1,0 +1,44 @@
+ext4: use ext4_reserve_inode_write in ext4_xattr_set_handle
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+ext4_mark_iloc_dirty() says:
+
+ * The caller must have previously called ext4_reserve_inode_write().
+ * Give this, we know that the caller already has write access to iloc->bh.
+
+ext4_xattr_set_handle, however, just open-codes it.  May as well use
+the helper function for consistency.
+
+No bug here, just tidiness.
+
+(Note: on cleanup path, ext4_reserve_inode_write sets
+the bh to NULL if it returns an error, and brelse() of 
+a null bh is handled gracefully).
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index c757adc..eefbdb0 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -985,11 +985,7 @@ ext4_xattr_set_handle(handle_t *handle, struct inode *inode, int name_index,
+ 	no_expand = ext4_test_inode_state(inode, EXT4_STATE_NO_EXPAND);
+ 	ext4_set_inode_state(inode, EXT4_STATE_NO_EXPAND);
+ 
+-	error = ext4_get_inode_loc(inode, &is.iloc);
+-	if (error)
+-		goto cleanup;
+-
+-	error = ext4_journal_get_write_access(handle, is.iloc.bh);
++	error = ext4_reserve_inode_write(handle, inode, &is.iloc);
+ 	if (error)
+ 		goto cleanup;
+ 
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
