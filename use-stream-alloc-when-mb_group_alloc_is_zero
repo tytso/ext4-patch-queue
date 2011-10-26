@@ -1,0 +1,47 @@
+ext4: use stream-alloc when mb_group_prealloc set to zero
+
+From: Robin Dong <sanbai@taobao.com>
+
+The kernel will crash on 
+
+ext4_mb_mark_diskspace_used:
+	BUG_ON(ac->ac_b_ex.fe_len <= 0);
+
+after we set /sys/fs/ext4/sda/mb_group_prealloc to zero and create new files in an ext4 filesystem.
+
+The reason is: ac_b_ex.fe_len also set to zero(mb_group_prealloc) in ext4_mb_normalize_group_request
+because the ac_flags contains EXT4_MB_HINT_GROUP_ALLOC.
+
+I think when someone set mb_group_prealloc to zero, it means DO NOT USE GROUP PREALLOCATION,
+so we should set alloc-strategy to STREAM in this case.
+
+Signed-off-by: Robin Dong <sanbai@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 17a5a57..6b58247 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -3969,6 +3969,11 @@ static void ext4_mb_group_or_file(struct ext4_allocation_context *ac)
+ 		return;
+ 	}
+ 
++	if (sbi->s_mb_group_prealloc <= 0) {
++		ac->ac_flags |= EXT4_MB_STREAM_ALLOC;
++		return;
++	}
++
+ 	/* don't use group allocation for large files */
+ 	size = max(size, isize);
+ 	if (size > sbi->s_mb_stream_request) {
+-- 
+1.7.4.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
