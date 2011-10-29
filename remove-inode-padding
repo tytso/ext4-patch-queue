@@ -5,39 +5,54 @@ fields that require 8-byte alignment don't end up causing 4-byte holes
 in the structure.  It reduces the size of struct inode from 568 bytes
 to 552 bytes.
 
+Also move the fields protected by i_lock (i_blocks, i_bytes, and
+i_size) into the same cache line as i_lock.
+
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- include/linux/fs.h |    4 ++--
- 1 files changed, 2 insertions(+), 2 deletions(-)
+ include/linux/fs.h |   10 +++++-----
+ 1 files changed, 5 insertions(+), 5 deletions(-)
 
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index 178cdb4..c85398d 100644
+index 178cdb4..fbda9a6 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -775,7 +775,6 @@ struct inode {
+@@ -771,12 +771,13 @@ struct inode {
+ 	unsigned long		i_ino;
+ 	unsigned int		i_nlink;
+ 	dev_t			i_rdev;
+-	loff_t			i_size;
  	struct timespec		i_atime;
  	struct timespec		i_mtime;
  	struct timespec		i_ctime;
 -	unsigned int		i_blkbits;
++	spinlock_t		i_lock;	/* i_blocks, i_bytes, maybe i_size */
++	unsigned short          i_bytes;
  	blkcnt_t		i_blocks;
++	loff_t			i_size;
  
  #ifdef __NEED_I_SIZE_ORDERED
-@@ -785,6 +784,7 @@ struct inode {
+ 	seqcount_t		i_size_seqcount;
+@@ -784,7 +785,6 @@ struct inode {
+ 
  	/* Misc */
  	unsigned long		i_state;
- 	spinlock_t		i_lock;	/* i_blocks, i_bytes, maybe i_size */
-+	unsigned int		i_blkbits;
+-	spinlock_t		i_lock;	/* i_blocks, i_bytes, maybe i_size */
  	struct mutex		i_mutex;
  
  	unsigned long		dirtied_when;	/* jiffies of first dirtying */
-@@ -798,6 +798,7 @@ struct inode {
+@@ -798,9 +798,10 @@ struct inode {
  		struct rcu_head		i_rcu;
  	};
  	atomic_t		i_count;
-+	atomic_t		i_writecount;
++	unsigned int		i_blkbits;
  	u64			i_version;
- 	unsigned short          i_bytes;
+-	unsigned short          i_bytes;
  	atomic_t		i_dio_count;
++	atomic_t		i_writecount;
+ 	const struct file_operations	*i_fop;	/* former ->i_op->default_file_ops */
+ 	struct file_lock	*i_flock;
+ 	struct address_space	i_data;
 @@ -824,7 +825,6 @@ struct inode {
  #ifdef CONFIG_IMA
  	atomic_t		i_readcount; /* struct files open RO */
