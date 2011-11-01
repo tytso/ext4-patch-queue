@@ -24,16 +24,16 @@ revisited once the upstream cleanup is backported.
 Signed-off-by: Eric Gouriou <egouriou@google.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents.c           |   92 +++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/extents.c           |   93 +++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/super.c             |    1 +
- include/trace/events/ext4.h |   82 ++++++++++++++++++++++++++++++++++++++
- 3 files changed, 175 insertions(+), 0 deletions(-)
+ include/trace/events/ext4.h |   82 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 176 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 9124cd2..0a7dd85 100644
+index c2ac06c..8b6a17b 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2909,12 +2909,23 @@ out:
+@@ -2919,12 +2919,23 @@ out:
   *   a> There is no split required: Entire extent should be initialized
   *   b> Splits in two extents: Write is happening at either end of the extent
   *   c> Splits in three extents: Somone is writing in middle of the extent
@@ -57,7 +57,13 @@ index 9124cd2..0a7dd85 100644
  	struct ext4_map_blocks split_map;
  	struct ext4_extent zero_ex;
  	struct ext4_extent *ex;
-@@ -2938,6 +2949,87 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+@@ -2944,11 +2955,93 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 		eof_block = map->m_lblk + map->m_len;
+ 
+ 	depth = ext_depth(inode);
++	eh = path[depth].p_hdr;
+ 	ex = path[depth].p_ext;
+ 	ee_block = le32_to_cpu(ex->ee_block);
  	ee_len = ext4_ext_get_actual_len(ex);
  	allocated = ee_len - (map->m_lblk - ee_block);
  
@@ -146,7 +152,7 @@ index 9124cd2..0a7dd85 100644
  	/*
  	 * It is safe to convert extent to initialized via explicit
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 44d0c8d..cad6454 100644
+index dcc4605..9953d80 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -45,6 +45,7 @@
@@ -158,7 +164,7 @@ index 44d0c8d..cad6454 100644
  #include "xattr.h"
  #include "acl.h"
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index b50a547..35b1219 100644
+index c9a341e..748ff7c 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
 @@ -9,6 +9,7 @@
@@ -169,7 +175,7 @@ index b50a547..35b1219 100644
  struct ext4_prealloc_space;
  struct ext4_inode_info;
  struct mpage_da_data;
-@@ -1386,6 +1387,87 @@ DEFINE_EVENT(ext4__truncate, ext4_truncate_exit,
+@@ -1394,6 +1395,87 @@ DEFINE_EVENT(ext4__truncate, ext4_truncate_exit,
  	TP_ARGS(inode)
  );
  
@@ -257,7 +263,3 @@ index b50a547..35b1219 100644
  DECLARE_EVENT_CLASS(ext4__map_blocks_enter,
  	TP_PROTO(struct inode *inode, ext4_lblk_t lblk,
  		 unsigned int len, unsigned int flags),
--- 
-1.7.3.1
-
-
