@@ -1,0 +1,30 @@
+ext4: let ext4_ext_rm_leaf work with EXT_DEBUG defined
+
+From: Yongqiang Yang <xiaoqiangnk@gmail.com>
+
+The variable 'block' is removed by commit 750c9c47, so use the
+replacement ex_ee_block instead.
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 2798945..4b10b58 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2424,7 +2424,7 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+ 		if (err)
+ 			goto out;
+ 
+-		ext_debug("new extent: %u:%u:%llu\n", block, num,
++		ext_debug("new extent: %u:%u:%llu\n", ex_ee_block, num,
+ 				ext4_ext_pblock(ex));
+ 		ex--;
+ 		ex_ee_block = le32_to_cpu(ex->ee_block);
+-- 
+1.7.5.1
+
+
