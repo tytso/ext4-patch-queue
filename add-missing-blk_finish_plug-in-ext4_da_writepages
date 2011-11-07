@@ -1,0 +1,28 @@
+From: Namjae Jeon <linkinjeon@gmail.com>
+
+ext4: add blk_finish_plug in error case of writepages.
+
+blk_finish_plug is needed in error case of writepages.
+
+Signed-off-by: Namjae Jeon <linkinjeon@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index cc5a6da..18b262b 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2270,6 +2270,7 @@ retry:
+ 			ext4_msg(inode->i_sb, KERN_CRIT, "%s: jbd2_start: "
+ 			       "%ld pages, ino %lu; err %d", __func__,
+ 				wbc->nr_to_write, inode->i_ino, ret);
++			blk_finish_plug(&plug);
+ 			goto out_writepages;
+ 		}
+ 
+-- 
+1.7.4.4
+
+
