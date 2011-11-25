@@ -1,0 +1,53 @@
+ext4: fix racy use-after-free in ext4_end_io_dio()
+
+From: Tejun Heo <tj@kernel.org>
+
+ext4_end_io_dio() queues io_end->work and then clears iocb->private;
+however, io_end->work calls aio_complete() which frees the iocb
+object.  If that slab object gets reallocated, then ext4_end_io_dio()
+can end up clearing someone else's iocb->private, this use-after-free
+can cause a leak of a struct ext4_io_end_t structure.
+
+Detected and tested with slab poisoning.
+
+[ Note: Can also reproduce using 12 fio's against 12 file systems with the
+  following configuration file:
+
+  [global]
+  direct=1
+  ioengine=libaio
+  iodepth=1
+  bs=4k
+  ba=4k
+  size=128m
+
+  [create]
+  filename=${TESTDIR}
+  rw=write
+
+  -- tytso ]
+
+Google-Bug-Id: 5354697
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reported-by: Kent Overstreet <koverstreet@google.com>
+Tested-by: Kent Overstreet <koverstreet@google.com>
+Cc: stable@kernel.org
+---
+ fs/ext4/inode.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index fffec40..848f436 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2807,8 +2807,8 @@ out:
+ 	spin_unlock_irqrestore(&ei->i_completed_io_lock, flags);
+ 
+ 	/* queue the work to convert unwritten extents to written */
+-	queue_work(wq, &io_end->work);
+ 	iocb->private = NULL;
++	queue_work(wq, &io_end->work);
+ 
+ 	/* XXX: probably should move into the real I/O completion handler */
+ 	inode_dio_done(inode);
