@@ -1,0 +1,30 @@
+ext4: remove a wrong BUG_ON in ext4_ext_convert_to_initialized
+
+From: Yongqiang Yang <xiaoqiangnk@gmail.com>
+
+If a file is fallocated on a hole, map->m_lblk + map->m_len may be greater
+than ee_block + ee_len.
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@kernel.org
+---
+ fs/ext4/extents.c |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 6f0300e..29bb629 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2943,7 +2943,6 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 	/* Pre-conditions */
+ 	BUG_ON(!ext4_ext_is_uninitialized(ex));
+ 	BUG_ON(!in_range(map->m_lblk, ee_block, ee_len));
+-	BUG_ON(map->m_lblk + map->m_len > ee_block + ee_len);
+ 
+ 	/*
+ 	 * Attempt to transfer newly initialized blocks from the currently
+-- 
+1.7.5.1
+
+
