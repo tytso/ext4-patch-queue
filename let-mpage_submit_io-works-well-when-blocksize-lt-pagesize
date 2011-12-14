@@ -1,0 +1,39 @@
+ext4: avoid potential hang in mpage_submit_io() when blocksize < pagesize
+
+From: Yongqiang Yang <xiaoqiangnk@gmail.com>
+
+If there is an unwritten but clean buffer in a page and there is a
+dirty buffer after the buffer, then mpage_submit_io does not write the
+dirty buffer out.  As a result, da_writepages loops forever.
+
+This patch fixes the problem by checking dirty flag.
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@kernel.org
+---
+ fs/ext4/inode.c |    7 +++++--
+ 1 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 755f6c7..20a1d17 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1339,8 +1339,11 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
+ 					clear_buffer_unwritten(bh);
+ 				}
+ 
+-				/* skip page if block allocation undone */
+-				if (buffer_delay(bh) || buffer_unwritten(bh))
++				/*
++				 * skip page if block allocation undone and
++				 * block is dirty
++				 */
++				if (ext4_bh_delay_or_unwritten(NULL, bh))
+ 					skip_page = 1;
+ 				bh = bh->b_this_page;
+ 				block_start += bh->b_size;
+-- 
+1.7.5.1
+
+
