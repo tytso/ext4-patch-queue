@@ -1,0 +1,32 @@
+ext4: remove unneeded file_remove_suid() from ext4_ioctl()
+
+In the code to support EXT4_IOC_MOVE_EXT, ext4_ioctl calls
+file_remove_suid() after the call to ext4_move_extents() if any
+extents has been moved.  There are at least three things wrong with
+this.  First, file_remove_suid() should be called with i_mutex down,
+which is not here.  Second, it should be called before the donor file
+has been modified, to avoid a potential race condition.  Third, and
+most importantly, it's pointless, because ext4_file_extents() already
+checks if the donor file has the setuid or setgid bit set, and will
+return an error in that case.  So the first two objections don't
+really matter, since file_remove_suid() will never need to modify the
+inode in any case.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ioctl.c |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index a567968..ff1aab7 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -247,8 +247,6 @@ setversion_out:
+ 		err = ext4_move_extents(filp, donor_filp, me.orig_start,
+ 					me.donor_start, me.len, &me.moved_len);
+ 		mnt_drop_write(filp->f_path.mnt);
+-		if (me.moved_len > 0)
+-			file_remove_suid(donor_filp);
+ 
+ 		if (copy_to_user((struct move_extent __user *)arg,
+ 				 &me, sizeof(me)))
