@@ -1,0 +1,43 @@
+ext4: flush journal when switching from data=journal mode
+
+From: Yongqiang Yang <xiaoqiangnk@gmail.com>
+
+It's necessary to flush the journal when switching away from
+data=journal mode.  This is because there are no revoke records when
+we are data blocks are journalled, which are required in the other
+journal modes.
+
+However, it is not necessary to flush the journal when switching into
+data=journal mode, and flushing the journal is expensive.  So let's
+avoid it in that case.
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index cb0ba9d..1254934 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4660,7 +4660,6 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
+ 	}
+ 
+ 	jbd2_journal_lock_updates(journal);
+-	jbd2_journal_flush(journal);
+ 
+ 	/*
+ 	 * OK, there are no updates running now, and all cached data is
+@@ -4672,8 +4671,10 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
+ 
+ 	if (val)
+ 		ext4_set_inode_flag(inode, EXT4_INODE_JOURNAL_DATA);
+-	else
++	else {
++		jbd2_journal_flush(journal);
+ 		ext4_clear_inode_flag(inode, EXT4_INODE_JOURNAL_DATA);
++	}
+ 	ext4_set_aops(inode);
+ 
+ 	jbd2_journal_unlock_updates(journal);
