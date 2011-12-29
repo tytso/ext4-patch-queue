@@ -5,22 +5,24 @@ From: Yongqiang Yang <xiaoqiangnk@gmail.com>
 This patch adds new online resize interface, whose input argument is a
 64-bit integer indicating how many blocks there are in the resized fs.
 
-In new resize impelmentation, all work like allocating group tables are done
-by kernel side, so the new resize interface can support flex_bg feature and
-prepares ground for suppoting resize with features like bigalloc and exclude
-bitmap. Besides these, user-space tools just passes in the new number of blocks.
+In new resize impelmentation, all work like allocating group tables
+are done by kernel side, so the new resize interface can support
+flex_bg feature and prepares ground for suppoting resize with features
+like bigalloc and exclude bitmap. Besides these, user-space tools just
+passes in the new number of blocks.
 
-We delay initializing the bitmaps and inode tables of added groups if possible
-and add multi groups (a flex groups) each time, so new resize is very fast like
-mkfs.
+We delay initializing the bitmaps and inode tables of added groups if
+possible and add multi groups (a flex groups) each time, so new resize
+is very fast like mkfs.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  Documentation/filesystems/ext4.txt |    7 ++
  fs/ext4/ext4.h                     |    2 +
- fs/ext4/ioctl.c                    |   39 ++++++++
- fs/ext4/resize.c                   |  171 ++++++++++++++++++++++++++++++++++++
- 4 files changed, 219 insertions(+), 0 deletions(-)
+ fs/ext4/ioctl.c                    |   42 +++++++++
+ fs/ext4/resize.c                   |  175 ++++++++++++++++++++++++++++++++++++
+ 4 files changed, 226 insertions(+), 0 deletions(-)
 
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
 index 4917cf2..10ec463 100644
@@ -41,7 +43,7 @@ index 4917cf2..10ec463 100644
  
  References
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index a062ab3..477137f 100644
+index 21b5809..16fe750 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -583,6 +583,7 @@ enum {
@@ -61,10 +63,10 @@ index a062ab3..477137f 100644
  /* super.c */
  extern void *ext4_kvmalloc(size_t size, gfp_t flags);
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index a567968..cfe95f2 100644
+index ff1aab7..d639132 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -331,6 +331,44 @@ mext_out:
+@@ -329,6 +329,47 @@ mext_out:
  		return err;
  	}
  
@@ -85,12 +87,14 @@ index a567968..cfe95f2 100644
 +			return err;
 +
 +		if (copy_from_user(&n_blocks_count, (__u64 __user *)arg,
-+				   sizeof(__u64)))
-+			return -EFAULT;
++				   sizeof(__u64))) {
++			err = -EFAULT;
++			goto resizefs_out;
++		}
 +
 +		err = mnt_want_write(filp->f_path.mnt);
 +		if (err)
-+			return err;
++			goto resizefs_out;
 +
 +		err = ext4_resize_fs(sb, n_blocks_count);
 +		if (EXT4_SB(sb)->s_journal) {
@@ -101,6 +105,7 @@ index a567968..cfe95f2 100644
 +		if (err == 0)
 +			err = err2;
 +		mnt_drop_write(filp->f_path.mnt);
++resizefs_out:
 +		ext4_resize_end(sb);
 +
 +		return err;
@@ -109,7 +114,7 @@ index a567968..cfe95f2 100644
  	case FITRIM:
  	{
  		struct request_queue *q = bdev_get_queue(sb->s_bdev);
-@@ -429,6 +467,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+@@ -427,6 +468,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
  	}
  	case EXT4_IOC_MOVE_EXT:
  	case FITRIM:
@@ -118,10 +123,10 @@ index a567968..cfe95f2 100644
  	default:
  		return -ENOIOCTLCMD;
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index cfd0791..0e130e0 100644
+index bfca158..6e0af4b 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -1469,6 +1469,64 @@ exit:
+@@ -1439,6 +1439,68 @@ exit:
  	return err;
  }
  
@@ -170,9 +175,13 @@ index cfd0791..0e130e0 100644
 +					       EXT4_FEATURE_RO_COMPAT_GDT_CSUM))
 +			flex_gd->bg_flags[i] = EXT4_BG_BLOCK_UNINIT |
 +					       EXT4_BG_INODE_UNINIT;
-+		else
-+			flex_gd->bg_flags[i] = EXT4_BG_INODE_ZEROED;
 +	}
++
++	if (last_group == n_group &&
++	    EXT4_HAS_RO_COMPAT_FEATURE(sb,
++				       EXT4_FEATURE_RO_COMPAT_GDT_CSUM))
++		/* We need to initialize block bitmap of last group. */
++		flex_gd->bg_flags[i - 1] &= ~EXT4_BG_BLOCK_UNINIT;
 +
 +	if ((last_group == n_group) && (last != blocks_per_group - 1)) {
 +		group_data[i - 1].blocks_count = last + 1;
@@ -186,7 +195,7 @@ index cfd0791..0e130e0 100644
  /* Add group descriptor data to an existing or new group descriptor block.
   * Ensure we handle all possible error conditions _before_ we start modifying
   * the filesystem, because we cannot abort the transaction and not have it
-@@ -1868,3 +1926,116 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -1838,3 +1900,116 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  exit_put:
  	return err;
  } /* ext4_group_extend */
@@ -263,7 +272,7 @@ index cfd0791..0e130e0 100644
 +		/* extend the last group */
 +		ext4_grpblk_t add;
 +		add = EXT4_BLOCKS_PER_GROUP(sb) - offset;
-+		err = __ext4_group_extend(sb, o_blocks_count, add);
++		err = ext4_group_extend_no_check(sb, o_blocks_count, add);
 +		if (err)
 +			goto out;
 +	}
@@ -303,3 +312,7 @@ index cfd0791..0e130e0 100644
 +		       "upto %llu blocks\n", o_blocks_count, n_blocks_count);
 +	return err;
 +}
+-- 
+1.7.5.1
+
+

@@ -3,21 +3,21 @@ ext4: add a function which sets up a new group desc
 From: Yongqiang Yang <xiaoqiangnk@gmail.com>
 
 This patch adds a function named ext4_setup_new_desc() which sets
-up a new group descriptor and whose code is sopied from ext4_group_add().
+up a new group descriptor and whose code is copied from ext4_group_add().
 
 The function will be used by new resize implementation.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/resize.c |   54 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
- 1 files changed, 54 insertions(+), 0 deletions(-)
+ fs/ext4/resize.c |   55 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 55 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 7e8cd6e..ef89758 100644
+index 9a5486e..a50eab3 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -777,6 +777,60 @@ out:
+@@ -777,6 +777,61 @@ out:
  	return err;
  }
  
@@ -55,7 +55,8 @@ index 7e8cd6e..ef89758 100644
 +	ext4_block_bitmap_set(sb, gdp, input->block_bitmap); /* LV FIXME */
 +	ext4_inode_bitmap_set(sb, gdp, input->inode_bitmap); /* LV FIXME */
 +	ext4_inode_table_set(sb, gdp, input->inode_table); /* LV FIXME */
-+	ext4_free_group_clusters_set(sb, gdp, EXT4_B2C(sbi, input->free_blocks_count));
++	ext4_free_group_clusters_set(sb, gdp,
++				     EXT4_B2C(sbi, input->free_blocks_count));
 +	ext4_free_inodes_set(sb, gdp, EXT4_INODES_PER_GROUP(sb));
 +	gdp->bg_flags = cpu_to_le16(EXT4_BG_INODE_ZEROED);
 +	gdp->bg_checksum = ext4_group_desc_csum(sbi, input->group, gdp);
@@ -78,3 +79,7 @@ index 7e8cd6e..ef89758 100644
  /* Add group descriptor data to an existing or new group descriptor block.
   * Ensure we handle all possible error conditions _before_ we start modifying
   * the filesystem, because we cannot abort the transaction and not have it
+-- 
+1.7.5.1
+
+

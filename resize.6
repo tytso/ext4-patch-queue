@@ -9,14 +9,14 @@ Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h   |    8 ++
- fs/ext4/resize.c |  249 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 257 insertions(+), 0 deletions(-)
+ fs/ext4/resize.c |  218 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 226 insertions(+), 0 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index b4bff1a..66260ec 100644
+index 5b0e26a..21b5809 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -490,6 +490,14 @@ struct ext4_new_group_data {
+@@ -511,6 +511,14 @@ struct ext4_new_group_data {
  	__u32 free_blocks_count;
  };
  
@@ -32,10 +32,10 @@ index b4bff1a..66260ec 100644
   * Flags used by ext4_map_blocks()
   */
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index fb84b48..7b1b8ac 100644
+index 78f3bab..cdefa36 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -234,6 +234,255 @@ static int extend_or_restart_transaction(handle_t *handle, int thresh)
+@@ -234,6 +234,224 @@ static int extend_or_restart_transaction(handle_t *handle, int thresh)
  }
  
  /*
@@ -185,22 +185,13 @@ index fb84b48..7b1b8ac 100644
 +				goto out;
 +		}
 +
-+		/* Initialize group tables of the grop @group */
-+		if (!(bg_flags[i] & EXT4_BG_INODE_ZEROED))
-+			goto handle_bb;
++		/* Online resize never initializes inode bitmaps
++		   and inode tables. */
++		BUG_ON(!(bg_flags[i] & EXT4_BG_INODE_UNINIT) ||
++			 bg_flags[i] & EXT4_BG_INODE_ZEROED);
 +
-+		/* Zero out all of the inode table blocks */
-+		block = group_data[i].inode_table;
-+		ext4_debug("clear inode table blocks %#04llx -> %#04lx\n",
-+			    block, sbi->s_itb_per_group);
-+		err = sb_issue_zeroout(sb, block, sbi->s_itb_per_group,
-+				       GFP_NOFS);
-+		if (err)
-+			goto out;
-+
-+handle_bb:
 +		if (bg_flags[i] & EXT4_BG_BLOCK_UNINIT)
-+			goto handle_ib;
++			continue;
 +
 +		/* Initialize block bitmap of the @group */
 +		block = group_data[i].block_bitmap;
@@ -219,29 +210,7 @@ index fb84b48..7b1b8ac 100644
 +			ext4_set_bits(bh->b_data, 0, gdblocks + reserved_gdb +
 +						     1);
 +		}
-+		ext4_mark_bitmap_end(group_data[0].blocks_count,
-+				     sb->s_blocksize * 8, bh->b_data);
-+		err = ext4_handle_dirty_metadata(handle, NULL, bh);
-+		if (err)
-+			goto out;
-+		brelse(bh);
-+
-+handle_ib:
-+		if (bg_flags[i] & EXT4_BG_INODE_UNINIT)
-+			continue;
-+
-+		/* Initialize inode bitmap of the @group */
-+		block = group_data[i].inode_bitmap;
-+		err = extend_or_restart_transaction(handle, 1);
-+		if (err)
-+			goto out;
-+		/* Mark unused entries in inode bitmap used */
-+		bh = bclean(handle, sb, block);
-+		if (IS_ERR(bh)) {
-+			err = PTR_ERR(bh);
-+			goto out;
-+		}
-+		ext4_mark_bitmap_end(EXT4_INODES_PER_GROUP(sb),
++		ext4_mark_bitmap_end(group_data[i].blocks_count,
 +				     sb->s_blocksize * 8, bh->b_data);
 +		err = ext4_handle_dirty_metadata(handle, NULL, bh);
 +		if (err)

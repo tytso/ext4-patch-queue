@@ -5,15 +5,16 @@ From: Yongqiang Yang <xiaoqiangnk@gmail.com>
 This patch lets ext4_group_add() call ext4_flex_group_add().
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/resize.c |  311 ++----------------------------------------------------
- 1 files changed, 11 insertions(+), 300 deletions(-)
+ fs/ext4/resize.c |  309 ++----------------------------------------------------
+ 1 files changed, 10 insertions(+), 299 deletions(-)
 
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 70ce3f5..76fa91d 100644
+index ba04e0b..2ca8fd0 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -594,137 +594,6 @@ out:
+@@ -563,137 +563,6 @@ out:
  }
  
  /*
@@ -151,7 +152,7 @@ index 70ce3f5..76fa91d 100644
   * Iterate through the groups which hold BACKUP superblock/GDT copies in an
   * ext4 filesystem.  The counters should be initialized to 1, 5, and 7 before
   * calling this for the first time.  In a sparse filesystem it will be the
-@@ -1542,16 +1411,15 @@ static int ext4_setup_next_flex_gd(struct super_block *sb,
+@@ -1516,16 +1385,15 @@ static int ext4_setup_next_flex_gd(struct super_block *sb,
   */
  int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  {
@@ -167,11 +168,11 @@ index 70ce3f5..76fa91d 100644
  	int gdb_off, gdb_num;
 -	int err, err2;
 +	int err;
-+	__u16 bg_flags;
++	__u16 bg_flags = EXT4_BG_INODE_UNINIT;
  
  	gdb_num = input->group / EXT4_DESC_PER_BLOCK(sb);
  	gdb_off = input->group % EXT4_DESC_PER_BLOCK(sb);
-@@ -1590,172 +1458,15 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -1564,172 +1432,15 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  	}
  
  
@@ -262,7 +263,8 @@ index 70ce3f5..76fa91d 100644
 -	 * descriptor
 -	 */
 -	err = ext4_mb_add_groupinfo(sb, input->group, gdp);
--	if (err)
++	err = verify_group_input(sb, input);
+ 	if (err)
 -		goto exit_journal;
 -
 -	/*
@@ -330,8 +332,6 @@ index 70ce3f5..76fa91d 100644
 -	}
 -
 -	ext4_handle_dirty_super(handle, sb);
-+	err = verify_group_input(sb, input);
-+ 	if (err)
 +		goto out;
  
 -exit_journal:
@@ -352,3 +352,7 @@ index 70ce3f5..76fa91d 100644
  	iput(inode);
  	return err;
  } /* ext4_group_add */
+-- 
+1.7.5.1
+
+

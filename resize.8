@@ -6,15 +6,16 @@ This patch adds a function named ext4_setup_new_descs() which sets up
 a flex groups each time.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/resize.c |   25 +++++++++++++++++++++++--
  1 files changed, 23 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 53412bf..ce38cef 100644
+index bae5b4c..5223245 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -1113,7 +1113,8 @@ static int ext4_add_new_descs(handle_t *handle, struct super_block *sb,
+@@ -1082,7 +1082,8 @@ static int ext4_add_new_descs(handle_t *handle, struct super_block *sb,
   * @sb: super block
   */
  static int ext4_setup_new_desc(handle_t *handle, struct super_block *sb,
@@ -24,16 +25,16 @@ index 53412bf..ce38cef 100644
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
  	ext4_group_t group;
-@@ -1142,7 +1143,7 @@ static int ext4_setup_new_desc(handle_t *handle, struct super_block *sb,
- 	ext4_inode_table_set(sb, gdp, input->inode_table); /* LV FIXME */
- 	ext4_free_blks_set(sb, gdp, input->free_blocks_count);
+@@ -1112,7 +1113,7 @@ static int ext4_setup_new_desc(handle_t *handle, struct super_block *sb,
+ 	ext4_free_group_clusters_set(sb, gdp,
+ 				     EXT4_B2C(sbi, input->free_blocks_count));
  	ext4_free_inodes_set(sb, gdp, EXT4_INODES_PER_GROUP(sb));
 -	gdp->bg_flags = cpu_to_le16(EXT4_BG_INODE_ZEROED);
 +	gdp->bg_flags = cpu_to_le16(bg_flags);
  	gdp->bg_checksum = ext4_group_desc_csum(sbi, input->group, gdp);
  
  	err = ext4_handle_dirty_metadata(handle, NULL, gdb_bh);
-@@ -1161,6 +1162,26 @@ static int ext4_setup_new_desc(handle_t *handle, struct super_block *sb,
+@@ -1131,6 +1132,26 @@ static int ext4_setup_new_desc(handle_t *handle, struct super_block *sb,
  }
  
  /*

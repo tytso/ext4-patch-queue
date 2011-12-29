@@ -2,19 +2,21 @@ ext4: let ext4_group_extend() use common code
 
 From: Yongqiang Yang <xiaoqiangnk@gmail.com>
 
-__ext4_group_extend() is moved out from ext4_group_extend(), this patch
-lets ext4_group_extend() call __ext4_group_extentd() instead.
+ext4_group_extend_no_check() is moved out from ext4_group_extend(),
+this patch lets ext4_group_extend() call ext4_group_extentd_no_check()
+instead.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/resize.c |   41 ++---------------------------------------
  1 files changed, 2 insertions(+), 39 deletions(-)
 
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index a7a1d3a..11183a3 100644
+index 6e0af4b..ba04e0b 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -1830,8 +1830,7 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -1804,8 +1804,7 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  	ext4_grpblk_t last;
  	ext4_grpblk_t add;
  	struct buffer_head *bh;
@@ -24,7 +26,7 @@ index a7a1d3a..11183a3 100644
  	ext4_group_t group;
  
  	o_blocks_count = ext4_blocks_count(es);
-@@ -1887,43 +1886,7 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -1861,43 +1860,7 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  	}
  	brelse(bh);
  
@@ -65,11 +67,9 @@ index a7a1d3a..11183a3 100644
 -	update_backups(sb, EXT4_SB(sb)->s_sbh->b_blocknr, (char *)es,
 -		       sizeof(struct ext4_super_block));
 -exit_put:
-+	err = __ext4_group_extend(sb, o_blocks_count, add);
++	err = ext4_group_extend_no_check(sb, o_blocks_count, add);
  	return err;
  } /* ext4_group_extend */
  
 -- 
 1.7.5.1
-
-
