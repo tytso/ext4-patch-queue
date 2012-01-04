@@ -20,9 +20,9 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  Documentation/filesystems/ext4.txt |    7 ++
  fs/ext4/ext4.h                     |    2 +
- fs/ext4/ioctl.c                    |   42 +++++++++
+ fs/ext4/ioctl.c                    |   57 ++++++++++++
  fs/ext4/resize.c                   |  177 ++++++++++++++++++++++++++++++++++++
- 4 files changed, 228 insertions(+), 0 deletions(-)
+ 4 files changed, 243 insertions(+), 0 deletions(-)
 
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
 index 4917cf2..10ec463 100644
@@ -63,10 +63,19 @@ index 05058e2..4bc0e82 100644
  /* super.c */
  extern void *ext4_kvmalloc(size_t size, gfp_t flags);
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index ff1aab7..d639132 100644
+index ff1aab7..c1a9880 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -329,6 +329,47 @@ mext_out:
+@@ -18,6 +18,8 @@
+ #include "ext4_jbd2.h"
+ #include "ext4.h"
+ 
++#define MAX_32_NUM ((((unsigned long long) 1) << 32) - 1)
++
+ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
+ 	struct inode *inode = filp->f_dentry->d_inode;
+@@ -329,6 +331,60 @@ mext_out:
  		return err;
  	}
  
@@ -78,19 +87,33 @@ index ff1aab7..d639132 100644
 +		if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
 +			       EXT4_FEATURE_RO_COMPAT_BIGALLOC)) {
 +			ext4_msg(sb, KERN_ERR,
-+				 "Online resizing not supported with bigalloc");
++				 "Online resizing not (yet) supported with bigalloc");
++			return -EOPNOTSUPP;
++		}
++
++		if (EXT4_HAS_INCOMPAT_FEATURE(sb,
++			       EXT4_FEATURE_INCOMPAT_META_BG)) {
++			ext4_msg(sb, KERN_ERR,
++				 "Online resizing not (yet) supported with meta_bg");
++			return -EOPNOTSUPP;
++		}
++
++		if (copy_from_user(&n_blocks_count, (__u64 __user *)arg,
++				   sizeof(__u64))) {
++			return -EFAULT;
++		}
++
++		if (n_blocks_count > MAX_32_NUM &&
++		    !EXT4_HAS_INCOMPAT_FEATURE(sb,
++					       EXT4_FEATURE_INCOMPAT_64BIT)) {
++			ext4_msg(sb, KERN_ERR,
++				 "File system only supports 32-bit block numbers");
 +			return -EOPNOTSUPP;
 +		}
 +
 +		err = ext4_resize_begin(sb);
 +		if (err)
 +			return err;
-+
-+		if (copy_from_user(&n_blocks_count, (__u64 __user *)arg,
-+				   sizeof(__u64))) {
-+			err = -EFAULT;
-+			goto resizefs_out;
-+		}
 +
 +		err = mnt_want_write(filp->f_path.mnt);
 +		if (err)
@@ -107,14 +130,13 @@ index ff1aab7..d639132 100644
 +		mnt_drop_write(filp->f_path.mnt);
 +resizefs_out:
 +		ext4_resize_end(sb);
-+
 +		return err;
 +	}
 +
  	case FITRIM:
  	{
  		struct request_queue *q = bdev_get_queue(sb->s_bdev);
-@@ -427,6 +468,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+@@ -427,6 +483,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
  	}
  	case EXT4_IOC_MOVE_EXT:
  	case FITRIM:
@@ -123,10 +145,10 @@ index ff1aab7..d639132 100644
  	default:
  		return -ENOIOCTLCMD;
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 3d56e70..29abd66 100644
+index dac2356..5fe2a01 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -1471,6 +1471,70 @@ exit:
+@@ -1430,6 +1430,70 @@ exit:
  	return err;
  }
  
@@ -197,7 +219,7 @@ index 3d56e70..29abd66 100644
  /* Add group descriptor data to an existing or new group descriptor block.
   * Ensure we handle all possible error conditions _before_ we start modifying
   * the filesystem, because we cannot abort the transaction and not have it
-@@ -1870,3 +1934,116 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -1827,3 +1891,116 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  exit_put:
  	return err;
  } /* ext4_group_extend */
@@ -314,7 +336,3 @@ index 3d56e70..29abd66 100644
 +		       "upto %llu blocks\n", o_blocks_count, n_blocks_count);
 +	return err;
 +}
--- 
-1.7.5.1
-
-
