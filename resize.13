@@ -21,8 +21,8 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  Documentation/filesystems/ext4.txt |    7 ++
  fs/ext4/ext4.h                     |    2 +
  fs/ext4/ioctl.c                    |   42 +++++++++
- fs/ext4/resize.c                   |  175 ++++++++++++++++++++++++++++++++++++
- 4 files changed, 226 insertions(+), 0 deletions(-)
+ fs/ext4/resize.c                   |  177 ++++++++++++++++++++++++++++++++++++
+ 4 files changed, 228 insertions(+), 0 deletions(-)
 
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
 index 4917cf2..10ec463 100644
@@ -43,7 +43,7 @@ index 4917cf2..10ec463 100644
  
  References
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 21b5809..16fe750 100644
+index 05058e2..4bc0e82 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -583,6 +583,7 @@ enum {
@@ -54,7 +54,7 @@ index 21b5809..16fe750 100644
  
  #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
  /*
-@@ -1932,6 +1933,7 @@ extern int ext4_group_add(struct super_block *sb,
+@@ -1929,6 +1930,7 @@ extern int ext4_group_add(struct super_block *sb,
  extern int ext4_group_extend(struct super_block *sb,
  				struct ext4_super_block *es,
  				ext4_fsblk_t n_blocks_count);
@@ -123,10 +123,10 @@ index ff1aab7..d639132 100644
  	default:
  		return -ENOIOCTLCMD;
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index bfca158..6e0af4b 100644
+index 3d56e70..29abd66 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -1439,6 +1439,68 @@ exit:
+@@ -1471,6 +1471,70 @@ exit:
  	return err;
  }
  
@@ -175,6 +175,8 @@ index bfca158..6e0af4b 100644
 +					       EXT4_FEATURE_RO_COMPAT_GDT_CSUM))
 +			flex_gd->bg_flags[i] = EXT4_BG_BLOCK_UNINIT |
 +					       EXT4_BG_INODE_UNINIT;
++		else
++			flex_gd->bg_flags[i] = EXT4_BG_INODE_ZEROED;
 +	}
 +
 +	if (last_group == n_group &&
@@ -195,7 +197,7 @@ index bfca158..6e0af4b 100644
  /* Add group descriptor data to an existing or new group descriptor block.
   * Ensure we handle all possible error conditions _before_ we start modifying
   * the filesystem, because we cannot abort the transaction and not have it
-@@ -1838,3 +1900,116 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -1870,3 +1934,116 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  exit_put:
  	return err;
  } /* ext4_group_extend */
