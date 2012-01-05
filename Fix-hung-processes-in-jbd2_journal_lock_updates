@@ -1,0 +1,66 @@
+jbd2: fix hung processes in jbd2_journal_lock_updates()
+
+From: Jan Kara <jack@suse.cz>
+
+Toshiyuki Okajima found out that when running
+
+for ((i=0; i < 100000; i++)); do
+        if ((i%2 == 0)); then
+                chattr +j /mnt/file
+        else
+                chattr -j /mnt/file
+        fi
+        echo "0" >> /mnt/file
+done
+
+process sometimes hangs indefinitely in jbd2_journal_lock_updates().
+
+Toshiyuki identified that the following race happens:
+
+jbd2_journal_lock_updates()            |jbd2_journal_stop()
+---------------------------------------+---------------------------------------
+ write_lock(&journal->j_state_lock)    |    .
+ ++journal->j_barrier_count            |    .
+ spin_lock(&tran->t_handle_lock)       |    .
+ atomic_read(&tran->t_updates) //not 0 |
+                                       | atomic_dec_and_test(&tran->t_updates)
+                                       |    // t_updates = 0
+                                       | wake_up(&journal->j_wait_updates)
+ prepare_to_wait()                     |    // no process is woken up.
+ spin_unlock(&tran->t_handle_lock)     |
+ write_unlock(&journal->j_state_lock)  |
+ schedule() // never return            |
+
+We fix the problem by first calling prepare_to_wait() and only after that
+checking t_updates in jbd2_journal_lock_updates().
+
+Reported-and-analyzed-by: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/transaction.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index a0e41a4..35ae096 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -517,12 +517,13 @@ void jbd2_journal_lock_updates(journal_t *journal)
+ 			break;
+ 
+ 		spin_lock(&transaction->t_handle_lock);
++		prepare_to_wait(&journal->j_wait_updates, &wait,
++				TASK_UNINTERRUPTIBLE);
+ 		if (!atomic_read(&transaction->t_updates)) {
+ 			spin_unlock(&transaction->t_handle_lock);
++			finish_wait(&journal->j_wait_updates, &wait);
+ 			break;
+ 		}
+-		prepare_to_wait(&journal->j_wait_updates, &wait,
+-				TASK_UNINTERRUPTIBLE);
+ 		spin_unlock(&transaction->t_handle_lock);
+ 		write_unlock(&journal->j_state_lock);
+ 		schedule();
+-- 
+1.7.1
+
