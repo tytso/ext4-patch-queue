@@ -17,41 +17,41 @@ Cc: akpm@linux-foundation.org
  4 files changed, 25 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 96cc62b..536a95f 100644
+index 262c253..6b8ca99 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -903,6 +903,9 @@ struct ext4_inode_info {
- #define EXT4_MOUNT_DISCARD		0x40000000 /* Issue DISCARD requests */
- #define EXT4_MOUNT_INIT_INODE_TABLE	0x80000000 /* Initialize uninitialized itables */
+@@ -954,6 +954,9 @@ struct ext4_inode_info {
+ #define EXT4_MOUNT2_EXPLICIT_DELALLOC	0x00000001 /* User explicitly
+ 						      specified delalloc */
  
-+#define EXT4_MOUNT2_AKPM_LOCK_HACK	0x0000001 /* akpm lock hack */
++#define EXT4_MOUNT2_AKPM_LOCK_HACK	0x80000000 /* akpm lock hack */
 +
 +
  #define clear_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt &= \
  						~EXT4_MOUNT_##opt
  #define set_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt |= \
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index d719551..4cd043f 100644
+index 7838301..b5341a7 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1039,6 +1039,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
- 	if (test_opt(sb, JOURNAL_CHECKSUM) &&
- 	    !test_opt(sb, JOURNAL_ASYNC_COMMIT))
+@@ -1110,6 +1110,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
+ 		seq_puts(seq, ",journal_async_commit");
+ 	else if (test_opt(sb, JOURNAL_CHECKSUM))
  		seq_puts(seq, ",journal_checksum");
 +	if (test_opt2(sb, AKPM_LOCK_HACK))
 +		seq_puts(seq, ",akpm_lock_hack");
  	if (test_opt(sb, I_VERSION))
  		seq_puts(seq, ",i_version");
  	if (!test_opt(sb, DELALLOC) &&
-@@ -1267,6 +1269,7 @@ enum {
+@@ -1334,6 +1336,7 @@ enum {
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
  	Opt_dioread_nolock, Opt_dioread_lock,
- 	Opt_discard, Opt_nodiscard,
- 	Opt_init_inode_table, Opt_noinit_inode_table,
+ 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
 +	Opt_akpm_lock_hack,
  };
  
  static const match_table_t tokens = {
-@@ -1325,6 +1328,7 @@ static const match_table_t tokens = {
+@@ -1391,6 +1394,7 @@ static const match_table_t tokens = {
  	{Opt_i_version, "i_version"},
  	{Opt_stripe, "stripe=%u"},
  	{Opt_resize, "resize"},
@@ -59,8 +59,8 @@ index d719551..4cd043f 100644
  	{Opt_delalloc, "delalloc"},
  	{Opt_nodelalloc, "nodelalloc"},
  	{Opt_mblk_io_submit, "mblk_io_submit"},
-@@ -1836,6 +1840,9 @@ set_qf_format:
- 		case Opt_noinit_inode_table:
+@@ -1905,6 +1909,9 @@ set_qf_format:
+ 		case Opt_noinit_itable:
  			clear_opt(sb, INIT_INODE_TABLE);
  			break;
 +		case Opt_akpm_lock_hack:
@@ -69,7 +69,7 @@ index d719551..4cd043f 100644
  		default:
  			ext4_msg(sb, KERN_ERR,
  			       "Unrecognized mount option \"%s\" "
-@@ -3760,6 +3767,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -3933,6 +3940,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
@@ -81,10 +81,10 @@ index d719551..4cd043f 100644
  }
  
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index 6bf0a24..e42578f 100644
+index 35ae096..b6141d8 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
-@@ -582,6 +582,7 @@ do_get_write_access(handle_t *handle, struct journal_head *jh,
+@@ -591,6 +591,7 @@ do_get_write_access(handle_t *handle, struct journal_head *jh,
  	int error;
  	char *frozen_buffer = NULL;
  	int need_copy = 0;
@@ -92,7 +92,7 @@ index 6bf0a24..e42578f 100644
  
  	if (is_handle_aborted(handle))
  		return -EROFS;
-@@ -597,7 +598,13 @@ repeat:
+@@ -606,7 +607,13 @@ repeat:
  
  	/* @@@ Need to check for errors here at some point. */
  
@@ -107,7 +107,7 @@ index 6bf0a24..e42578f 100644
  	jbd_lock_bh_state(bh);
  
  	/* We now hold the buffer lock so it is safe to query the buffer
-@@ -638,7 +645,8 @@ repeat:
+@@ -647,7 +654,8 @@ repeat:
  		set_buffer_jbddirty(bh);
  	}
  
@@ -118,10 +118,10 @@ index 6bf0a24..e42578f 100644
  	error = -EROFS;
  	if (is_handle_aborted(handle)) {
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 2ae86aa..48104df 100644
+index 5557bae..140824b 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
-@@ -991,6 +991,7 @@ struct journal_s
+@@ -953,6 +953,7 @@ struct journal_s
  #define JBD2_ABORT_ON_SYNCDATA_ERR	0x040	/* Abort the journal on file
  						 * data write error in ordered
  						 * mode */
