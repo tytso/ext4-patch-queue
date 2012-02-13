@@ -1,0 +1,40 @@
+ext4: remove unneeded variable in ext4_xattr_check_block()
+
+From: Zheng Liu <wenqing.lz@taobao.com>
+
+We could return directly from ext4_xattr_check_block(). Thus, we
+shouldn't need to define a 'error' variable.
+
+Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/xattr.c |    5 +----
+ 1 files changed, 1 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index 93a00d8..1bff752 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -158,13 +158,10 @@ ext4_xattr_check_names(struct ext4_xattr_entry *entry, void *end)
+ static inline int
+ ext4_xattr_check_block(struct buffer_head *bh)
+ {
+-	int error;
+-
+ 	if (BHDR(bh)->h_magic != cpu_to_le32(EXT4_XATTR_MAGIC) ||
+ 	    BHDR(bh)->h_blocks != cpu_to_le32(1))
+ 		return -EIO;
+-	error = ext4_xattr_check_names(BFIRST(bh), bh->b_data + bh->b_size);
+-	return error;
++	return ext4_xattr_check_names(BFIRST(bh), bh->b_data + bh->b_size);
+ }
+ 
+ static inline int
+-- 
+1.7.4.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
