@@ -11,15 +11,8 @@ once if we get really unlucky.
 Addresses-Google-Bug: 2828254
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/ext4/balloc.c  |   59 +++++++++++++++++++++++++++-------------
- fs/ext4/ext4.h    |   11 ++++++-
- fs/ext4/ialloc.c  |   26 ++++++++++++-----
- fs/ext4/mballoc.c |   79 ++++++++++-------------------------------------------
- 4 files changed, 82 insertions(+), 93 deletions(-)
-
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index f9e2cd8..95c87ab 100644
+index f9e2cd8..a2cff2b 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -336,10 +336,10 @@ err_out:
@@ -48,7 +41,7 @@ index f9e2cd8..95c87ab 100644
  		return NULL;
  	}
  
-@@ -382,25 +382,46 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
+@@ -382,25 +382,50 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
  		return bh;
  	}
  	/*
@@ -58,6 +51,7 @@ index f9e2cd8..95c87ab 100644
 -	 * get set with buffer lock held.
 +	 * submit the buffer_head for reading
  	 */
++	set_buffer_new(bh);
  	trace_ext4_read_block_bitmap_load(sb, block_group);
 -	set_bitmap_uptodate(bh);
 -	if (bh_submit_read(bh) < 0) {
@@ -74,6 +68,8 @@ index f9e2cd8..95c87ab 100644
 +{
 +	struct ext4_group_desc *desc;
 +
++	if (!buffer_new(bh))
++		return 0;
 +	desc = ext4_get_group_desc(sb, block_group, NULL);
 +	if (!desc)
 +		return 1;
@@ -87,6 +83,7 @@ index f9e2cd8..95c87ab 100644
 +			   block_group, bh->b_blocknr);
 +		return 1;
  	}
++	clear_buffer_new(bh);
 +	/* Panic or remount fs read-only if block bitmap is invalid */
  	ext4_valid_block_bitmap(sb, desc, block_group, bh);
 -	/*
@@ -110,7 +107,7 @@ index f9e2cd8..95c87ab 100644
  }
  
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index e7dc9ad..eb4596e 100644
+index 513004f..315f01b 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1794,8 +1794,14 @@ extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
@@ -139,7 +136,7 @@ index e7dc9ad..eb4596e 100644
  /* mballoc.c */
  extern long ext4_mb_stats;
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index 7d7f3b4..9d6d99f 100644
+index 84e6e9a..b268599 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -92,6 +92,16 @@ static unsigned ext4_init_inode_bitmap(struct super_block *sb,
