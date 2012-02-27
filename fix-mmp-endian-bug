@@ -1,0 +1,33 @@
+ext4: Fix endianness bug when reading the MMP block
+
+From: Santosh Nayak <santoshprasadnayak@gmail.com>
+
+Sparse complained about this endian bug in fs/ext4/mmp.c.
+
+Signed-off-by: Santosh Nayak <santoshprasadnayak@gmail.com>
+Reviewed-by: Johann Lombardi <johann@whamcloud.com>
+Reviewed-by: Andreas Dilger <adilger@dilger.ca>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mmp.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/mmp.c b/fs/ext4/mmp.c
+index 7ea4ba4..ed6548d 100644
+--- a/fs/ext4/mmp.c
++++ b/fs/ext4/mmp.c
+@@ -257,8 +257,8 @@ int ext4_multi_mount_protect(struct super_block *sb,
+ 	 * If check_interval in MMP block is larger, use that instead of
+ 	 * update_interval from the superblock.
+ 	 */
+-	if (mmp->mmp_check_interval > mmp_check_interval)
+-		mmp_check_interval = mmp->mmp_check_interval;
++	if (le16_to_cpu(mmp->mmp_check_interval) > mmp_check_interval)
++		mmp_check_interval = le16_to_cpu(mmp->mmp_check_interval);
+ 
+ 	seq = le32_to_cpu(mmp->mmp_seq);
+ 	if (seq == EXT4_MMP_SEQ_CLEAN)
+-- 
+1.7.4.4
+
+
