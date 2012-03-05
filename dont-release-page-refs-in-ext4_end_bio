@@ -1,0 +1,69 @@
+ext4: Don't release page refs in ext4_end_bio()
+
+From: Curt Wohlgemuth <curtw@google.com>
+
+We can clear PageWriteback on each page when the IO
+completes, but we can't release the references on the page
+until we convert any uninitialized extents.
+
+Without this patch, the use of the dioread_nolock mount
+option can break buffered writes, because extents may
+not be converted by the time a subsequent buffered read
+comes in; if the page is not in the page cache, a read
+will return zeros if the extent is still uninitialized.
+
+I tested this with a (temporary) patch that adds a call
+to msleep(1000) at the start of ext4_end_io_work(), to delay
+processing of each DIO-unwritten work queue item.  With this
+msleep(), a simple workload of
+
+  fallocate
+  write
+  fadvise
+  read
+
+will fail without this patch, succeeds with it.
+
+Signed-off-by: Curt Wohlgemuth <curtw@google.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/page-io.c |    7 ++++---
+ 1 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index e6271fe..0991c22 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -63,7 +63,6 @@ void ext4_ioend_wait(struct inode *inode)
+ static void put_io_page(struct ext4_io_page *io_page)
+ {
+ 	if (atomic_dec_and_test(&io_page->p_count)) {
+-		end_page_writeback(io_page->p_page);
+ 		put_page(io_page->p_page);
+ 		kmem_cache_free(io_page_cachep, io_page);
+ 	}
+@@ -235,9 +234,9 @@ static void ext4_end_bio(struct bio *bio, int error)
+ 			} while (bh != head);
+ 		}
+ 
+-		put_io_page(io_end->pages[i]);
++		if (atomic_read(&io_end->pages[i]->p_count) == 1)
++			end_page_writeback(io_end->pages[i]->p_page);
+ 	}
+-	io_end->num_io_pages = 0;
+ 	inode = io_end->inode;
+ 
+ 	if (error) {
+@@ -429,6 +428,8 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+ 	 * PageWriteback bit from the page to prevent the system from
+ 	 * wedging later on.
+ 	 */
++	if (atomic_read(&io_page->p_count) == 1)
++		end_page_writeback(page);
+ 	put_io_page(io_page);
+ 	return ret;
+ }
+-- 
+1.7.7.3
+
+
