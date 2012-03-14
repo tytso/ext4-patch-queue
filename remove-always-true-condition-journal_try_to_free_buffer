@@ -1,0 +1,35 @@
+jbd2: remove always true condition in __journal_try_to_free_buffer()
+
+From: Jan Kara <jack@suse.cz>
+
+The check b_jlist == BJ_None in __journal_try_to_free_buffer() is
+always true (__jbd2_journal_temp_unlink_buffer() also checks this in
+an assertion) so just remove it.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/transaction.c |    6 ++----
+ 1 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index acd08be..52154c9 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -1645,10 +1645,8 @@ __journal_try_to_free_buffer(journal_t *journal, struct buffer_head *bh)
+ 	spin_lock(&journal->j_list_lock);
+ 	if (jh->b_cp_transaction != NULL && jh->b_transaction == NULL) {
+ 		/* written-back checkpointed metadata buffer */
+-		if (jh->b_jlist == BJ_None) {
+-			JBUFFER_TRACE(jh, "remove from checkpoint list");
+-			__jbd2_journal_remove_checkpoint(jh);
+-		}
++		JBUFFER_TRACE(jh, "remove from checkpoint list");
++		__jbd2_journal_remove_checkpoint(jh);
+ 	}
+ 	spin_unlock(&journal->j_list_lock);
+ out:
+-- 
+1.7.1
+
+
