@@ -1,0 +1,222 @@
+ext4: change some printk() calls to use ext4_msg() instead
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/dir.c     |    5 +++--
+ fs/ext4/extents.c |   19 ++++++++++---------
+ fs/ext4/ialloc.c  |   19 ++++++++++---------
+ fs/ext4/inode.c   |   23 +++++++++++++----------
+ fs/ext4/resize.c  |   19 ++++++++++---------
+ fs/ext4/super.c   |    4 ++--
+ 6 files changed, 48 insertions(+), 41 deletions(-)
+
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index 0fb96c7..b867862 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -537,8 +537,9 @@ static int call_filldir(struct file *filp, void *dirent,
+ 	sb = inode->i_sb;
+ 
+ 	if (!fname) {
+-		printk(KERN_ERR "EXT4-fs: call_filldir: called with "
+-		       "null fname?!?\n");
++		ext4_msg(sb, KERN_ERR, "%s:%d: inode #%lu: comm %s: "
++			 "called with null fname?!?", __func__, __LINE__,
++			 inode->i_ino, current->comm);
+ 		return 0;
+ 	}
+ 	curr_pos = hash2pos(filp, fname->hash, fname->minor_hash);
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 5c9c067..d075f34 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2728,17 +2728,17 @@ void ext4_ext_init(struct super_block *sb)
+ 
+ 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_EXTENTS)) {
+ #if defined(AGGRESSIVE_TEST) || defined(CHECK_BINSEARCH) || defined(EXTENTS_STATS)
+-		printk(KERN_INFO "EXT4-fs: file extents enabled");
++		printk(KERN_INFO "EXT4-fs: file extents enabled"
+ #ifdef AGGRESSIVE_TEST
+-		printk(", aggressive tests");
++		       ", aggressive tests"
+ #endif
+ #ifdef CHECK_BINSEARCH
+-		printk(", check binsearch");
++		       ", check binsearch"
+ #endif
+ #ifdef EXTENTS_STATS
+-		printk(", stats");
++		       ", stats"
+ #endif
+-		printk("\n");
++		       "\n");
+ #endif
+ #ifdef EXTENTS_STATS
+ 		spin_lock_init(&EXT4_SB(sb)->s_ext_stats_lock);
+@@ -4412,10 +4412,11 @@ int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
+ 				      EXT4_GET_BLOCKS_IO_CONVERT_EXT);
+ 		if (ret <= 0) {
+ 			WARN_ON(ret <= 0);
+-			printk(KERN_ERR "%s: ext4_ext_map_blocks "
+-				    "returned error inode#%lu, block=%u, "
+-				    "max_blocks=%u", __func__,
+-				    inode->i_ino, map.m_lblk, map.m_len);
++			ext4_msg(inode->i_sb, KERN_ERR,
++				 "%s:%d: inode #%lu: block %u: len %u: "
++				 "ext4_ext_map_blocks returned %d",
++				 __func__, __LINE__, inode->i_ino, map.m_lblk,
++				 map.m_len, ret);
+ 		}
+ 		ext4_mark_inode_dirty(handle, inode);
+ 		ret2 = ext4_journal_stop(handle);
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 75e2eae..409c2ee 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -204,19 +204,20 @@ void ext4_free_inode(handle_t *handle, struct inode *inode)
+ 	struct ext4_sb_info *sbi;
+ 	int fatal = 0, err, count, cleared;
+ 
+-	if (atomic_read(&inode->i_count) > 1) {
+-		printk(KERN_ERR "ext4_free_inode: inode has count=%d\n",
+-		       atomic_read(&inode->i_count));
++	if (!sb) {
++		printk(KERN_ERR "EXT4-fs: %s:%d: inode on "
++		       "nonexistent device\n", __func__, __LINE__);
+ 		return;
+ 	}
+-	if (inode->i_nlink) {
+-		printk(KERN_ERR "ext4_free_inode: inode has nlink=%d\n",
+-		       inode->i_nlink);
++	if (atomic_read(&inode->i_count) > 1) {
++		ext4_msg(sb, KERN_ERR, "%s:%d: inode #%lu: count=%d",
++			 __func__, __LINE__, inode->i_ino,
++			 atomic_read(&inode->i_count));
+ 		return;
+ 	}
+-	if (!sb) {
+-		printk(KERN_ERR "ext4_free_inode: inode on "
+-		       "nonexistent device\n");
++	if (inode->i_nlink) {
++		ext4_msg(sb, KERN_ERR, "%s:%d: inode #%lu: nlink=%d\n",
++			 __func__, __LINE__, inode->i_ino, inode->i_nlink);
+ 		return;
+ 	}
+ 	sbi = EXT4_SB(sb);
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index a11264e..83a2dae 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1428,20 +1428,22 @@ static void ext4_da_block_invalidatepages(struct mpage_da_data *mpd)
+ static void ext4_print_free_blocks(struct inode *inode)
+ {
+ 	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+-	printk(KERN_CRIT "Total free blocks count %lld\n",
++	struct super_block *sb = inode->i_sb;
++
++	ext4_msg(sb, KERN_CRIT, "Total free blocks count %lld",
+ 	       EXT4_C2B(EXT4_SB(inode->i_sb),
+ 			ext4_count_free_clusters(inode->i_sb)));
+-	printk(KERN_CRIT "Free/Dirty block details\n");
+-	printk(KERN_CRIT "free_blocks=%lld\n",
++	ext4_msg(sb, KERN_CRIT, "Free/Dirty block details");
++	ext4_msg(sb, KERN_CRIT, "free_blocks=%lld",
+ 	       (long long) EXT4_C2B(EXT4_SB(inode->i_sb),
+ 		percpu_counter_sum(&sbi->s_freeclusters_counter)));
+-	printk(KERN_CRIT "dirty_blocks=%lld\n",
++	ext4_msg(sb, KERN_CRIT, "dirty_blocks=%lld",
+ 	       (long long) EXT4_C2B(EXT4_SB(inode->i_sb),
+ 		percpu_counter_sum(&sbi->s_dirtyclusters_counter)));
+-	printk(KERN_CRIT "Block reservation details\n");
+-	printk(KERN_CRIT "i_reserved_data_blocks=%u\n",
+-	       EXT4_I(inode)->i_reserved_data_blocks);
+-	printk(KERN_CRIT "i_reserved_meta_blocks=%u\n",
++	ext4_msg(sb, KERN_CRIT, "Block reservation details");
++	ext4_msg(sb, KERN_CRIT, "i_reserved_data_blocks=%u",
++		 EXT4_I(inode)->i_reserved_data_blocks);
++	ext4_msg(sb, KERN_CRIT, "i_reserved_meta_blocks=%u",
+ 	       EXT4_I(inode)->i_reserved_meta_blocks);
+ 	return;
+ }
+@@ -2809,8 +2811,9 @@ static void ext4_end_io_buffer_write(struct buffer_head *bh, int uptodate)
+ 		goto out;
+ 
+ 	if (!(io_end->inode->i_sb->s_flags & MS_ACTIVE)) {
+-		printk("sb umounted, discard end_io request for inode %lu\n",
+-			io_end->inode->i_ino);
++		ext4_msg(io_end->inode->i_sb, KERN_INFO,
++			 "sb umounted, discard end_io request for inode %lu",
++			 io_end->inode->i_ino);
+ 		ext4_free_io_end(io_end);
+ 		goto out;
+ 	}
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 3fed79d..b6ad461 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -1512,16 +1512,17 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+ 	o_blocks_count = ext4_blocks_count(es);
+ 
+ 	if (test_opt(sb, DEBUG))
+-		printk(KERN_DEBUG "EXT4-fs: extending last group from %llu to %llu blocks\n",
+-		       o_blocks_count, n_blocks_count);
++		ext4_msg(sb, KERN_DEBUG,
++			 "extending last group from %llu to %llu blocks",
++			 o_blocks_count, n_blocks_count);
+ 
+ 	if (n_blocks_count == 0 || n_blocks_count == o_blocks_count)
+ 		return 0;
+ 
+ 	if (n_blocks_count > (sector_t)(~0ULL) >> (sb->s_blocksize_bits - 9)) {
+-		printk(KERN_ERR "EXT4-fs: filesystem on %s:"
+-			" too large to resize to %llu blocks safely\n",
+-			sb->s_id, n_blocks_count);
++		ext4_msg(sb, KERN_ERR,
++			 "filesystem too large to resize to %llu blocks safely",
++			 n_blocks_count);
+ 		if (sizeof(sector_t) < 8)
+ 			ext4_warning(sb, "CONFIG_LBDAF not enabled");
+ 		return -EINVAL;
+@@ -1591,8 +1592,8 @@ int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
+ 	o_blocks_count = ext4_blocks_count(es);
+ 
+ 	if (test_opt(sb, DEBUG))
+-		printk(KERN_DEBUG "EXT4-fs: resizing filesystem from %llu "
+-		       "upto %llu blocks\n", o_blocks_count, n_blocks_count);
++		ext4_msg(sb, KERN_DEBUG, "resizing filesystem from %llu "
++		       "to %llu blocks", o_blocks_count, n_blocks_count);
+ 
+ 	if (n_blocks_count < o_blocks_count) {
+ 		/* On-line shrinking not supported */
+@@ -1676,7 +1677,7 @@ out:
+ 
+ 	iput(resize_inode);
+ 	if (test_opt(sb, DEBUG))
+-		printk(KERN_DEBUG "EXT4-fs: resized filesystem from %llu "
+-		       "upto %llu blocks\n", o_blocks_count, n_blocks_count);
++		ext4_msg(sb, KERN_DEBUG, "resized filesystem from %llu "
++		       "upto %llu blocks", o_blocks_count, n_blocks_count);
+ 	return err;
+ }
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 11dfaad..1e26f4a 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -376,7 +376,7 @@ void ext4_journal_abort_handle(const char *caller, unsigned int line,
+ 	if (is_handle_aborted(handle))
+ 		return;
+ 
+-	printk(KERN_ERR "%s:%d: aborting transaction: %s in %s\n",
++	printk(KERN_ERR "EXT4-fs: %s:%d: aborting transaction: %s in %s\n",
+ 	       caller, line, errstr, err_fn);
+ 
+ 	jbd2_journal_abort_handle(handle);
+@@ -2809,7 +2809,7 @@ static int ext4_run_lazyinit_thread(void)
+ 		ext4_clear_request_list();
+ 		kfree(ext4_li_info);
+ 		ext4_li_info = NULL;
+-		printk(KERN_CRIT "EXT4: error %d creating inode table "
++		printk(KERN_CRIT "EXT4-fs: error %d creating inode table "
+ 				 "initialization thread\n",
+ 				 err);
+ 		return err;

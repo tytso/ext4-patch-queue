@@ -1,0 +1,60 @@
+ext4: remove trailing newlines from ext4_msg() and ext4_error() messages
+
+The functions ext4_msg() and ext4_error() already tack on a trailing
+newline, so remove the unnecessary extra newline.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index b268599..75e2eae 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -1102,9 +1102,9 @@ int ext4_init_inode_table(struct super_block *sb, ext4_group_t group,
+ 			    sbi->s_inodes_per_block);
+ 
+ 	if ((used_blks < 0) || (used_blks > sbi->s_itb_per_group)) {
+-		ext4_error(sb, "Something is wrong with group %u\n"
+-			   "Used itable blocks: %d"
+-			   "itable unused count: %u\n",
++		ext4_error(sb, "Something is wrong with group %u: "
++			   "used itable blocks: %d; "
++			   "itable unused count: %u",
+ 			   group, used_blks,
+ 			   ext4_itable_unused_count(sb, gdp));
+ 		ret = 1;
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 0281402..a11264e 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -272,7 +272,7 @@ void ext4_da_update_reserve_space(struct inode *inode,
+ 	trace_ext4_da_update_reserve_space(inode, used, quota_claim);
+ 	if (unlikely(used > ei->i_reserved_data_blocks)) {
+ 		ext4_msg(inode->i_sb, KERN_NOTICE, "%s: ino %lu, used %d "
+-			 "with only %d reserved data blocks\n",
++			 "with only %d reserved data blocks",
+ 			 __func__, inode->i_ino, used,
+ 			 ei->i_reserved_data_blocks);
+ 		WARN_ON(1);
+@@ -1165,7 +1165,7 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
+ 		 */
+ 		ext4_msg(inode->i_sb, KERN_NOTICE, "ext4_da_release_space: "
+ 			 "ino %lu, to_free %d with only %d reserved "
+-			 "data blocks\n", inode->i_ino, to_free,
++			 "data blocks", inode->i_ino, to_free,
+ 			 ei->i_reserved_data_blocks);
+ 		WARN_ON(1);
+ 		to_free = ei->i_reserved_data_blocks;
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 8631e73..23ec6a8 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2762,7 +2762,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+ 	len = EXT4_C2B(sbi, ac->ac_b_ex.fe_len);
+ 	if (!ext4_data_block_valid(sbi, block, len)) {
+ 		ext4_error(sb, "Allocating blocks %llu-%llu which overlap "
+-			   "fs metadata\n", block, block+len);
++			   "fs metadata", block, block+len);
+ 		/* File system mounted not to panic on error
+ 		 * Fix the bitmap and repeat the block allocation
+ 		 * We leak some of the blocks here.
