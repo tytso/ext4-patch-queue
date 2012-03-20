@@ -10,14 +10,16 @@ longer needed from the ext4_ext_map_blocks().
 Signed-off-by: Lukas Czerner <lczerner@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
+v2: Nothing changed
+
  fs/ext4/extents.c |  119 ++++++-----------------------------------------------
  1 files changed, 13 insertions(+), 106 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 04dd188..f773e5f 100644
+index 522f429..ce593b7 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -3778,8 +3778,6 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3774,8 +3774,6 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	int free_on_err = 0, err = 0, depth, ret;
  	unsigned int allocated = 0, offset = 0;
  	unsigned int allocated_clusters = 0;
@@ -26,7 +28,7 @@ index 04dd188..f773e5f 100644
  	struct ext4_allocation_request ar;
  	ext4_io_end_t *io = EXT4_I(inode)->cur_aio_dio;
  	ext4_lblk_t cluster_offset;
-@@ -3789,8 +3787,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3785,8 +3783,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	trace_ext4_ext_map_blocks_enter(inode, map->m_lblk, map->m_len, flags);
  
  	/* check in cache */
@@ -36,7 +38,7 @@ index 04dd188..f773e5f 100644
  		if (!newex.ee_start_lo && !newex.ee_start_hi) {
  			if ((sbi->s_cluster_ratio > 1) &&
  			    ext4_find_delalloc_cluster(inode, map->m_lblk, 0))
-@@ -3858,113 +3855,25 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3854,113 +3851,25 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  
  		/* if found extent covers block, simply return it */
  		if (in_range(map->m_lblk, ee_block, ee_len)) {
@@ -160,7 +162,7 @@ index 04dd188..f773e5f 100644
  		}
  	}
  
-@@ -4233,13 +4142,11 @@ out2:
+@@ -4229,13 +4138,11 @@ out2:
  		ext4_ext_drop_refs(path);
  		kfree(path);
  	}
