@@ -1,0 +1,31 @@
+ext4: remove useless s_dirt assignment
+
+From: Artem Bityutskiy <artem.bityutskiy@linux.intel.com>
+
+Clean-up ext4 a tiny bit by removing useless s_dirt assignment in
+'ext4_fill_super()' because a bit later we anyway call
+'ext4_setup_super()' which writes the superblock to the media
+unconditionally.
+
+Signed-off-by: Artem Bityutskiy <artem.bityutskiy@linux.intel.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index c1f5111..d280bb6 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3415,7 +3415,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ #else
+ 		es->s_flags |= cpu_to_le32(EXT2_FLAGS_SIGNED_HASH);
+ #endif
+-		sb->s_dirt = 1;
+ 	}
+ 
+ 	/* Handle clustersize */
+-- 
+1.7.7.6
+
+
