@@ -1,0 +1,37 @@
+ext4: fix trimmed block count accunting
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Currently when there is not enough free blocks in the block group to
+discard (grp->bb_free < minlen) the 'trimmed' is bumped up anyway with
+the number of discarded blocks from the previous iteration. Fix this
+by bumping up 'trimmed' only if the ext4_trim_all_free() was actually
+run.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+v2: nothing changed
+
+ fs/ext4/mballoc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 16a3aeb..f20688e 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -5083,8 +5083,8 @@ int ext4_trim_fs(struct super_block *sb, struct fstrim_range *range)
+ 				ret = cnt;
+ 				break;
+ 			}
++			trimmed += cnt;
+ 		}
+-		trimmed += cnt;
+ 
+ 		/*
+ 		 * For every group except the first one, we are sure
+-- 
+1.7.4.4
+
+
