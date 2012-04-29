@@ -17,10 +17,10 @@ Cc: akpm@linux-foundation.org
  4 files changed, 25 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 262c253..6b8ca99 100644
+index ea7158d..813058b 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -954,6 +954,9 @@ struct ext4_inode_info {
+@@ -980,6 +980,9 @@ struct ext4_inode_info {
  #define EXT4_MOUNT2_EXPLICIT_DELALLOC	0x00000001 /* User explicitly
  						      specified delalloc */
  
@@ -31,19 +31,10 @@ index 262c253..6b8ca99 100644
  						~EXT4_MOUNT_##opt
  #define set_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt |= \
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 7838301..b5341a7 100644
+index 4daaf95..94e2a18 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1110,6 +1110,8 @@ static int ext4_show_options(struct seq_file *seq, struct vfsmount *vfs)
- 		seq_puts(seq, ",journal_async_commit");
- 	else if (test_opt(sb, JOURNAL_CHECKSUM))
- 		seq_puts(seq, ",journal_checksum");
-+	if (test_opt2(sb, AKPM_LOCK_HACK))
-+		seq_puts(seq, ",akpm_lock_hack");
- 	if (test_opt(sb, I_VERSION))
- 		seq_puts(seq, ",i_version");
- 	if (!test_opt(sb, DELALLOC) &&
-@@ -1334,6 +1336,7 @@ enum {
+@@ -1230,6 +1230,7 @@ enum {
  	Opt_inode_readahead_blks, Opt_journal_ioprio,
  	Opt_dioread_nolock, Opt_dioread_lock,
  	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
@@ -51,25 +42,34 @@ index 7838301..b5341a7 100644
  };
  
  static const match_table_t tokens = {
-@@ -1391,6 +1394,7 @@ static const match_table_t tokens = {
+@@ -1285,6 +1286,7 @@ static const match_table_t tokens = {
+ 	{Opt_nobarrier, "nobarrier"},
  	{Opt_i_version, "i_version"},
  	{Opt_stripe, "stripe=%u"},
- 	{Opt_resize, "resize"},
 +	{Opt_akpm_lock_hack, "akpm_lock_hack"},
  	{Opt_delalloc, "delalloc"},
  	{Opt_nodelalloc, "nodelalloc"},
  	{Opt_mblk_io_submit, "mblk_io_submit"},
-@@ -1905,6 +1909,9 @@ set_qf_format:
- 		case Opt_noinit_itable:
- 			clear_opt(sb, INIT_INODE_TABLE);
- 			break;
-+		case Opt_akpm_lock_hack:
-+			set_opt2(sb, AKPM_LOCK_HACK);
-+			break;
- 		default:
- 			ext4_msg(sb, KERN_ERR,
- 			       "Unrecognized mount option \"%s\" "
-@@ -3933,6 +3940,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -1542,6 +1544,9 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
+ 			return -1;
+ 		*journal_ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, arg);
+ 		return 1;
++	case Opt_akpm_lock_hack:
++		set_opt2(sb, AKPM_LOCK_HACK);
++		return 1;
+ 	}
+ 
+ 	for (m = ext4_mount_opts; m->token != Opt_err; m++) {
+@@ -1795,6 +1800,8 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
+ 		SEQ_OPTS_PRINT("min_batch_time=%u", sbi->s_min_batch_time);
+ 	if (nodefs || sbi->s_max_batch_time != EXT4_DEF_MAX_BATCH_TIME)
+ 		SEQ_OPTS_PRINT("max_batch_time=%u", sbi->s_max_batch_time);
++	if (test_opt2(sb, AKPM_LOCK_HACK))
++		seq_puts(seq, ",akpm_lock_hack");
+ 	if (sb->s_flags & MS_I_VERSION)
+ 		SEQ_OPTS_PUTS("i_version");
+ 	if (nodefs || sbi->s_stripe)
+@@ -3897,6 +3904,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
@@ -81,10 +81,10 @@ index 7838301..b5341a7 100644
  }
  
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index 35ae096..b6141d8 100644
+index ddcd354..a5e19e7 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
-@@ -591,6 +591,7 @@ do_get_write_access(handle_t *handle, struct journal_head *jh,
+@@ -621,6 +621,7 @@ do_get_write_access(handle_t *handle, struct journal_head *jh,
  	int error;
  	char *frozen_buffer = NULL;
  	int need_copy = 0;
@@ -92,7 +92,7 @@ index 35ae096..b6141d8 100644
  
  	if (is_handle_aborted(handle))
  		return -EROFS;
-@@ -606,7 +607,13 @@ repeat:
+@@ -636,7 +637,13 @@ repeat:
  
  	/* @@@ Need to check for errors here at some point. */
  
@@ -107,7 +107,7 @@ index 35ae096..b6141d8 100644
  	jbd_lock_bh_state(bh);
  
  	/* We now hold the buffer lock so it is safe to query the buffer
-@@ -647,7 +654,8 @@ repeat:
+@@ -677,7 +684,8 @@ repeat:
  		set_buffer_jbddirty(bh);
  	}
  
@@ -118,7 +118,7 @@ index 35ae096..b6141d8 100644
  	error = -EROFS;
  	if (is_handle_aborted(handle)) {
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 5557bae..140824b 100644
+index 912c30a..db74b0b 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
 @@ -953,6 +953,7 @@ struct journal_s
