@@ -1,0 +1,31 @@
+ext4: disallow hard-linked directory in ext4_lookup
+
+From: Andreas Dilger <adilger@dilger.ca>
+
+A hard-linked directory to its parent can cause the VFS to deadlock,
+and is a sign of a corrupted file system.  So detect this case in
+ext4_lookup(), before the rmdir() lockup scenario can take place.
+
+Signed-off-by: Andreas Dilger <adilger@dilger.ca>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/namei.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index a9fd5f4..5f4a030 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1330,6 +1330,12 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, stru
+ 			EXT4_ERROR_INODE(dir, "bad inode number: %u", ino);
+ 			return ERR_PTR(-EIO);
+ 		}
++		if (ino == dir->i_ino) {
++			EXT4_ERROR_INODE(dir, "'%.*s' linked to parent dir",
++					 dentry->d_name.len,
++					 dentry->d_name.name);
++			return ERR_PTR(-EIO);
++		}
+ 		inode = ext4_iget(dir->i_sb, ino);
+ 		if (inode == ERR_PTR(-ESTALE)) {
+ 			EXT4_ERROR_INODE(dir,
