@@ -1,0 +1,45 @@
+ext4/jbd2: add metadata checksumming to the list of supported features
+
+From: "Darrick J. Wong" <djwong@us.ibm.com>
+
+Activate the metadata checksumming feature by adding it to ext4 and
+jbd2's lists of supported features.
+
+Signed-off-by: Darrick J. Wong <djwong@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h       |    3 ++-
+ include/linux/jbd2.h |    3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 900d5c4..dd75078 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1486,7 +1486,8 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
+ 					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \
+ 					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR |\
+ 					 EXT4_FEATURE_RO_COMPAT_HUGE_FILE |\
+-					 EXT4_FEATURE_RO_COMPAT_BIGALLOC)
++					 EXT4_FEATURE_RO_COMPAT_BIGALLOC |\
++					 EXT4_FEATURE_RO_COMPAT_METADATA_CSUM)
+ 
+ /*
+  * Default values for user and/or group using reserved blocks
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index f321226..40ceeff 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -296,7 +296,8 @@ typedef struct journal_superblock_s
+ #define JBD2_KNOWN_ROCOMPAT_FEATURES	0
+ #define JBD2_KNOWN_INCOMPAT_FEATURES	(JBD2_FEATURE_INCOMPAT_REVOKE | \
+ 					JBD2_FEATURE_INCOMPAT_64BIT | \
+-					JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT)
++					JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT | \
++					JBD2_FEATURE_INCOMPAT_CSUM_V2)
+ 
+ #ifdef __KERNEL__
+ 
+
+

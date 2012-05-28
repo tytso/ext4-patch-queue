@@ -1,0 +1,125 @@
+jbd2: checksum data blocks that are stored in the journal
+
+From: "Darrick J. Wong" <djwong@us.ibm.com>
+
+Calculate and verify checksums of each data block being stored in the journal.
+
+Signed-off-by: Darrick J. Wong <djwong@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/commit.c   | 22 ++++++++++++++++++++++
+ fs/jbd2/journal.c  | 10 ++++++++--
+ fs/jbd2/recovery.c | 30 ++++++++++++++++++++++++++++++
+ 3 files changed, 60 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index 16e1fe2..216f429 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -338,6 +338,26 @@ static void jbd2_descr_block_csum_set(journal_t *j,
+ 	tail->t_checksum = cpu_to_be32(csum);
+ }
+ 
++static void jbd2_block_tag_csum_set(journal_t *j, journal_block_tag_t *tag,
++				    struct buffer_head *bh, __u32 sequence)
++{
++	struct page *page = bh->b_page;
++	__u8 *addr;
++	__u32 csum;
++
++	if (!JBD2_HAS_INCOMPAT_FEATURE(j, JBD2_FEATURE_INCOMPAT_CSUM_V2))
++		return;
++
++	sequence = cpu_to_be32(sequence);
++	addr = kmap_atomic(page, KM_USER0);
++	csum = jbd2_chksum(j, j->j_csum_seed, (__u8 *)&sequence,
++			  sizeof(sequence));
++	csum = jbd2_chksum(j, csum, addr + offset_in_page(bh->b_data),
++			  bh->b_size);
++	kunmap_atomic(addr, KM_USER0);
++
++	tag->t_checksum = cpu_to_be32(csum);
++}
+ /*
+  * jbd2_journal_commit_transaction
+  *
+@@ -669,6 +689,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 		tag = (journal_block_tag_t *) tagp;
+ 		write_tag_block(tag_bytes, tag, jh2bh(jh)->b_blocknr);
+ 		tag->t_flags = cpu_to_be16(tag_flag);
++		jbd2_block_tag_csum_set(journal, tag, jh2bh(new_jh),
++					commit_transaction->t_tid);
+ 		tagp += tag_bytes;
+ 		space_left -= tag_bytes;
+ 
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 9072f03..e9a3c4c 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -2097,10 +2097,16 @@ int jbd2_journal_blocks_per_page(struct inode *inode)
+  */
+ size_t journal_tag_bytes(journal_t *journal)
+ {
++	journal_block_tag_t tag;
++	size_t x = 0;
++
++	if (JBD2_HAS_INCOMPAT_FEATURE(journal, JBD2_FEATURE_INCOMPAT_CSUM_V2))
++		x += sizeof(tag.t_checksum);
++
+ 	if (JBD2_HAS_INCOMPAT_FEATURE(journal, JBD2_FEATURE_INCOMPAT_64BIT))
+-		return JBD2_TAG_SIZE64;
++		return x + JBD2_TAG_SIZE64;
+ 	else
+-		return JBD2_TAG_SIZE32;
++		return x + JBD2_TAG_SIZE32;
+ }
+ 
+ /*
+diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
+index df4a20e..0131e43 100644
+--- a/fs/jbd2/recovery.c
++++ b/fs/jbd2/recovery.c
+@@ -393,6 +393,23 @@ static int jbd2_commit_block_csum_verify(journal_t *j, void *buf)
+ 	return provided == calculated;
+ }
+ 
++static int jbd2_block_tag_csum_verify(journal_t *j, journal_block_tag_t *tag,
++				      void *buf, __u32 sequence)
++{
++	__u32 provided, calculated;
++
++	if (!JBD2_HAS_INCOMPAT_FEATURE(j, JBD2_FEATURE_INCOMPAT_CSUM_V2))
++		return 1;
++
++	sequence = cpu_to_be32(sequence);
++	calculated = jbd2_chksum(j, j->j_csum_seed, (__u8 *)&sequence,
++				 sizeof(sequence));
++	calculated = jbd2_chksum(j, calculated, buf, j->j_blocksize);
++	provided = be32_to_cpu(tag->t_checksum);
++
++	return provided == cpu_to_be32(calculated);
++}
++
+ static int do_one_pass(journal_t *journal,
+ 			struct recovery_info *info, enum passtype pass)
+ {
+@@ -569,6 +586,19 @@ static int do_one_pass(journal_t *journal,
+ 						goto skip_write;
+ 					}
+ 
++					/* Look for block corruption */
++					if (!jbd2_block_tag_csum_verify(
++						journal, tag, obh->b_data,
++						be32_to_cpu(tmp->h_sequence))) {
++						brelse(obh);
++						success = -EIO;
++						printk(KERN_ERR "JBD: Invalid "
++						       "checksum recovering "
++						       "block %llu in log\n",
++						       blocknr);
++						continue;
++					}
++
+ 					/* Find a buffer for the new
+ 					 * data being restored */
+ 					nbh = __getblk(journal->j_fs_dev,
