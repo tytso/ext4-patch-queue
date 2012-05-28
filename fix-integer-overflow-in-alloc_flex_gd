@@ -1,0 +1,37 @@
+ext4: fix potential integer overflow in alloc_flex_gd()
+
+From: Haogang Chen <haogangchen@gmail.com>
+
+In alloc_flex_gd(), when flexbg_size is large, kmalloc size would
+overflow and flex_gd->groups would point to a buffer smaller than
+expected, causing OOB accesses when it is used.
+
+Note that in ext4_resize_fs(), flexbg_size is calculated using
+sbi->s_log_groups_per_flex, which is read from the disk and only bounded
+to [1, 31]. The patch returns NULL for too large flexbg_size.
+
+Reviewed-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Haogang Chen <haogangchen@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@kernel.org
+---
+ fs/ext4/resize.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index f9d948f..8601f4b 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -161,6 +161,8 @@ static struct ext4_new_flex_group_data *alloc_flex_gd(unsigned long flexbg_size)
+ 	if (flex_gd == NULL)
+ 		goto out3;
+ 
++	if (flexbg_size >= UINT_MAX / sizeof(struct ext4_new_flex_group_data))
++		goto out2;
+ 	flex_gd->count = flexbg_size;
+ 
+ 	flex_gd->groups = kmalloc(sizeof(struct ext4_new_group_data) *
+-- 
+1.7.5.4
+
+
