@@ -1,0 +1,42 @@
+ext4: use consistent ssize_t type in ext4_file_write()
+
+From: Zheng Liu <gnehzuil.liu@gmail.com>
+
+The generic_file_aio_write() function returns ssize_t, and
+ext4_file_write() returns a ssize_t, so use a ssize_t to collect the
+return value from generic_file_aio_write().  It shouldn't matter since
+the VFS read/write paths shouldn't allow a read greater than MAX_INT,
+but there was previously a bug in the AIO code paths, and it's best if
+we use a consistent type so that the return value from
+generic_file_aio_write() can't get truncated.
+
+Reported-by: Jouni Siren <jouni.siren@iki.fi>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+ fs/ext4/file.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index cb70f18..8c7642a 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -95,7 +95,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+ {
+ 	struct inode *inode = iocb->ki_filp->f_path.dentry->d_inode;
+ 	int unaligned_aio = 0;
+-	int ret;
++	ssize_t ret;
+ 
+ 	/*
+ 	 * If we have encountered a bitmap-format file, the size limit
+-- 
+1.7.4.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
