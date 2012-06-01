@@ -1,0 +1,32 @@
+ext4: add ext4_mb_unload_buddy in the error path
+
+From: Salman Qazi <sqazi@google.com>
+
+ext4_free_blocks fails to pair an ext4_mb_load_buddy with a matching
+ext4_mb_unload_buddy when it fails a memory allocation.
+
+Signed-off-by: Salman Qazi <sqazi@google.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@kernel.org
+---
+ fs/ext4/mballoc.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 99ab428..5c315ab 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4636,6 +4636,7 @@ do_more:
+ 		 */
+ 		new_entry = kmem_cache_alloc(ext4_free_data_cachep, GFP_NOFS);
+ 		if (!new_entry) {
++			ext4_mb_unload_buddy(&e4b);
+ 			err = -ENOMEM;
+ 			goto error_return;
+ 		}
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
