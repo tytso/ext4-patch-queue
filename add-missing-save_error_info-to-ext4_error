@@ -1,0 +1,28 @@
+ext4: add missing save_error_info() to ext4_error()
+
+The ext4_error() function is missing a call to save_error_info().
+Since this is the function which marks the file system as containing
+an error, this oversight (which was introduced in 2.6.36) is quite
+significant, and should be backported to older stable kernels with
+high urgency.
+
+Reported-by: Ken Sumrall <ksumrall@google.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: ksumrall@google.com
+Cc: stable@kernel.org
+---
+ fs/ext4/super.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 9f1ae6b..b8d5fc1 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -539,6 +539,7 @@ void __ext4_error(struct super_block *sb, const char *function,
+ 	printk(KERN_CRIT "EXT4-fs error (device %s): %s:%d: comm %s: %pV\n",
+ 	       sb->s_id, function, line, current->comm, &vaf);
+ 	va_end(args);
++	save_error_info(sb, function, line);
+ 
+ 	ext4_handle_error(sb);
+ }
