@@ -1,0 +1,35 @@
+jbd2: use kmem_cache_zalloc wrapper instead of flag
+
+From: Wanlong Gao <gaowanlong@cn.fujitsu.com>
+
+Use kmem_cache_zalloc wrapper instead of flag __GFP_ZERO.
+
+Signed-off-by: Wanlong Gao <gaowanlong@cn.fujitsu.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/transaction.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index ddcd354..fb1ab953 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -162,8 +162,8 @@ static int start_this_handle(journal_t *journal, handle_t *handle,
+ 
+ alloc_transaction:
+ 	if (!journal->j_running_transaction) {
+-		new_transaction = kmem_cache_alloc(transaction_cache,
+-						   gfp_mask | __GFP_ZERO);
++		new_transaction = kmem_cache_zalloc(transaction_cache,
++						    gfp_mask);
+ 		if (!new_transaction) {
+ 			/*
+ 			 * If __GFP_FS is not present, then we may be
+-- 
+1.7.10
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
