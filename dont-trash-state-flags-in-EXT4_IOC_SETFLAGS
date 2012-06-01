@@ -1,0 +1,47 @@
+ext4: don't trash state flags in EXT4_IOC_SETFLAGS
+
+In commit 353eb83c we removed i_state_flags with 64-bit longs, But
+when handling the EXT4_IOC_SETFLAGS ioctl, we replace i_flags
+directly, which trashes the state flags which are stored in the high
+32-bits of i_flags on 64-bit platforms.  So use the the
+ext4_{set,clear}_inode_flags() functions which use atomic bit
+manipulation functions instead.
+
+Reported-by: Tao Ma <boyu.mt@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@kernel.org
+
+---
+ fs/ext4/ioctl.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index feba55a..8ad112a 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -38,7 +38,7 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 		handle_t *handle = NULL;
+ 		int err, migrate = 0;
+ 		struct ext4_iloc iloc;
+-		unsigned int oldflags;
++		unsigned int oldflags, mask, i;
+ 		unsigned int jflag;
+ 
+ 		if (!inode_owner_or_capable(inode))
+@@ -115,8 +115,14 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 		if (err)
+ 			goto flags_err;
+ 
+-		flags = flags & EXT4_FL_USER_MODIFIABLE;
+-		flags |= oldflags & ~EXT4_FL_USER_MODIFIABLE;
++		for (i = 0, mask = 1; i < 32; i++, mask <<= 1) {
++			if (!(mask & EXT4_FL_USER_MODIFIABLE))
++				continue;
++			if (mask & flags)
++				ext4_set_inode_flag(inode, i);
++			else
++				ext4_clear_inode_flag(inode, i);
++		}
+ 		ei->i_flags = flags;
+ 
+ 		ext4_set_inode_flags(inode);

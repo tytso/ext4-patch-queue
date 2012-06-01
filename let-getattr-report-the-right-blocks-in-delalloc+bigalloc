@@ -1,0 +1,35 @@
+ext4: let getattr report the right blocks in delalloc+bigalloc
+
+From: Tao Ma <boyu.mt@taobao.com>
+
+In delayed allocation, i_reserved_data_blocks now indicates
+clusters, not blocks. So report it in the right number.
+
+This can be easily exposed by the following command:
+echo foo > blah; du -hc blah; sync; du -hc blah
+
+Reported-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Tao Ma <boyu.mt@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index feaa82f..a5eb8c6 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4200,7 +4200,8 @@ int ext4_getattr(struct vfsmount *mnt, struct dentry *dentry,
+ 	 * will return the blocks that include the delayed allocation
+ 	 * blocks for this file.
+ 	 */
+-	delalloc_blocks = EXT4_I(inode)->i_reserved_data_blocks;
++	delalloc_blocks = EXT4_C2B(EXT4_SB(inode->i_sb),
++				EXT4_I(inode)->i_reserved_data_blocks);
+ 
+ 	stat->blocks += (delalloc_blocks << inode->i_sb->s_blocksize_bits)>>9;
+ 	return 0;
+-- 
+1.7.0.4
+
+
