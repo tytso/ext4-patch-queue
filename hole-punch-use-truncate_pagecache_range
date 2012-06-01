@@ -1,0 +1,33 @@
+ext4: hole-punch use truncate_pagecache_range
+
+From: Hugh Dickins <hughd@google.com>
+
+When truncating a file, we unmap pages from userspace first, as that's
+usually more efficient than relying, page by page, on the fallback in
+truncate_inode_page() - particularly if the file is mapped many times.
+
+Do the same when punching a hole: 3.4 added truncate_pagecache_range()
+to do the unmap and trunc, so use it in ext4_ext_punch_hole(), instead
+of calling truncate_inode_pages_range() directly.
+
+Signed-off-by: Hugh Dickins <hughd@google.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+ fs/ext4/extents.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- next-20120511/fs/ext4/extents.c	2012-05-11 00:22:26.011158147 -0700
++++ linux/fs/ext4/extents.c	2012-05-12 18:01:14.988654723 -0700
+@@ -4789,8 +4789,8 @@ int ext4_ext_punch_hole(struct file *fil
+ 
+ 	/* Now release the pages */
+ 	if (last_page_offset > first_page_offset) {
+-		truncate_inode_pages_range(mapping, first_page_offset,
+-					   last_page_offset-1);
++		truncate_pagecache_range(inode, first_page_offset,
++					 last_page_offset - 1);
+ 	}
+ 
+ 	/* finish any pending end_io work */
+
