@@ -8,19 +8,20 @@ ext4_lookup(), before the rmdir() lockup scenario can take place.
 
 Signed-off-by: Andreas Dilger <adilger@dilger.ca>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@kernel.org
 ---
  fs/ext4/namei.c | 6 ++++++
  1 file changed, 6 insertions(+)
 
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index a9fd5f4..5f4a030 100644
+index a9fd5f4..daf8260 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -1330,6 +1330,12 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, stru
  			EXT4_ERROR_INODE(dir, "bad inode number: %u", ino);
  			return ERR_PTR(-EIO);
  		}
-+		if (ino == dir->i_ino) {
++		if (unlikely(ino == dir->i_ino)) {
 +			EXT4_ERROR_INODE(dir, "'%.*s' linked to parent dir",
 +					 dentry->d_name.len,
 +					 dentry->d_name.name);
