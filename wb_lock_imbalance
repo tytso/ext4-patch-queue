@@ -1,0 +1,37 @@
+writeback: Fix lock imbalance in writeback_sb_inodes()
+
+From: Jan Kara <jack@suse.cz>
+
+Fix bug introduced by 169ebd90.  We have to have wb_list_lock locked when
+restarting writeback loop after having waited for inode writeback.
+
+Bug description by Ted Tso:
+
+  I can reproduce this fairly easily by using ext4 w/o a journal, running
+  under KVM with 1024k memory, with fsstress (xfstests #13):
+
+  [   45.153294] =====================================
+  [   45.154784] [ BUG: bad unlock balance detected! ]
+  [   45.155591] 3.5.0-rc1-00002-gb22b1f1 #124 Not tainted
+  [   45.155591] -------------------------------------
+  [   45.155591] flush-254:16/2499 is trying to release lock (&(&wb->list_lock)->rlock) at:
+  [   45.155591] [<c022c3da>] writeback_sb_inodes+0x160/0x327
+  [   45.155591] but there are no more locks to release!
+
+Reported-by: Theodore Ts'o <tytso@mit.edu>
+Tested-by: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Fengguang Wu <fengguang.wu@intel.com>
+
+diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
+index 8d2fb8c..41a3ccf 100644
+--- a/fs/fs-writeback.c
++++ b/fs/fs-writeback.c
+@@ -664,6 +664,7 @@ static long writeback_sb_inodes(struct super_block *sb,
+ 			/* Wait for I_SYNC. This function drops i_lock... */
+ 			inode_sleep_on_writeback(inode);
+ 			/* Inode may be gone, start again */
++			spin_lock(&wb->list_lock);
+ 			continue;
+ 		}
+ 		inode->i_state |= I_SYNC;
