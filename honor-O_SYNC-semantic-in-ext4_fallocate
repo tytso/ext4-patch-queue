@@ -1,0 +1,30 @@
+ext4: honor O_(D)SYNC semantic in ext4_fallocate()
+
+From: Zheng Liu <gnehzuil.liu@gmail.com>
+
+Ext4 must make sure the transaction to be commited to the disk when
+user opens a file with O_(D)SYNC flag and do a fallocate(2) call.
+
+This problem had been reported by Christoph Hellwig in this thread:
+http://www.spinics.net/lists/linux-btrfs/msg13621.html
+
+Reported-by: Christoph Hellwig <hch@infradead.org>
+Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 91341ec..f1089cb 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4420,6 +4420,8 @@ retry:
+ 		ext4_falloc_update_inode(inode, mode, new_size,
+ 					 (map.m_flags & EXT4_MAP_NEW));
+ 		ext4_mark_inode_dirty(handle, inode);
++		if ((file->f_flags & O_SYNC) && ret >= max_blocks)
++			ext4_handle_sync(handle);
+ 		ret2 = ext4_journal_stop(handle);
+ 		if (ret2)
+ 			break;
