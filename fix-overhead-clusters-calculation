@@ -13,7 +13,7 @@ Cc: stable@kernel.org
  fs/ext4/bitmap.c |   4 --
  fs/ext4/ext4.h   |   4 +-
  fs/ext4/resize.c |   7 ++-
- fs/ext4/super.c  | 174 +++++++++++++++++++++++++++++++++++++++----------------
+ fs/ext4/super.c  | 174 ++++++++++++++++++++++++++++++++++++++----------------
  4 files changed, 132 insertions(+), 57 deletions(-)
 
 diff --git a/fs/ext4/bitmap.c b/fs/ext4/bitmap.c
@@ -86,7 +86,7 @@ index 7ea6cbb..17d38de 100644
  		printk(KERN_DEBUG "EXT4-fs: added group %u:"
  		       "%llu blocks(%llu free %llu reserved)\n", flex_gd->count,
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index eb7aa3e..c2514e9 100644
+index eb7aa3e..78b7ede 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -3085,6 +3085,114 @@ static int set_journal_csum_feature_set(struct super_block *sb)
@@ -114,11 +114,11 @@ index eb7aa3e..c2514e9 100644
 +	struct ext4_sb_info	*sbi = EXT4_SB(sb);
 +	struct ext4_group_desc	*gdp;
 +	ext4_fsblk_t		first_block, last_block, b;
-+	ext4_group_t 		i, ngroups = ext4_get_groups_count(sb);
++	ext4_group_t		i, ngroups = ext4_get_groups_count(sb);
 +	int			s, j, count = 0;
 +
 +	first_block = le32_to_cpu(sbi->s_es->s_first_data_block) +
-+		(grp * 	EXT4_BLOCKS_PER_GROUP(sb));
++		(grp * EXT4_BLOCKS_PER_GROUP(sb));
 +	last_block = first_block + EXT4_BLOCKS_PER_GROUP(sb) - 1;
 +	for (i = 0; i < ngroups; i++) {
 +		gdp = ext4_get_group_desc(sb, i, NULL);
@@ -146,7 +146,7 @@ index eb7aa3e..c2514e9 100644
 +			ext4_set_bit(s++, buf);
 +			count++;
 +		}
-+		for (j=ext4_bg_num_gdb(sb, grp); j > 0; j--) {
++		for (j = ext4_bg_num_gdb(sb, grp); j > 0; j--) {
 +			ext4_set_bit(EXT4_B2C(sbi, s++), buf);
 +			count++;
 +		}
