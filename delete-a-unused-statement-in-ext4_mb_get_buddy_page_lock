@@ -1,0 +1,28 @@
+ext4: remove an unused statement in ext4_mb_get_buddy_page_lock()
+
+From: Haibo Liu <HaiboLiu6@gmai.com>
+
+In this patch, the statement "poff = block % blocks_per_page"
+in ext4_mb_get_buddy_page_lock has no effect.
+
+It will be optimized out by the compiler, but it's better to remove it.
+
+Signed-off-by: Haibo Liu <HaiboLiu6@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
+---
+fs/ext4/mballoc.c |    1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index cb990b2..7223bd4 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -1016,7 +1016,6 @@ static int ext4_mb_get_buddy_page_lock(struct super_block *sb,
+ 
+ 	block++;
+ 	pnum = block / blocks_per_page;
+-	poff = block % blocks_per_page;
+ 	page = find_or_create_page(inode->i_mapping, pnum, GFP_NOFS);
+ 	if (!page)
+ 		return -EIO;
