@@ -44,8 +44,8 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h      |   5 +-
  fs/ext4/ext4_jbd2.h |  18 ++++---
- fs/ext4/super.c     | 135 ++++++++++++++++++++++++++++++++++++++++++++++++++-
- 3 files changed, 149 insertions(+), 9 deletions(-)
+ fs/ext4/super.c     | 137 ++++++++++++++++++++++++++++++++++++++++++++++++--
+ 3 files changed, 150 insertions(+), 10 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 4a49f82..1610e80 100644
@@ -102,7 +102,7 @@ index f440e8f1..1393c83 100644
  #define EXT4_QUOTA_TRANS_BLOCKS(sb) 0
  #define EXT4_QUOTA_INIT_BLOCKS(sb) 0
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index c2514e9..6a48073 100644
+index 78b7ede..bebf8e5 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1137,12 +1137,18 @@ static int ext4_mark_dquot_dirty(struct dquot *dquot);
@@ -187,12 +187,17 @@ index c2514e9..6a48073 100644
  	ext4_msg(sb, KERN_INFO, "mounted filesystem with%s. "
  		 "Opts: %s%s%s", descr, sbi->s_es->s_mount_opts,
  		 *sbi->s_es->s_mount_opts ? "; " : "", orig_data);
-@@ -4690,8 +4731,18 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -4682,16 +4723,26 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 	if (sbi->s_journal == NULL)
+ 		ext4_commit_super(sb, 1);
+ 
++	unlock_super(sb);
+ #ifdef CONFIG_QUOTA
+ 	/* Release old quota file names */
+ 	for (i = 0; i < MAXQUOTAS; i++)
+ 		if (old_opts.s_qf_names[i] &&
+ 		    old_opts.s_qf_names[i] != sbi->s_qf_names[i])
  			kfree(old_opts.s_qf_names[i]);
- #endif
- 	unlock_super(sb);
--	if (enable_quota)
--		dquot_resume(sb, -1);
 +	if (enable_quota) {
 +		if (sb_any_quota_suspended(sb))
 +			dquot_resume(sb, -1);
@@ -205,6 +210,10 @@ index c2514e9..6a48073 100644
 +			}
 +		}
 +	}
+ #endif
+-	unlock_super(sb);
+-	if (enable_quota)
+-		dquot_resume(sb, -1);
  
  	ext4_msg(sb, KERN_INFO, "re-mounted. Opts: %s", orig_data);
  	kfree(orig_data);
