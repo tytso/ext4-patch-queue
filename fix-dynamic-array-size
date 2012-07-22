@@ -1,0 +1,31 @@
+ext4: remove dynamic array size in ext4_chksum()
+
+The ext4_checksum() inline function was using a dynamic array size,
+which is not legal C.  (It is a gcc extension).
+
+Remove it.
+
+Cc: "Darrick J. Wong" <djwong@us.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 1610e80..e8e8afa 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1667,10 +1667,12 @@ static inline u32 ext4_chksum(struct ext4_sb_info *sbi, u32 crc,
+ {
+ 	struct {
+ 		struct shash_desc shash;
+-		char ctx[crypto_shash_descsize(sbi->s_chksum_driver)];
++		char ctx[4];
+ 	} desc;
+ 	int err;
+ 
++	BUG_ON(crypto_shash_descsize(sbi->s_chksum_driver)!=sizeof(desc.ctx));
++
+ 	desc.shash.tfm = sbi->s_chksum_driver;
+ 	desc.shash.flags = 0;
+ 	*(u32 *)desc.ctx = crc;
