@@ -1,0 +1,23 @@
+ext4: fix ext4 mismerge back in January
+
+From: Al Viro <viro@ZenIV.linux.org.uk>
+
+Duplicate caused, AFAICS, by mismerge in
+ff9cb1c4eead5e4c292e75cd3170a82d66944101>
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -268,7 +268,6 @@ group_extend_out:
+ 		err = ext4_move_extents(filp, donor_filp, me.orig_start,
+ 					me.donor_start, me.len, &me.moved_len);
+ 		mnt_drop_write_file(filp);
+-		mnt_drop_write(filp->f_path.mnt);
+ 
+ 		if (copy_to_user((struct move_extent __user *)arg,
+ 				 &me, sizeof(me)))
+
