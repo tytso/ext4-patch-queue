@@ -1,0 +1,30 @@
+jbd2: check return value of blkdev_issue_flush()
+
+blkdev_issue_flush() can fail; make sure the error gets properly
+propagated.
+
+This is a port of the equivalent jbd patch from commit 349ecd6a3c0e.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/recovery.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
+index 0131e43..626846b 100644
+--- a/fs/jbd2/recovery.c
++++ b/fs/jbd2/recovery.c
+@@ -289,8 +289,11 @@ int jbd2_journal_recover(journal_t *journal)
+ 	if (!err)
+ 		err = err2;
+ 	/* Make sure all replayed data is on permanent storage */
+-	if (journal->j_flags & JBD2_BARRIER)
+-		blkdev_issue_flush(journal->j_fs_dev, GFP_KERNEL, NULL);
++	if (journal->j_flags & JBD2_BARRIER) {
++		err2 = blkdev_issue_flush(journal->j_fs_dev, GFP_KERNEL, NULL);
++		if (!err)
++			err = err2;
++	}
+ 	return err;
+ }
+ 
