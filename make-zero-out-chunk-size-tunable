@@ -1,0 +1,121 @@
+ext4: make the zero-out chunk size tunable
+
+From: Zheng Liu <wenqing.lz@taobao.com>
+
+Currently in ext4 the length of zero-out chunk is set to 7.  But it is
+too short so that it will cause a lot of fragmentation of extent when
+we use fallocate to preallocate some uninitialized extents and the
+workload frequently does some uninitialized extent conversions.  Thus,
+we allow it to be tunable via sysfs and set an initial default value
+of 32, so instead of creating uninitalized extents smaller than
+256k (assuming a 4k block size), they will be zeroed out instead.
+
+CC: Zach Brown <zab@zabbo.net>
+CC: Andreas Dilger <adilger@dilger.ca>
+Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h    |  3 +++
+ fs/ext4/extents.c | 11 ++++++-----
+ fs/ext4/super.c   |  3 +++
+ 3 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 7c0841e..f9024a6 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1271,6 +1271,9 @@ struct ext4_sb_info {
+ 	unsigned long s_sectors_written_start;
+ 	u64 s_kbytes_written;
+ 
++	/* the size of zero-out chunk */
++	unsigned int s_extent_zeroout_len;
++
+ 	unsigned int s_log_groups_per_flex;
+ 	struct flex_groups *s_flex_groups;
+ 
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 92fac2f..10f0afd 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -3084,7 +3084,6 @@ out:
+ 	return err ? err : map->m_len;
+ }
+ 
+-#define EXT4_EXT_ZERO_LEN 7
+ /*
+  * This function is called by ext4_ext_map_blocks() if someone tries to write
+  * to an uninitialized extent. It may result in splitting the uninitialized
+@@ -3110,6 +3109,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 					   struct ext4_map_blocks *map,
+ 					   struct ext4_ext_path *path)
+ {
++	struct ext4_sb_info *sbi;
+ 	struct ext4_extent_header *eh;
+ 	struct ext4_map_blocks split_map;
+ 	struct ext4_extent zero_ex;
+@@ -3124,6 +3124,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 		"block %llu, max_blocks %u\n", inode->i_ino,
+ 		(unsigned long long)map->m_lblk, map->m_len);
+ 
++	sbi = EXT4_SB(inode->i_sb);
+ 	eof_block = (inode->i_size + inode->i_sb->s_blocksize - 1) >>
+ 		inode->i_sb->s_blocksize_bits;
+ 	if (eof_block < map->m_lblk + map->m_len)
+@@ -3223,8 +3224,8 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 	 */
+ 	split_flag |= ee_block + ee_len <= eof_block ? EXT4_EXT_MAY_ZEROOUT : 0;
+ 
+-	/* If extent has less than 2*EXT4_EXT_ZERO_LEN zerout directly */
+-	if (ee_len <= 2*EXT4_EXT_ZERO_LEN &&
++	/* If extent has less than 2*s_extent_zeroout_len zerout directly */
++	if (ee_len <= (2 * sbi->s_extent_zeroout_len) &&
+ 	    (EXT4_EXT_MAY_ZEROOUT & split_flag)) {
+ 		err = ext4_ext_zeroout(inode, ex);
+ 		if (err)
+@@ -3250,7 +3251,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 	split_map.m_len = map->m_len;
+ 
+ 	if (allocated > map->m_len) {
+-		if (allocated <= EXT4_EXT_ZERO_LEN &&
++		if (allocated <= sbi->s_extent_zeroout_len &&
+ 		    (EXT4_EXT_MAY_ZEROOUT & split_flag)) {
+ 			/* case 3 */
+ 			zero_ex.ee_block =
+@@ -3264,7 +3265,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+ 			split_map.m_lblk = map->m_lblk;
+ 			split_map.m_len = allocated;
+ 		} else if ((map->m_lblk - ee_block + map->m_len <
+-			   EXT4_EXT_ZERO_LEN) &&
++			   sbi->s_extent_zeroout_len) &&
+ 			   (EXT4_EXT_MAY_ZEROOUT & split_flag)) {
+ 			/* case 2 */
+ 			if (map->m_lblk != ee_block) {
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 5896dcb..4a7092b 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -2541,6 +2541,7 @@ EXT4_RW_ATTR_SBI_UI(mb_order2_req, s_mb_order2_reqs);
+ EXT4_RW_ATTR_SBI_UI(mb_stream_req, s_mb_stream_request);
+ EXT4_RW_ATTR_SBI_UI(mb_group_prealloc, s_mb_group_prealloc);
+ EXT4_RW_ATTR_SBI_UI(max_writeback_mb_bump, s_max_writeback_mb_bump);
++EXT4_RW_ATTR_SBI_UI(extent_zeroout_len, s_extent_zeroout_len);
+ EXT4_ATTR(trigger_fs_error, 0200, NULL, trigger_test_error);
+ 
+ static struct attribute *ext4_attrs[] = {
+@@ -2556,6 +2557,7 @@ static struct attribute *ext4_attrs[] = {
+ 	ATTR_LIST(mb_stream_req),
+ 	ATTR_LIST(mb_group_prealloc),
+ 	ATTR_LIST(max_writeback_mb_bump),
++	ATTR_LIST(extent_zeroout_len),
+ 	ATTR_LIST(trigger_fs_error),
+ 	NULL,
+ };
+@@ -3752,6 +3754,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 
+ 	sbi->s_stripe = ext4_get_stripe_size(sbi);
+ 	sbi->s_max_writeback_mb_bump = 128;
++	sbi->s_extent_zeroout_len = 16;
+ 
+ 	/*
+ 	 * set up enough so that it can read an inode
