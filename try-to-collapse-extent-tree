@@ -2,17 +2,18 @@ ext4: collapse a single extent tree block into the inode if possible
 
 If an inode has more than 4 extents, but then later some of the
 extents are merged together, we can optimize the file system by moving
-the extents up into the inode, and discarding extent tree block.  This
-is important, because if there are a large number of inodes with an
-external extent tree blocks where the contents could fit in the inode,
-this can significantly increase the fsck time of the file system.
+the extents up into the inode, and discarding the extent tree block.
+This is important, because if there are a large number of inodes with
+an external extent tree blocks where the contents could fit in the
+inode, this can significantly increase the fsck time of the file
+system.
 
 Google-Bug-Id: 6801242
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
- fs/ext4/extents.c | 72 ++++++++++++++++++++++++++++++++++++++++++++++++++-------------
+ fs/ext4/extents.c | 72 ++++++++++++++++++++++++++++++++++++++++++++-----------
  1 file changed, 58 insertions(+), 14 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
