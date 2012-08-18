@@ -1,0 +1,48 @@
+jbd2: don't write superblock when if its empty
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+This sequence:
+
+# truncate --size=1g fsfile
+# mkfs.ext4 -F fsfile
+# mount -o loop,ro fsfile /mnt
+# umount /mnt
+# dmesg | tail
+
+results in an IO error when unmounting the RO filesystem:
+
+[  318.020828] Buffer I/O error on device loop1, logical block 196608
+[  318.027024] lost page write due to I/O error on loop1
+[  318.032088] JBD2: Error -5 detected when updating journal superblock for loop1-8.
+
+This was a regression introduced by commit 24bcc89c7e7c: "jbd2: split
+updating of journal superblock and marking journal empty".
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index e9a3c4c..987ec76 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -1354,6 +1354,11 @@ static void jbd2_mark_journal_empty(journal_t *journal)
+ 
+ 	BUG_ON(!mutex_is_locked(&journal->j_checkpoint_mutex));
+ 	read_lock(&journal->j_state_lock);
++	/* Is it already empty? */
++	if (sb->s_start == 0) {
++		read_unlock(&journal->j_state_lock);
++		return;
++	}
+ 	jbd_debug(1, "JBD2: Marking journal as empty (seq %d)\n",
+ 		  journal->j_tail_sequence);
+ 
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
