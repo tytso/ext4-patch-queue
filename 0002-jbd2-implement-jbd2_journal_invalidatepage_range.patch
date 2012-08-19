@@ -1,0 +1,98 @@
+From a9898d3b647408bf0eb0226c7deef0857f7a22e7 Mon Sep 17 00:00:00 2001
+From: Lukas Czerner <lczerner@redhat.com>
+Date: Thu, 26 Jul 2012 22:01:01 +0000
+Subject: [PATCH 02/15] jbd2: implement jbd2_journal_invalidatepage_range
+
+mm now supports invalidatepage_range address space operation and there
+are two file system using jbd2 also implementing punch hole feature
+which can benefit from this. We need to implement the same thing for
+jbd2 layer in order to allow those file system take benefit of this
+functionality.
+
+With new function jbd2_journal_invalidatepage_range() we can now specify
+length to invalidate, rather than assuming invalidate to the end of the
+page.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/jbd2/journal.c     |  1 +
+ fs/jbd2/transaction.c | 20 ++++++++++++++++++--
+ include/linux/jbd2.h  |  2 ++
+ 3 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 0f16edd..8b1ada1 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -86,6 +86,7 @@ EXPORT_SYMBOL(jbd2_journal_force_commit_nested);
+ EXPORT_SYMBOL(jbd2_journal_wipe);
+ EXPORT_SYMBOL(jbd2_journal_blocks_per_page);
+ EXPORT_SYMBOL(jbd2_journal_invalidatepage);
++EXPORT_SYMBOL(jbd2_journal_invalidatepage_range);
+ EXPORT_SYMBOL(jbd2_journal_try_to_free_buffers);
+ EXPORT_SYMBOL(jbd2_journal_force_commit);
+ EXPORT_SYMBOL(jbd2_journal_file_inode);
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index fb1ab953..225c6ba 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -1993,10 +1993,20 @@ zap_buffer_unlocked:
+  *
+  */
+ void jbd2_journal_invalidatepage(journal_t *journal,
+-		      struct page *page,
+-		      unsigned long offset)
++				 struct page *page,
++				 unsigned long offset)
++{
++	jbd2_journal_invalidatepage_range(journal, page, offset,
++					  PAGE_CACHE_SIZE);
++}
++
++void jbd2_journal_invalidatepage_range(journal_t *journal,
++				       struct page *page,
++				       unsigned long offset,
++				       unsigned long length)
+ {
+ 	struct buffer_head *head, *bh, *next;
++	unsigned long stop = offset + length;
+ 	unsigned int curr_off = 0;
+ 	int may_free = 1;
+ 
+@@ -2005,6 +2015,9 @@ void jbd2_journal_invalidatepage(journal_t *journal,
+ 	if (!page_has_buffers(page))
+ 		return;
+ 
++	if (stop < length)
++		stop = PAGE_CACHE_SIZE;
++
+ 	/* We will potentially be playing with lists other than just the
+ 	 * data lists (especially for journaled data mode), so be
+ 	 * cautious in our locking. */
+@@ -2014,6 +2027,9 @@ void jbd2_journal_invalidatepage(journal_t *journal,
+ 		unsigned int next_off = curr_off + bh->b_size;
+ 		next = bh->b_this_page;
+ 
++		if (next_off > stop)
++			return;
++
+ 		if (offset <= curr_off) {
+ 			/* This block is wholly outside the truncation point */
+ 			lock_buffer(bh);
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 3efc43f..de7335c 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -1101,6 +1101,8 @@ extern int	 jbd2_journal_forget (handle_t *, struct buffer_head *);
+ extern void	 journal_sync_buffer (struct buffer_head *);
+ extern void	 jbd2_journal_invalidatepage(journal_t *,
+ 				struct page *, unsigned long);
++extern void	 jbd2_journal_invalidatepage_range(journal_t *, struct page *,
++				unsigned long, unsigned long);
+ extern int	 jbd2_journal_try_to_free_buffers(journal_t *, struct page *, gfp_t);
+ extern int	 jbd2_journal_stop(handle_t *);
+ extern int	 jbd2_journal_flush (journal_t *);
+-- 
+1.7.12.rc0.22.gcdd159b
+
