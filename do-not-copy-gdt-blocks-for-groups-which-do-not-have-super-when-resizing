@@ -1,0 +1,40 @@
+ext4: when resizing, do not copy gdt blocks for groups that do not them
+
+From: Yongqiang Yang <xiaoqiangnk@gmail.com>
+
+The resize code was copying blocks at the beginning of each block
+group in order to copy the superblock and block group descriptor table
+(gdt) blocks.  This was, unfortunately, being done even for block
+groups that did not have super blocks or gdt blocks.  This is a
+complete waste of perfectly good I/O bandwidth, to skip writing those
+blocks for sparse bg's.
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+fs/ext4/resize.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 59fa0be..9a6fb74 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -449,6 +449,9 @@ static int setup_new_flex_group_blocks(struct super_block *sb,
+ 		gdblocks = ext4_bg_num_gdb(sb, group);
+ 		start = ext4_group_first_block_no(sb, group);
+ 
++		if (!ext4_bg_has_super(sb, group))
++			goto handle_itb;
++
+ 		/* Copy all of the GDT blocks into the backup in this group */
+ 		for (j = 0, block = start + 1; j < gdblocks; j++, block++) {
+ 			struct buffer_head *gdb;
+@@ -491,6 +494,7 @@ static int setup_new_flex_group_blocks(struct super_block *sb,
+ 				goto out;
+ 		}
+ 
++handle_itb:
+ 		/* Initialize group tables of the grop @group */
+ 		if (!(bg_flags[i] & EXT4_BG_INODE_ZEROED))
+ 			goto handle_bb;
+
