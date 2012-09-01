@@ -1,4 +1,4 @@
-ext4: when resizing, do not copy gdt blocks for groups that do not them
+ext4: when resizing, do not copy gdt blocks for groups that do not have them
 
 From: Yongqiang Yang <xiaoqiangnk@gmail.com>
 
@@ -11,15 +11,16 @@ blocks for sparse bg's.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@vger.kernel.org
 ---
-fs/ext4/resize.c |    4 ++++
- 1 files changed, 4 insertions(+), 0 deletions(-)
+ fs/ext4/resize.c | 4 ++++
+ 1 file changed, 4 insertions(+)
 
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 59fa0be..9a6fb74 100644
+index abe0548..ea2384e 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -449,6 +449,9 @@ static int setup_new_flex_group_blocks(struct super_block *sb,
+@@ -451,6 +451,9 @@ static int setup_new_flex_group_blocks(struct super_block *sb,
  		gdblocks = ext4_bg_num_gdb(sb, group);
  		start = ext4_group_first_block_no(sb, group);
  
@@ -29,7 +30,7 @@ index 59fa0be..9a6fb74 100644
  		/* Copy all of the GDT blocks into the backup in this group */
  		for (j = 0, block = start + 1; j < gdblocks; j++, block++) {
  			struct buffer_head *gdb;
-@@ -491,6 +494,7 @@ static int setup_new_flex_group_blocks(struct super_block *sb,
+@@ -493,6 +496,7 @@ static int setup_new_flex_group_blocks(struct super_block *sb,
  				goto out;
  		}
  
@@ -37,4 +38,3 @@ index 59fa0be..9a6fb74 100644
  		/* Initialize group tables of the grop @group */
  		if (!(bg_flags[i] & EXT4_BG_INODE_ZEROED))
  			goto handle_bb;
-
