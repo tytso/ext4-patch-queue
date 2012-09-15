@@ -1,4 +1,4 @@
-ext4: when resizing, do not copy gdt blocks for groups that do not have them
+ext4: don't copy non-existent gdt blocks when resizing
 
 From: Yongqiang Yang <xiaoqiangnk@gmail.com>
 
@@ -17,10 +17,10 @@ Cc: stable@vger.kernel.org
  1 file changed, 4 insertions(+)
 
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index abe0548..ea2384e 100644
+index 591f4bd..a0ee26c 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -451,6 +451,9 @@ static int setup_new_flex_group_blocks(struct super_block *sb,
+@@ -456,6 +456,9 @@ static int setup_new_flex_group_blocks(struct super_block *sb,
  		gdblocks = ext4_bg_num_gdb(sb, group);
  		start = ext4_group_first_block_no(sb, group);
  
@@ -30,7 +30,7 @@ index abe0548..ea2384e 100644
  		/* Copy all of the GDT blocks into the backup in this group */
  		for (j = 0, block = start + 1; j < gdblocks; j++, block++) {
  			struct buffer_head *gdb;
-@@ -493,6 +496,7 @@ static int setup_new_flex_group_blocks(struct super_block *sb,
+@@ -498,6 +501,7 @@ static int setup_new_flex_group_blocks(struct super_block *sb,
  				goto out;
  		}
  
