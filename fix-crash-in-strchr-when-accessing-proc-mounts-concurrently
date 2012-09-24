@@ -1,0 +1,60 @@
+ext4: fix crash when accessing /proc/mounts concurrently
+
+From: Herton Ronaldo Krzesinski <herton.krzesinski@canonical.com>
+
+The crash was caused by a variable being erronously declared static in
+token2str().
+
+In addition to /proc/mounts, the problem can also be easily replicated
+by accessing /proc/fs/ext4/<partition>/options in parallel:
+
+$ cat /proc/fs/ext4/<partition>/options > options.txt
+
+... and then running the following command in two different terminals:
+
+$ while diff /proc/fs/ext4/<partition>/options options.txt; do true; done
+
+This is also the cause of the following a crash while running xfstests
+#234, as reported in the following bug reports:
+
+	https://bugs.launchpad.net/bugs/1053019
+	https://bugzilla.kernel.org/show_bug.cgi?id=47731
+
+Signed-off-by: Herton Ronaldo Krzesinski <herton.krzesinski@canonical.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Brad Figg <brad.figg@canonical.com>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/super.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+The problem is easy to reproduce, for example running:
+$ cat /proc/fs/ext4/<partition>/options > options.txt
+$ while diff /proc/fs/ext4/<partition>/options options.txt; do true; done
+- And concurrently on another terminal:
+$ while diff /proc/fs/ext4/<partition>/options options.txt; do true; done
+
+One of the diff loops will get incomplete options contents because of
+the issue, and exit.
+
+I also believe the same problem is the cause of the following bug:
+https://bugs.launchpad.net/bugs/1053019, that happened while running
+test 234 from xfstests.
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 41598ee..975405c 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1748,7 +1748,7 @@ static inline void ext4_show_quota_options(struct seq_file *seq,
+ 
+ static const char *token2str(int token)
+ {
+-	static const struct match_token *t;
++	const struct match_token *t;
+ 
+ 	for (t = tokens; t->token != Opt_err; t++)
+ 		if (t->token == token && !strchr(t->pattern, '='))
+-- 
+1.7.9.5
+
+
