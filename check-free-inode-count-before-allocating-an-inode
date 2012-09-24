@@ -1,0 +1,39 @@
+ext4: check free inode count before allocating an inode
+
+From: Yongqiang Yang <xiaoqiangnk@gmail.com>
+
+Recently, I ecountered some corrupted filesystems in which some
+groups' free inode counts were 65535, it seemed that free inode
+count was overflow.  This patch teaches ext4 to check free inode
+count before allocaing an inode.
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ialloc.c |    9 +++++++++
+ 1 files changed, 9 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 26154b8..fa36372 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -697,6 +697,15 @@ got_group:
+ 		if (!gdp)
+ 			goto fail;
+ 
++		/*
++		 * Check free inodes count before loading bitmap.
++		 */
++		if (ext4_free_inodes_count(sb, gdp) == 0) {
++			if (++group == ngroups)
++				group = 0;
++			continue;
++		}
++
+ 		brelse(inode_bitmap_bh);
+ 		inode_bitmap_bh = ext4_read_inode_bitmap(sb, group);
+ 		if (!inode_bitmap_bh)
+-- 
+1.7.5.1
+
+
