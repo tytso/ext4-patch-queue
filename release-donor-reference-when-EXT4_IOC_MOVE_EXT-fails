@@ -1,0 +1,30 @@
+ext4: release donor reference when EXT4_IOC_MOVE_EXT ioctl fails
+
+From: Djalal Harouni <tixxdz@opendz.org>
+
+When the EXT4_IOC_MOVE_EXT ioctl() fails on bigalloc file systems, we
+should jump to the 'mext_out' label to release the donor file reference.
+
+Signed-off-by: Djalal Harouni <tixxdz@opendz.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ioctl.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index a567968..034e147 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -237,7 +237,8 @@ setversion_out:
+ 			       EXT4_FEATURE_RO_COMPAT_BIGALLOC)) {
+ 			ext4_msg(sb, KERN_ERR,
+ 				 "Online defrag not supported with bigalloc");
+-			return -EOPNOTSUPP;
++			err = -EOPNOTSUPP;
++			goto mext_out;
+ 		}
+ 
+ 		err = mnt_want_write(filp->f_path.mnt);
+-- 
+1.7.1
+
