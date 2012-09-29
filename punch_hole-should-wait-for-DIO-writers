@@ -1,4 +1,4 @@
-Subject: [PATCH 10/11] ext4: punch_hole should wait for DIO writers V2
+ext4: punch_hole should wait for DIO writers
 
 From: Dmitry Monakhov <dmonakhov@openvz.org>
 
@@ -21,14 +21,14 @@ This patch performs following changes:
 Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents.c |   50 +++++++++++++++++++++++++++++++++-----------------
- 1 files changed, 33 insertions(+), 17 deletions(-)
+ fs/ext4/extents.c | 50 +++++++++++++++++++++++++++++++++-----------------
+ 1 file changed, 33 insertions(+), 17 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 70ba122..a1d16eb 100644
+index 2320774..32f4de3 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -4568,9 +4568,29 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
+@@ -4794,9 +4794,29 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
  	loff_t first_page_offset, last_page_offset;
  	int credits, err = 0;
  
@@ -59,7 +59,7 @@ index 70ba122..a1d16eb 100644
  
  	/*
  	 * If the hole extends beyond i_size, set the hole
-@@ -4588,33 +4608,25 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
+@@ -4814,33 +4834,25 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
  	first_page_offset = first_page << PAGE_CACHE_SHIFT;
  	last_page_offset = last_page << PAGE_CACHE_SHIFT;
  
@@ -101,7 +101,7 @@ index 70ba122..a1d16eb 100644
  
  
  	/*
-@@ -4706,6 +4718,10 @@ out:
+@@ -4930,6 +4942,10 @@ out:
  	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
  	ext4_mark_inode_dirty(handle, inode);
  	ext4_journal_stop(handle);
@@ -112,7 +112,3 @@ index 70ba122..a1d16eb 100644
  	return err;
  }
  int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
--- 
-1.7.7.6
-
-
