@@ -4,16 +4,18 @@ From: Zheng Liu <wenqing.lz@taobao.com>
 
 This patch adds operations on a extent status tree.
 
+[ Includes patch from Hugh Dickens which fixes a use-after-free bug. ]
+
 CC: Lukas Czerner <lczerner@redhat.com>
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 Signed-off-by: Allison Henderson <achender@linux.vnet.ibm.com>
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: Hugh Dickins <hughd@google.com>
 ---
- fs/ext4/Makefile         |    2 +-
- fs/ext4/extents_status.c |  434 ++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/extents_status.h |   20 ++
- 3 files changed, 455 insertions(+), 1 deletions(-)
- create mode 100644 fs/ext4/extents_status.c
+ fs/ext4/Makefile         |   2 +-
+ fs/ext4/extents_status.c | 433 +++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/extents_status.h |  20 +++
+ 3 files changed, 454 insertions(+), 1 deletion(-)
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index 56fd8f86..41f22be 100644
@@ -30,10 +32,10 @@ index 56fd8f86..41f22be 100644
  ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
 new file mode 100644
-index 0000000..ccb7e2b
+index 0000000..f2f498c
 --- /dev/null
 +++ b/fs/ext4/extents_status.c
-@@ -0,0 +1,434 @@
+@@ -0,0 +1,433 @@
 +/*
 + *  fs/ext4/extents_status.c
 + *
@@ -274,24 +276,24 @@ index 0000000..ccb7e2b
 +	kmem_cache_free(ext4_es_cachep, es);
 +}
 +
-+static void ext4_es_try_to_merge_left(struct ext4_es_tree *tree,
-+				      struct extent_status *es)
++static struct extent_status *
++ext4_es_try_to_merge_left(struct ext4_es_tree *tree, struct extent_status *es)
 +{
 +	struct extent_status *es1;
 +	struct rb_node *node;
 +
 +	node = rb_prev(&es->rb_node);
 +	if (!node)
-+		return;
++		return es;
 +
 +	es1 = rb_entry(node, struct extent_status, rb_node);
 +	if (es->start == extent_status_end(es1) + 1) {
 +		es1->len += es->len;
 +		rb_erase(&es->rb_node, &tree->root);
-+		if (es == tree->cache_es)
-+			tree->cache_es = es1;
 +		ext4_es_free_extent(es);
++		es = es1;	/* Caller will update tree->cache_es to this */
 +	}
++	return es;
 +}
 +
 +static void ext4_es_try_to_merge_right(struct ext4_es_tree *tree,
@@ -308,9 +310,8 @@ index 0000000..ccb7e2b
 +	if (es1->start == extent_status_end(es) + 1) {
 +		es->len += es1->len;
 +		rb_erase(node, &tree->root);
-+		if (es1 == tree->cache_es)
-+			tree->cache_es = es;
 +		ext4_es_free_extent(es1);
++		/* Caller will update tree->cache_es to es */
 +	}
 +}
 +
@@ -347,7 +348,7 @@ index 0000000..ccb7e2b
 +		es_debug("cached by [%u/%u)\n", es->start, es->len);
 +		es->start = offset;
 +		es->len += len;
-+		ext4_es_try_to_merge_left(tree, es);
++		es = ext4_es_try_to_merge_left(tree, es);
 +		goto out;
 +	} else if (es && in_range(offset, es->start, es->len)) {
 +		es_debug("cached by [%u/%u)\n", es->start, es->len);
@@ -504,11 +505,3 @@ index 8be2ab9..077f82d 100644
 +				struct extent_status *es);
 +
  #endif /* _EXT4_EXTENTS_STATUS_H */
--- 
-1.7.4.1
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
