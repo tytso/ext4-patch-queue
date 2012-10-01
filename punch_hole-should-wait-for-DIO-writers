@@ -18,17 +18,20 @@ This patch performs following changes:
   may appear due to mmap(), and currently there is no easy way to stop
   writeback while punch_hole is in progress.
 
+[ Fixed error return from ext4_ext_punch_hole() to make sure that we
+  release i_mutex before returning EPERM or ETXTBUSY -- Ted ]
+
 Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents.c | 50 +++++++++++++++++++++++++++++++++-----------------
- 1 file changed, 33 insertions(+), 17 deletions(-)
+ fs/ext4/extents.c | 53 ++++++++++++++++++++++++++++++++++++-----------------
+ 1 file changed, 36 insertions(+), 17 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 2320774..32f4de3 100644
+index 2320774..5920e75 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -4794,9 +4794,29 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
+@@ -4794,9 +4794,32 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
  	loff_t first_page_offset, last_page_offset;
  	int credits, err = 0;
  
@@ -45,12 +48,15 @@ index 2320774..32f4de3 100644
 +	}
 +
 +	mutex_lock(&inode->i_mutex);
-+	/* Need recheck file flags under mutex */
 +	/* It's not possible punch hole on append only file */
-+	if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
-+		return -EPERM;
-+	if (IS_SWAPFILE(inode))
-+		return -ETXTBSY;
++	if (IS_APPEND(inode) || IS_IMMUTABLE(inode)) {
++		err = -EPERM;
++		goto out_mutex;
++	}
++	if (IS_SWAPFILE(inode)) {
++		err = -ETXTBSY;
++		goto out_mutex;
++	}
 +
  	/* No need to punch hole beyond i_size */
  	if (offset >= inode->i_size)
@@ -59,7 +65,7 @@ index 2320774..32f4de3 100644
  
  	/*
  	 * If the hole extends beyond i_size, set the hole
-@@ -4814,33 +4834,25 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
+@@ -4814,33 +4837,25 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
  	first_page_offset = first_page << PAGE_CACHE_SHIFT;
  	last_page_offset = last_page << PAGE_CACHE_SHIFT;
  
@@ -101,7 +107,7 @@ index 2320774..32f4de3 100644
  
  
  	/*
-@@ -4930,6 +4942,10 @@ out:
+@@ -4930,6 +4945,10 @@ out:
  	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
  	ext4_mark_inode_dirty(handle, inode);
  	ext4_journal_stop(handle);
