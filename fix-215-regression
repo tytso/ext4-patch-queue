@@ -1,0 +1,26 @@
+ext4: fix mtime update in nodelalloc mode
+
+Commits 5e8830dc85d0 and 41c4d25f78c0 introduced a regression into
+v3.6-rc1 for ext4 in nodealloc mode, such that mtime updates would not
+take place for files modified via mmap if the page was already in the
+page cache.  This would also affect ext3 file systems mounted using
+the ext4 file system driver.
+
+The problem was that ext4_page_mkwrite() had a shortcut which would
+avoid calling __block_page_mkwrite() under some circumstances, and the
+above two commit transferred the responsibility of calling
+file_update_time() to __block_page_mkwrite --- which woudln't get
+called in some circumstances.
+
+Since __block_page_mkwrite() only has three callers,
+block_page_mkwrite(), ext4_page_mkwrite, and nilfs_page_mkwrite(), the
+best way to solve this is to move the responsibility for calling
+file_update_time() to its caller.
+
+This problem was found via xfstests #215 with a file system mounted
+with -o nodelalloc.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Jan Kara <jack@suse.cz>
+Cc: KONISHI Ryusuke <konishi.ryusuke@lab.ntt.co.jp>
+Cc: stable@vger.kernel.org
