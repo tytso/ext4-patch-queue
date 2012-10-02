@@ -3,14 +3,14 @@ ext4: completed_io locking cleanup
 From: Dmitry Monakhov <dmonakhov@openvz.org>
 
 Current unwritten extent conversion state-machine is very fuzzy.
-- By unknown reason it want perform conversion under i_mutex. What for?
+- For unknown reason it performs conversion under i_mutex. What for?
   My diagnosis:
   We already protect extent tree with i_data_sem, truncate and punch_hole
   should wait for DIO, so the only data we have to protect is end_io->flags
   modification, but only flush_completed_IO and end_io_work modified this
   flags and we can serialize them via i_completed_io_lock.
 
-  Currently all this games with mutex_trylock result in following deadlock
+  Currently all these games with mutex_trylock result in the following deadlock
    truncate:                          kworker:
     ext4_setattr                       ext4_end_io_work
     mutex_lock(i_mutex)
@@ -33,18 +33,18 @@ This patch makes state machine simple and clean:
 (1) xxx_end_io schedule final extent conversion simply by calling
     ext4_add_complete_io(), which append it to ei->i_completed_io_list
     NOTE1: because of (2A) work should be queued only if
-    ->i_completed_io_list was empty, otherwise it work is scheduled already.
+    ->i_completed_io_list was empty, otherwise the work is scheduled already.
 
 (2) ext4_flush_completed_IO is responsible for handling all pending
     end_io from ei->i_completed_io_list
-    Flushing sequange consist of following stages:
+    Flushing sequence consists of following stages:
     A) LOCKED: Atomically drain completed_io_list to local_list
     B) Perform extents conversion
-    C) LOCKED: move conveted io's to to_free list for final deletion
+    C) LOCKED: move converted io's to to_free list for final deletion
        	     This logic depends on context which we was called from.
     D) Final end_io context destruction
     NOTE1: i_mutex is no longer required because end_io->flags modification
-    protected by ei->ext4_complete_io_lock
+    is protected by ei->ext4_complete_io_lock
 
 Full list of changes:
 - Move all completion end_io related routines to page-io.c in order to improve
