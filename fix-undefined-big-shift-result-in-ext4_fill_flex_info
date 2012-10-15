@@ -1,0 +1,44 @@
+ext4: fix undefined bit shift result in ext4_fill_flex_info
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+The result of the bit shift expression in
+'1 << sbi->s_log_groups_per_flex' can be undefined in the case that
+s_log_groups_per_flex is 31 because the result of the shift is bigger
+than INT_MAX. In reality this probably should not cause much problems
+since we'll end up with INT_MIN which will then be converted into
+'unsigned int' type, but nevertheless according to the ISO C99 the
+result is actually undefined.
+
+Fix this by changing the left operand to 'unsigned int' type.
+
+Note that the commit d50f2ab6f050311dbf7b8f5501b25f0bf64a439b already
+tried to fix the undefined behaviour, but this was missed.
+
+Thanks to Laszlo Ersek for pointing this out and suggesting the fix.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Carlos Maiolino <cmaiolino@redhat.com>
+Reported-by: Laszlo Ersek <lersek@redhat.com>
+---
+ fs/ext4/super.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 69c55d4..95b9c8e 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1929,7 +1929,7 @@ static int ext4_fill_flex_info(struct super_block *sb)
+ 		sbi->s_log_groups_per_flex = 0;
+ 		return 1;
+ 	}
+-	groups_per_flex = 1 << sbi->s_log_groups_per_flex;
++	groups_per_flex = 1U << sbi->s_log_groups_per_flex;
+ 
+ 	/* We allocate both existing and potentially added groups */
+ 	flex_group_count = ((sbi->s_groups_count + groups_per_flex - 1) +
+-- 
+1.7.7.6
+
+
