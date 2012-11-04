@@ -7,59 +7,59 @@ This patch adds some tracepoints in extent status tree.
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents_status.c    |    8 +++
- include/trace/events/ext4.h |  101 +++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 109 insertions(+), 0 deletions(-)
+ fs/ext4/extents_status.c    |   8 ++++
+ include/trace/events/ext4.h | 101 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 109 insertions(+)
 
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index ccb7e2b..12336b1 100644
+index 048ae8c..1c4af0a 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
-@@ -13,6 +13,8 @@
+@@ -14,6 +14,8 @@
  #include "extents_status.h"
  #include "ext4_extents.h"
  
 +#include <trace/events/ext4.h>
 +
  /*
-  * extents status tree implementation for ext4.
-  *
-@@ -191,6 +193,8 @@ ext4_lblk_t ext4_es_find_extent(struct inode *inode, struct extent_status *es)
+  * According to previous discussion in Ext4 Developer Workshop, we will
+  * introduce a new structure called io tree to track all extent status in order
+@@ -223,6 +225,8 @@ ext4_lblk_t ext4_es_find_extent(struct inode *inode, struct extent_status *es)
  	struct rb_node *node;
  	ext4_lblk_t ret = EXT_MAX_BLOCKS;
  
 +	trace_ext4_es_find_extent_enter(inode, es->start);
 +
+ 	read_lock(&EXT4_I(inode)->i_es_lock);
  	tree = &EXT4_I(inode)->i_es_tree;
  
- 	/* find delay extent in cache */
-@@ -218,6 +222,8 @@ out:
- 		}
+@@ -252,6 +256,8 @@ out:
  	}
  
-+	trace_ext4_es_find_extent_exit(inode, es, ret);
+ 	read_unlock(&EXT4_I(inode)->i_es_lock);
 +
++	trace_ext4_es_find_extent_exit(inode, es, ret);
  	return ret;
  }
  
-@@ -297,6 +303,7 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t offset,
- 	ext4_lblk_t end = offset + len - 1;
+@@ -392,6 +398,7 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t offset,
+ 	struct ext4_es_tree *tree;
+ 	int err = 0;
  
- 	BUG_ON(end < offset);
 +	trace_ext4_es_insert_extent(inode, offset, len);
- 
- 	es = tree->cache_es;
  	es_debug("add [%u/%u) to extent status tree of inode %lu\n",
-@@ -367,6 +374,7 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t offset,
- 	struct extent_status orig_es;
+ 		 offset, len, inode->i_ino);
+ 
+@@ -421,6 +428,7 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t offset,
  	ext4_lblk_t len1, len2, end;
+ 	int err = 0;
  
 +	trace_ext4_es_remove_extent(inode, offset, len);
  	es_debug("remove [%u/%u) from extent status tree of inode %lu\n",
  		 offset, len, inode->i_ino);
  
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index 69d8a69..31730f8 100644
+index d49b285..b01a901 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
 @@ -15,6 +15,7 @@ struct ext4_inode_info;
@@ -178,10 +178,6 @@ index 69d8a69..31730f8 100644
  
  /* This part must be outside protection */
 -- 
-1.7.4.1
+1.7.12.rc2.18.g61b472e
 
---
-To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
 

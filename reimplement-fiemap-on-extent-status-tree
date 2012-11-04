@@ -1,22 +1,23 @@
-ext4: reimplement fiemap on extent status tree
+ext4: reimplement fiemap using extent status tree
 
 From: Zheng Liu <wenqing.lz@taobao.com>
-
-This patch reimplements fiemap on extent status tree.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 Signed-off-by: Allison Henderson <achender@linux.vnet.ibm.com>
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents.c |  186 +++++++----------------------------------------------
- 1 files changed, 23 insertions(+), 163 deletions(-)
+
+V3 version
+
+ fs/ext4/extents.c | 184 +++++++-----------------------------------------------
+ 1 file changed, 21 insertions(+), 163 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index bf5ece2..44cda82 100644
+index d6da3a8..a72197b 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -4514,193 +4514,53 @@ static int ext4_ext_fiemap_cb(struct inode *inode, ext4_lblk_t next,
+@@ -4499,193 +4499,51 @@ static int ext4_ext_fiemap_cb(struct inode *inode, ext4_lblk_t next,
  		       struct ext4_ext_cache *newex, struct ext4_extent *ex,
  		       void *data)
  {
@@ -33,9 +34,7 @@ index bf5ece2..44cda82 100644
 -	blksize_bits = inode->i_sb->s_blocksize_bits;
 -	logical = (__u64)newex->ec_block << blksize_bits;
 +	es.start = newex->ec_block;
-+	down_read(&EXT4_I(inode)->i_data_sem);
 +	next_del = ext4_es_find_extent(inode, &es);
-+	up_read(&EXT4_I(inode)->i_data_sem);
  
 +	next = min(next_del, next);
  	if (newex->ec_start == 0) {
@@ -234,10 +233,6 @@ index bf5ece2..44cda82 100644
  					length, flags);
  	if (ret < 0)
 -- 
-1.7.4.1
+1.7.12.rc2.18.g61b472e
 
---
-To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
 

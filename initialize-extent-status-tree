@@ -9,26 +9,26 @@ Signed-off-by: Allison Henderson <achender@linux.vnet.ibm.com>
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/super.c |    1 +
- 1 files changed, 1 insertions(+), 0 deletions(-)
+v3 <- v2:
+ - initialize i_es_lock
+
+ fs/ext4/super.c | 2 ++
+ 1 file changed, 2 insertions(+)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 3e0851e..353b1fd 100644
+index 80928f7..e0c824b 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -944,6 +944,7 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
+@@ -943,6 +943,8 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
  	memset(&ei->i_cached_extent, 0, sizeof(struct ext4_ext_cache));
  	INIT_LIST_HEAD(&ei->i_prealloc_list);
  	spin_lock_init(&ei->i_prealloc_lock);
 +	ext4_es_init_tree(&ei->i_es_tree);
++	rwlock_init(&ei->i_es_lock);
  	ei->i_reserved_data_blocks = 0;
  	ei->i_reserved_meta_blocks = 0;
  	ei->i_allocated_meta_blocks = 0;
 -- 
-1.7.4.1
+1.7.12.rc2.18.g61b472e
 
---
-To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
 

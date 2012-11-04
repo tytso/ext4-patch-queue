@@ -9,17 +9,17 @@ Signed-off-by: Allison Henderson <achender@linux.vnet.ibm.com>
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h         |    4 --
- fs/ext4/ext4_extents.h |    3 +-
- fs/ext4/extents.c      |  112 +++++------------------------------------------
- fs/ext4/inode.c        |   53 +----------------------
- 4 files changed, 14 insertions(+), 158 deletions(-)
+ fs/ext4/ext4.h         |   4 --
+ fs/ext4/ext4_extents.h |   3 +-
+ fs/ext4/extents.c      | 117 ++++++++-----------------------------------------
+ fs/ext4/inode.c        |  53 +---------------------
+ 4 files changed, 20 insertions(+), 157 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 66c592e..f1d5087 100644
+index bcc634b..246e38f 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2431,14 +2431,10 @@ enum ext4_state_bits {
+@@ -2451,14 +2451,10 @@ enum ext4_state_bits {
  				 * never, ever appear in a buffer_head's state
  				 * flag. See EXT4_MAP_FROM_CLUSTER to see where
  				 * this is used. */
@@ -48,10 +48,10 @@ index cb1b2c9..603bb11 100644
  #endif /* _EXT4_EXTENTS */
  
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 44cda82..f12d7e8 100644
+index 0e1a925..d6da3a8 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -3405,115 +3405,27 @@ out:
+@@ -3461,115 +3461,34 @@ out:
  /**
   * ext4_find_delalloc_range: find delayed allocated block in the given range.
   *
@@ -84,10 +84,19 @@ index 44cda82..f12d7e8 100644
 -	/* reverse search wont work if fs block size is less than page size */
 -	if (inode->i_blkbits < PAGE_CACHE_SHIFT)
 -		search_hint_reverse = 0;
--
++	struct extent_status es;
+ 
 -	if (search_hint_reverse)
 -		i = lblk_end;
--	else
++	es.start = lblk_start;
++	ext4_es_find_extent(inode, &es);
++	if (es.len == 0)
++		return 0; /* there is no delay extent in this tree */
++	else if (es.start <= lblk_start && lblk_start < es.start + es.len)
++		return 1;
++	else if (lblk_start <= es.start && es.start <= lblk_end)
++		return 1;
+ 	else
 -		i = lblk_start;
 -
 -	index = i >> (PAGE_CACHE_SHIFT - inode->i_blkbits);
@@ -150,14 +159,11 @@ index 44cda82..f12d7e8 100644
 -			index++;
 -		i = index << (PAGE_CACHE_SHIFT - inode->i_blkbits);
 -	}
-+	struct extent_status es;
- 
+-
 -	trace_ext4_find_delalloc_range(inode, lblk_start, lblk_end,
 -					search_hint_reverse, 0, 0);
 -	return 0;
-+	es.start = lblk_start;
-+	ext4_es_find_extent(inode, &es);
-+	return (es.start + es.len) >= lblk_end && es.start <= lblk_start;
++		return 0;
  }
  
 -int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk,
@@ -175,7 +181,7 @@ index 44cda82..f12d7e8 100644
  }
  
  /**
-@@ -3574,7 +3486,7 @@ get_reserved_cluster_alloc(struct inode *inode, ext4_lblk_t lblk_start,
+@@ -3630,7 +3549,7 @@ get_reserved_cluster_alloc(struct inode *inode, ext4_lblk_t lblk_start,
  		lblk_from = lblk_start & (~(sbi->s_cluster_ratio - 1));
  		lblk_to = lblk_from + c_offset - 1;
  
@@ -184,7 +190,7 @@ index 44cda82..f12d7e8 100644
  			allocated_clusters--;
  	}
  
-@@ -3584,7 +3496,7 @@ get_reserved_cluster_alloc(struct inode *inode, ext4_lblk_t lblk_start,
+@@ -3640,7 +3559,7 @@ get_reserved_cluster_alloc(struct inode *inode, ext4_lblk_t lblk_start,
  		lblk_from = lblk_start + num_blks;
  		lblk_to = lblk_from + (sbi->s_cluster_ratio - c_offset) - 1;
  
@@ -193,7 +199,7 @@ index 44cda82..f12d7e8 100644
  			allocated_clusters--;
  	}
  
-@@ -3868,7 +3780,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3927,7 +3846,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	if (ext4_ext_in_cache(inode, map->m_lblk, &newex)) {
  		if (!newex.ee_start_lo && !newex.ee_start_hi) {
  			if ((sbi->s_cluster_ratio > 1) &&
@@ -202,7 +208,7 @@ index 44cda82..f12d7e8 100644
  				map->m_flags |= EXT4_MAP_FROM_CLUSTER;
  
  			if ((flags & EXT4_GET_BLOCKS_CREATE) == 0) {
-@@ -3956,7 +3868,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -4015,7 +3934,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	}
  
  	if ((sbi->s_cluster_ratio > 1) &&
@@ -212,7 +218,7 @@ index 44cda82..f12d7e8 100644
  
  	/*
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index aa04aa6..e1416c1 100644
+index e4da45d..8009d51 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -484,49 +484,6 @@ static pgoff_t ext4_num_dirty_pages(struct inode *inode, pgoff_t idx,
@@ -279,7 +285,7 @@ index aa04aa6..e1416c1 100644
  delayed_mapped:
  			/* delayed allocation blocks has been allocated */
  			ret = ext4_es_remove_extent(inode, map->m_lblk,
-@@ -1325,7 +1277,6 @@ static void ext4_da_page_release_reservation(struct page *page,
+@@ -1328,7 +1280,6 @@ static void ext4_da_page_release_reservation(struct page *page,
  		if ((offset <= curr_off) && (buffer_delay(bh))) {
  			to_release++;
  			clear_buffer_delay(bh);
@@ -287,7 +293,7 @@ index aa04aa6..e1416c1 100644
  		}
  		curr_off = next_off;
  	} while ((bh = bh->b_this_page) != head);
-@@ -1338,7 +1289,7 @@ static void ext4_da_page_release_reservation(struct page *page,
+@@ -1345,7 +1296,7 @@ static void ext4_da_page_release_reservation(struct page *page,
  		lblk = (page->index << (PAGE_CACHE_SHIFT - inode->i_blkbits)) +
  			((num_clusters - 1) << sbi->s_cluster_bits);
  		if (sbi->s_cluster_ratio == 1 ||
@@ -296,7 +302,7 @@ index aa04aa6..e1416c1 100644
  			ext4_da_release_space(inode, 1);
  
  		num_clusters--;
-@@ -1444,8 +1395,6 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
+@@ -1451,8 +1402,6 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
  						clear_buffer_delay(bh);
  						bh->b_blocknr = pblock;
  					}
@@ -306,10 +312,6 @@ index aa04aa6..e1416c1 100644
  					    buffer_mapped(bh))
  						BUG_ON(bh->b_blocknr != pblock);
 -- 
-1.7.4.1
+1.7.12.rc2.18.g61b472e
 
---
-To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
 
