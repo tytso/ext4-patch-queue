@@ -1,0 +1,36 @@
+ext4: fix overhead calculations in ext4_stats, again
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+"overhead" was a write-only variable in this function after commit
+952fc18e; we set it to 0 for minixdf, or to sbi->s_overhead if !minixdf,
+but never read it again after that.
+
+We need to use it, not sbi->s_overhead, when subtracting out overhead
+for f_blocks, or we get the wrong answer for minixdf.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+"Once more, with feeling!" ;)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index e44b233..2feaf78 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4758,7 +4758,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+ 
+ 	buf->f_type = EXT4_SUPER_MAGIC;
+ 	buf->f_bsize = sb->s_blocksize;
+-	buf->f_blocks = ext4_blocks_count(es) - EXT4_C2B(sbi, sbi->s_overhead);
++	buf->f_blocks = ext4_blocks_count(es) - EXT4_C2B(sbi, overhead);
+ 	bfree = percpu_counter_sum_positive(&sbi->s_freeclusters_counter) -
+ 		percpu_counter_sum_positive(&sbi->s_dirtyclusters_counter);
+ 	/* prevent underflow in case that few free space is available */
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
