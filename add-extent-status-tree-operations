@@ -11,18 +11,10 @@ Signed-off-by: Hugh Dickins <hughd@google.com>
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
-v3 <- v2:
- - improve try_to_merge_left/right() functions (Hugh, Thank you)
- - fix some bugs on inserting/removing an extent
- - use i_es_lock to protect extent status tree
- - add some comments to describe the extent status tree and future works in
-   step2
-
  fs/ext4/Makefile         |   2 +-
- fs/ext4/extents_status.c | 491 +++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/extents_status.c | 492 +++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/extents_status.h |  20 ++
- 3 files changed, 512 insertions(+), 1 deletion(-)
- create mode 100644 fs/ext4/extents_status.c
+ 3 files changed, 513 insertions(+), 1 deletion(-)
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index 56fd8f86..41f22be 100644
@@ -39,10 +31,10 @@ index 56fd8f86..41f22be 100644
  ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
 new file mode 100644
-index 0000000..048ae8c
+index 0000000..02c09be
 --- /dev/null
 +++ b/fs/ext4/extents_status.c
-@@ -0,0 +1,491 @@
+@@ -0,0 +1,492 @@
 +/*
 + *  fs/ext4/extents_status.c
 + *
@@ -60,25 +52,26 @@ index 0000000..048ae8c
 +#include "ext4_extents.h"
 +
 +/*
-+ * According to previous discussion in Ext4 Developer Workshop, we will
-+ * introduce a new structure called io tree to track all extent status in order
-+ * to solve some problems that we have met (e.g. Reservation space warning), and
-+ * provide extent-level locking.  Delay extent tree is the first step to achieve
-+ * this goal.  It is original built by Yongqiang Yang.  At that time it is
-+ * called delay extent tree, whose goal is only track delay extent in memory to
-+ * simplify the implementation of fiemap and bigalloc, and introduce lseek
-+ * SEEK_DATA/SEEK_HOLE support.  That is why it is still called delay extent
-+ * tree at the following comment.  But for better understand what it does, it
-+ * has been rename to extent status tree.
++ * According to previous discussion in Ext4 Developer Workshop, we
++ * will introduce a new structure called io tree to track all extent
++ * status in order to solve some problems that we have met
++ * (e.g. Reservation space warning), and provide extent-level locking.
++ * Delay extent tree is the first step to achieve this goal.  It is
++ * original built by Yongqiang Yang.  At that time it is called delay
++ * extent tree, whose goal is only track delay extent in memory to
++ * simplify the implementation of fiemap and bigalloc, and introduce
++ * lseek SEEK_DATA/SEEK_HOLE support.  That is why it is still called
++ * delay extent tree at the following comment.  But for better
++ * understand what it does, it has been rename to extent status tree.
 + *
-+ * Currently the first step has been done.  All delay extents are tracked in the
-+ * tree.  It maintains the delay extent when a delay allocation is issued, and
-+ * the delay extent is written out or invalidated.  Therefore the implementation
-+ * of fiemap and bigalloc are simplified, and SEEK_DATA/SEEK_HOLE are
-+ * introduced.
++ * Currently the first step has been done.  All delay extents are
++ * tracked in the tree.  It maintains the delay extent when a delay
++ * allocation is issued, and the delay extent is written out or
++ * invalidated.  Therefore the implementation of fiemap and bigalloc
++ * are simplified, and SEEK_DATA/SEEK_HOLE are introduced.
 + *
-+ * The following comment describes the implemenmtation of extent status tree and
-+ * future works.
++ * The following comment describes the implemenmtation of extent
++ * status tree and future works.
 + */
 +
 +/*
@@ -90,12 +83,13 @@ index 0000000..048ae8c
 + *
 + * 1. Why delayed extent implementation ?
 + *
-+ * Without delayed extent, ext4 identifies a delayed extent by looking up
-+ * page cache, this has several deficiencies - complicated, buggy, and
-+ * inefficient code.
++ * Without delayed extent, ext4 identifies a delayed extent by looking
++ * up page cache, this has several deficiencies - complicated, buggy,
++ * and inefficient code.
 + *
-+ * FIEMAP, SEEK_HOLE/DATA, bigalloc, punch hole and writeout all need to know if
-+ * a block or a range of blocks are belonged to a delayed extent.
++ * FIEMAP, SEEK_HOLE/DATA, bigalloc, punch hole and writeout all need
++ * to know if a block or a range of blocks are belonged to a delayed
++ * extent.
 + *
 + * Let us have a look at how they do without delayed extents implementation.
 + *   --	FIEMAP
@@ -105,41 +99,44 @@ index 0000000..048ae8c
 + *	SEEK_HOLE/DATA has the same problem as FIEMAP.
 + *
 + *   --	bigalloc
-+ *	bigalloc looks up page cache to figure out if a block is already
-+ *	under delayed allocation or not to determine whether quota reserving
-+ *	is needed for the cluster.
++ *	bigalloc looks up page cache to figure out if a block is
++ *	already under delayed allocation or not to determine whether
++ *	quota reserving is needed for the cluster.
 + *
 + *   -- punch hole
 + *	punch hole looks up page cache to identify a delayed extent.
 + *
 + *   --	writeout
-+ *	Writeout looks up whole page cache to see if a buffer is mapped, If
-+ *	there are not very many delayed buffers, then it is time comsuming.
++ *	Writeout looks up whole page cache to see if a buffer is
++ *	mapped, If there are not very many delayed buffers, then it is
++ *	time comsuming.
 + *
-+ * With delayed extents implementation, FIEMAP, SEEK_HOLE/DATA, bigalloc and
-+ * writeout can figure out if a block or a range of blocks is under delayed
-+ * allocation(belonged to a delayed extent) or not by searching the delayed
-+ * extent tree.
++ * With delayed extents implementation, FIEMAP, SEEK_HOLE/DATA,
++ * bigalloc and writeout can figure out if a block or a range of
++ * blocks is under delayed allocation(belonged to a delayed extent) or
++ * not by searching the delayed extent tree.
 + *
 + *
 + * ==========================================================================
 + * 2. ext4 delayed extents impelmentation
 + *
 + *   --	delayed extent
-+ *	A delayed extent is a range of blocks which are contiguous logically and
-+ *	under delayed allocation.  Unlike extent in ext4, delayed extent in ext4
-+ *	is a in-memory struct, there is no corresponding on-disk data.  There is
-+ *	no limit on length of delayed extent, so a delayed extent can contain as
-+ *	many blocks as they are contiguous logically.
++ *	A delayed extent is a range of blocks which are contiguous
++ *	logically and under delayed allocation.  Unlike extent in
++ *	ext4, delayed extent in ext4 is a in-memory struct, there is
++ *	no corresponding on-disk data.  There is no limit on length of
++ *	delayed extent, so a delayed extent can contain as many blocks
++ *	as they are contiguous logically.
 + *
 + *   --	delayed extent tree
-+ *	Every inode has a delayed extent tree and all under delayed allocation
-+ *	blocks are added to the tree as delayed extents.  Delayed extents in
-+ *	the tree are ordered by logical block no.
++ *	Every inode has a delayed extent tree and all under delayed
++ *	allocation blocks are added to the tree as delayed extents.
++ *	Delayed extents in the tree are ordered by logical block no.
 + *
 + *   --	operations on a delayed extent tree
-+ *	There are three operations on a delayed extent tree: find next delayed
-+ *	extent, adding a space(a range of blocks) and removing a space.
++ *	There are three operations on a delayed extent tree: find next
++ *	delayed extent, adding a space(a range of blocks) and removing
++ *	a space.
 + *
 + *   --	race on a delayed extent tree
 + *	Delayed extent tree is protected inode->i_es_lock.
@@ -148,16 +145,12 @@ index 0000000..048ae8c
 + * ==========================================================================
 + * 3. performance analysis
 + *   --	overhead
-+ *	1. Apart from operations on a delayed extent tree, we need to
-+ *	down_write(inode->i_data_sem) in delayed write path to maintain delayed
-+ *	extent tree, this can have impact on parallel read-write and write-write
-+ *
-+ *	2. There is a cache extent for write access, so if writes are not very
-+ *	random, adding space operaions are in O(1) time.
++ *	1. There is a cache extent for write access, so if writes are
++ *	not very random, adding space operaions are in O(1) time.
 + *
 + *   --	gain
-+ *	3. Code is much simpler, more readable, more maintainable and
-+ *      more efficient.
++ *	2. Code is much simpler, more readable, more maintainable and
++ *	more efficient.
 + *
 + *
 + * ==========================================================================
@@ -570,7 +563,3 @@ index 8be2ab9..077f82d 100644
 +				struct extent_status *es);
 +
  #endif /* _EXT4_EXTENTS_STATUS_H */
--- 
-1.7.12.rc2.18.g61b472e
-
-
