@@ -1,0 +1,32 @@
+ext4: fixed potential NULL dereference in ext4_calculate_overhead()
+
+From: Vahram Martirosyan <vmartirosyan@gmail.com>
+
+The memset operation before check can cause a BUG if the memory
+allocation failed.  Since we are using get_zeroed_age, there is no
+need to use memset anyway.
+
+Found by the Spruce system in cooperation with the KEDR Framework.
+
+Signed-off-by: Vahram Martirosyan <vmartirosyan@linuxtesting.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index ad6cd8a..66a4e20 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3206,7 +3206,6 @@ int ext4_calculate_overhead(struct super_block *sb)
+ 	ext4_fsblk_t overhead = 0;
+ 	char *buf = (char *) get_zeroed_page(GFP_KERNEL);
+ 
+-	memset(buf, 0, PAGE_SIZE);
+ 	if (!buf)
+ 		return -ENOMEM;
+ 
+-- 
+1.8.0
+
+
