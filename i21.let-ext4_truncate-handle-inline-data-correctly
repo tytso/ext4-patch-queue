@@ -1,0 +1,165 @@
+ext4: let ext4_truncate handle inline data correctly
+
+From: Tao Ma <boyu.mt@taobao.com>
+
+Signed-off-by: Robin Dong <sanbai@taobao.com>
+Signed-off-by: Tao Ma <boyu.mt@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inline.c |   90 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/inode.c  |    8 +++++
+ fs/ext4/xattr.h  |    9 +++++
+ 3 files changed, 107 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
+index 6a4053e..bff1f23 100644
+--- a/fs/ext4/inline.c
++++ b/fs/ext4/inline.c
+@@ -1747,3 +1747,93 @@ out:
+ 	brelse(iloc.bh);
+ 	return error;
+ }
++
++void ext4_inline_data_truncate(struct inode *inode, int *has_inline)
++{
++	handle_t *handle;
++	int inline_size, value_len, needed_blocks;
++	size_t i_size;
++	void *value = NULL;
++	struct ext4_xattr_ibody_find is = {
++		.s = { .not_found = -ENODATA, },
++	};
++	struct ext4_xattr_info i = {
++		.name_index = EXT4_XATTR_INDEX_SYSTEM,
++		.name = EXT4_XATTR_SYSTEM_DATA,
++	};
++
++
++	needed_blocks = ext4_writepage_trans_blocks(inode);
++	handle = ext4_journal_start(inode, needed_blocks);
++	if (IS_ERR(handle))
++		return;
++
++	down_write(&EXT4_I(inode)->xattr_sem);
++	if (!ext4_has_inline_data(inode)) {
++		*has_inline = 0;
++		ext4_journal_stop(handle);
++		return;
++	}
++
++	if (ext4_orphan_add(handle, inode))
++		goto out;
++
++	if (ext4_get_inode_loc(inode, &is.iloc))
++		goto out;
++
++	down_write(&EXT4_I(inode)->i_data_sem);
++	i_size = inode->i_size;
++	inline_size = ext4_get_inline_size(inode);
++	EXT4_I(inode)->i_disksize = i_size;
++
++	if (i_size < inline_size) {
++		/* Clear the content in the xattr space. */
++		if (inline_size > EXT4_MIN_INLINE_DATA_SIZE) {
++			if (ext4_xattr_ibody_find(inode, &i, &is))
++				goto out_error;
++
++			BUG_ON(is.s.not_found);
++
++			value_len = le32_to_cpu(is.s.here->e_value_size);
++			value = kmalloc(value_len, GFP_NOFS);
++			if (!value)
++				goto out_error;
++
++			if (ext4_xattr_ibody_get(inode, i.name_index, i.name,
++						value, value_len))
++				goto out_error;
++
++			i.value = value;
++			i.value_len = i_size > EXT4_MIN_INLINE_DATA_SIZE ?
++					i_size - EXT4_MIN_INLINE_DATA_SIZE : 0;
++			if (ext4_xattr_ibody_inline_set(handle, inode, &i, &is))
++				goto out_error;
++		}
++
++		/* Clear the content within i_blocks. */
++		if (i_size < EXT4_MIN_INLINE_DATA_SIZE)
++			memset(ext4_raw_inode(&is.iloc)->i_block + i_size, 0,
++					EXT4_MIN_INLINE_DATA_SIZE - i_size);
++
++		EXT4_I(inode)->i_inline_size = i_size <
++					EXT4_MIN_INLINE_DATA_SIZE ?
++					EXT4_MIN_INLINE_DATA_SIZE : i_size;
++	}
++
++out_error:
++	up_write(&EXT4_I(inode)->i_data_sem);
++out:
++	brelse(is.iloc.bh);
++	up_write(&EXT4_I(inode)->xattr_sem);
++	kfree(value);
++	if (inode->i_nlink)
++		ext4_orphan_del(handle, inode);
++
++	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
++	ext4_mark_inode_dirty(handle, inode);
++	if (IS_SYNC(inode))
++		ext4_handle_sync(handle);
++
++	ext4_journal_stop(handle);
++	return;
++}
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 44b572e..b314a0c 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3643,6 +3643,14 @@ void ext4_truncate(struct inode *inode)
+ 	if (inode->i_size == 0 && !test_opt(inode->i_sb, NO_AUTO_DA_ALLOC))
+ 		ext4_set_inode_state(inode, EXT4_STATE_DA_ALLOC_CLOSE);
+ 
++	if (ext4_has_inline_data(inode)) {
++		int has_inline = 1;
++
++		ext4_inline_data_truncate(inode, &has_inline);
++		if (has_inline)
++			return;
++	}
++
+ 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
+ 		ext4_ext_truncate(inode);
+ 	else
+diff --git a/fs/ext4/xattr.h b/fs/ext4/xattr.h
+index ef9ce62..0aef19e 100644
+--- a/fs/ext4/xattr.h
++++ b/fs/ext4/xattr.h
+@@ -190,6 +190,8 @@ extern int ext4_inline_data_fiemap(struct inode *inode,
+ extern int ext4_try_to_evict_inline_data(handle_t *handle,
+ 					 struct inode *inode,
+ 					 int needed);
++extern void ext4_inline_data_truncate(struct inode *inode, int *has_inline);
++
+ # else  /* CONFIG_EXT4_FS_XATTR */
+ 
+ static inline int
+@@ -409,6 +411,13 @@ static inline int ext4_inline_data_fiemap(struct inode *inode,
+ {
+ 	return 0;
+ }
++
++static inline void ext4_inline_data_truncate(struct inode *inode,
++					     int *has_inline)
++{
++	return;
++}
++
+ # endif  /* CONFIG_EXT4_FS_XATTR */
+ 
+ #ifdef CONFIG_EXT4_FS_SECURITY
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

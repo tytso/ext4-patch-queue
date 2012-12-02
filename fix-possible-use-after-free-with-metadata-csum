@@ -1,0 +1,38 @@
+ext4: fix possible use after free with metadata csum
+
+Commit fa77dcfafeaa introduces block bitmap checksum calculation into
+ext4_new_inode() in the case that block group was uninitialized.
+However we brelse() the bitmap buffer before we attempt to checksum it
+so we have no guarantee that the buffer is still there.
+
+Fix this by releasing the buffer after the possible checksum
+computation.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Acked-by: Darrick J. Wong <darrick.wong@oracle.com>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/ialloc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 3a100e7..c7efa88 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -762,7 +762,6 @@ got:
+ 
+ 		BUFFER_TRACE(block_bitmap_bh, "dirty block bitmap");
+ 		err = ext4_handle_dirty_metadata(handle, NULL, block_bitmap_bh);
+-		brelse(block_bitmap_bh);
+ 
+ 		/* recheck and clear flag under lock if we still need to */
+ 		ext4_lock_group(sb, group);
+@@ -775,6 +774,7 @@ got:
+ 			ext4_group_desc_csum_set(sb, group, gdp);
+ 		}
+ 		ext4_unlock_group(sb, group);
++		brelse(block_bitmap_bh);
+ 
+ 		if (err)
+ 			goto fail;

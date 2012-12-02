@@ -1,0 +1,58 @@
+ext4: move extra inode read to a new function
+
+From: Tao Ma <boyu.mt@taobao.com>
+
+Currently, in ext4_iget we do a simple check to see whether
+there does exist some information starting from the end
+of i_extra_size. With inline data added, this procedure
+is more complicated. So move it to a new function named
+ext4_iget_extra_inode.
+
+Signed-off-by: Tao Ma <boyu.mt@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |   16 +++++++++++-----
+ 1 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index b3c243b..e8f6ce0 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3756,6 +3756,16 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
+ 	}
+ }
+ 
++static inline void ext4_iget_extra_inode(struct inode *inode,
++					 struct ext4_inode *raw_inode,
++					 struct ext4_inode_info *ei)
++{
++	__le32 *magic = (void *)raw_inode +
++			EXT4_GOOD_OLD_INODE_SIZE + ei->i_extra_isize;
++	if (*magic == cpu_to_le32(EXT4_XATTR_MAGIC))
++		ext4_set_inode_state(inode, EXT4_STATE_XATTR);
++}
++
+ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+ {
+ 	struct ext4_iloc iloc;
+@@ -3898,11 +3908,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+ 			ei->i_extra_isize = sizeof(struct ext4_inode) -
+ 					    EXT4_GOOD_OLD_INODE_SIZE;
+ 		} else {
+-			__le32 *magic = (void *)raw_inode +
+-					EXT4_GOOD_OLD_INODE_SIZE +
+-					ei->i_extra_isize;
+-			if (*magic == cpu_to_le32(EXT4_XATTR_MAGIC))
+-				ext4_set_inode_state(inode, EXT4_STATE_XATTR);
++			ext4_iget_extra_inode(inode, raw_inode, ei);
+ 		}
+ 	}
+ 
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
