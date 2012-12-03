@@ -1,0 +1,28 @@
+ext4: remove redundant initialization in ext4_fill_super()
+
+From: Guo Chao <yan@linux.vnet.ibm.com>
+
+We use kzalloc() to allocate sbi, no need to zero its field.
+
+Signed-off-by: Guo Chao <yan@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c |    1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 15d28e3..a99f6c7 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3799,7 +3799,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 
+ 	INIT_LIST_HEAD(&sbi->s_orphan); /* unlinked but open files */
+ 	mutex_init(&sbi->s_orphan_lock);
+-	sbi->s_resize_flags = 0;
+ 
+ 	sb->s_root = NULL;
+ 
+-- 
+1.7.9.5
+
+
