@@ -8,13 +8,13 @@ inlined file.
 Signed-off-by: Tao Ma <boyu.mt@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inline.c |   61 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/inode.c  |   31 ++++++++++++++++++++++++++-
- fs/ext4/xattr.h  |    7 ++++++
- 3 files changed, 98 insertions(+), 1 deletions(-)
+ fs/ext4/inline.c | 61 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/inode.c  | 31 +++++++++++++++++++++++++++-
+ fs/ext4/xattr.h  |  7 +++++++
+ 3 files changed, 98 insertions(+), 1 deletion(-)
 
 diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
-index aaa4461..6843fbc 100644
+index a2b5298..5bf2f02 100644
 --- a/fs/ext4/inline.c
 +++ b/fs/ext4/inline.c
 @@ -449,6 +449,67 @@ out:
@@ -86,10 +86,10 @@ index aaa4461..6843fbc 100644
  {
  	int ret;
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index bcf7648..580ec8d 100644
+index c6c0e4f..855e437 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -680,6 +680,9 @@ static int _ext4_get_block(struct inode *inode, sector_t iblock,
+@@ -649,6 +649,9 @@ static int _ext4_get_block(struct inode *inode, sector_t iblock,
  	int ret = 0, started = 0;
  	int dio_credits;
  
@@ -99,12 +99,12 @@ index bcf7648..580ec8d 100644
  	map.m_lblk = iblock;
  	map.m_len = bh->b_size >> inode->i_blkbits;
  
-@@ -2721,6 +2724,12 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
+@@ -2687,6 +2690,12 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
  	journal_t *journal;
  	int err;
  
 +	/*
-+	 * XXX: Can we arrive here for a inline file? Maybe not.
++	 * We can get here for an inline file via the FIBMAP ioctl
 +	 */
 +	if (ext4_has_inline_data(inode))
 +		return 0;
@@ -112,7 +112,7 @@ index bcf7648..580ec8d 100644
  	if (mapping_tagged(mapping, PAGECACHE_TAG_DIRTY) &&
  			test_opt(inode->i_sb, DELALLOC)) {
  		/*
-@@ -2766,14 +2775,30 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
+@@ -2732,14 +2741,30 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
  
  static int ext4_readpage(struct file *file, struct page *page)
  {
@@ -144,7 +144,7 @@ index bcf7648..580ec8d 100644
  	return mpage_readpages(mapping, pages, nr_pages, ext4_get_block);
  }
  
-@@ -3134,6 +3159,10 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
+@@ -3078,6 +3103,10 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
  	if (ext4_should_journal_data(inode))
  		return 0;
  
@@ -180,11 +180,3 @@ index 8c51edf..0586cb0 100644
  # endif  /* CONFIG_EXT4_FS_XATTR */
  
  #ifdef CONFIG_EXT4_FS_SECURITY
--- 
-1.7.1
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-

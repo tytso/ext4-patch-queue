@@ -11,17 +11,17 @@ is initialized with blocks, the inline part is removed.
 Signed-off-by: Tao Ma <boyu.mt@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h   |    4 +
- fs/ext4/inline.c |  177 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/inode.c  |   63 ++++++++++++++++---
- fs/ext4/xattr.h  |   27 ++++++++
+ fs/ext4/ext4.h   |   4 ++
+ fs/ext4/inline.c | 177 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/inode.c  |  63 +++++++++++++++++---
+ fs/ext4/xattr.h  |  27 +++++++++
  4 files changed, 262 insertions(+), 9 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index fc884cd..7838c32 100644
+index 5b5f4d8..3d2f834 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2005,6 +2005,8 @@ int ext4_get_block_write(struct inode *inode, sector_t iblock,
+@@ -2021,6 +2021,8 @@ int ext4_get_block_write(struct inode *inode, sector_t iblock,
  			 struct buffer_head *bh_result, int create);
  int ext4_get_block(struct inode *inode, sector_t iblock,
  				struct buffer_head *bh_result, int create);
@@ -30,7 +30,7 @@ index fc884cd..7838c32 100644
  int walk_page_buffers(handle_t *handle,
  			     struct buffer_head *head,
  			     unsigned from,
-@@ -2014,6 +2016,8 @@ int walk_page_buffers(handle_t *handle,
+@@ -2030,6 +2032,8 @@ int walk_page_buffers(handle_t *handle,
  				       struct buffer_head *bh));
  int do_journal_get_write_access(handle_t *handle,
  				struct buffer_head *bh);
@@ -228,10 +228,10 @@ index fc42ed0..7787173 100644
  int ext4_destroy_inline_data(handle_t *handle, struct inode *inode)
  {
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 5180158..44b572e 100644
+index e07480d..7d779bc 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1818,7 +1818,19 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
+@@ -1789,7 +1789,19 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
  	 * file system block.
  	 */
  	down_read((&EXT4_I(inode)->i_data_sem));
@@ -245,14 +245,14 @@ index 5180158..44b572e 100644
 +		 * is calculated properly.
 +		 */
 +		if ((EXT4_SB(inode->i_sb)->s_cluster_ratio > 1) &&
-+		    ext4_find_delalloc_cluster(inode, map->m_lblk, 0))
++		    ext4_find_delalloc_cluster(inode, map->m_lblk))
 +			map->m_flags |= EXT4_MAP_FROM_CLUSTER;
 +		retval = 0;
 +	} else if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
  		retval = ext4_ext_map_blocks(NULL, inode, map, 0);
  	else
  		retval = ext4_ind_map_blocks(NULL, inode, map, 0);
-@@ -1865,8 +1877,8 @@ out_unlock:
+@@ -1840,8 +1852,8 @@ out_unlock:
   * We also have b_blocknr = physicalblock mapping unwritten extent and b_bdev
   * initialized properly.
   */
@@ -263,7 +263,7 @@ index 5180158..44b572e 100644
  {
  	struct ext4_map_blocks map;
  	int ret = 0;
-@@ -2137,7 +2149,8 @@ static int ext4_da_writepages_trans_blocks(struct inode *inode)
+@@ -2112,7 +2124,8 @@ static int ext4_da_writepages_trans_blocks(struct inode *inode)
   * mpage_da_map_and_submit to map a single contiguous memory region
   * and then write them.
   */
@@ -273,7 +273,7 @@ index 5180158..44b572e 100644
  				struct writeback_control *wbc,
  				struct mpage_da_data *mpd,
  				pgoff_t *done_index)
-@@ -2216,6 +2229,17 @@ static int write_cache_pages_da(struct address_space *mapping,
+@@ -2191,6 +2204,17 @@ static int write_cache_pages_da(struct address_space *mapping,
  			wait_on_page_writeback(page);
  			BUG_ON(PageWriteback(page));
  
@@ -291,7 +291,7 @@ index 5180158..44b572e 100644
  			if (mpd->next_page != page->index)
  				mpd->first_page = page->index;
  			mpd->next_page = page->index + 1;
-@@ -2422,7 +2446,8 @@ retry:
+@@ -2397,7 +2421,8 @@ retry:
  		 * contiguous region of logical blocks that need
  		 * blocks to be allocated by ext4 and submit them.
  		 */
@@ -301,7 +301,7 @@ index 5180158..44b572e 100644
  		/*
  		 * If we have a contiguous extent of pages and we
  		 * haven't done the I/O yet, map the blocks and submit
-@@ -2486,7 +2511,6 @@ out_writepages:
+@@ -2461,7 +2486,6 @@ out_writepages:
  	return ret;
  }
  
@@ -309,7 +309,7 @@ index 5180158..44b572e 100644
  static int ext4_nonda_switch(struct super_block *sb)
  {
  	s64 free_blocks, dirty_blocks;
-@@ -2543,6 +2567,19 @@ static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
+@@ -2518,6 +2542,19 @@ static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
  	}
  	*fsdata = (void *)0;
  	trace_ext4_da_write_begin(inode, pos, len, flags);
@@ -329,7 +329,7 @@ index 5180158..44b572e 100644
  retry:
  	/*
  	 * With delayed allocation, we don't log the i_disksize update
-@@ -2644,10 +2681,10 @@ static int ext4_da_write_end(struct file *file,
+@@ -2619,10 +2656,10 @@ static int ext4_da_write_end(struct file *file,
  	 * changes.  So let's piggyback the i_disksize mark_inode_dirty
  	 * into that.
  	 */
@@ -340,9 +340,9 @@ index 5180158..44b572e 100644
 +		if (ext4_has_inline_data(inode) ||
 +		    ext4_da_should_update_i_disksize(page, end)) {
  			down_write(&EXT4_I(inode)->i_data_sem);
- 			if (new_i_size > EXT4_I(inode)->i_disksize) {
- 				/*
-@@ -2668,8 +2705,16 @@ static int ext4_da_write_end(struct file *file,
+ 			if (new_i_size > EXT4_I(inode)->i_disksize)
+ 				EXT4_I(inode)->i_disksize = new_i_size;
+@@ -2634,8 +2671,16 @@ static int ext4_da_write_end(struct file *file,
  			ext4_mark_inode_dirty(handle, inode);
  		}
  	}
@@ -405,11 +405,3 @@ index 91df676..24c6289 100644
  # endif  /* CONFIG_EXT4_FS_XATTR */
  
  #ifdef CONFIG_EXT4_FS_SECURITY
--- 
-1.7.1
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-

@@ -10,24 +10,26 @@ this patch does the work.
 Signed-off-by: Tao Ma <boyu.mt@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/inline.c |   46 ++++++++++++++++++++++++++++++++++++++++++----
- fs/ext4/xattr.c  |   48 +++++++++++++++++++++++++++++++++++++++++++++++-
- fs/ext4/xattr.h  |    9 ++++++---
- 3 files changed, 95 insertions(+), 8 deletions(-)
+ fs/ext4/inline.c | 48 +++++++++++++++++++++++++++++++++++++++++++-----
+ fs/ext4/xattr.c  | 48 +++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/xattr.h  |  9 ++++++---
+ 3 files changed, 96 insertions(+), 9 deletions(-)
 
 diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
-index dcf1f8e..6a4053e 100644
+index a022534..b31ac84 100644
 --- a/fs/ext4/inline.c
 +++ b/fs/ext4/inline.c
-@@ -202,7 +202,7 @@ out:
+@@ -202,8 +202,8 @@ out:
  /*
   * write the buffer to the inline inode.
   * If 'create' is set, we don't need to do the extra copy in the xattr
 - * value since it is already handled by ext4_xattr_ibody_set. That saves
-+ * value since it is already handled by ext4_xattr_ibody_inline_set. That saves
-  * us one memcpy.
+- * us one memcpy.
++ * value since it is already handled by ext4_xattr_ibody_inline_set.
++ * That saves us one memcpy.
   */
  void ext4_write_inline_data(struct inode *inode, struct ext4_iloc *iloc,
+ 			    void *buffer, loff_t pos, unsigned int len)
 @@ -280,7 +280,7 @@ static int ext4_create_inline_data(handle_t *handle,
  
  	BUG_ON(!is.s.not_found);
@@ -98,10 +100,10 @@ index dcf1f8e..6a4053e 100644
 +	return error;
 +}
 diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
-index dfcb156..e83beb2 100644
+index a47dc38..18e565d 100644
 --- a/fs/ext4/xattr.c
 +++ b/fs/ext4/xattr.c
-@@ -959,6 +959,44 @@ int ext4_xattr_ibody_find(struct inode *inode, struct ext4_xattr_info *i,
+@@ -958,6 +958,44 @@ int ext4_xattr_ibody_find(struct inode *inode, struct ext4_xattr_info *i,
  	return 0;
  }
  
@@ -146,7 +148,7 @@ index dfcb156..e83beb2 100644
  int ext4_xattr_ibody_set(handle_t *handle, struct inode *inode,
  			 struct ext4_xattr_info *i,
  			 struct ext4_xattr_ibody_find *is)
-@@ -1117,9 +1155,17 @@ ext4_xattr_set(struct inode *inode, int name_index, const char *name,
+@@ -1116,9 +1154,17 @@ ext4_xattr_set(struct inode *inode, int name_index, const char *name,
  {
  	handle_t *handle;
  	int error, retries = 0;
@@ -192,11 +194,3 @@ index 2e09ab2..ef9ce62 100644
  # else  /* CONFIG_EXT4_FS_XATTR */
  
  static inline int
--- 
-1.7.1
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
