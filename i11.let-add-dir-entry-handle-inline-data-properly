@@ -14,17 +14,17 @@ added when we convert an inline dir to a block-based one.
 Signed-off-by: Tao Ma <boyu.mt@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h   |   10 ++
- fs/ext4/inline.c |  377 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/namei.c  |   34 ++++--
- fs/ext4/xattr.h  |   19 +++
- 4 files changed, 430 insertions(+), 10 deletions(-)
+ fs/ext4/ext4.h   |  10 ++
+ fs/ext4/inline.c | 378 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/namei.c  |  34 +++--
+ fs/ext4/xattr.h  |  19 +++
+ 4 files changed, 431 insertions(+), 10 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 82871bb..0b8e788 100644
+index a89ebb6..2624782 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1599,6 +1599,11 @@ struct ext4_dir_entry_tail {
+@@ -1615,6 +1615,11 @@ struct ext4_dir_entry_tail {
  	__le32	det_checksum;		/* crc32c(uuid+inum+dirblock) */
  };
  
@@ -36,7 +36,7 @@ index 82871bb..0b8e788 100644
  /*
   * Ext4 directory file types.  Only the low 3 bits are used.  The
   * other bits are reserved for now.
-@@ -2419,6 +2424,11 @@ extern struct ext4_dir_entry_2 *ext4_init_dot_dotdot(struct inode *inode,
+@@ -2434,6 +2439,11 @@ extern struct ext4_dir_entry_2 *ext4_init_dot_dotdot(struct inode *inode,
  				 struct ext4_dir_entry_2 *de,
  				 int blocksize, int csum_size,
  				 unsigned int parent_ino, int dotdot_real_len);
@@ -49,7 +49,7 @@ index 82871bb..0b8e788 100644
  /* symlink.c */
  extern const struct inode_operations ext4_symlink_inode_operations;
 diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
-index 7787173..5a17543 100644
+index 56c0c6b..2745aaa 100644
 --- a/fs/ext4/inline.c
 +++ b/fs/ext4/inline.c
 @@ -18,6 +18,7 @@
@@ -60,7 +60,7 @@ index 7787173..5a17543 100644
  
  int ext4_get_inline_size(struct inode *inode)
  {
-@@ -943,6 +944,382 @@ int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
+@@ -944,6 +945,383 @@ int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
  	return copied;
  }
  
@@ -142,7 +142,8 @@ index 7787173..5a17543 100644
 +	return 1;
 +}
 +
-+void *ext4_get_inline_xattr_pos(struct inode *inode, struct ext4_iloc *iloc)
++static void *ext4_get_inline_xattr_pos(struct inode *inode,
++				       struct ext4_iloc *iloc)
 +{
 +	struct ext4_xattr_entry *entry;
 +	struct ext4_xattr_ibody_header *header;
@@ -444,7 +445,7 @@ index 7787173..5a17543 100644
  {
  	int ret;
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 21c9f9a..bbf9c2e 100644
+index bb9259d..3cde36b 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -202,13 +202,8 @@ static int ext4_dx_add_entry(handle_t *handle, struct dentry *dentry,
@@ -463,7 +464,7 @@ index 21c9f9a..bbf9c2e 100644
  {
  	memset(t, 0, sizeof(struct ext4_dir_entry_tail));
  	t->det_rec_len = ext4_rec_len_to_disk(
-@@ -303,9 +298,9 @@ static void ext4_dirent_csum_set(struct inode *inode,
+@@ -307,9 +302,9 @@ static void ext4_dirent_csum_set(struct inode *inode,
  					   (void *)t - (void *)dirent);
  }
  
@@ -476,7 +477,7 @@ index 21c9f9a..bbf9c2e 100644
  {
  	ext4_dirent_csum_set(inode, (struct ext4_dir_entry *)bh->b_data);
  	return ext4_handle_dirty_metadata(handle, inode, bh);
-@@ -1859,6 +1854,17 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -1878,6 +1873,17 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  	blocksize = sb->s_blocksize;
  	if (!dentry->d_name.len)
  		return -EINVAL;
@@ -494,7 +495,7 @@ index 21c9f9a..bbf9c2e 100644
  	if (is_dx(dir)) {
  		retval = ext4_dx_add_entry(handle, dentry, inode);
  		if (!retval || (retval != ERR_BAD_DX_DIR))
-@@ -2282,6 +2288,14 @@ static int ext4_init_new_dir(handle_t *handle, struct inode *dir,
+@@ -2301,6 +2307,14 @@ static int ext4_init_new_dir(handle_t *handle, struct inode *dir,
  				       EXT4_FEATURE_RO_COMPAT_METADATA_CSUM))
  		csum_size = sizeof(struct ext4_dir_entry_tail);
  
@@ -546,11 +547,3 @@ index 24c6289..6fecf7b 100644
  # endif  /* CONFIG_EXT4_FS_XATTR */
  
  #ifdef CONFIG_EXT4_FS_SECURITY
--- 
-1.7.1
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
