@@ -11,14 +11,17 @@ Also for an inlined dir, "." and ".." are removed and we only use
 4 bytes to store the parent inode number. These 2 entries will be
 added when we convert an inline dir to a block-based one.
 
+[ Folded in patch from Dan Carpenter to remove an unused variable. ]
+
 Signed-off-by: Tao Ma <boyu.mt@taobao.com>
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h   |  10 ++
- fs/ext4/inline.c | 378 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/inline.c | 377 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/namei.c  |  34 +++--
  fs/ext4/xattr.h  |  19 +++
- 4 files changed, 431 insertions(+), 10 deletions(-)
+ 4 files changed, 430 insertions(+), 10 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index a89ebb6..2624782 100644
@@ -49,7 +52,7 @@ index a89ebb6..2624782 100644
  /* symlink.c */
  extern const struct inode_operations ext4_symlink_inode_operations;
 diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
-index 56c0c6b..2745aaa 100644
+index 56c0c6b..86c89c2 100644
 --- a/fs/ext4/inline.c
 +++ b/fs/ext4/inline.c
 @@ -18,6 +18,7 @@
@@ -60,7 +63,7 @@ index 56c0c6b..2745aaa 100644
  
  int ext4_get_inline_size(struct inode *inode)
  {
-@@ -944,6 +945,383 @@ int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
+@@ -944,6 +945,382 @@ int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
  	return copied;
  }
  
@@ -344,7 +347,7 @@ index 56c0c6b..2745aaa 100644
 +			      struct inode *inode)
 +{
 +	int ret, inline_size;
-+	void *inline_start, *backup_buf = NULL;
++	void *inline_start;
 +	struct ext4_iloc iloc;
 +	struct inode *dir = dentry->d_parent->d_inode;
 +
@@ -396,7 +399,6 @@ index 56c0c6b..2745aaa 100644
 +	ret = ext4_convert_inline_data_nolock(handle, dir, &iloc);
 +
 +out:
-+	kfree(backup_buf);
 +	ext4_mark_inode_dirty(handle, dir);
 +	up_write(&EXT4_I(dir)->xattr_sem);
 +	brelse(iloc.bh);
@@ -511,7 +513,7 @@ index bb9259d..3cde36b 100644
  	dir_block = ext4_bread(handle, inode, 0, 1, &err);
  	if (!(dir_block = ext4_bread(handle, inode, 0, 1, &err))) {
 diff --git a/fs/ext4/xattr.h b/fs/ext4/xattr.h
-index 24c6289..6fecf7b 100644
+index 0905981..71c3e7e 100644
 --- a/fs/ext4/xattr.h
 +++ b/fs/ext4/xattr.h
 @@ -163,6 +163,11 @@ extern int ext4_da_write_inline_data_begin(struct address_space *mapping,
@@ -526,7 +528,7 @@ index 24c6289..6fecf7b 100644
  # else  /* CONFIG_EXT4_FS_XATTR */
  
  static inline int
-@@ -326,6 +331,20 @@ static inline int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
+@@ -327,6 +332,20 @@ static inline int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
  {
  	return 0;
  }

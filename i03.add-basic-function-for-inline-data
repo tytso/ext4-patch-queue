@@ -12,11 +12,11 @@ Signed-off-by: Tao Ma <boyu.mt@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/Makefile |   2 +-
- fs/ext4/ext4.h   |   9 +-
+ fs/ext4/ext4.h   |  10 +-
  fs/ext4/inline.c | 461 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/inode.c  |   5 +-
  fs/ext4/xattr.h  |  54 +++++++
- 5 files changed, 528 insertions(+), 3 deletions(-)
+ 5 files changed, 529 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index 41f22be..3d96d56 100644
@@ -31,7 +31,7 @@ index 41f22be..3d96d56 100644
  ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
  ext4-$(CONFIG_EXT4_FS_SECURITY)		+= xattr_security.o
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 2e9ffa9..52c394b 100644
+index 2e9ffa9..c827e47 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -402,6 +402,7 @@ struct flex_groups {
@@ -50,7 +50,15 @@ index 2e9ffa9..52c394b 100644
  	EXT4_INODE_RESERVED	= 31,	/* reserved for ext4 lib */
  };
  
-@@ -918,6 +920,10 @@ struct ext4_inode_info {
+@@ -504,6 +506,7 @@ static inline void ext4_check_flag_values(void)
+ 	CHECK_FLAG_VALUE(EXTENTS);
+ 	CHECK_FLAG_VALUE(EA_INODE);
+ 	CHECK_FLAG_VALUE(EOFBLOCKS);
++	CHECK_FLAG_VALUE(INLINE_DATA);
+ 	CHECK_FLAG_VALUE(RESERVED);
+ }
+ 
+@@ -918,6 +921,10 @@ struct ext4_inode_info {
  	/* on-disk additional length */
  	__u16 i_extra_isize;
  
@@ -61,7 +69,7 @@ index 2e9ffa9..52c394b 100644
  #ifdef CONFIG_QUOTA
  	/* quota space reservation, managed internally by quota code */
  	qsize_t i_reserved_quota;
-@@ -1376,6 +1382,7 @@ enum {
+@@ -1376,6 +1383,7 @@ enum {
  	EXT4_STATE_DELALLOC_RESERVED,	/* blks already reserved for delalloc */
  	EXT4_STATE_DIOREAD_LOCK,	/* Disable support for dio read
  					   nolocking */
@@ -69,7 +77,7 @@ index 2e9ffa9..52c394b 100644
  };
  
  #define EXT4_INODE_BIT_FNS(name, field, offset)				\
-@@ -1497,7 +1504,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
+@@ -1497,7 +1505,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
  #define EXT4_FEATURE_INCOMPAT_DIRDATA		0x1000 /* data in dirent */
  #define EXT4_FEATURE_INCOMPAT_BG_USE_META_CSUM	0x2000 /* use crc32c for bg */
  #define EXT4_FEATURE_INCOMPAT_LARGEDIR		0x4000 /* >2GB or 3-lvl htree */
@@ -570,7 +578,7 @@ index befa005..c6c0e4f 100644
  	ei->i_dtime = le32_to_cpu(raw_inode->i_dtime);
  	/* We now have enough fields to check if the inode was active or not.
 diff --git a/fs/ext4/xattr.h b/fs/ext4/xattr.h
-index 8c61a41..8c51edf 100644
+index 40ca7a6..9b2e93c 100644
 --- a/fs/ext4/xattr.h
 +++ b/fs/ext4/xattr.h
 @@ -21,6 +21,7 @@
@@ -601,7 +609,7 @@ index 8c61a41..8c51edf 100644
  # else  /* CONFIG_EXT4_FS_XATTR */
  
  static inline int
-@@ -200,6 +214,46 @@ extern int ext4_xattr_ibody_get(struct inode *inode, int name_index,
+@@ -201,6 +215,46 @@ ext4_xattr_ibody_get(struct inode *inode, int name_index,
  	return -EOPNOTSUPP;
  }
  
