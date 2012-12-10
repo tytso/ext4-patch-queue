@@ -24,16 +24,53 @@ Reviewed-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Tao Ma <boyu.mt@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/Kconfig   |  15 ----
- fs/ext4/Makefile  |   4 +-
- fs/ext4/ext4.h    |   2 -
- fs/ext4/file.c    |   2 -
- fs/ext4/namei.c   |   4 -
- fs/ext4/super.c   |   9 ---
- fs/ext4/symlink.c |   4 -
- fs/ext4/xattr.h   | 235 ------------------------------------------------------
- 8 files changed, 2 insertions(+), 273 deletions(-)
+ Documentation/filesystems/ext4.txt |   9 +-
+ fs/Kconfig                         |   4 +-
+ fs/ext4/Kconfig                    |  15 ---
+ fs/ext4/Makefile                   |   4 +-
+ fs/ext4/ext4.h                     |   2 -
+ fs/ext4/file.c                     |   2 -
+ fs/ext4/namei.c                    |   4 -
+ fs/ext4/super.c                    |   9 --
+ fs/ext4/symlink.c                  |   4 -
+ fs/ext4/xattr.h                    | 235 -------------------------------------------
+ 10 files changed, 7 insertions(+), 281 deletions(-)
 
+diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
+index 104322b..34ea4f1 100644
+--- a/Documentation/filesystems/ext4.txt
++++ b/Documentation/filesystems/ext4.txt
+@@ -200,12 +200,9 @@ inode_readahead_blks=n	This tuning parameter controls the maximum
+ 			table readahead algorithm will pre-read into
+ 			the buffer cache.  The default value is 32 blocks.
+ 
+-nouser_xattr		Disables Extended User Attributes. If you have extended
+-			attribute support enabled in the kernel configuration
+-			(CONFIG_EXT4_FS_XATTR), extended attribute support
+-			is enabled by default on mount. See the attr(5) manual
+-			page and http://acl.bestbits.at/ for more information
+-			about extended attributes.
++nouser_xattr		Disables Extended User Attributes.  See the
++			attr(5) manual page and http://acl.bestbits.at/
++			for more information about extended attributes.
+ 
+ noacl			This option disables POSIX Access Control List
+ 			support. If ACL support is enabled in the kernel
+diff --git a/fs/Kconfig b/fs/Kconfig
+index f95ae3a..eaff24a 100644
+--- a/fs/Kconfig
++++ b/fs/Kconfig
+@@ -28,8 +28,8 @@ config FS_MBCACHE
+ 	tristate
+ 	default y if EXT2_FS=y && EXT2_FS_XATTR
+ 	default y if EXT3_FS=y && EXT3_FS_XATTR
+-	default y if EXT4_FS=y && EXT4_FS_XATTR
+-	default m if EXT2_FS_XATTR || EXT3_FS_XATTR || EXT4_FS_XATTR
++	default y if EXT4_FS=y
++	default m if EXT2_FS_XATTR || EXT3_FS_XATTR || EXT4_FS
+ 
+ source "fs/reiserfs/Kconfig"
+ source "fs/jfs/Kconfig"
 diff --git a/fs/ext4/Kconfig b/fs/ext4/Kconfig
 index c22f170..0a475c8 100644
 --- a/fs/ext4/Kconfig
