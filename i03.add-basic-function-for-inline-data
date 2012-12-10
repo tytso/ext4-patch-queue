@@ -13,10 +13,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/Makefile |   2 +-
  fs/ext4/ext4.h   |  10 +-
- fs/ext4/inline.c | 461 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/inline.c | 466 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/inode.c  |   5 +-
  fs/ext4/xattr.h  |  54 +++++++
- 5 files changed, 529 insertions(+), 3 deletions(-)
+ 5 files changed, 534 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index 41f22be..3d96d56 100644
@@ -88,10 +88,10 @@ index 2e9ffa9..c827e47 100644
  #define EXT2_FEATURE_INCOMPAT_SUPP	(EXT4_FEATURE_INCOMPAT_FILETYPE| \
 diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
 new file mode 100644
-index 0000000..a2b5298
+index 0000000..bec68b3
 --- /dev/null
 +++ b/fs/ext4/inline.c
-@@ -0,0 +1,461 @@
+@@ -0,0 +1,466 @@
 +/*
 + * Copyright (c) 2012 Taobao.
 + * Written by Tao Ma <boyu.mt@taobao.com>
@@ -216,7 +216,12 @@ index 0000000..a2b5298
 +	       EXT4_I(inode)->i_inline_off;
 +}
 +
-+int ext4_find_inline_data(struct inode *inode)
++/*
++ * this function does not take xattr_sem, which is OK because it is
++ * currently only used in a code path coming form ext4_iget, before
++ * the new inode has been unlocked
++ */
++int ext4_find_inline_data_nolock(struct inode *inode)
 +{
 +	struct ext4_xattr_ibody_find is = {
 +		.s = { .not_found = -ENODATA, },
@@ -554,7 +559,7 @@ index 0000000..a2b5298
 +	return ret;
 +}
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index befa005..c6c0e4f 100644
+index befa005..e23f114 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -3706,8 +3706,10 @@ static inline void ext4_iget_extra_inode(struct inode *inode,
@@ -564,7 +569,7 @@ index befa005..c6c0e4f 100644
 -	if (*magic == cpu_to_le32(EXT4_XATTR_MAGIC))
 +	if (*magic == cpu_to_le32(EXT4_XATTR_MAGIC)) {
  		ext4_set_inode_state(inode, EXT4_STATE_XATTR);
-+		ext4_find_inline_data(inode);
++		ext4_find_inline_data_nolock(inode);
 +	}
  }
  
@@ -578,7 +583,7 @@ index befa005..c6c0e4f 100644
  	ei->i_dtime = le32_to_cpu(raw_inode->i_dtime);
  	/* We now have enough fields to check if the inode was active or not.
 diff --git a/fs/ext4/xattr.h b/fs/ext4/xattr.h
-index 40ca7a6..9b2e93c 100644
+index 40ca7a6..7ae0d05 100644
 --- a/fs/ext4/xattr.h
 +++ b/fs/ext4/xattr.h
 @@ -21,6 +21,7 @@
@@ -596,7 +601,7 @@ index 40ca7a6..9b2e93c 100644
 +extern int ext4_has_inline_data(struct inode *inode);
 +extern int ext4_get_inline_size(struct inode *inode);
 +extern int ext4_get_max_inline_size(struct inode *inode);
-+extern int ext4_find_inline_data(struct inode *inode);
++extern int ext4_find_inline_data_nolock(struct inode *inode);
 +extern void ext4_write_inline_data(struct inode *inode,
 +				   struct ext4_iloc *iloc,
 +				   void *buffer, loff_t pos,
@@ -613,7 +618,7 @@ index 40ca7a6..9b2e93c 100644
  	return -EOPNOTSUPP;
  }
  
-+static inline int ext4_find_inline_data(struct inode *inode)
++static inline int ext4_find_inline_data_nolock(struct inode *inode)
 +{
 +	return 0;
 +}

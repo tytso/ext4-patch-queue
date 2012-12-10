@@ -18,10 +18,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  5 files changed, 340 insertions(+), 42 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 52c394b..3920ba1 100644
+index c827e47..9f4efc6 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2017,8 +2017,19 @@ struct buffer_head *ext4_getblk(handle_t *, struct inode *,
+@@ -2018,8 +2018,19 @@ struct buffer_head *ext4_getblk(handle_t *, struct inode *,
  						ext4_lblk_t, int, int *);
  struct buffer_head *ext4_bread(handle_t *, struct inode *,
  						ext4_lblk_t, int, int *);
@@ -69,7 +69,7 @@ index 1dc19a7..f2659f5 100644
  	if (chunk)
  		index = depth * 2;
 diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
-index 5bf2f02..b69539c 100644
+index e4a41d5..320ff6f 100644
 --- a/fs/ext4/inline.c
 +++ b/fs/ext4/inline.c
 @@ -14,6 +14,7 @@
@@ -80,7 +80,7 @@ index 5bf2f02..b69539c 100644
  
  #define EXT4_XATTR_SYSTEM_DATA	"data"
  #define EXT4_MIN_INLINE_DATA_SIZE	((sizeof(__le32) * EXT4_N_BLOCKS))
-@@ -510,6 +511,238 @@ int ext4_readpage_inline(struct inode *inode, struct page *page)
+@@ -515,6 +516,238 @@ int ext4_readpage_inline(struct inode *inode, struct page *page)
  	return ret >= 0 ? 0 : ret;
  }
  
@@ -320,7 +320,7 @@ index 5bf2f02..b69539c 100644
  {
  	int ret;
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 855e437..972249e 100644
+index 1668abf..70c8d5f 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -770,13 +770,13 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
@@ -484,7 +484,7 @@ index 855e437..972249e 100644
 @@ -3738,7 +3754,8 @@ static inline void ext4_iget_extra_inode(struct inode *inode,
  	if (*magic == cpu_to_le32(EXT4_XATTR_MAGIC)) {
  		ext4_set_inode_state(inode, EXT4_STATE_XATTR);
- 		ext4_find_inline_data(inode);
+ 		ext4_find_inline_data_nolock(inode);
 -	}
 +	} else
 +		EXT4_I(inode)->i_inline_off = 0;
@@ -556,7 +556,7 @@ index 855e437..972249e 100644
  			unlock_page(page);
  			ret = VM_FAULT_SIGBUS;
 diff --git a/fs/ext4/xattr.h b/fs/ext4/xattr.h
-index 0586cb0..7d9bf51 100644
+index 646c9b9..db56722 100644
 --- a/fs/ext4/xattr.h
 +++ b/fs/ext4/xattr.h
 @@ -141,6 +141,15 @@ extern int ext4_init_inline_data(handle_t *handle, struct inode *inode,
@@ -575,7 +575,7 @@ index 0586cb0..7d9bf51 100644
  # else  /* CONFIG_EXT4_FS_XATTR */
  
  static inline int
-@@ -261,6 +270,23 @@ static inline int ext4_readpage_inline(struct inode *inode, struct page *page)
+@@ -262,6 +271,23 @@ static inline int ext4_readpage_inline(struct inode *inode, struct page *page)
  {
  	return 0;
  }
