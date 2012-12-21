@@ -1,0 +1,62 @@
+jbd2: fix assertion failure in jbd2_journal_flush()
+
+From: Jan Kara <jack@suse.cz>
+
+The following race is possible between start_this_handle() and someone
+calling jbd2_journal_flush().
+
+Process A                              Process B
+start_this_handle().
+  if (journal->j_barrier_count) # false
+  if (!journal->j_running_transaction) { #true
+    read_unlock(&journal->j_state_lock);
+                                       jbd2_journal_lock_updates()
+                                       jbd2_journal_flush()
+                                         write_lock(&journal->j_state_lock);
+                                         if (journal->j_running_transaction) {
+                                           # false
+                                         ... wait for committing trans ...
+                                         write_unlock(&journal->j_state_lock);
+    ...
+    write_lock(&journal->j_state_lock);
+    if (!journal->j_running_transaction) { # true
+      jbd2_get_transaction(journal, new_transaction);
+    write_unlock(&journal->j_state_lock);
+    goto repeat; # eventually blocks on j_barrier_count > 0
+                                         ...
+                                         J_ASSERT(!journal->j_running_transaction);
+                                           # fails
+
+We fix the race by rechecking j_barrier_count after reacquiring j_state_lock
+in exclusive mode.
+
+CC: stable@vger.kernel.org
+Reported-by: yjwsignal@empal.com
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/transaction.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index a74ba46..6873d24 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -209,7 +209,8 @@ repeat:
+ 		if (!new_transaction)
+ 			goto alloc_transaction;
+ 		write_lock(&journal->j_state_lock);
+-		if (!journal->j_running_transaction) {
++		if (!journal->j_running_transaction &&
++		    !journal->j_barrier_count) {
+ 			jbd2_get_transaction(journal, new_transaction);
+ 			new_transaction = NULL;
+ 		}
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
