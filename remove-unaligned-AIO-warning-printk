@@ -1,0 +1,42 @@
+ext4: remove unaligned AIO warning printk
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+Although I put this in, I now think it was a bad decision.  For most
+users, there is very little to be done in this case.  They get the
+message, once per day, with no real context or proposed action.  TBH,
+it generates support calls when it probably does not need to; the
+message sounds more dire than the situation really is.
+
+Just nuke it.  Normal investigation via blktrace or whatnot can
+reveal poor IO patterns if bad performance is encountered.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index bf3966b..6c6b741 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -107,14 +107,6 @@ ext4_file_dio_write(struct kiocb *iocb, const struct iovec *iov,
+ 
+ 	/* Unaligned direct AIO must be serialized; see comment above */
+ 	if (unaligned_aio) {
+-		static unsigned long unaligned_warn_time;
+-
+-		/* Warn about this once per day */
+-		if (printk_timed_ratelimit(&unaligned_warn_time, 60*60*24*HZ))
+-			ext4_msg(inode->i_sb, KERN_WARNING,
+-				 "Unaligned AIO/DIO on inode %ld by %s; "
+-				 "performance will be poor.",
+-				 inode->i_ino, current->comm);
+ 		mutex_lock(ext4_aio_mutex(inode));
+ 		ext4_unwritten_wait(inode);
+ 	}
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
