@@ -35,15 +35,15 @@ int main(int argc, char **argv)
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h  |    2 +
- fs/ext4/ioctl.c |   65 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 67 insertions(+), 0 deletions(-)
+ fs/ext4/ext4.h  |  2 ++
+ fs/ext4/ioctl.c | 65 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 67 insertions(+)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index f6d0e0e..262c253 100644
+index 03da14a..41c44d3 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -604,6 +604,8 @@ enum {
+@@ -637,6 +637,8 @@ enum {
  /* Max physical block we can address w/o extents */
  #define EXT4_MAX_BLOCK_FILE_PHYS	0xFFFFFFFF
  
@@ -53,7 +53,7 @@ index f6d0e0e..262c253 100644
   * Structure of an inode on the disk
   */
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index b81a5f1..1f2a349 100644
+index 5747f52..87ad6ed 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
 @@ -20,6 +20,17 @@
@@ -74,7 +74,7 @@ index b81a5f1..1f2a349 100644
  long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  {
  	struct inode *inode = filp->f_dentry->d_inode;
-@@ -429,6 +440,59 @@ resizefs_out:
+@@ -422,6 +433,59 @@ resizefs_out:
  		return 0;
  	}
  
@@ -92,7 +92,7 @@ index b81a5f1..1f2a349 100644
 +
 +		printk(KERN_DEBUG "EXT4-fs debug delalloc of %s\n", sb->s_id);
 +		printk(KERN_DEBUG "EXT4-fs: dirty clusters %lld free clusters %lld\n",
-+		       percpu_counter_sum(&sbi->s_dirtyblocks_counter),
++		       percpu_counter_sum(&sbi->s_dirtyclusters_counter),
 +		       percpu_counter_sum(&sbi->s_freeclusters_counter));
 +#ifdef MODULE
 +		/* Yuck; but the inode_lock spinlock is not exported */
@@ -134,7 +134,7 @@ index b81a5f1..1f2a349 100644
  	default:
  		return -ENOTTY;
  	}
-@@ -492,6 +556,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+@@ -485,6 +549,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
  	case EXT4_IOC_MOVE_EXT:
  	case FITRIM:
  	case EXT4_IOC_RESIZE_FS:
