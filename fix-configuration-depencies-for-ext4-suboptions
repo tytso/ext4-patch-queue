@@ -1,0 +1,42 @@
+ext4: fix configuration dependencies for ext4 ACLs and security labels
+
+From: Valerie Aurora <val@vaaconsulting.com>
+
+Commit "ext4: Remove CONFIG_EXT4_FS_XATTR" removed the configuration
+dependencies for ext4 xattrs from the ext4 ACLs and security labels
+configuration options, but did not replace them with a dependency on
+ext4 itself.  Add back the dependency on ext4 so the options only show
+up if ext4 is enabled.
+
+Signed-off-by: Valerie Aurora <val@vaaconsulting.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Tao Ma <boyu.mt@taobao.com>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/Kconfig |    2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ext4/Kconfig b/fs/ext4/Kconfig
+index 0a475c8..9873587 100644
+--- a/fs/ext4/Kconfig
++++ b/fs/ext4/Kconfig
+@@ -41,6 +41,7 @@ config EXT4_USE_FOR_EXT23
+ 
+ config EXT4_FS_POSIX_ACL
+ 	bool "Ext4 POSIX Access Control Lists"
++	depends on EXT4_FS
+ 	select FS_POSIX_ACL
+ 	help
+ 	  POSIX Access Control Lists (ACLs) support permissions for users and
+@@ -53,6 +54,7 @@ config EXT4_FS_POSIX_ACL
+ 
+ config EXT4_FS_SECURITY
+ 	bool "Ext4 Security Labels"
++	depends on EXT4_FS
+ 	help
+ 	  Security labels support alternative access control models
+ 	  implemented by security modules like SELinux.  This option
+-- 
+1.7.10.4
+
+
