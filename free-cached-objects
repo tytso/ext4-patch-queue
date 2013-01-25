@@ -1,0 +1,75 @@
+fs: allow for fs-specific objects to be pruned as part of pruning inodes
+
+The VFS's prune_super() function allows for the file system to prune
+file-system specific objects.  Ext4 would like to use this to prune
+parts of the inode's extent cache.  The object lifetime rules used by
+ext4 is somewhat different from the those of the dentry and inode in
+the VFS.  Ext4's extent cache objects can be pruned without removing
+the inode; however if an inode is pruned, all of the extent cache
+objects associated with the inode are immediately removed.
+
+To accomodate this rule, we measure the number of fs-specific objects
+before the dentry and inodes are pruned, and then measure them again
+afterwards.  If the number of fs-specific objects have decreased, we
+credit that decrease as part of the shrink operation, so that we do
+not end up removing too many fs-specific objects.
+
+In the case where fs-specific objects are not removed when inodes are
+removed, this will not change the behavior of prune_super() in any
+appreciable way.  (Currently the only other user of this facility is
+XFS, and this change should not affect XFS's usage of this facility
+for this reason.)
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: linux-fsdevel@vger.kernel.org
+---
+ fs/super.c | 22 +++++++++++++++++++---
+ 1 file changed, 19 insertions(+), 3 deletions(-)
+
+diff --git a/fs/super.c b/fs/super.c
+index 12f1237..fb57bd2 100644
+--- a/fs/super.c
++++ b/fs/super.c
+@@ -80,6 +80,7 @@ static int prune_super(struct shrinker *shrink, struct shrink_control *sc)
+ 	if (sc->nr_to_scan) {
+ 		int	dentries;
+ 		int	inodes;
++		int	fs_to_scan = 0;
+ 
+ 		/* proportion the scan between the caches */
+ 		dentries = (sc->nr_to_scan * sb->s_nr_dentry_unused) /
+@@ -87,7 +88,7 @@ static int prune_super(struct shrinker *shrink, struct shrink_control *sc)
+ 		inodes = (sc->nr_to_scan * sb->s_nr_inodes_unused) /
+ 							total_objects;
+ 		if (fs_objects)
+-			fs_objects = (sc->nr_to_scan * fs_objects) /
++			fs_to_scan = (sc->nr_to_scan * fs_objects) /
+ 							total_objects;
+ 		/*
+ 		 * prune the dcache first as the icache is pinned by it, then
+@@ -96,8 +97,23 @@ static int prune_super(struct shrinker *shrink, struct shrink_control *sc)
+ 		prune_dcache_sb(sb, dentries);
+ 		prune_icache_sb(sb, inodes);
+ 
+-		if (fs_objects && sb->s_op->free_cached_objects) {
+-			sb->s_op->free_cached_objects(sb, fs_objects);
++		/*
++		 * If as a result of pruning the icache, we released some
++		 * of the fs_objects, give credit to the fact and
++		 * reduce the number of fs objects that we should try
++		 * to release.
++		 */
++		if (fs_to_scan) {
++			int fs_objects_now = sb->s_op->nr_cached_objects(sb);
++
++			if (fs_objects_now < fs_objects)
++				fs_to_scan -= fs_objects - fs_objects_now;
++			if (fs_to_scan < 0)
++				fs_to_scan = 0;
++		}
++
++		if (fs_to_scan && sb->s_op->free_cached_objects) {
++			sb->s_op->free_cached_objects(sb, fs_to_scan);
+ 			fs_objects = sb->s_op->nr_cached_objects(sb);
+ 		}
+ 		total_objects = sb->s_nr_dentry_unused +
