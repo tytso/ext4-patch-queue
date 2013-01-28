@@ -18,10 +18,10 @@ Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h     |   1 +
- fs/ext4/extents.c  |  14 +--
- fs/ext4/indirect.c | 244 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/extents.c  |  14 ++--
+ fs/ext4/indirect.c | 240 +++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/inode.c    |   6 +-
- 4 files changed, 254 insertions(+), 11 deletions(-)
+ 4 files changed, 250 insertions(+), 11 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 8024623..ca9294f 100644
@@ -68,10 +68,10 @@ index 391e53a..566c8f3 100644
  	map.m_lblk = offset >> blkbits;
  	/*
 diff --git a/fs/ext4/indirect.c b/fs/ext4/indirect.c
-index 8d83d1e..93480c8 100644
+index 8d83d1e..bdd2023 100644
 --- a/fs/ext4/indirect.c
 +++ b/fs/ext4/indirect.c
-@@ -1518,3 +1518,247 @@ out_stop:
+@@ -1518,3 +1518,243 @@ out_stop:
  	trace_ext4_truncate_exit(inode);
  }
  
@@ -142,7 +142,7 @@ index 8d83d1e..93480c8 100644
 +					       level, first, count, num);
 +			if (ret)
 +				goto err;
-+			if (count > max)
++			if (count > max - first)
 +				count -= max - first;
 +			else
 +				break;
@@ -221,15 +221,11 @@ index 8d83d1e..93480c8 100644
 +	}
 +
 +	/* Wait all existing dio works, newcomers will block on i_mutex */
-+	ext4_inode_block_unlocked_dio(inode);
-+	err = ext4_flush_unwritten_io(inode);
-+	if (err)
-+		goto out_dio;
 +	inode_dio_wait(inode);
 +
 +	handle = start_transaction(inode);
 +	if (IS_ERR(handle))
-+		goto out_dio;
++		goto out_mutex;
 +
 +	/*
 +	 * Now we need to zero out the non-page-aligned data in the
@@ -298,6 +294,8 @@ index 8d83d1e..93480c8 100644
 +	down_write(&EXT4_I(inode)->i_data_sem);
 +	ext4_discard_preallocations(inode);
 +
++	err = ext4_es_remove_extent(inode, first_block,
++				    stop_block - first_block);
 +	err = ext4_free_hole_blocks(handle, inode, first_block, stop_block);
 +
 +	ext4_discard_preallocations(inode);
@@ -312,8 +310,6 @@ index 8d83d1e..93480c8 100644
 +	ext4_mark_inode_dirty(handle, inode);
 +	ext4_journal_stop(handle);
 +
-+out_dio:
-+	ext4_inode_resume_unlocked_dio(inode);
 +out_mutex:
 +	mutex_unlock(&inode->i_mutex);
 +
