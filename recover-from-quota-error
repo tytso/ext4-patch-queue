@@ -7,11 +7,11 @@ Reviewed-by: Carlos Maiolino <cmaiolino@redhat.com>
 Cc: stable@vger.kernel.org
 
 ---
- fs/ext4/super.c | 10 ++++++----
- 1 file changed, 6 insertions(+), 4 deletions(-)
+ fs/ext4/super.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index c014edd..96a3cc9 100644
+index c014edd..3ac3060 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -4009,7 +4009,7 @@ no_journal:
@@ -23,16 +23,18 @@ index c014edd..96a3cc9 100644
  	}
  #endif  /* CONFIG_QUOTA */
  
-@@ -4036,6 +4036,8 @@ cantfind_ext4:
+@@ -4036,6 +4036,10 @@ cantfind_ext4:
  		ext4_msg(sb, KERN_ERR, "VFS: Can't find ext4 filesystem");
  	goto failed_mount;
  
++#ifdef CONFIG_QUOTA
 +failed_mount8:
 +	kobject_del(&sbi->s_kobj);
++#endif
  failed_mount7:
  	ext4_unregister_li_request(sb);
  failed_mount6:
-@@ -5006,9 +5008,9 @@ static int ext4_enable_quotas(struct super_block *sb)
+@@ -5006,9 +5010,9 @@ static int ext4_enable_quotas(struct super_block *sb)
  						DQUOT_USAGE_ENABLED);
  			if (err) {
  				ext4_warning(sb,
