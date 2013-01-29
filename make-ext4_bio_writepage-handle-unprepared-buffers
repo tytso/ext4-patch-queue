@@ -1,0 +1,61 @@
+ext4: Make ext4_bio_writepage() handle unprepared buffers
+
+From: Jan Kara <jack@suse.cz>
+
+So far ext4_bio_writepage() unconditionally cleared dirty bit on all
+buffers underlying the page. That implicitely assumes we can write all
+buffers. So far that is true because callers call into
+ext4_bio_writepage() make sure all buffers in the page are mapped but:
+
+a) it's a data corruption bug waiting to happen
+b) in data=ordered mode when blocksize < pagesize we do need to write
+   pages that may have only some of dirty buffers mapped.
+
+So change ext4_bio_writepage() to skip buffers that cannot be written without
+clearing their dirty bit.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/page-io.c |   17 +++++++++--------
+ 1 files changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index 3fb385c..0290bf8 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -350,14 +350,6 @@ static int io_submit_add_bh(struct ext4_io_submit *io,
+ 		unmap_underlying_metadata(bh->b_bdev, bh->b_blocknr);
+ 	}
+ 
+-	if (!buffer_mapped(bh) || buffer_delay(bh)) {
+-		if (!buffer_mapped(bh))
+-			clear_buffer_dirty(bh);
+-		if (io->io_bio)
+-			ext4_io_submit(io);
+-		return 0;
+-	}
+-
+ 	if (io->io_bio && bh->b_blocknr != io->io_next_block) {
+ submit_and_retry:
+ 		ext4_io_submit(io);
+@@ -436,6 +428,15 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+ 			set_buffer_uptodate(bh);
+ 			continue;
+ 		}
++		if (!buffer_dirty(bh) || buffer_delay(bh) ||
++		    !buffer_mapped(bh) || buffer_unwritten(bh)) {
++			/* A hole? We can safely clear the dirty bit */
++			if (!buffer_mapped(bh))
++				clear_buffer_dirty(bh);
++			if (io->io_bio)
++				ext4_io_submit(io);
++			continue;
++		}
+ 		ret = io_submit_add_bh(io, io_page, inode, wbc, bh);
+ 		if (ret) {
+ 			/*
+-- 
+1.7.1
+
+
