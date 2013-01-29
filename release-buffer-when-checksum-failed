@@ -1,0 +1,86 @@
+ext4: release buffer when checksum failed
+
+From: Guo Chao <yan@linux.vnet.ibm.com>
+
+Commit b0336e8d (ext4: calculate and verify checksums of directory
+leaf blocks) and commit dbe89444 (ext4: Calculate and verify checksums
+for htree nodes) forget to release buffer when checksum failed, at
+some places.
+
+Signed-off-by: Guo Chao <yan@linux.vnet.ibm.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Darrick J. Wong <darrick.wong@oracle.com>
+---
+ fs/ext4/dir.c   |    1 +
+ fs/ext4/namei.c |   12 ++++++++++--
+ 2 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index 80a28b2..3882fbc 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -185,6 +185,7 @@ static int ext4_readdir(struct file *filp,
+ 					"at offset %llu",
+ 					(unsigned long long)filp->f_pos);
+ 			filp->f_pos += sb->s_blocksize - offset;
++			brelse(bh);
+ 			continue;
+ 		}
+ 		set_buffer_verified(bh);
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 8990165..a445247 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -837,6 +837,7 @@ static int ext4_htree_next_block(struct inode *dir, __u32 hash,
+ 		    !ext4_dx_csum_verify(dir,
+ 					 (struct ext4_dir_entry *)bh->b_data)) {
+ 			ext4_warning(dir->i_sb, "Node failed checksum");
++			brelse(bh);
+ 			return -EIO;
+ 		}
+ 		set_buffer_verified(bh);
+@@ -877,8 +878,11 @@ static int htree_dirblock_to_tree(struct file *dir_file,
+ 	}
+ 
+ 	if (!buffer_verified(bh) &&
+-	    !ext4_dirent_csum_verify(dir, (struct ext4_dir_entry *)bh->b_data))
++			!ext4_dirent_csum_verify(dir,
++				(struct ext4_dir_entry *)bh->b_data)) {
++		brelse(bh);
+ 		return -EIO;
++	}
+ 	set_buffer_verified(bh);
+ 
+ 	de = (struct ext4_dir_entry_2 *) bh->b_data;
+@@ -1929,8 +1933,10 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+ 		}
+ 		if (!buffer_verified(bh) &&
+ 		    !ext4_dirent_csum_verify(dir,
+-				(struct ext4_dir_entry *)bh->b_data))
++				(struct ext4_dir_entry *)bh->b_data)) {
++			brelse(bh);
+ 			return -EIO;
++		}
+ 		set_buffer_verified(bh);
+ 		retval = add_dirent_to_buf(handle, dentry, inode, NULL, bh);
+ 		if (retval != -ENOSPC) {
+@@ -2493,6 +2499,7 @@ static int empty_dir(struct inode *inode)
+ 			(struct ext4_dir_entry *)bh->b_data)) {
+ 		EXT4_ERROR_INODE(inode, "checksum error reading directory "
+ 				 "lblock 0");
++		brelse(bh);
+ 		return -EIO;
+ 	}
+ 	set_buffer_verified(bh);
+@@ -2537,6 +2544,7 @@ static int empty_dir(struct inode *inode)
+ 					(struct ext4_dir_entry *)bh->b_data)) {
+ 				EXT4_ERROR_INODE(inode, "checksum error "
+ 						 "reading directory lblock 0");
++				brelse(bh);
+ 				return -EIO;
+ 			}
+ 			set_buffer_verified(bh);
+-- 
+1.7.9.5
+
+
