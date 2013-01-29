@@ -2,20 +2,18 @@ ext4: track all extent status in extent status tree
 
 From: Zheng Liu <wenqing.lz@taobao.com>
 
-After adding phycisal block and status, the extent status tree is able
+By recording the phycisal block and status, extent status tree is able
 to track the status of every extents.  When we call _map_blocks
-functions to lookup an extent or create a new
-written/unwritten/delayed extent, this extent will be inserted into
-extent status tree.
+functions to lookup an extent or create a new written/unwritten/delayed
+extent, this extent will be inserted into extent status tree.
 
 We don't load all extents from disk in alloc_inode() because it costs
-too much memory, and, when open/close a file very frequently, it will
+too much memory, and if a file is opened and closed frequently it will
 takes too much time to load all extent information.  So currently when
 we create/lookup an extent, this extent will be inserted into extent
-status tree.  Hence, the status in extent status tree might be not
-completely.
+status tree.  Hence, the extent status tree may not comprehensively
+contain all of the extents found in the file.
 
-CC: Jan kara <jack@suse.cz>
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---

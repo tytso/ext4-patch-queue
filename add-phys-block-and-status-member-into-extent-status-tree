@@ -2,22 +2,21 @@ ext4: add physical block and status member into extent status tree
 
 From: Zheng Liu <wenqing.lz@taobao.com>
 
-es_pblk is used to record physical block that maps to the disk.  es_status is
-used to record the status of the extent.  Three status are defined, which are
-written, unwritten and delayed.
+es_pblk is used to record physical block that maps to the disk.
+es_status is used to record the status of the extent.  Three status
+are defined, which are written, unwritten and delayed.
 
-CC: Jan kara <jack@suse.cz>
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents_status.h | 8 ++++++++
- 1 file changed, 8 insertions(+)
+ fs/ext4/extents_status.h | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/extents_status.h b/fs/ext4/extents_status.h
-index 81e9339..85115bb 100644
+index 81e9339..2eb9cc3 100644
 --- a/fs/ext4/extents_status.h
 +++ b/fs/ext4/extents_status.h
-@@ -20,10 +20,18 @@
+@@ -20,10 +20,22 @@
  #define es_debug(fmt, ...)	no_printk(fmt, ##__VA_ARGS__)
  #endif
  
@@ -27,12 +26,18 @@ index 81e9339..85115bb 100644
 +	EXTENT_STATUS_DELAYED = 2,	/* delayed extent */
 +};
 +
++/*
++ * Here for save memory es_status is stashed into es_pblk because we only have
++ * 48 bits physical block and es_status only needs 2 bits.
++ */
  struct extent_status {
  	struct rb_node rb_node;
- 	ext4_lblk_t es_lblk;	/* first logical block extent covers */
- 	ext4_lblk_t es_len;	/* length of extent in block */
-+	ext4_fsblk_t es_pblk;	/* first physical block */
-+	int es_status;		/* record the status of extent */
+-	ext4_lblk_t es_lblk;	/* first logical block extent covers */
+-	ext4_lblk_t es_len;	/* length of extent in block */
++	ext4_lblk_t es_lblk;		/* first logical block extent covers */
++	ext4_lblk_t es_len;		/* length of extent in block */
++	ext4_fsblk_t es_pblk : 62;	/* first physical block */
++	ext4_fsblk_t es_status : 2;	/* record the status of extent */
  };
  
  struct ext4_es_tree {

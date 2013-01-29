@@ -2,34 +2,33 @@ ext4: adjust interfaces of extent status tree
 
 From: Zheng Liu <wenqing.lz@taobao.com>
 
-Due to two members are added into extent status tree, all interfaces need to be
-adjusted.
+Due to two members are added into extent status tree, all interfaces
+need to be adjusted.
 
-CC: Jan kara <jack@suse.cz>
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents_status.c    | 55 ++++++++++++++++++++++++++++++++++++---------
- fs/ext4/extents_status.h    | 24 +++++++++++++++++++-
+ fs/ext4/extents_status.c    | 56 ++++++++++++++++++++++++++++++++++++---------
+ fs/ext4/extents_status.h    | 24 ++++++++++++++++++-
  fs/ext4/inode.c             |  3 ++-
- include/trace/events/ext4.h | 34 ++++++++++++++++++----------
- 4 files changed, 91 insertions(+), 25 deletions(-)
+ include/trace/events/ext4.h | 34 +++++++++++++++++----------
+ 4 files changed, 92 insertions(+), 25 deletions(-)
 
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index 0662369..b5a5224 100644
+index 1ce4a69..7cbb916 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
-@@ -174,7 +174,8 @@ static void ext4_es_print_tree(struct inode *inode)
+@@ -179,7 +179,8 @@ static void ext4_es_print_tree(struct inode *inode)
  	while (node) {
  		struct extent_status *es;
  		es = rb_entry(node, struct extent_status, rb_node);
 -		printk(KERN_DEBUG " [%u/%u)", es->es_lblk, es->es_len);
-+		printk(KERN_DEBUG " [%u/%u) %llu %d",
++		printk(KERN_DEBUG " [%u/%u) %llu %u",
 +		       es->es_lblk, es->es_len, es->es_pblk, es->es_status);
  		node = rb_next(node);
  	}
  	printk(KERN_DEBUG "\n");
-@@ -229,7 +230,7 @@ static struct extent_status *__es_tree_search(struct rb_root *root,
+@@ -234,7 +235,7 @@ static struct extent_status *__es_tree_search(struct rb_root *root,
   * @es: delayed extent that we found
   *
   * Returns the first block of the next extent after es, otherwise
@@ -38,7 +37,7 @@ index 0662369..b5a5224 100644
   * Delayed extent is returned via @es.
   */
  ext4_lblk_t ext4_es_find_extent(struct inode *inode, struct extent_status *es)
-@@ -244,12 +245,13 @@ ext4_lblk_t ext4_es_find_extent(struct inode *inode, struct extent_status *es)
+@@ -249,12 +250,14 @@ ext4_lblk_t ext4_es_find_extent(struct inode *inode, struct extent_status *es)
  	read_lock(&EXT4_I(inode)->i_es_lock);
  	tree = &EXT4_I(inode)->i_es_tree;
  
@@ -49,13 +48,14 @@ index 0662369..b5a5224 100644
  		if (in_range(es->es_lblk, es1->es_lblk, es1->es_len)) {
 -			es_debug("%u cached by [%u/%u)\n",
 -				 es->es_lblk, es1->es_lblk, es1->es_len);
-+			es_debug("%u cached by [%u/%u) %llu %d\n",
++			es_debug("%u cached by [%u/%u) %llu %u\n",
 +				 es->es_lblk, es1->es_lblk, es1->es_len,
-+				 es1->es_pblk, es1->es_status);
++				 (unsigned long long)es1->es_pblk,
++				 es1->es_status);
  			goto out;
  		}
  	}
-@@ -262,6 +264,8 @@ out:
+@@ -267,6 +270,8 @@ out:
  		tree->cache_es = es1;
  		es->es_lblk = es1->es_lblk;
  		es->es_len = es1->es_len;
@@ -64,7 +64,7 @@ index 0662369..b5a5224 100644
  		node = rb_next(&es1->rb_node);
  		if (node) {
  			es1 = rb_entry(node, struct extent_status, rb_node);
-@@ -276,7 +280,8 @@ out:
+@@ -281,7 +286,8 @@ out:
  }
  
  static struct extent_status *
@@ -74,7 +74,7 @@ index 0662369..b5a5224 100644
  {
  	struct extent_status *es;
  	es = kmem_cache_alloc(ext4_es_cachep, GFP_ATOMIC);
-@@ -284,6 +289,8 @@ ext4_es_alloc_extent(ext4_lblk_t lblk, ext4_lblk_t len)
+@@ -289,6 +295,8 @@ ext4_es_alloc_extent(ext4_lblk_t lblk, ext4_lblk_t len)
  		return NULL;
  	es->es_lblk = lblk;
  	es->es_len = len;
@@ -83,7 +83,7 @@ index 0662369..b5a5224 100644
  	return es;
  }
  
-@@ -296,6 +303,8 @@ static void ext4_es_free_extent(struct extent_status *es)
+@@ -301,6 +309,8 @@ static void ext4_es_free_extent(struct extent_status *es)
   * Check whether or not two extents can be merged
   * Condition:
   *  - logical block number is contiguous
@@ -92,7 +92,7 @@ index 0662369..b5a5224 100644
   */
  static int ext4_es_can_be_merged(struct extent_status *es1,
  				 struct extent_status *es2)
-@@ -303,6 +312,13 @@ static int ext4_es_can_be_merged(struct extent_status *es1,
+@@ -308,6 +318,13 @@ static int ext4_es_can_be_merged(struct extent_status *es1,
  	if (es1->es_lblk + es1->es_len != es2->es_lblk)
  		return 0;
  
@@ -106,7 +106,7 @@ index 0662369..b5a5224 100644
  	return 1;
  }
  
-@@ -366,6 +382,8 @@ static int __es_insert_extent(struct ext4_es_tree *tree,
+@@ -370,6 +387,8 @@ static int __es_insert_extent(struct ext4_es_tree *tree,
  			if (ext4_es_can_be_merged(newes, es)) {
  				es->es_lblk = newes->es_lblk;
  				es->es_len += newes->es_len;
@@ -115,7 +115,7 @@ index 0662369..b5a5224 100644
  				es = ext4_es_try_to_merge_left(tree, es);
  				goto out;
  			}
-@@ -383,7 +401,8 @@ static int __es_insert_extent(struct ext4_es_tree *tree,
+@@ -387,7 +406,8 @@ static int __es_insert_extent(struct ext4_es_tree *tree,
  		}
  	}
  
@@ -125,7 +125,7 @@ index 0662369..b5a5224 100644
  	if (!es)
  		return -ENOMEM;
  	rb_link_node(&es->rb_node, parent, p);
-@@ -402,21 +421,23 @@ out:
+@@ -406,21 +426,23 @@ out:
   * Return 0 on success, error code on failure.
   */
  int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
@@ -153,7 +153,7 @@ index 0662369..b5a5224 100644
  
  	write_lock(&EXT4_I(inode)->i_es_lock);
  	tree = &EXT4_I(inode)->i_es_tree;
-@@ -453,6 +474,9 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
+@@ -457,6 +479,9 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
  
  	orig_es.es_lblk = es->es_lblk;
  	orig_es.es_len = es->es_len;
@@ -161,9 +161,9 @@ index 0662369..b5a5224 100644
 +	orig_es.es_status = es->es_status;
 +
  	len1 = lblk > es->es_lblk ? lblk - es->es_lblk : 0;
- 	len2 = extent_status_end(es) > end ?
- 	       extent_status_end(es) - end : 0;
-@@ -464,6 +488,9 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
+ 	len2 = ext4_es_end(es) > end ? ext4_es_end(es) - end : 0;
+ 	if (len1 > 0)
+@@ -467,6 +492,9 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
  
  			newes.es_lblk = end + 1;
  			newes.es_len = len2;
@@ -173,7 +173,7 @@ index 0662369..b5a5224 100644
  			err = __es_insert_extent(tree, &newes);
  			if (err) {
  				es->es_lblk = orig_es.es_lblk;
-@@ -473,6 +500,8 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
+@@ -476,6 +504,8 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
  		} else {
  			es->es_lblk = end + 1;
  			es->es_len = len2;
@@ -182,13 +182,13 @@ index 0662369..b5a5224 100644
  		}
  		goto out;
  	}
-@@ -497,9 +526,13 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
+@@ -500,9 +530,13 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
  	}
  
  	if (es && es->es_lblk < end + 1) {
 +		ext4_lblk_t orig_len = es->es_len;
 +
- 		len1 = extent_status_end(es) - end;
+ 		len1 = ext4_es_end(es) - end;
  		es->es_lblk = end + 1;
  		es->es_len = len1;
 +		es->es_pblk = ext4_es_get_pblock(es,
@@ -197,10 +197,10 @@ index 0662369..b5a5224 100644
  
  out:
 diff --git a/fs/ext4/extents_status.h b/fs/ext4/extents_status.h
-index 85115bb..dad3b5e 100644
+index 2eb9cc3..1345c06 100644
 --- a/fs/ext4/extents_status.h
 +++ b/fs/ext4/extents_status.h
-@@ -44,10 +44,32 @@ extern void ext4_exit_es(void);
+@@ -48,10 +48,32 @@ extern void ext4_exit_es(void);
  extern void ext4_es_init_tree(struct ext4_es_tree *tree);
  
  extern int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
@@ -249,7 +249,7 @@ index 4d066f3..e09c7cf 100644
  			goto out_unlock;
  
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index 952628a..5483f62 100644
+index 952628a..43f335a 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
 @@ -2068,28 +2068,33 @@ TRACE_EVENT(ext4_ext_remove_space_done,
@@ -287,7 +287,7 @@ index 952628a..5483f62 100644
  	),
  
 -	TP_printk("dev %d,%d ino %lu es [%lld/%lld)",
-+	TP_printk("dev %d,%d ino %lu es [%u/%u) mapped %llu status %d",
++	TP_printk("dev %d,%d ino %lu es [%u/%u) mapped %llu status %u",
  		  MAJOR(__entry->dev), MINOR(__entry->dev),
  		  (unsigned long) __entry->ino,
 -		  __entry->lblk, __entry->len)
@@ -315,7 +315,7 @@ index 952628a..5483f62 100644
  	),
  
 -	TP_printk("dev %d,%d ino %lu es [%u/%u) ret %u",
-+	TP_printk("dev %d,%d ino %lu es [%u/%u) mapped %llu status %d ret %u",
++	TP_printk("dev %d,%d ino %lu es [%u/%u) mapped %llu status %u ret %u",
  		  MAJOR(__entry->dev), MINOR(__entry->dev),
  		  (unsigned long) __entry->ino,
 -		  __entry->lblk, __entry->len, __entry->ret)
