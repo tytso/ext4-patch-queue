@@ -1,0 +1,28 @@
+ext4: remove unnecessary wait for extent conversion in ext4_fallocate()
+
+From: Jan Kara <jack@suse.cz>
+
+Now that we don't merge uninitialized extents anymore,
+ext4_fallocate() is free to operate on the inode while there are still
+some extent conversions pending - it won't disturb them in any way.
+
+Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index f22480a..a6b9ffa 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4423,8 +4423,6 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+ 	if (len <= EXT_UNINIT_MAX_LEN << blkbits)
+ 		flags |= EXT4_GET_BLOCKS_NO_NORMALIZE;
+ 
+-	/* Prevent race condition between unwritten */
+-	ext4_flush_unwritten_io(inode);
+ retry:
+ 	while (ret >= 0 && ret < max_blocks) {
+ 		map.m_lblk = map.m_lblk + ret;
