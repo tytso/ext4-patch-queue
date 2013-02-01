@@ -19,14 +19,14 @@ be merged or not.
 5) Update and clarified comments.
 
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
-Cc: "Theodore Ts'o" <tytso@mit.edu>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/extents.c           |  21 +--
- fs/ext4/extents_status.c    | 322 +++++++++++++++++++++++++-------------------
+ fs/ext4/extents_status.c    | 318 ++++++++++++++++++++++++--------------------
  fs/ext4/extents_status.h    |   8 +-
  fs/ext4/file.c              |  12 +-
  include/trace/events/ext4.h |  40 +++---
- 5 files changed, 220 insertions(+), 183 deletions(-)
+ 5 files changed, 217 insertions(+), 182 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
 index 5ae1674..f7bf616 100644
@@ -85,7 +85,7 @@ index 5ae1674..f7bf616 100644
  
  	return next_del;
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index 564d981..1ce4a69 100644
+index 564d981..aa4d346 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
 @@ -23,40 +23,53 @@
@@ -179,6 +179,13 @@ index 564d981..1ce4a69 100644
   * ==========================================================================
 - * 2. ext4 delayed extents impelmentation
 + * 2. Ext4 extent status tree impelmentation
++ *
++ *   --	extent
++ *	A extent is a range of blocks which are contiguous logically and
++ *	physically.  Unlike extent in extent tree, this extent in ext4 is
++ *	a in-memory struct, there is no corresponding on-disk data.  There
++ *	is no limit on length of extent, so an extent can contain as many
++ *	blocks as they are contiguous logically and physically.
   *
 - *   --	delayed extent
 - *	A delayed extent is a range of blocks which are contiguous
@@ -187,35 +194,28 @@ index 564d981..1ce4a69 100644
 - *	no corresponding on-disk data.  There is no limit on length of
 - *	delayed extent, so a delayed extent can contain as many blocks
 - *	as they are contiguous logically.
-+ *   --	extent
-+ *	A extent is a range of blocks which are contiguous logically and
-+ *	physically.  Unlike extent in extent tree, this extent in ext4 is
-+ *	a in-memory struct, there is no corresponding on-disk data.  There
-+ *	is no limit on length of extent, so an extent can contain as many
-+ *	blocks as they are contiguous logically and physically.
-  *
-- *   --	delayed extent tree
-- *	Every inode has a delayed extent tree and all under delayed
-- *	allocation blocks are added to the tree as delayed extents.
-- *	Delayed extents in the tree are ordered by logical block no.
 + *   --	extent status tree
 + *	Every inode has an extent status tree and all allocation blocks
 + *	are added to the tree with different status.  The extent in the
 + *	tree are ordered by logical block no.
   *
-- *   --	operations on a delayed extent tree
-- *	There are three operations on a delayed extent tree: find next
-- *	delayed extent, adding a space(a range of blocks) and removing
-- *	a space.
+- *   --	delayed extent tree
+- *	Every inode has a delayed extent tree and all under delayed
+- *	allocation blocks are added to the tree as delayed extents.
+- *	Delayed extents in the tree are ordered by logical block no.
 + *   --	operations on a extent status tree
 + *	There are three important operations on a delayed extent tree: find
 + *	next extent, adding a extent(a range of blocks) and removing a extent.
   *
+- *   --	operations on a delayed extent tree
+- *	There are three operations on a delayed extent tree: find next
+- *	delayed extent, adding a space(a range of blocks) and removing
+- *	a space.
++ *   --	race on a extent status tree
++ *	Extent status tree is protected by inode->i_es_lock.
+  *
 - *   --	race on a delayed extent tree
 - *	Delayed extent tree is protected inode->i_es_lock.
-+ *   --	race on a extent status tree
-+ *	Extent status tree is protected inode->i_es_lock.
-+ *
 + *   --	memory consumption
 + *      Fragmented extent tree will make extent status tree cost too much
 + *      memory.  Hence, we will reclaim written/unwritten extents from the
@@ -236,7 +236,7 @@ index 564d981..1ce4a69 100644
 - *   -- Track all extent status
   *
 - *   -- Improve get block process
-+ *   -- Refactor delayed reserve space
++ *   -- Refactor delayed space reservation
   *
   *   -- Extent-level locking
   */
@@ -419,7 +419,7 @@ index 564d981..1ce4a69 100644
  		rb_erase(node, &tree->root);
  		ext4_es_free_extent(es1);
  	}
-@@ -320,92 +352,84 @@ ext4_es_try_to_merge_right(struct ext4_es_tree *tree, struct extent_status *es)
+@@ -320,60 +352,39 @@ ext4_es_try_to_merge_right(struct ext4_es_tree *tree, struct extent_status *es)
  	return es;
  }
  
@@ -451,9 +451,6 @@ index 564d981..1ce4a69 100644
 -		es_debug("cached by [%u/%u)\n", es->start, es->len);
 -		goto out;
 -	}
-+
-+	/* invalidate cache */
-+	tree->cache_es = NULL;
  
  	while (*p) {
  		parent = *p;
@@ -495,11 +492,7 @@ index 564d981..1ce4a69 100644
  	if (!es)
  		return -ENOMEM;
  	rb_link_node(&es->rb_node, parent, p);
- 	rb_insert_color(&es->rb_node, &tree->root);
- 
- out:
--	tree->cache_es = es;
- 	return 0;
+@@ -385,27 +396,38 @@ out:
  }
  
  /*
@@ -544,7 +537,7 @@ index 564d981..1ce4a69 100644
  	write_unlock(&EXT4_I(inode)->i_es_lock);
  
  	ext4_es_print_tree(inode);
-@@ -413,57 +437,45 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t offset,
+@@ -413,57 +435,45 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t offset,
  	return err;
  }
  
@@ -621,7 +614,7 @@ index 564d981..1ce4a69 100644
  		}
  		goto out;
  	}
-@@ -476,7 +488,7 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t offset,
+@@ -476,7 +486,7 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t offset,
  			es = NULL;
  	}
  
@@ -630,7 +623,7 @@ index 564d981..1ce4a69 100644
  		node = rb_next(&es->rb_node);
  		rb_erase(&es->rb_node, &tree->root);
  		ext4_es_free_extent(es);
-@@ -487,13 +499,39 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t offset,
+@@ -487,13 +497,39 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t offset,
  		es = rb_entry(node, struct extent_status, rb_node);
  	}
  
