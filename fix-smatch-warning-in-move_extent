@@ -1,0 +1,42 @@
+ext4: fix smatch warning in move_extent.c's mext_replace_branches()
+
+From: Akria Fujita <a-fujita@rs.jp.nec.com>
+
+Commit 2147b1a6a48 resulted in a new smatch warning:
+
+> fs/ext4/move_extent.c:693 mext_replace_branches()
+> 	 warn: variable dereferenced before check 'dext' (see line 683)
+
+Fix this by adding a check to make sure dext is non-NULL before we
+derefrence it.
+
+Signed-off-by: Akria Fujita <a-fujita@rs.jp.nec.com>
+[ modified by tytso to make sure an ext4_error is called ]
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/move_extent.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
+index b9222c8..cd90b7e 100644
+--- a/fs/ext4/move_extent.c
++++ b/fs/ext4/move_extent.c
+@@ -681,6 +681,8 @@ mext_replace_branches(handle_t *handle, struct inode *orig_inode,
+ 
+ 	depth = ext_depth(donor_inode);
+ 	dext = donor_path[depth].p_ext;
++	if (unlikely(!dext))
++		goto missing_donor_extent;
+ 	tmp_dext = *dext;
+ 
+ 	*err = mext_calc_swap_extents(&tmp_dext, &tmp_oext, orig_off,
+@@ -691,7 +693,8 @@ mext_replace_branches(handle_t *handle, struct inode *orig_inode,
+ 	/* Loop for the donor extents */
+ 	while (1) {
+ 		/* The extent for donor must be found. */
+-		if (!dext) {
++		if (unlikely(!dext)) {
++		missing_donor_extent:
+ 			EXT4_ERROR_INODE(donor_inode,
+ 				   "The extent for donor must be found");
+ 			*err = -EIO;
