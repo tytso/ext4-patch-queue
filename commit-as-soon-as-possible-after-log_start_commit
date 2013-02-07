@@ -14,71 +14,30 @@ try to get the commit started as soon as possible.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/jbd2/commit.c      | 3 ++-
- fs/jbd2/journal.c     | 1 +
  fs/jbd2/transaction.c | 6 ++++--
- include/linux/jbd2.h  | 1 +
- 4 files changed, 8 insertions(+), 3 deletions(-)
+ 1 file changed, 4 insertions(+), 2 deletions(-)
 
-diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index 3091d42..fd2ac94 100644
---- a/fs/jbd2/commit.c
-+++ b/fs/jbd2/commit.c
-@@ -424,7 +424,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
- 	J_ASSERT(journal->j_committing_transaction == NULL);
- 
- 	commit_transaction = journal->j_running_transaction;
--	J_ASSERT(commit_transaction->t_state == T_RUNNING);
-+	J_ASSERT(commit_transaction->t_state == T_REQUESTED ||
-+		 commit_transaction->t_state == T_RUNNING);
- 
- 	trace_jbd2_start_commit(journal, commit_transaction);
- 	jbd_debug(1, "JBD2: starting commit of transaction %d\n",
-diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 1a80e31..c22773b 100644
---- a/fs/jbd2/journal.c
-+++ b/fs/jbd2/journal.c
-@@ -533,6 +533,7 @@ int __jbd2_log_start_commit(journal_t *journal, tid_t target)
- 		jbd_debug(1, "JBD2: requesting commit %d/%d\n",
- 			  journal->j_commit_request,
- 			  journal->j_commit_sequence);
-+		journal->j_running_transaction->t_state = T_REQUESTED;
- 		wake_up(&journal->j_wait_commit);
- 		return 1;
- 	} else if (!tid_geq(journal->j_commit_request, target))
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index df9f297..6daff29 100644
+index 735609e..434d525 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
-@@ -224,7 +224,8 @@ repeat:
+@@ -225,7 +225,8 @@ repeat:
  	 * If the current transaction is locked down for commit, wait for the
  	 * lock to be released.
  	 */
 -	if (transaction->t_state == T_LOCKED) {
-+	if ((transaction->t_state == T_LOCKED) ||
-+	    (transaction->t_state == T_REQUESTED)) {
++	if (transaction->t_state == T_LOCKED ||
++	    transaction->t_requested) {
  		DEFINE_WAIT(wait);
  
  		prepare_to_wait(&journal->j_wait_transaction_locked,
-@@ -2179,7 +2180,8 @@ void __jbd2_journal_refile_buffer(struct journal_head *jh)
- 	else
- 		jlist = BJ_Reserved;
- 	__jbd2_journal_file_buffer(jh, jh->b_transaction, jlist);
--	J_ASSERT_JH(jh, jh->b_transaction->t_state == T_RUNNING);
-+	J_ASSERT_JH(jh, (jh->b_transaction->t_state == T_RUNNING ||
-+			 jh->b_transaction->t_state == T_REQUESTED));
+@@ -427,7 +428,8 @@ int jbd2_journal_extend(handle_t *handle, int nblocks)
+ 	read_lock(&journal->j_state_lock);
  
- 	if (was_dirty)
- 		set_buffer_jbddirty(bh);
-diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index e30b663..920a8d0 100644
---- a/include/linux/jbd2.h
-+++ b/include/linux/jbd2.h
-@@ -493,6 +493,7 @@ struct transaction_s
- 	 */
- 	enum {
- 		T_RUNNING,
-+		T_REQUESTED,
- 		T_LOCKED,
- 		T_FLUSH,
- 		T_COMMIT,
+ 	/* Don't extend a locked-down transaction! */
+-	if (handle->h_transaction->t_state != T_RUNNING) {
++	if (handle->h_transaction->t_state != T_RUNNING ||
++	    handle->h_transaction->t_requested) {
+ 		jbd_debug(3, "denied handle %p %d blocks: "
+ 			  "transaction not running\n", handle, nblocks);
+ 		goto error_out;

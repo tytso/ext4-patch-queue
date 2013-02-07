@@ -8,40 +8,33 @@ synchronous operation which triggered the commit request) plus
 scheduling overhead; however, it's possible that real time processes
 might get in the way of letting the kjournald thread from executing.
 
-In addition, since we now prohibit handles from being newly started or
-extended once a commit has been requested, calculate the commit
-running time from when the commit was first requested, and include the
-request delay as part of the transaction lockdown delay.
-
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/jbd2/commit.c            | 10 ++++++++++
+ fs/jbd2/commit.c            |  8 ++++++++
  fs/jbd2/journal.c           | 12 +++++++++---
  fs/jbd2/transaction.c       |  1 +
  include/linux/jbd2.h        |  7 +++++++
  include/trace/events/jbd2.h |  8 ++++++--
- 5 files changed, 33 insertions(+), 5 deletions(-)
+ 5 files changed, 31 insertions(+), 5 deletions(-)
 
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index fd2ac94..20dde86 100644
+index 3091d42..750c701 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
-@@ -436,7 +436,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -435,7 +435,12 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  
  	trace_jbd2_commit_locking(journal, commit_transaction);
  	stats.run.rs_wait = commit_transaction->t_max_wait;
 +	stats.run.rs_request_delay = 0;
  	stats.run.rs_locked = jiffies;
-+	if (commit_transaction->t_requested) {
++	if (commit_transaction->t_requested)
 +		stats.run.rs_request_delay =
 +			jbd2_time_diff(commit_transaction->t_requested,
 +				       stats.run.rs_locked);
-+		stats.run.rs_locked = commit_transaction->t_requested;
-+	}
  	stats.run.rs_running = jbd2_time_diff(commit_transaction->t_start,
  					      stats.run.rs_locked);
  
-@@ -1117,7 +1124,10 @@ restart_loop:
+@@ -1116,7 +1121,10 @@ restart_loop:
  	 */
  	spin_lock(&journal->j_history_lock);
  	journal->j_stats.ts_tid++;
@@ -53,18 +46,18 @@ index fd2ac94..20dde86 100644
  	journal->j_stats.run.rs_locked += stats.run.rs_locked;
  	journal->j_stats.run.rs_flushing += stats.run.rs_flushing;
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index c22773b..f6ad0c0 100644
+index 1a80e31..4ba2e81 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
-@@ -534,6 +534,7 @@ int __jbd2_log_start_commit(journal_t *journal, tid_t target)
+@@ -533,6 +533,7 @@ int __jbd2_log_start_commit(journal_t *journal, tid_t target)
+ 		jbd_debug(1, "JBD2: requesting commit %d/%d\n",
  			  journal->j_commit_request,
  			  journal->j_commit_sequence);
- 		journal->j_running_transaction->t_state = T_REQUESTED;
 +		journal->j_running_transaction->t_requested = jiffies;
  		wake_up(&journal->j_wait_commit);
  		return 1;
  	} else if (!tid_geq(journal->j_commit_request, target))
-@@ -899,13 +900,18 @@ static int jbd2_seq_info_show(struct seq_file *seq, void *v)
+@@ -898,13 +899,18 @@ static int jbd2_seq_info_show(struct seq_file *seq, void *v)
  
  	if (v != SEQ_START_TOKEN)
  		return 0;
@@ -87,7 +80,7 @@ index c22773b..f6ad0c0 100644
  	    jiffies_to_msecs(s->stats->run.rs_running / s->stats->ts_tid));
  	seq_printf(seq, "  %ums transaction was being locked\n",
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index 6daff29..7fbc68f 100644
+index df9f297..735609e 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
 @@ -100,6 +100,7 @@ jbd2_get_transaction(journal_t *journal, transaction_t *transaction)
@@ -99,10 +92,10 @@ index 6daff29..7fbc68f 100644
  	return transaction;
  }
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 920a8d0..95c1ca8 100644
+index e30b663..e0aafc4 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
-@@ -582,6 +582,11 @@ struct transaction_s
+@@ -581,6 +581,11 @@ struct transaction_s
  	unsigned long		t_start;
  
  	/*
@@ -114,7 +107,7 @@ index 920a8d0..95c1ca8 100644
  	 * Checkpointing stats [j_checkpoint_sem]
  	 */
  	struct transaction_chp_stats_s t_chp_stats;
-@@ -638,6 +643,7 @@ struct transaction_s
+@@ -637,6 +642,7 @@ struct transaction_s
  
  struct transaction_run_stats_s {
  	unsigned long		rs_wait;
@@ -122,7 +115,7 @@ index 920a8d0..95c1ca8 100644
  	unsigned long		rs_running;
  	unsigned long		rs_locked;
  	unsigned long		rs_flushing;
-@@ -650,6 +656,7 @@ struct transaction_run_stats_s {
+@@ -649,6 +655,7 @@ struct transaction_run_stats_s {
  
  struct transaction_stats_s {
  	unsigned long		ts_tid;
