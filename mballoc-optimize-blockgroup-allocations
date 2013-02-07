@@ -1,0 +1,79 @@
+ext4: optimize mballoc for large allocations
+
+The ext4 block allocator only maintains buddy bitmaps for chunks which
+are less than or equal to one quarter of a block group.  That is, for
+a file aystem with a 1k blocksize, and where the number of blocks in a
+block group is 8192 blocks, the largest chunk size tracked by buddy
+bitmaps is 2048 blocks.
+
+For a file system with a 4k blocksize, and where the number of blocks
+in a block group is 32768 blocks, the largest chunk size tracked by
+buddy bitmaps is 8192 blocks.
+
+To work around this code, mballoc.c before this commit would truncate
+allocation requests to the number of blocks in a block group minus 10.
+Why 10?  Aside from being a completely arbitrary number, it avoids
+block allocation to be a power of two larger than 25% of the block
+group.  If you try to explicitly fallocate 50% of the block group
+size, this will demonstrate the problem; the block allocation code
+will scan the all of the blocks in the file system with cr==0 (since
+the request is for a natural power of two), but then completely fail
+for all blocks groups, since the buddy bitmaps don't track chunk sizes
+of 50% of the block group.
+
+To fix this, in these we use ext4_mb_complex_scan_group() instead of
+ext4_mb_simple_scan_group().
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Andreas Dilger <adilger@dilger.ca>
+---
+ fs/ext4/mballoc.c | 16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 061727a..e350885 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -1884,15 +1884,19 @@ static int ext4_mb_good_group(struct ext4_allocation_context *ac,
+ 	case 0:
+ 		BUG_ON(ac->ac_2order == 0);
+ 
+-		if (grp->bb_largest_free_order < ac->ac_2order)
+-			return 0;
+-
+ 		/* Avoid using the first bg of a flexgroup for data files */
+ 		if ((ac->ac_flags & EXT4_MB_HINT_DATA) &&
+ 		    (flex_size >= EXT4_FLEX_SIZE_DIR_ALLOC_SCHEME) &&
+ 		    ((group % flex_size) == 0))
+ 			return 0;
+ 
++		if ((ac->ac_2order > ac->ac_sb->s_blocksize_bits+1) ||
++		    (free / fragments) >= ac->ac_g_ex.fe_len)
++			return 1;
++
++		if (grp->bb_largest_free_order < ac->ac_2order)
++			return 0;
++
+ 		return 1;
+ 	case 1:
+ 		if ((free / fragments) >= ac->ac_g_ex.fe_len)
+@@ -2007,7 +2011,7 @@ repeat:
+ 			}
+ 
+ 			ac->ac_groups_scanned++;
+-			if (cr == 0)
++			if (cr == 0 && ac->ac_2order < sb->s_blocksize_bits+2)
+ 				ext4_mb_simple_scan_group(ac, &e4b);
+ 			else if (cr == 1 && sbi->s_stripe &&
+ 					!(ac->ac_g_ex.fe_len % sbi->s_stripe))
+@@ -4005,8 +4009,8 @@ ext4_mb_initialize_context(struct ext4_allocation_context *ac,
+ 	len = ar->len;
+ 
+ 	/* just a dirty hack to filter too big requests  */
+-	if (len >= EXT4_CLUSTERS_PER_GROUP(sb) - 10)
+-		len = EXT4_CLUSTERS_PER_GROUP(sb) - 10;
++	if (len >= EXT4_CLUSTERS_PER_GROUP(sb))
++		len = EXT4_CLUSTERS_PER_GROUP(sb);
+ 
+ 	/* start searching from the goal */
+ 	goal = ar->goal;
