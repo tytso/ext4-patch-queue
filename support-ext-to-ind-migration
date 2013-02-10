@@ -1,0 +1,140 @@
+ext4: support simple conversion of extent-mapped inodes to use i_blocks
+
+In order to make it simpler to test the code which support
+i_blocks/indirect-mapped inodes, support the conversion of inodes
+which are less than 12 blocks and which are contained in no more than
+a single extent.
+
+The primary intended use of this code is to converting freshly created
+zero-length files and empty directories.
+
+Note that the version of chattr in e2fsprogs 1.42.7 and earlier has a
+check that prevents the clearing of the extent flag.  A simple patch
+which allows "chattr -e <file>" to work will be checked into the
+e2fsprogs git repository.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h    |  3 ++-
+ fs/ext4/extents.c | 50 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/ioctl.c   | 20 ++++++++------------
+ 3 files changed, 60 insertions(+), 13 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 1876b95..95d01ec 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -403,7 +403,7 @@ struct flex_groups {
+ #define EXT4_RESERVED_FL		0x80000000 /* reserved for ext4 lib */
+ 
+ #define EXT4_FL_USER_VISIBLE		0x004BDFFF /* User visible flags */
+-#define EXT4_FL_USER_MODIFIABLE		0x004B80FF /* User modifiable flags */
++#define EXT4_FL_USER_MODIFIABLE		0x004380FF /* User modifiable flags */
+ 
+ /* Flags that should be inherited by new inodes from their parent. */
+ #define EXT4_FL_INHERITED (EXT4_SECRM_FL | EXT4_UNRM_FL | EXT4_COMPR_FL |\
+@@ -2602,6 +2602,7 @@ extern int ext4_ext_check_inode(struct inode *inode);
+ extern int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk);
+ extern int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 			__u64 start, __u64 len);
++extern int ext4_ind_migrate(struct inode *inode);
+ 
+ 
+ /* move_extent.c */
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 143cb77..2034146 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4766,3 +4766,53 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 
+ 	return error;
+ }
++
++/*
++ * Migrate a simple extent-based inode to use the i_blocks[] array
++ */
++int ext4_ind_migrate(struct inode *inode)
++{
++	struct ext4_extent_header	*eh;
++	struct ext4_super_block		*es = EXT4_SB(inode->i_sb)->s_es;
++	struct ext4_inode_info		*ei = EXT4_I(inode);
++	struct ext4_extent		*ex;
++	unsigned int			i, len;
++	ext4_fsblk_t			blk;
++	handle_t			*handle;
++	int				ret;
++
++	if (!EXT4_HAS_INCOMPAT_FEATURE(inode->i_sb,
++				       EXT4_FEATURE_INCOMPAT_EXTENTS) ||
++	    (!ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
++		return -EINVAL;
++
++	ret = ext4_ext_check_inode(inode);
++	if (ret)
++		return ret;
++
++	eh = ext_inode_hdr(inode);
++	ex  = EXT_FIRST_EXTENT(eh);
++	if (ext4_blocks_count(es) > EXT4_MAX_BLOCK_FILE_PHYS ||
++	    eh->eh_depth != 0 || eh->eh_entries > 1)
++		return -EOPNOTSUPP;
++	if (eh->eh_entries == 0)
++		blk = len = 0;
++	else {
++		len = ex->ee_len;
++		blk = ext4_ext_pblock(ex);
++		if (len > EXT4_NDIR_BLOCKS)
++			return -EOPNOTSUPP;
++	}
++
++	handle = ext4_journal_start(inode, EXT4_HT_MIGRATE, 1);
++	if (IS_ERR(handle))
++		return PTR_ERR(handle);
++
++	ext4_clear_inode_flag(inode, EXT4_INODE_EXTENTS);
++	memset(ei->i_data, 0, sizeof(ei->i_data));
++	for (i=0; i < len; i++)
++		ei->i_data[i] = cpu_to_le32(blk++);
++	ext4_mark_inode_dirty(handle, inode);
++	ext4_journal_stop(handle);
++	return 0;
++}
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 31f4f56..a9aab2e 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -83,17 +83,8 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 			if (!capable(CAP_SYS_RESOURCE))
+ 				goto flags_out;
+ 		}
+-		if (oldflags & EXT4_EXTENTS_FL) {
+-			/* We don't support clearning extent flags */
+-			if (!(flags & EXT4_EXTENTS_FL)) {
+-				err = -EOPNOTSUPP;
+-				goto flags_out;
+-			}
+-		} else if (flags & EXT4_EXTENTS_FL) {
+-			/* migrate the file */
++		if ((flags ^ oldflags) & EXT4_EXTENTS_FL)
+ 			migrate = 1;
+-			flags &= ~EXT4_EXTENTS_FL;
+-		}
+ 
+ 		if (flags & EXT4_EOFBLOCKS_FL) {
+ 			/* we don't support adding EOFBLOCKS flag */
+@@ -137,8 +128,13 @@ flags_err:
+ 			err = ext4_change_inode_journal_flag(inode, jflag);
+ 		if (err)
+ 			goto flags_out;
+-		if (migrate)
+-			err = ext4_ext_migrate(inode);
++		if (migrate) {
++			if (flags & EXT4_EXTENTS_FL)
++				err = ext4_ext_migrate(inode);
++			else
++				err = ext4_ind_migrate(inode);
++		}
++
+ flags_out:
+ 		mutex_unlock(&inode->i_mutex);
+ 		mnt_drop_write_file(filp);
