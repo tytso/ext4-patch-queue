@@ -7,19 +7,20 @@ as a extent cache, and it can do a better job.
 
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Jan kara <jack@suse.cz>
 ---
- fs/ext4/ext4.h         |  12 ---
+ fs/ext4/ext4.h         |  12 ----
  fs/ext4/ext4_extents.h |   6 --
- fs/ext4/extents.c      | 220 ++++++++-----------------------------------------
+ fs/ext4/extents.c      | 177 +++++++++++--------------------------------------
  fs/ext4/move_extent.c  |   3 -
  fs/ext4/super.c        |   1 -
- 5 files changed, 34 insertions(+), 208 deletions(-)
+ 5 files changed, 37 insertions(+), 162 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 36145ef1..60d16d1 100644
+index ad885b5..12b1fc7 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -802,17 +802,6 @@ do {									       \
+@@ -812,17 +812,6 @@ do {									       \
  
  #endif /* defined(__KERNEL__) || defined(__linux__) */
  
@@ -37,7 +38,7 @@ index 36145ef1..60d16d1 100644
  #include "extents_status.h"
  
  /*
-@@ -879,7 +868,6 @@ struct ext4_inode_info {
+@@ -889,7 +878,6 @@ struct ext4_inode_info {
  	struct inode vfs_inode;
  	struct jbd2_inode *jinode;
  
@@ -63,7 +64,7 @@ index 487fda1..8643ff5 100644
  {
  	/* We can not have an uninitialized extent of zero length! */
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index d23a654..dedd557 100644
+index 1be8955..9f21430 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -112,7 +112,7 @@ static int ext4_split_extent_at(handle_t *handle,
@@ -166,7 +167,7 @@ index d23a654..dedd557 100644
  	}
  
  	if (path) {
-@@ -2112,115 +2110,6 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+@@ -2112,21 +2110,6 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
  	return err;
  }
  
@@ -185,52 +186,27 @@ index d23a654..dedd557 100644
 -	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
 -}
 -
--/*
-- * ext4_ext_put_gap_in_cache:
-- * calculate boundaries of the gap that the requested block fits into
-- * and cache this gap
-- */
--static void
--ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
--				ext4_lblk_t block)
--{
--	int depth = ext_depth(inode);
--	unsigned long len;
--	ext4_lblk_t lblock;
--	struct ext4_extent *ex;
--
--	ex = path[depth].p_ext;
--	if (ex == NULL) {
+ /*
+  * ext4_ext_put_gap_in_cache:
+  * calculate boundaries of the gap that the requested block fits into
+@@ -2143,9 +2126,10 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
+ 
+ 	ex = path[depth].p_ext;
+ 	if (ex == NULL) {
 -		/* there is no extent yet, so gap is [0;-] */
 -		lblock = 0;
 -		len = EXT_MAX_BLOCKS;
--		ext_debug("cache gap(whole file):");
--	} else if (block < le32_to_cpu(ex->ee_block)) {
--		lblock = block;
--		len = le32_to_cpu(ex->ee_block) - block;
--		ext_debug("cache gap(before): %u [%u:%u]",
--				block,
--				le32_to_cpu(ex->ee_block),
--				 ext4_ext_get_actual_len(ex));
--	} else if (block >= le32_to_cpu(ex->ee_block)
--			+ ext4_ext_get_actual_len(ex)) {
--		ext4_lblk_t next;
--		lblock = le32_to_cpu(ex->ee_block)
--			+ ext4_ext_get_actual_len(ex);
--
--		next = ext4_ext_next_allocated_block(path);
--		ext_debug("cache gap(after): [%u:%u] %u",
--				le32_to_cpu(ex->ee_block),
--				ext4_ext_get_actual_len(ex),
--				block);
--		BUG_ON(next == lblock);
--		len = next - lblock;
--	} else {
--		lblock = len = 0;
--		BUG();
--	}
--
--	ext_debug(" -> %u:%lu\n", lblock, len);
++		/*
++		 * there is no extent yet, so gap is [0;-] and we
++		 * don't cache it
++		 */
+ 		ext_debug("cache gap(whole file):");
+ 	} else if (block < le32_to_cpu(ex->ee_block)) {
+ 		lblock = block;
+@@ -2177,52 +2161,6 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
+ 	}
+ 
+ 	ext_debug(" -> %u:%lu\n", lblock, len);
 -	ext4_ext_put_in_cache(inode, lblock, len, 0);
 -}
 -
@@ -277,12 +253,10 @@ index d23a654..dedd557 100644
 -	trace_ext4_ext_in_cache(inode, block, ret);
 -	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
 -	return ret;
--}
--
+ }
+ 
  /*
-  * ext4_ext_rm_idx:
-  * removes index from the index block.
-@@ -2658,8 +2547,6 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start,
+@@ -2662,8 +2600,6 @@ static int ext4_ext_remove_space(struct inode *inode, ext4_lblk_t start,
  		return PTR_ERR(handle);
  
  again:
@@ -291,13 +265,17 @@ index d23a654..dedd557 100644
  	trace_ext4_ext_remove_space(inode, start, depth);
  
  	/*
-@@ -3900,29 +3787,6 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3906,35 +3842,6 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		  map->m_lblk, map->m_len, inode->i_ino);
  	trace_ext4_ext_map_blocks_enter(inode, map->m_lblk, map->m_len, flags);
  
 -	/* check in cache */
 -	if (ext4_ext_in_cache(inode, map->m_lblk, &newex)) {
 -		if (!newex.ee_start_lo && !newex.ee_start_hi) {
+-			if ((sbi->s_cluster_ratio > 1) &&
+-			    ext4_find_delalloc_cluster(inode, map->m_lblk))
+-				map->m_flags |= EXT4_MAP_FROM_CLUSTER;
+-
 -			if ((flags & EXT4_GET_BLOCKS_CREATE) == 0) {
 -				/*
 -				 * block isn't allocated yet and
@@ -308,6 +286,8 @@ index d23a654..dedd557 100644
 -			/* we should allocate requested block */
 -		} else {
 -			/* block is already allocated */
+-			if (sbi->s_cluster_ratio > 1)
+-				map->m_flags |= EXT4_MAP_FROM_CLUSTER;
 -			newblock = map->m_lblk
 -				   - le32_to_cpu(newex.ee_block)
 -				   + ext4_ext_pblock(&newex);
@@ -321,7 +301,7 @@ index d23a654..dedd557 100644
  	/* find extent for this block */
  	path = ext4_ext_find_extent(inode, map->m_lblk, NULL);
  	if (IS_ERR(path)) {
-@@ -3969,15 +3833,9 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -3981,15 +3888,9 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  			ext_debug("%u fit into %u:%d -> %llu\n", map->m_lblk,
  				  ee_block, ee_len, newblock);
  
@@ -339,23 +319,7 @@ index d23a654..dedd557 100644
  			allocated = ext4_ext_handle_uninitialized_extents(
  				handle, inode, map, path, flags,
  				allocated, newblock);
-@@ -3989,14 +3847,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
- 	 * requested block isn't allocated yet;
- 	 * we couldn't try to create block if create flag is zero
- 	 */
--	if ((flags & EXT4_GET_BLOCKS_CREATE) == 0) {
--		/*
--		 * put just found gap into cache to speed up
--		 * subsequent requests
--		 */
--		ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
-+	if ((flags & EXT4_GET_BLOCKS_CREATE) == 0)
- 		goto out2;
--	}
- 
- 	/*
- 	 * Okay, we need to do block allocation.
-@@ -4232,10 +4084,9 @@ got_allocated_blocks:
+@@ -4251,10 +4152,9 @@ got_allocated_blocks:
  	 * Cache the extent and update transaction to commit on fdatasync only
  	 * when it is _not_ an uninitialized extent.
  	 */
@@ -368,7 +332,7 @@ index d23a654..dedd557 100644
  		ext4_update_inode_fsync_trans(handle, inode, 0);
  out:
  	if (allocated > map->m_len)
-@@ -4294,7 +4145,6 @@ void ext4_ext_truncate(struct inode *inode)
+@@ -4313,7 +4213,6 @@ void ext4_ext_truncate(struct inode *inode)
  		goto out_stop;
  
  	down_write(&EXT4_I(inode)->i_data_sem);
@@ -376,7 +340,7 @@ index d23a654..dedd557 100644
  
  	ext4_discard_preallocations(inode);
  
-@@ -4544,26 +4394,26 @@ int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
+@@ -4563,40 +4462,40 @@ int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
  }
  
  /*
@@ -401,7 +365,7 @@ index d23a654..dedd557 100644
  
 -	es.es_lblk = newex->ec_block;
 +	es.es_lblk = newes->es_lblk;
- 	next_del = ext4_es_find_extent(inode, &es);
+ 	next_del = ext4_es_find_delayed_extent(inode, &es);
  
 -	if (newex->ec_start == 0) {
 +	if (newes->es_pblk == 0) {
@@ -411,8 +375,7 @@ index d23a654..dedd557 100644
  		 * then the block may stay in 1)a hole or 2)delayed-extent.
  		 */
  		if (es.es_len == 0)
-@@ -4573,14 +4423,14 @@ static int ext4_find_delayed_extent(struct inode *inode,
- 		if (!ext4_es_is_delayed(&es))
+ 			/* A hole found. */
  			return 0;
  
 -		if (es.es_lblk > newex->ec_block) {
@@ -430,7 +393,7 @@ index d23a654..dedd557 100644
  	}
  
  	return next_del;
-@@ -4780,14 +4630,12 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
+@@ -4796,14 +4695,12 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
  		goto out;
  
  	down_write(&EXT4_I(inode)->i_data_sem);
