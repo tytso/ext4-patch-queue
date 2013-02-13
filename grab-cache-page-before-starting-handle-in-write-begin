@@ -16,15 +16,16 @@ postmark-2917  [000] ....   196.435786: jbd2_handle_stats: dev 254,32
    dirtied_blocks 0
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
 ---
- fs/ext4/inode.c | 111 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-------------------------------------------
+ fs/ext4/inode.c | 111 ++++++++++++++++++++++++++++++++++----------------------
  1 file changed, 68 insertions(+), 43 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index c3c47e2..38164a8 100644
+index 5042c87..2fa18bb 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -906,32 +906,40 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
+@@ -875,32 +875,40 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
  		ret = ext4_try_to_write_inline_data(mapping, inode, pos, len,
  						    flags, pagep);
  		if (ret < 0)
@@ -83,7 +84,7 @@ index c3c47e2..38164a8 100644
  
  	if (ext4_should_dioread_nolock(inode))
  		ret = __block_write_begin(page, pos, len, ext4_get_block_write);
-@@ -946,7 +954,6 @@ retry:
+@@ -915,7 +923,6 @@ retry:
  
  	if (ret) {
  		unlock_page(page);
@@ -91,7 +92,7 @@ index c3c47e2..38164a8 100644
  		/*
  		 * __block_write_begin may have instantiated a few blocks
  		 * outside i_size.  Trim these off again. Don't need
-@@ -970,11 +977,14 @@ retry:
+@@ -939,11 +946,14 @@ retry:
  			if (inode->i_nlink)
  				ext4_orphan_del(NULL, inode);
  		}
@@ -110,7 +111,7 @@ index c3c47e2..38164a8 100644
  	return ret;
  }
  
-@@ -2524,42 +2534,52 @@ static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
+@@ -2458,42 +2468,52 @@ static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
  						      pos, len, flags,
  						      pagep, fsdata);
  		if (ret < 0)
@@ -180,7 +181,7 @@ index c3c47e2..38164a8 100644
  		/*
  		 * block_write_begin may have instantiated a few blocks
  		 * outside i_size.  Trim these off again. Don't need
-@@ -2567,11 +2587,16 @@ retry:
+@@ -2501,11 +2521,16 @@ retry:
  		 */
  		if (pos + len > inode->i_size)
  			ext4_truncate_failed_write(inode);
