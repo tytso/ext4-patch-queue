@@ -22,7 +22,7 @@ Reviewed-by: Jan Kara <jack@suse.cz>
  4 files changed, 142 insertions(+), 26 deletions(-)
 
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index aa4d346..5093cee 100644
+index a6d2fe1..243611f 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
 @@ -179,7 +179,9 @@ static void ext4_es_print_tree(struct inode *inode)
@@ -116,8 +116,8 @@ index aa4d346..5093cee 100644
  	return 1;
  }
  
-@@ -367,6 +381,10 @@ static int __es_insert_extent(struct ext4_es_tree *tree,
- 			if (ext4_es_can_be_merged(newes, es)) {
+@@ -371,6 +385,10 @@ static int __es_insert_extent(struct ext4_es_tree *tree,
+ 				 */
  				es->es_lblk = newes->es_lblk;
  				es->es_len += newes->es_len;
 +				if (ext4_es_is_written(es) ||
@@ -127,7 +127,7 @@ index aa4d346..5093cee 100644
  				es = ext4_es_try_to_merge_left(tree, es);
  				goto out;
  			}
-@@ -384,7 +402,8 @@ static int __es_insert_extent(struct ext4_es_tree *tree,
+@@ -388,7 +406,8 @@ static int __es_insert_extent(struct ext4_es_tree *tree,
  		}
  	}
  
@@ -137,7 +137,7 @@ index aa4d346..5093cee 100644
  	if (!es)
  		return -ENOMEM;
  	rb_link_node(&es->rb_node, parent, p);
-@@ -404,21 +423,24 @@ out:
+@@ -408,21 +427,24 @@ out:
   * Return 0 on success, error code on failure.
   */
  int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
@@ -166,7 +166,7 @@ index aa4d346..5093cee 100644
  
  	write_lock(&EXT4_I(inode)->i_es_lock);
  	tree = &EXT4_I(inode)->i_es_tree;
-@@ -442,6 +464,7 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
+@@ -446,6 +468,7 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
  	struct extent_status *es;
  	struct extent_status orig_es;
  	ext4_lblk_t len1, len2;
@@ -174,7 +174,7 @@ index aa4d346..5093cee 100644
  	int err = 0;
  
  	es = __es_tree_search(&tree->root, lblk);
-@@ -455,6 +478,8 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
+@@ -459,6 +482,8 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
  
  	orig_es.es_lblk = es->es_lblk;
  	orig_es.es_len = es->es_len;
@@ -183,7 +183,7 @@ index aa4d346..5093cee 100644
  	len1 = lblk > es->es_lblk ? lblk - es->es_lblk : 0;
  	len2 = ext4_es_end(es) > end ? ext4_es_end(es) - end : 0;
  	if (len1 > 0)
-@@ -465,6 +490,13 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
+@@ -469,6 +494,13 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
  
  			newes.es_lblk = end + 1;
  			newes.es_len = len2;
@@ -197,7 +197,7 @@ index aa4d346..5093cee 100644
  			err = __es_insert_extent(tree, &newes);
  			if (err) {
  				es->es_lblk = orig_es.es_lblk;
-@@ -474,6 +506,11 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
+@@ -478,6 +510,11 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
  		} else {
  			es->es_lblk = end + 1;
  			es->es_len = len2;
@@ -209,7 +209,7 @@ index aa4d346..5093cee 100644
  		}
  		goto out;
  	}
-@@ -498,9 +535,15 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
+@@ -502,9 +539,15 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
  	}
  
  	if (es && es->es_lblk < end + 1) {
@@ -226,17 +226,17 @@ index aa4d346..5093cee 100644
  
  out:
 diff --git a/fs/ext4/extents_status.h b/fs/ext4/extents_status.h
-index 81e9339..2a5d69e 100644
+index 81e9339..3cad833 100644
 --- a/fs/ext4/extents_status.h
 +++ b/fs/ext4/extents_status.h
 @@ -20,10 +20,21 @@
  #define es_debug(fmt, ...)	no_printk(fmt, ##__VA_ARGS__)
  #endif
  
-+#define EXTENT_STATUS_WRITTEN	0x10000000	/* written extent */
-+#define EXTENT_STATUS_UNWRITTEN	0x20000000	/* unwritten extent */
-+#define EXTENT_STATUS_DELAYED	0x40000000	/* delayed extent */
-+#define EXTENT_STATUS_HOLE	0x80000000	/* hole */
++#define EXTENT_STATUS_WRITTEN	0x80000000	/* written extent */
++#define EXTENT_STATUS_UNWRITTEN	0x40000000	/* unwritten extent */
++#define EXTENT_STATUS_DELAYED	0x20000000	/* delayed extent */
++#define EXTENT_STATUS_HOLE	0x10000000	/* hole */
 +
 +#define EXTENT_STATUS_FLAGS	(EXTENT_STATUS_WRITTEN | \
 +				 EXTENT_STATUS_UNWRITTEN | \

@@ -20,15 +20,15 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: Jan kara <jack@suse.cz>
 ---
  fs/ext4/ext4.h              |  2 ++
- fs/ext4/extents.c           |  7 ++++-
- fs/ext4/extents_status.c    | 59 +++++++++++++++++++++++++++++++++++++++++
- fs/ext4/extents_status.h    |  1 +
- fs/ext4/inode.c             | 64 +++++++++++++++++++++++++++++++++++++++++++--
- include/trace/events/ext4.h | 56 +++++++++++++++++++++++++++++++++++++++
- 6 files changed, 186 insertions(+), 3 deletions(-)
+ fs/ext4/extents.c           |  9 ++++++-
+ fs/ext4/extents_status.c    | 60 +++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/extents_status.h    |  2 ++
+ fs/ext4/inode.c             | 66 +++++++++++++++++++++++++++++++++++++++++++--
+ include/trace/events/ext4.h | 56 ++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 192 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 8462eb3..ad885b5 100644
+index bf9d835..8c8cd57 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -582,6 +582,8 @@ enum {
@@ -41,28 +41,30 @@ index 8462eb3..ad885b5 100644
  /*
   * Flags used by ext4_free_blocks
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 4b065ff..1be8955 100644
+index a294db3..d5161cd 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2154,6 +2154,8 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
+@@ -2164,6 +2164,9 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
  				block,
  				le32_to_cpu(ex->ee_block),
  				 ext4_ext_get_actual_len(ex));
-+		ext4_es_insert_extent(inode, lblock, len, ~0,
-+				      EXTENT_STATUS_HOLE);
++		if (!ext4_find_delalloc_range(inode, lblock, lblock + len - 1))
++			ext4_es_insert_extent(inode, lblock, len, ~0,
++					      EXTENT_STATUS_HOLE);
  	} else if (block >= le32_to_cpu(ex->ee_block)
  			+ ext4_ext_get_actual_len(ex)) {
  		ext4_lblk_t next;
-@@ -2167,6 +2169,8 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
+@@ -2177,6 +2180,9 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
  				block);
  		BUG_ON(next == lblock);
  		len = next - lblock;
-+		ext4_es_insert_extent(inode, lblock, len, ~0,
-+				      EXTENT_STATUS_HOLE);
++		if (!ext4_find_delalloc_range(inode, lblock, lblock + len - 1))
++			ext4_es_insert_extent(inode, lblock, len, ~0,
++					      EXTENT_STATUS_HOLE);
  	} else {
  		lblock = len = 0;
  		BUG();
-@@ -4006,7 +4010,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -4015,7 +4021,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		 * put just found gap into cache to speed up
  		 * subsequent requests
  		 */
@@ -73,10 +75,10 @@ index 4b065ff..1be8955 100644
  	}
  
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index 71cb75a..ca7dc9f 100644
+index cf0fd41..473a935 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
-@@ -468,6 +468,65 @@ error:
+@@ -461,6 +461,66 @@ error:
  	return err;
  }
  
@@ -87,26 +89,27 @@ index 71cb75a..ca7dc9f 100644
 + *
 + * Return: 1 on found, 0 on not
 + */
-+int ext4_es_lookup_extent(struct inode *inode, struct extent_status *es)
++int ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
++			  struct extent_status *es)
 +{
 +	struct ext4_es_tree *tree;
 +	struct extent_status *es1 = NULL;
 +	struct rb_node *node;
 +	int found = 0;
 +
-+	trace_ext4_es_lookup_extent_enter(inode, es->es_lblk);
-+	es_debug("lookup extent in block %u\n", es->es_lblk);
++	trace_ext4_es_lookup_extent_enter(inode, lblk);
++	es_debug("lookup extent in block %u\n", lblk);
 +
 +	tree = &EXT4_I(inode)->i_es_tree;
 +	read_lock(&EXT4_I(inode)->i_es_lock);
 +
 +	/* find extent in cache firstly */
-+	es->es_len = es->es_pblk = 0;
++	es->es_lblk = es->es_len = es->es_pblk = 0;
 +	if (tree->cache_es) {
 +		es1 = tree->cache_es;
-+		if (in_range(es->es_lblk, es1->es_lblk, es1->es_len)) {
++		if (in_range(lblk, es1->es_lblk, es1->es_len)) {
 +			es_debug("%u cached by [%u/%u)\n",
-+				 es->es_lblk, es1->es_lblk, es1->es_len);
++				 lblk, es1->es_lblk, es1->es_len);
 +			found = 1;
 +			goto out;
 +		}
@@ -115,9 +118,9 @@ index 71cb75a..ca7dc9f 100644
 +	node = tree->root.rb_node;
 +	while (node) {
 +		es1 = rb_entry(node, struct extent_status, rb_node);
-+		if (es->es_lblk < es1->es_lblk)
++		if (lblk < es1->es_lblk)
 +			node = node->rb_left;
-+		else if (es->es_lblk > ext4_es_end(es1))
++		else if (lblk > ext4_es_end(es1))
 +			node = node->rb_right;
 +		else {
 +			found = 1;
@@ -143,22 +146,23 @@ index 71cb75a..ca7dc9f 100644
  				 ext4_lblk_t end)
  {
 diff --git a/fs/ext4/extents_status.h b/fs/ext4/extents_status.h
-index b5788eb..effe78c 100644
+index 3f69d09..8ffc90c 100644
 --- a/fs/ext4/extents_status.h
 +++ b/fs/ext4/extents_status.h
-@@ -53,6 +53,7 @@ extern int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
+@@ -53,6 +53,8 @@ extern int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
  				 ext4_lblk_t len);
- extern ext4_lblk_t ext4_es_find_delayed_extent(struct inode *inode,
- 					       struct extent_status *es);
-+extern int ext4_es_lookup_extent(struct inode *inode, struct extent_status *es);
+ extern void ext4_es_find_delayed_extent(struct inode *inode, ext4_lblk_t lblk,
+ 					struct extent_status *es);
++extern int ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
++				 struct extent_status *es);
  
  static inline int ext4_es_is_written(struct extent_status *es)
  {
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 16454fc..670779a 100644
+index 42c38e0..039e8bd 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -508,12 +508,34 @@ static pgoff_t ext4_num_dirty_pages(struct inode *inode, pgoff_t idx,
+@@ -508,12 +508,33 @@ static pgoff_t ext4_num_dirty_pages(struct inode *inode, pgoff_t idx,
  int ext4_map_blocks(handle_t *handle, struct inode *inode,
  		    struct ext4_map_blocks *map, int flags)
  {
@@ -171,8 +175,7 @@ index 16454fc..670779a 100644
  		  (unsigned long) map->m_lblk);
 +
 +	/* Lookup extent status tree firstly */
-+	es.es_lblk = map->m_lblk;
-+	if (ext4_es_lookup_extent(inode, &es)) {
++	if (ext4_es_lookup_extent(inode, map->m_lblk, &es)) {
 +		if (ext4_es_is_written(&es) || ext4_es_is_unwritten(&es)) {
 +			map->m_pblk = ext4_es_pblock(&es) +
 +					map->m_lblk - es.es_lblk;
@@ -193,7 +196,7 @@ index 16454fc..670779a 100644
  	/*
  	 * Try to see if we can get the block without requesting a new
  	 * file system block.
-@@ -541,6 +563,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
+@@ -545,6 +566,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
  	if (!(flags & EXT4_GET_BLOCKS_NO_LOCK))
  		up_read((&EXT4_I(inode)->i_data_sem));
  
@@ -201,7 +204,7 @@ index 16454fc..670779a 100644
  	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
  		int ret = check_block_validity(inode, map);
  		if (ret != 0)
-@@ -1772,6 +1795,7 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
+@@ -1780,6 +1802,7 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
  			      struct ext4_map_blocks *map,
  			      struct buffer_head *bh)
  {
@@ -209,14 +212,13 @@ index 16454fc..670779a 100644
  	int retval;
  	sector_t invalid_block = ~((sector_t) 0xffff);
  
-@@ -1782,6 +1806,39 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
+@@ -1790,6 +1813,42 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
  	ext_debug("ext4_da_map_blocks(): inode %lu, max_blocks %u,"
  		  "logical block %lu\n", inode->i_ino, map->m_len,
  		  (unsigned long) map->m_lblk);
 +
 +	/* Lookup extent status tree firstly */
-+	es.es_lblk = iblock;
-+	if (ext4_es_lookup_extent(inode, &es)) {
++	if (ext4_es_lookup_extent(inode, iblock, &es)) {
 +
 +		if (ext4_es_is_hole(&es)) {
 +			retval = 0;
@@ -224,7 +226,11 @@ index 16454fc..670779a 100644
 +			goto add_delayed;
 +		}
 +
-+		if (ext4_es_is_delayed(&es)) {
++		/*
++		 * Delayed extent could be allocated by fallocate.
++		 * So we need to check it.
++		 */
++		if (ext4_es_is_delayed(&es) && !ext4_es_is_unwritten(&es)) {
 +			map_bh(bh, inode->i_sb, invalid_block);
 +			set_buffer_new(bh);
 +			set_buffer_delay(bh);
@@ -249,7 +255,7 @@ index 16454fc..670779a 100644
  	/*
  	 * Try to see if we can get the block without requesting a new
  	 * file system block.
-@@ -1800,10 +1857,13 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
+@@ -1808,10 +1867,13 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
  			map->m_flags |= EXT4_MAP_FROM_CLUSTER;
  		retval = 0;
  	} else if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
@@ -266,11 +272,11 @@ index 16454fc..670779a 100644
  		int ret;
  		/*
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index d278ced..822780a 100644
+index 7f7d57b..1e634c1 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
-@@ -2177,6 +2177,62 @@ TRACE_EVENT(ext4_es_find_delayed_extent_exit,
- 		  __entry->pblk, __entry->status, __entry->ret)
+@@ -2174,6 +2174,62 @@ TRACE_EVENT(ext4_es_find_delayed_extent_exit,
+ 		  __entry->pblk, __entry->status)
  );
  
 +TRACE_EVENT(ext4_es_lookup_extent_enter,

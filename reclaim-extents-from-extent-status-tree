@@ -11,7 +11,7 @@ Here we maintain a lru list in super_block.  When the extent status of
 an inode is accessed and changed, this inode will be move to the tail
 of the list.  The inode will be dropped from this list when it is
 cleared.  In the inode, a counter is added to count the number of
-cached objects in extent status tree.  Here only written/unwritten
+cached objects in extent status tree.  Here only written/unwritten/hole
 extent is counted because delayed extent doesn't be reclaimed due to
 fiemap, bigalloc and seek_data/hole need it.  The counter will be
 increased as a new extent is allocated, and it will be decreased as a
@@ -20,8 +20,8 @@ extent is freed.
 In this commit we use normal shrinker framework to reclaim memory from
 the status tree.  ext4_es_reclaim_extents_count() traverses the lru list
 to count the number of reclaimable extents.  ext4_es_shrink() tries to
-reclaim written/unwritten extents from extent status tree.  The inode
-that has been shrunk is moved to the tail of lru list.
+reclaim written/unwritten/hole extents from extent status tree.  The
+inode that has been shrunk is moved to the tail of lru list.
 
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
@@ -35,7 +35,7 @@ Cc: Jan kara <jack@suse.cz>
  5 files changed, 235 insertions(+)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 12b1fc7..dc46fe2 100644
+index 29bd2ef..01b2b37 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -891,6 +891,8 @@ struct ext4_inode_info {
@@ -60,7 +60,7 @@ index 12b1fc7..dc46fe2 100644
  
  static inline struct ext4_sb_info *EXT4_SB(struct super_block *sb)
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index 84fe78d..bac5286 100644
+index 3021858..8d8d061 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
 @@ -145,6 +145,9 @@ static struct kmem_cache *ext4_es_cachep;
@@ -73,15 +73,15 @@ index 84fe78d..bac5286 100644
  
  int __init ext4_init_es(void)
  {
-@@ -290,6 +293,7 @@ out:
+@@ -280,6 +283,7 @@ out:
  
  	read_unlock(&EXT4_I(inode)->i_es_lock);
  
 +	ext4_es_lru_add(inode);
- 	trace_ext4_es_find_delayed_extent_exit(inode, es, ret);
- 	return ret;
+ 	trace_ext4_es_find_delayed_extent_exit(inode, es);
  }
-@@ -305,11 +309,24 @@ ext4_es_alloc_extent(struct inode *inode, ext4_lblk_t lblk, ext4_lblk_t len,
+ 
+@@ -294,11 +298,24 @@ ext4_es_alloc_extent(struct inode *inode, ext4_lblk_t lblk, ext4_lblk_t len,
  	es->es_lblk = lblk;
  	es->es_len = len;
  	es->es_pblk = pblk;
@@ -106,7 +106,7 @@ index 84fe78d..bac5286 100644
  	kmem_cache_free(ext4_es_cachep, es);
  }
  
-@@ -463,6 +480,7 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
+@@ -456,6 +473,7 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
  error:
  	write_unlock(&EXT4_I(inode)->i_es_lock);
  
@@ -114,7 +114,7 @@ index 84fe78d..bac5286 100644
  	ext4_es_print_tree(inode);
  
  	return err;
-@@ -523,6 +541,7 @@ out:
+@@ -517,6 +535,7 @@ out:
  
  	read_unlock(&EXT4_I(inode)->i_es_lock);
  
@@ -122,7 +122,7 @@ index 84fe78d..bac5286 100644
  	trace_ext4_es_lookup_extent_exit(inode, es, found);
  	return found;
  }
-@@ -645,3 +664,140 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
+@@ -639,3 +658,140 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
  	ext4_es_print_tree(inode);
  	return err;
  }
@@ -264,10 +264,10 @@ index 84fe78d..bac5286 100644
 +	return nr_shrunk;
 +}
 diff --git a/fs/ext4/extents_status.h b/fs/ext4/extents_status.h
-index effe78c..938ad2b 100644
+index 8ffc90c..cf83e77 100644
 --- a/fs/ext4/extents_status.h
 +++ b/fs/ext4/extents_status.h
-@@ -105,4 +105,9 @@ static inline void ext4_es_store_status(struct extent_status *es,
+@@ -106,4 +106,9 @@ static inline void ext4_es_store_status(struct extent_status *es,
  	es->es_pblk = block;
  }
  
@@ -317,10 +317,10 @@ index a35c6c1..64d78b1 100644
  	 * set up enough so that it can read an inode
  	 */
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index 822780a..f0734b3 100644
+index 1e634c1..4f8e763 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
-@@ -2233,6 +2233,66 @@ TRACE_EVENT(ext4_es_lookup_extent_exit,
+@@ -2230,6 +2230,66 @@ TRACE_EVENT(ext4_es_lookup_extent_exit,
  		  __entry->found ? __entry->status : 0)
  );
  
