@@ -1,0 +1,51 @@
+ext4: no need to remove extent if len is 0 in ext4_es_remove_extent()
+
+From: Eryu Guan <guaneryu@gmail.com>
+
+len is 0 means no extent needs to be removed, so return immediately.
+Otherwise it could trigger the following BUG_ON() in
+ext4_es_remove_extent()
+
+	end = lblk + len - 1;
+	BUG_ON(end < lblk);
+
+This could be reproduced by a simple truncate(1) command by an
+unprivileged user
+
+	truncate -s $(($((2**32 - 1)) * 4096)) /mnt/ext4/testfile
+
+The same is true for __es_insert_extent().
+
+Patched kernel passed xfstests regression test.
+
+Signed-off-by: Eryu Guan <guaneryu@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
+---
+ fs/ext4/extents_status.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
+index 9f1380e..f768f4a 100644
+--- a/fs/ext4/extents_status.c
++++ b/fs/ext4/extents_status.c
+@@ -456,6 +456,9 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
+ 	es_debug("add [%u/%u) %llu %llx to extent status tree of inode %lu\n",
+ 		 lblk, len, pblk, status, inode->i_ino);
+ 
++	if (!len)
++		return 0;
++
+ 	BUG_ON(end < lblk);
+ 
+ 	newes.es_lblk = lblk;
+@@ -649,6 +652,9 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
+ 	es_debug("remove [%u/%u) from extent status tree of inode %lu\n",
+ 		 lblk, len, inode->i_ino);
+ 
++	if (!len)
++		return err;
++
+ 	end = lblk + len - 1;
+ 	BUG_ON(end < lblk);
+ 
