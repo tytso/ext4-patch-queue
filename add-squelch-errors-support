@@ -18,10 +18,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 4 insertions(+)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 8462eb3..03da14a 100644
+index c8f0f25..316760b 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1163,6 +1163,7 @@ struct ext4_super_block {
+@@ -1152,6 +1152,7 @@ struct ext4_super_block {
   */
  #define EXT4_MF_MNTDIR_SAMPLED	0x0001
  #define EXT4_MF_FS_ABORTED	0x0002	/* Fatal error detected */
@@ -29,19 +29,19 @@ index 8462eb3..03da14a 100644
  
  /*
   * fourth extended-fs super-block data in memory
-@@ -1379,6 +1380,7 @@ enum {
- 	EXT4_STATE_DIOREAD_LOCK,	/* Disable support for dio read
+@@ -1374,6 +1375,7 @@ enum {
  					   nolocking */
  	EXT4_STATE_MAY_INLINE_DATA,	/* may have in-inode data */
+ 	EXT4_STATE_ORDERED_MODE,	/* data=ordered mode */
 +	EXT4_STATE_ERR_SQUELCHED,	/* squeched error */
  };
  
  #define EXT4_INODE_BIT_FNS(name, field, offset)				\
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 4db28f0..8258de3 100644
+index 40b6264..4d6d42c 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -2595,6 +2595,7 @@ EXT4_RW_ATTR_SBI_UI(mb_group_prealloc, s_mb_group_prealloc);
+@@ -2520,6 +2520,7 @@ EXT4_RW_ATTR_SBI_UI(mb_group_prealloc, s_mb_group_prealloc);
  EXT4_RW_ATTR_SBI_UI(max_writeback_mb_bump, s_max_writeback_mb_bump);
  EXT4_RW_ATTR_SBI_UI(extent_max_zeroout_kb, s_extent_max_zeroout_kb);
  EXT4_ATTR(trigger_fs_error, 0200, NULL, trigger_test_error);
@@ -49,7 +49,7 @@ index 4db28f0..8258de3 100644
  
  static struct attribute *ext4_attrs[] = {
  	ATTR_LIST(delayed_allocation_blocks),
-@@ -2611,6 +2612,7 @@ static struct attribute *ext4_attrs[] = {
+@@ -2536,6 +2537,7 @@ static struct attribute *ext4_attrs[] = {
  	ATTR_LIST(max_writeback_mb_bump),
  	ATTR_LIST(extent_max_zeroout_kb),
  	ATTR_LIST(trigger_fs_error),
