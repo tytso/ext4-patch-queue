@@ -16,12 +16,12 @@ e2fsprogs git repository.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/ext4.h    |  3 ++-
- fs/ext4/extents.c | 50 ++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/ioctl.c   | 20 ++++++++------------
- 3 files changed, 60 insertions(+), 13 deletions(-)
+ fs/ext4/extents.c | 59 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/ioctl.c   | 20 ++++++++-----------
+ 3 files changed, 69 insertions(+), 13 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index add9d19..5d82a5d 100644
+index 85dfd49..c8f0f25 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -403,7 +403,7 @@ struct flex_groups {
@@ -33,7 +33,7 @@ index add9d19..5d82a5d 100644
  
  /* Flags that should be inherited by new inodes from their parent. */
  #define EXT4_FL_INHERITED (EXT4_SECRM_FL | EXT4_UNRM_FL | EXT4_COMPR_FL |\
-@@ -2602,6 +2602,7 @@ extern int ext4_ext_check_inode(struct inode *inode);
+@@ -2606,6 +2606,7 @@ extern int ext4_find_delalloc_range(struct inode *inode,
  extern int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk);
  extern int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
  			__u64 start, __u64 len);
@@ -42,10 +42,10 @@ index add9d19..5d82a5d 100644
  
  /* move_extent.c */
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 1918f8b..e558831 100644
+index 372b2cb..ade3801 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -4768,3 +4768,53 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+@@ -4783,3 +4783,62 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
  
  	return error;
  }
@@ -69,27 +69,34 @@ index 1918f8b..e558831 100644
 +	    (!ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
 +		return -EINVAL;
 +
++	down_write(&EXT4_I(inode)->i_data_sem);
 +	ret = ext4_ext_check_inode(inode);
 +	if (ret)
-+		return ret;
++		goto errout;
 +
 +	eh = ext_inode_hdr(inode);
 +	ex  = EXT_FIRST_EXTENT(eh);
 +	if (ext4_blocks_count(es) > EXT4_MAX_BLOCK_FILE_PHYS ||
-+	    eh->eh_depth != 0 || eh->eh_entries > 1)
-+		return -EOPNOTSUPP;
++	    eh->eh_depth != 0 || eh->eh_entries > 1) {
++		ret = -EOPNOTSUPP;
++		goto errout;
++	}
 +	if (eh->eh_entries == 0)
 +		blk = len = 0;
 +	else {
 +		len = le16_to_cpu(ex->ee_len);
 +		blk = ext4_ext_pblock(ex);
-+		if (len > EXT4_NDIR_BLOCKS)
-+			return -EOPNOTSUPP;
++		if (len > EXT4_NDIR_BLOCKS) {
++			ret = -EOPNOTSUPP;
++			goto errout;
++		}
 +	}
 +
 +	handle = ext4_journal_start(inode, EXT4_HT_MIGRATE, 1);
-+	if (IS_ERR(handle))
-+		return PTR_ERR(handle);
++	if (IS_ERR(handle)) {
++		ret = PTR_ERR(handle);
++		goto errout;
++	}
 +
 +	ext4_clear_inode_flag(inode, EXT4_INODE_EXTENTS);
 +	memset(ei->i_data, 0, sizeof(ei->i_data));
@@ -97,7 +104,9 @@ index 1918f8b..e558831 100644
 +		ei->i_data[i] = cpu_to_le32(blk++);
 +	ext4_mark_inode_dirty(handle, inode);
 +	ext4_journal_stop(handle);
-+	return 0;
++errout:
++	up_write(&EXT4_I(inode)->i_data_sem);
++	return ret;
 +}
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
 index 31f4f56..a9aab2e 100644
