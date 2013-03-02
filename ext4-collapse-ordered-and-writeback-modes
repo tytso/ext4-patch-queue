@@ -6,9 +6,10 @@ code duplication by factoring out redundant the code paths.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h  |   1 +
- fs/ext4/inode.c | 123 +++++++++++++-------------------------------------------
- 2 files changed, 29 insertions(+), 95 deletions(-)
+ fs/ext4/ext4.h              |   1 +
+ fs/ext4/inode.c             | 125 ++++++++++----------------------------------
+ include/trace/events/ext4.h |  10 +---
+ 3 files changed, 31 insertions(+), 105 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 6e16c18..85dfd49 100644
@@ -23,7 +24,7 @@ index 6e16c18..85dfd49 100644
  
  #define EXT4_INODE_BIT_FNS(name, field, offset)				\
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 95a0c62..2e338a6 100644
+index 95a0c62..c7c835c 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -1055,77 +1055,36 @@ static int ext4_generic_write_end(struct file *file,
@@ -43,7 +44,7 @@ index 95a0c62..2e338a6 100644
  	struct inode *inode = mapping->host;
  	int ret = 0, ret2;
  
- 	trace_ext4_ordered_write_end(inode, pos, len, copied);
+-	trace_ext4_ordered_write_end(inode, pos, len, copied);
 -	ret = ext4_jbd2_file_inode(handle, inode);
 -
 -	if (ret == 0) {
@@ -76,6 +77,7 @@ index 95a0c62..2e338a6 100644
 -		 */
 -		if (inode->i_nlink)
 -			ext4_orphan_del(NULL, inode);
++	trace_ext4_write_end(inode, pos, len, copied);
 +	if (ext4_test_inode_state(inode, EXT4_STATE_ORDERED_MODE)) {
 +		ret = ext4_jbd2_file_inode(handle, inode);
 +		if (ret) {
@@ -203,3 +205,24 @@ index 95a0c62..2e338a6 100644
  }
  
  
+diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
+index c0457c0..2d2adf3 100644
+--- a/include/trace/events/ext4.h
++++ b/include/trace/events/ext4.h
+@@ -257,15 +257,7 @@ DECLARE_EVENT_CLASS(ext4__write_end,
+ 		  __entry->pos, __entry->len, __entry->copied)
+ );
+ 
+-DEFINE_EVENT(ext4__write_end, ext4_ordered_write_end,
+-
+-	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,
+-		 unsigned int copied),
+-
+-	TP_ARGS(inode, pos, len, copied)
+-);
+-
+-DEFINE_EVENT(ext4__write_end, ext4_writeback_write_end,
++DEFINE_EVENT(ext4__write_end, ext4_write_end,
+ 
+ 	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,
+ 		 unsigned int copied),
