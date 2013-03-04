@@ -24,20 +24,20 @@ ext4_split_extent_at() returns. None of split_flags can not be applied
 to initialized extent so this patch also add BUG_ON to prevent similar
 issues in future.
 
-TESTCASE: https://github.com/dmonakhov/xfstests/commit/1a1c4f337d4d198803436c63a56625b1a78d8a5e
+TESTCASE: https://github.com/dmonakhov/xfstests/commit/b8a55eb5ce28c6ff29e620ab090902fcd5833597
 
 Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
-Reviewed-by: Jan Kara <jack@suse.cz>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
 ---
  fs/ext4/extents.c | 23 +++++++++++++++++------
  1 file changed, 17 insertions(+), 6 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index a6b9ffa..8cb55fb 100644
+index 372b2cb..bef194a 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2982,6 +2982,10 @@ static int ext4_split_extent_at(handle_t *handle,
+@@ -2943,6 +2943,10 @@ static int ext4_split_extent_at(handle_t *handle,
  	newblock = split - ee_block + ext4_ext_pblock(ex);
  
  	BUG_ON(split < ee_block || split >= (ee_block + ee_len));
@@ -48,7 +48,7 @@ index a6b9ffa..8cb55fb 100644
  
  	err = ext4_ext_get_access(handle, inode, path + depth);
  	if (err)
-@@ -3091,18 +3095,25 @@ static int ext4_split_extent(handle_t *handle,
+@@ -3061,19 +3065,26 @@ static int ext4_split_extent(handle_t *handle,
  		if (err)
  			goto out;
  	}
@@ -67,13 +67,14 @@ index a6b9ffa..8cb55fb 100644
 +	split_flag1 = 0;
  
  	if (map->m_lblk >= ee_block) {
--		split_flag1 = split_flag & EXT4_EXT_MAY_ZEROOUT;
+-		split_flag1 = split_flag & (EXT4_EXT_MAY_ZEROOUT |
+-					    EXT4_EXT_DATA_VALID2);
 -		if (uninitialized)
--			split_flag1 |= EXT4_EXT_MARK_UNINIT1;
++		split_flag1 = split_flag & EXT4_EXT_DATA_VALID2;
++		if (uninitialized) {
+ 			split_flag1 |= EXT4_EXT_MARK_UNINIT1;
 -		if (split_flag & EXT4_EXT_MARK_UNINIT2)
 -			split_flag1 |= EXT4_EXT_MARK_UNINIT2;
-+		if (uninitialized) {
-+			split_flag1 = EXT4_EXT_MARK_UNINIT1;
 +			split_flag1 |= split_flag & (EXT4_EXT_MAY_ZEROOUT |
 +						     EXT4_EXT_MARK_UNINIT2);
 +		}
