@@ -1,0 +1,48 @@
+ext4: fix wrong m_len value after unwritten extent conversion
+
+From: Zheng Liu <wenqing.lz@taobao.com>
+
+The ext4_ext_handle_uninitialized_extents() function was assuming the
+return value of ext4_ext_map_blocks() is equal to map->m_len.  This
+incorrect assumption was harmless until we started use status tree as
+a extent cache because we need to update status tree according to
+'m_len' value.
+
+Meanwhile this commit marks EXT4_MAP_MAPPED flag after unwritten extent
+conversion.  It shouldn't cause a bug because we update status tree
+according to checking EXT4_MAP_UNWRITTEN flag.  But it should be fixed.
+
+After applied this commit, the following error message from self-testing
+infrastructure disappears.
+
+    ...
+    kernel: ES len assertation failed for inode: 230 retval 1 !=
+    map->m_len 3 in ext4_map_blocks (allocation)
+    ...
+
+Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Dmitry Monakhov <dmonakhov@openvz.org>
+---
+ fs/ext4/extents.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 25c86aa..110e85a 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -3650,6 +3650,10 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+ 						 path, map->m_len);
+ 		} else
+ 			err = ret;
++		map->m_flags |= EXT4_MAP_MAPPED;
++		if (allocated > map->m_len)
++			allocated = map->m_len;
++		map->m_len = allocated;
+ 		goto out2;
+ 	}
+ 	/* buffered IO case */
+-- 
+1.7.12.rc2.18.g61b472e
+
+
