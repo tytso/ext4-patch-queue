@@ -1,0 +1,57 @@
+ext4: reserve metadata block for every delayed write
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Currently we only reserve space (data+metadata) in delayed allocation if
+we're allocating from new cluster (which is always in non-bigalloc file
+system) which is ok for data blocks, because we reserve the whole cluster.
+
+However we have to reserve metadata for every delayed block we're going
+to write because every block could potentially require metedata block
+when we need to grow the extent tree.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+---
+ fs/ext4/inode.c |   14 ++++++++++++--
+ 1 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index c3b88ec..e0d5bc6 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1905,8 +1905,11 @@ add_delayed:
+ 		 * XXX: __block_prepare_write() unmaps passed block,
+ 		 * is it OK?
+ 		 */
+-		/* If the block was allocated from previously allocated cluster,
+-		 * then we dont need to reserve it again. */
++		/*
++		 * If the block was allocated from previously allocated cluster,
++		 * then we don't need to reserve it again. However we still need
++		 * to reserve metadata for every block we're going to write.
++		 */
+ 		if (!(map->m_flags & EXT4_MAP_FROM_CLUSTER)) {
+ 			ret = ext4_da_reserve_space(inode, iblock);
+ 			if (ret) {
+@@ -1914,6 +1917,13 @@ add_delayed:
+ 				retval = ret;
+ 				goto out_unlock;
+ 			}
++		} else {
++			ret = ext4_da_reserve_metadata(inode, iblock);
++			if (ret) {
++				/* not enough space to reserve */
++				retval = ret;
++				goto out_unlock;
++			}
+ 		}
+ 
+ 		ret = ext4_es_insert_extent(inode, map->m_lblk, map->m_len,
+-- 
+1.7.7.6
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
