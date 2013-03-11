@@ -1,0 +1,63 @@
+ext4: do not use yield()
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Using yield() is strongly discouraged (see sched/core.c) especially
+since we can just use cond_resched().
+
+Replace all use of yield() with cond_resched().
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c   |    2 +-
+ fs/ext4/mballoc.c |    8 ++------
+ 2 files changed, 3 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 9ea0cde..ab28090 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1263,7 +1263,7 @@ repeat:
+ 		ei->i_da_metadata_calc_last_lblock = save_last_lblock;
+ 		spin_unlock(&ei->i_block_reservation_lock);
+ 		if (ext4_should_retry_alloc(inode->i_sb, &retries)) {
+-			yield();
++			cond_resched();
+ 			goto repeat;
+ 		}
+ 		dquot_release_reservation_block(inode, EXT4_C2B(sbi, 1));
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 0a493a1..d2ec0d8 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -3692,11 +3692,7 @@ repeat:
+ 	if (free < needed && busy) {
+ 		busy = 0;
+ 		ext4_unlock_group(sb, group);
+-		/*
+-		 * Yield the CPU here so that we don't get soft lockup
+-		 * in non preempt case.
+-		 */
+-		yield();
++		cond_resched();
+ 		goto repeat;
+ 	}
+ 
+@@ -4246,7 +4242,7 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
+ 			ext4_claim_free_clusters(sbi, ar->len, ar->flags)) {
+ 
+ 			/* let others to free the space */
+-			yield();
++			cond_resched();
+ 			ar->len = ar->len >> 1;
+ 		}
+ 		if (!ar->len) {
+-- 
+1.7.7.6
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
