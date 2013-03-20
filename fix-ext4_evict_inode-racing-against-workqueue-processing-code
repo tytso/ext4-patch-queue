@@ -14,11 +14,12 @@ evict_inode() codepath can race against the workqueue code on CPU #1
 accessing EXT4_I(inode)->i_unwritten_work to find the next item of
 work to do.
 
-Fix this by calling flush_work() if the work structure is still
-pending in ext$_ioend_wait().  Also, move the call to
-ext4_ioend_wait() until after truncate_inode_pages() and
-filemap_write_and_wait() are called, to make sure all dirty pages have
-been written back and flushed from the page cache first.
+Fix this by calling cancel_work_sync() in ext4_ioend_wait(), which
+will be renamed ext4_ioend_shutdown(), since it is only used by
+ext4_evict_inode().  Also, move the call to ext4_ioend_shutdown()
+until after truncate_inode_pages() and filemap_write_and_wait() are
+called, to make sure all dirty pages have been written back and
+flushed from the page cache first.
 
 BUG: unable to handle kernel NULL pointer dereference at   (null)
 IP: [<c01dda6a>] cwq_activate_delayed_work+0x3b/0x7e
@@ -58,11 +59,29 @@ CR2: 0000000000000000
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: Jan Kara <jack@suse.cz>
 ---
+ fs/ext4/ext4.h    |  2 +-
+ fs/ext4/inode.c   |  4 ++--
+ fs/ext4/page-io.c | 11 ++++++++++-
+ 3 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 167ff56..3b83cd6 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2617,7 +2617,7 @@ extern int ext4_move_extents(struct file *o_filp, struct file *d_filp,
+ extern int __init ext4_init_pageio(void);
+ extern void ext4_add_complete_io(ext4_io_end_t *io_end);
+ extern void ext4_exit_pageio(void);
+-extern void ext4_ioend_wait(struct inode *);
++extern void ext4_ioend_shutdown(struct inode *);
+ extern void ext4_free_io_end(ext4_io_end_t *io);
+ extern ext4_io_end_t *ext4_init_io_end(struct inode *inode, gfp_t flags);
+ extern void ext4_end_io_work(struct work_struct *work);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index cbbf583..276a51c 100644
+index 65bbc93..ea5f24f 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -187,8 +187,6 @@ void ext4_evict_inode(struct inode *inode)
+@@ -185,8 +185,6 @@ void ext4_evict_inode(struct inode *inode)
  
  	trace_ext4_evict_inode(inode);
  
@@ -71,45 +90,45 @@ index cbbf583..276a51c 100644
  	if (inode->i_nlink) {
  		/*
  		 * When journalling data dirty buffers are tracked only in the
-@@ -218,6 +216,7 @@ void ext4_evict_inode(struct inode *inode)
+@@ -216,6 +214,7 @@ void ext4_evict_inode(struct inode *inode)
  			filemap_write_and_wait(&inode->i_data);
  		}
  		truncate_inode_pages(&inode->i_data, 0);
-+		ext4_ioend_wait(inode);
++		ext4_ioend_shutdown(inode);
  		goto no_delete;
  	}
  
-@@ -227,6 +226,7 @@ void ext4_evict_inode(struct inode *inode)
+@@ -225,6 +224,7 @@ void ext4_evict_inode(struct inode *inode)
  	if (ext4_should_order_data(inode))
  		ext4_begin_ordered_truncate(inode, 0);
  	truncate_inode_pages(&inode->i_data, 0);
-+	ext4_ioend_wait(inode);
++	ext4_ioend_shutdown(inode);
  
  	if (is_bad_inode(inode))
  		goto no_delete;
 diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
-index a029017..e3d9cdb 100644
+index 809b310..6f016de 100644
 --- a/fs/ext4/page-io.c
 +++ b/fs/ext4/page-io.c
-@@ -50,11 +50,21 @@ void ext4_exit_pageio(void)
+@@ -50,11 +50,20 @@ void ext4_exit_pageio(void)
  	kmem_cache_destroy(io_page_cachep);
  }
  
+-void ext4_ioend_wait(struct inode *inode)
 +/*
-+ * Called by ext4_evict_inode() to make sure there are no pending I/O
-+ * completion work left to do.
++ * This function is called by ext4_evict_inode() to make sure there is
++ * no more pending I/O completion work left to do.
 + */
- void ext4_ioend_wait(struct inode *inode)
++void ext4_ioend_shutdown(struct inode *inode)
  {
  	wait_queue_head_t *wq = ext4_ioend_wq(inode);
  
  	wait_event(*wq, (atomic_read(&EXT4_I(inode)->i_ioend_count) == 0));
 +	/*
-+	 * We need to make sure the work structure is finished before
-+	 * we let the inode get destroyed by ext4_evict_inode()
++	 * We need to make sure the work structure is finished being
++	 * used before we let the inode get destroyed.
 +	 */
-+	if (work_pending(&EXT4_I(inode)->i_unwritten_work))
-+		flush_work(&EXT4_I(inode)->i_unwritten_work);
++	cancel_work_sync(&EXT4_I(inode)->i_unwritten_work);
  }
  
  static void put_io_page(struct ext4_io_page *io_page)

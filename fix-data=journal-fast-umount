@@ -3,7 +3,7 @@ ext4: fix data=journal fast mount/umount hang
 In data=journal mode, if we unmount the file system before a
 transaction has a chance to complete, when the journal inode is being
 evicted, we can end up calling into jbd2_log_wait_commit() for the
-current transaction.
+last transaction, after the journalling machinery has been shut down.
 
 Arguably we should adjust ext4_should_journal_data() to return FALSE
 for the journal inode, but the only place it matters is
@@ -47,7 +47,7 @@ Call Trace:
 jbd2_log_wait_commit: error: j_commit_request=-1289337090, tid=0
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-Cc: Jan Kara <jack@suse.cz>
+Reviewed-by: Jan Kara <jack@suse.cz>
 Cc: stable@vger.kernel.org
 
 ---
