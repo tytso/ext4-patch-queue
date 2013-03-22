@@ -61,8 +61,8 @@ Cc: Jan Kara <jack@suse.cz>
 ---
  fs/ext4/ext4.h    |  2 +-
  fs/ext4/inode.c   |  4 ++--
- fs/ext4/page-io.c | 11 ++++++++++-
- 3 files changed, 13 insertions(+), 4 deletions(-)
+ fs/ext4/page-io.c | 12 +++++++++++-
+ 3 files changed, 14 insertions(+), 4 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 167ff56..3b83cd6 100644
@@ -107,10 +107,10 @@ index 65bbc93..ea5f24f 100644
  	if (is_bad_inode(inode))
  		goto no_delete;
 diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
-index 809b310..6f016de 100644
+index 809b310..047a6de 100644
 --- a/fs/ext4/page-io.c
 +++ b/fs/ext4/page-io.c
-@@ -50,11 +50,20 @@ void ext4_exit_pageio(void)
+@@ -50,11 +50,21 @@ void ext4_exit_pageio(void)
  	kmem_cache_destroy(io_page_cachep);
  }
  
@@ -128,7 +128,8 @@ index 809b310..6f016de 100644
 +	 * We need to make sure the work structure is finished being
 +	 * used before we let the inode get destroyed.
 +	 */
-+	cancel_work_sync(&EXT4_I(inode)->i_unwritten_work);
++	if (work_pending(&EXT4_I(inode)->i_unwritten_work))
++		cancel_work_sync(&EXT4_I(inode)->i_unwritten_work);
  }
  
  static void put_io_page(struct ext4_io_page *io_page)
