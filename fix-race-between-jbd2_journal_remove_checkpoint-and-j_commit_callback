@@ -47,12 +47,12 @@ Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: stable@vger.kernel.org
 ---
- fs/jbd2/commit.c     |   50 ++++++++++++++++++++++++++++----------------------
- include/linux/jbd2.h |    1 +
+ fs/jbd2/commit.c     | 50 ++++++++++++++++++++++++++++----------------------
+ include/linux/jbd2.h |  1 +
  2 files changed, 29 insertions(+), 22 deletions(-)
 
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index 750c701..1f1fd9c 100644
+index 750c701..0f53946 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
 @@ -382,7 +382,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
@@ -115,7 +115,7 @@ index 750c701..1f1fd9c 100644
 -
 +	/* Drop all spin_locks because commit_callback may be block.
 +	 * __journal_remove_checkpoint() can not destroy transaction
-+	 * under us because it is marked as T_FINISHED yet */
++	 * under us because it is not marked as T_FINISHED yet */
  	if (journal->j_commit_callback)
  		journal->j_commit_callback(journal, commit_transaction);
  
@@ -139,7 +139,7 @@ index 750c701..1f1fd9c 100644
  	wake_up(&journal->j_wait_done_commit);
  }
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 50e5a5e..608ea13 100644
+index f028975..f9fe889 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
 @@ -480,6 +480,7 @@ struct transaction_s
@@ -150,7 +150,3 @@ index 50e5a5e..608ea13 100644
  		T_FINISHED
  	}			t_state;
  
--- 
-1.7.1
-
-
