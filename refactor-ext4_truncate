@@ -5,11 +5,11 @@ ext4_truncate().  This saves over 60 lines of code.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h     |  4 +--
- fs/ext4/extents.c  | 60 +--------------------------------------
- fs/ext4/indirect.c | 88 +++------------------------------------------------------
- fs/ext4/inode.c    | 72 ++++++++++++++++++++++++++++++++++++++++++++--
- 4 files changed, 77 insertions(+), 147 deletions(-)
+ fs/ext4/ext4.h     |  4 ++--
+ fs/ext4/extents.c  | 60 +--------------------------------------------------------
+ fs/ext4/indirect.c | 88 ++++--------------------------------------------------------------------------------
+ fs/ext4/inode.c    | 74 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++---
+ 4 files changed, 78 insertions(+), 148 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 0649253..d05ba38 100644
@@ -34,7 +34,7 @@ index 0649253..d05ba38 100644
  				 ext4_lblk_t end);
  extern void ext4_ext_init(struct super_block *);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 2860b8f..61b8cd2 100644
+index 8f6b3de..57cb4b7 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -4254,48 +4254,13 @@ out3:
@@ -118,7 +118,7 @@ index 2860b8f..61b8cd2 100644
  
  static void ext4_falloc_update_inode(struct inode *inode,
 diff --git a/fs/ext4/indirect.c b/fs/ext4/indirect.c
-index b6250b1..df6804b 100644
+index 926028c..80a798b 100644
 --- a/fs/ext4/indirect.c
 +++ b/fs/ext4/indirect.c
 @@ -806,26 +806,9 @@ int ext4_ind_trans_blocks(struct inode *inode, int nrblocks, int chunk)
@@ -262,10 +262,21 @@ index b6250b1..df6804b 100644
  
  static int free_hole_blocks(handle_t *handle, struct inode *inode,
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 5052ba3..a088087 100644
+index 9bda50a..49c80e4 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -3800,6 +3800,12 @@ out_mutex:
+@@ -3738,9 +3738,9 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
+ 					    stop_block);
+ 
+ 	ext4_discard_preallocations(inode);
++	up_write(&EXT4_I(inode)->i_data_sem);
+ 	if (IS_SYNC(inode))
+ 		ext4_handle_sync(handle);
+-	up_write(&EXT4_I(inode)->i_data_sem);
+ 	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
+ 	ext4_mark_inode_dirty(handle, inode);
+ out_stop:
+@@ -3782,6 +3782,12 @@ out_mutex:
   */
  void ext4_truncate(struct inode *inode)
  {
@@ -278,7 +289,7 @@ index 5052ba3..a088087 100644
  	trace_ext4_truncate_enter(inode);
  
  	if (!ext4_can_truncate(inode))
-@@ -3818,10 +3824,72 @@ void ext4_truncate(struct inode *inode)
+@@ -3800,10 +3806,72 @@ void ext4_truncate(struct inode *inode)
  			return;
  	}
  
@@ -288,11 +299,9 @@ index 5052ba3..a088087 100644
 +	 */
 +	ext4_flush_unwritten_io(inode);
 +
- 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
--		ext4_ext_truncate(inode);
++	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
 +		credits = ext4_writepage_trans_blocks(inode);
- 	else
--		ext4_ind_truncate(inode);
++	else
 +		credits = ext4_blocks_for_truncate(inode);
 +
 +	handle = ext4_journal_start(inode, EXT4_HT_TRUNCATE, credits);
@@ -326,9 +335,11 @@ index 5052ba3..a088087 100644
 +
 +	ext4_discard_preallocations(inode);
 +
-+	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
+ 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
+-		ext4_ext_truncate(inode);
 +		ext4_ext_truncate(handle, inode);
-+	else
+ 	else
+-		ext4_ind_truncate(inode);
 +		ext4_ind_truncate(handle, inode);
 +
 +	up_write(&ei->i_data_sem);
