@@ -10,13 +10,20 @@ specifically, the append-only, immutable, and extents inode flags.  So
 we need to take i_mutex before deciding whether to use the
 extents-specific or indirect-specific punch_hole code.
 
+Also, there was a missing call to ext4_inode_block_unlocked_dio() in
+the indirect punch codepath.  This was added in commit 02d262dffcf4c
+to block DIO readers racing against the punch operation in the
+codepath for extent-mapped inodes, but it was missing for
+indirect-block mapped inodes.  One of the advantages of refactoring
+the code is that it makes such oversights much less likely.
+
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h     |   7 ++-
- fs/ext4/extents.c  | 185 +-------------------------------------------------------
- fs/ext4/indirect.c | 158 +----------------------------------------------
- fs/ext4/inode.c    | 181 ++++++++++++++++++++++++++++++++++++++++++++++++++++--
- 4 files changed, 184 insertions(+), 347 deletions(-)
+ fs/ext4/ext4.h     |   7 ++--
+ fs/ext4/extents.c  | 185 +----------------------------------------------------------------------------------
+ fs/ext4/indirect.c | 158 +----------------------------------------------------------------------
+ fs/ext4/inode.c    | 180 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++---
+ 4 files changed, 183 insertions(+), 347 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index f91e11b..0649253 100644
@@ -420,10 +427,10 @@ index b780c4a..926028c 100644
 -	return err;
 -}
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 4ee6927..ac1d78c 100644
+index a4ffb47..9bda50a 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -3579,20 +3579,191 @@ int ext4_can_truncate(struct inode *inode)
+@@ -3566,20 +3566,190 @@ int ext4_can_truncate(struct inode *inode)
  int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
  {
  	struct inode *inode = file_inode(file);
@@ -510,8 +517,7 @@ index 4ee6927..ac1d78c 100644
 +		credits = ext4_writepage_trans_blocks(inode);
 +	else
 +		credits = ext4_blocks_for_truncate(inode);
-+	handle = ext4_journal_start(inode, EXT4_HT_TRUNCATE,
-+				    ext4_blocks_for_truncate(inode));
++	handle = ext4_journal_start(inode, EXT4_HT_TRUNCATE, credits);
 +	if (IS_ERR(handle)) {
 +		ret = PTR_ERR(handle);
 +		ext4_std_error(sb, ret);

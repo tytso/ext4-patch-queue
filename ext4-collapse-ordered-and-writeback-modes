@@ -5,17 +5,18 @@ data=writeback is a single call to ext4_jbd2_file_inode().  Eliminate
 code duplication by factoring out redundant the code paths.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Lukas Czerner <lczerner@redhat.com>
 ---
  fs/ext4/ext4.h              |   1 +
- fs/ext4/inode.c             | 125 ++++++++++----------------------------------
- include/trace/events/ext4.h |  10 +---
+ fs/ext4/inode.c             | 125 +++++++++++++++++---------------------------------------------------------
+ include/trace/events/ext4.h |  10 +-----
  3 files changed, 31 insertions(+), 105 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 6e16c18..85dfd49 100644
+index 3b83cd6..f91e11b 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1373,6 +1373,7 @@ enum {
+@@ -1374,6 +1374,7 @@ enum {
  	EXT4_STATE_DIOREAD_LOCK,	/* Disable support for dio read
  					   nolocking */
  	EXT4_STATE_MAY_INLINE_DATA,	/* may have in-inode data */
@@ -24,10 +25,10 @@ index 6e16c18..85dfd49 100644
  
  #define EXT4_INODE_BIT_FNS(name, field, offset)				\
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 95a0c62..c7c835c 100644
+index b3a5213..4ee6927 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1055,77 +1055,36 @@ static int ext4_generic_write_end(struct file *file,
+@@ -1145,77 +1145,36 @@ static int ext4_generic_write_end(struct file *file,
   * ext4 never places buffers on inode->i_mapping->private_list.  metadata
   * buffers are managed internally.
   */
@@ -122,7 +123,7 @@ index 95a0c62..c7c835c 100644
  	ret2 = ext4_journal_stop(handle);
  	if (!ret)
  		ret = ret2;
-@@ -2656,18 +2615,9 @@ static int ext4_da_write_end(struct file *file,
+@@ -2818,18 +2777,9 @@ static int ext4_da_write_end(struct file *file,
  	unsigned long start, end;
  	int write_mode = (int)(unsigned long)fsdata;
  
@@ -144,7 +145,7 @@ index 95a0c62..c7c835c 100644
  
  	trace_ext4_da_write_end(inode, pos, len, copied);
  	start = pos & (PAGE_CACHE_SIZE - 1);
-@@ -3172,27 +3122,12 @@ static int ext4_journalled_set_page_dirty(struct page *page)
+@@ -3334,27 +3284,12 @@ static int ext4_journalled_set_page_dirty(struct page *page)
  	return __set_page_dirty_nobuffers(page);
  }
  
@@ -174,7 +175,7 @@ index 95a0c62..c7c835c 100644
  	.bmap			= ext4_bmap,
  	.invalidatepage		= ext4_invalidatepage,
  	.releasepage		= ext4_releasepage,
-@@ -3237,23 +3172,21 @@ void ext4_set_aops(struct inode *inode)
+@@ -3399,23 +3334,21 @@ void ext4_set_aops(struct inode *inode)
  {
  	switch (ext4_inode_journal_mode(inode)) {
  	case EXT4_INODE_ORDERED_DATA_MODE:
@@ -206,7 +207,7 @@ index 95a0c62..c7c835c 100644
  
  
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index c0457c0..2d2adf3 100644
+index 4ee4710..58459b7 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
 @@ -257,15 +257,7 @@ DECLARE_EVENT_CLASS(ext4__write_end,
