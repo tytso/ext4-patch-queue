@@ -16,17 +16,14 @@ interested in knowing the block group.
 Signed-off-by: Lukas Czerner <lczerner@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
-v2: Update after patch 0001 changed
-v3: Use test_opt2/set_opt2
-
- fs/ext4/balloc.c  |   25 ++++++++++++++++++-------
- fs/ext4/ext4.h    |    3 +++
- fs/ext4/mballoc.c |    6 +++---
- fs/ext4/resize.c  |   10 +++++-----
- 4 files changed, 29 insertions(+), 15 deletions(-)
+ fs/ext4/balloc.c  | 25 ++++++++++++++++++-------
+ fs/ext4/ext4.h    | 10 +++++++---
+ fs/ext4/mballoc.c |  6 +++---
+ fs/ext4/resize.c  | 10 +++++-----
+ 4 files changed, 33 insertions(+), 18 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index d6babf9..1033674 100644
+index d6babf9..9e8d8ff 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -30,6 +30,23 @@ static unsigned ext4_num_base_meta_clusters(struct super_block *sb,
@@ -35,8 +32,8 @@ index d6babf9..1033674 100644
  /*
 + * Calculate block group number for a given block number
 + */
-+inline ext4_group_t ext4_get_group_number(struct super_block *sb,
-+					  ext4_fsblk_t block)
++ext4_group_t ext4_get_group_number(struct super_block *sb,
++				   ext4_fsblk_t block)
 +{
 +	ext4_group_t group;
 +
@@ -69,24 +66,38 @@ index d6babf9..1033674 100644
  }
  
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 87572c1..655d7ff 100644
+index cc58aa8..a0637e5 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1795,6 +1795,9 @@ ext4_group_first_block_no(struct super_block *sb, ext4_group_t group_no)
- void ext4_get_group_no_and_offset(struct super_block *sb, ext4_fsblk_t blocknr,
- 			ext4_group_t *blockgrpp, ext4_grpblk_t *offsetp);
+@@ -1793,9 +1793,6 @@ ext4_group_first_block_no(struct super_block *sb, ext4_group_t group_no)
+  */
+ #define ERR_BAD_DX_DIR	-75000
  
-+inline ext4_group_t ext4_get_group_number(struct super_block *sb,
-+					  ext4_fsblk_t block);
-+
+-void ext4_get_group_no_and_offset(struct super_block *sb, ext4_fsblk_t blocknr,
+-			ext4_group_t *blockgrpp, ext4_grpblk_t *offsetp);
+-
  /*
   * Timeout and state flag for lazy initialization inode thread.
   */
+@@ -1917,6 +1914,13 @@ int ext4_block_bitmap_csum_verify(struct super_block *sb, ext4_group_t group,
+ 				  struct buffer_head *bh);
+ 
+ /* balloc.c */
++extern void ext4_get_group_no_and_offset(struct super_block *sb,
++					 ext4_fsblk_t blocknr,
++					 ext4_group_t *blockgrpp,
++					 ext4_grpblk_t *offsetp);
++extern ext4_group_t ext4_get_group_number(struct super_block *sb,
++					  ext4_fsblk_t block);
++
+ extern void ext4_validate_block_bitmap(struct super_block *sb,
+ 				       struct ext4_group_desc *desc,
+ 				       unsigned int block_group,
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index ee6614b..dca7f06 100644
+index 580aada..8c8d052 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
-@@ -3342,7 +3342,7 @@ static void ext4_mb_put_pa(struct ext4_allocation_context *ac,
+@@ -3344,7 +3344,7 @@ static void ext4_mb_put_pa(struct ext4_allocation_context *ac,
  	if (pa->pa_type == MB_GROUP_PA)
  		grp_blk--;
  
@@ -95,7 +106,7 @@ index ee6614b..dca7f06 100644
  
  	/*
  	 * possible race:
-@@ -3807,7 +3807,7 @@ repeat:
+@@ -3809,7 +3809,7 @@ repeat:
  
  	list_for_each_entry_safe(pa, tmp, &list, u.pa_tmp_list) {
  		BUG_ON(pa->pa_type != MB_INODE_PA);
@@ -104,7 +115,7 @@ index ee6614b..dca7f06 100644
  
  		err = ext4_mb_load_buddy(sb, group, &e4b);
  		if (err) {
-@@ -4069,7 +4069,7 @@ ext4_mb_discard_lg_preallocations(struct super_block *sb,
+@@ -4071,7 +4071,7 @@ ext4_mb_discard_lg_preallocations(struct super_block *sb,
  
  	list_for_each_entry_safe(pa, tmp, &discard_list, u.pa_tmp_list) {
  
@@ -162,7 +173,3 @@ index c169477..e349853 100644
  	ext4_get_group_no_and_offset(sb, o_blocks_count - 1, &o_group, &offset);
  
  	n_desc_blocks = num_desc_blocks(sb, n_group + 1);
--- 
-1.7.7.6
-
-
