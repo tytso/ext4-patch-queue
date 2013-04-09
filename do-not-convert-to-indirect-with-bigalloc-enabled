@@ -1,0 +1,35 @@
+ext4: do not convert to indirect with bigalloc enabled
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+With bigalloc feature enabled we do not support indirect addressing at all
+so we have to prevent extent addressing to indirect addressing
+conversion in this case. The problem has been introduced with the commit
+"ext4: support simple conversion of extent-mapped inodes to use i_blocks"
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
+---
+ fs/ext4/extents.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 6c5a70a..ddb6628 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4735,6 +4735,10 @@ int ext4_ind_migrate(struct inode *inode)
+ 	    (!ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
+ 		return -EINVAL;
+ 
++	if (EXT4_HAS_RO_COMPAT_FEATURE(inode->i_sb,
++				       EXT4_FEATURE_RO_COMPAT_BIGALLOC))
++		return -EOPNOTSUPP;
++
+ 	down_write(&EXT4_I(inode)->i_data_sem);
+ 	ret = ext4_ext_check_inode(inode);
+ 	if (ret)
+-- 
+1.7.7.6
+
+
