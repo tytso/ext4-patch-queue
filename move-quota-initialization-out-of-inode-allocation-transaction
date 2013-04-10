@@ -1,0 +1,198 @@
+ext4: move quota initialization out of inode allocation transaction
+
+From: Jan Kara <jack@suse.cz>
+
+Inode allocation transaction is pretty heavy (246 credits with quotas
+and extents before previous patch, still around 200 after it).  This is
+mostly due to credits required for allocation of quota structures
+(credits there are heavily overestimated but it's difficult to make
+better estimates if we don't want to wire non-trivial assumptions about
+quota format into filesystem).
+
+So move quota initialization out of allocation transaction. That way
+transaction for quota structure allocation will be started only if we
+need to look up quota structure on disk (rare) and furthermore it will
+be started for each quota type separately, not for all of them at once.
+This reduces maximum transaction size to 34 is most cases and to 73 in
+the worst case.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ialloc.c |   62 +++++++++++++++++++++++++++---------------------------
+ fs/ext4/namei.c  |   12 +++-------
+ 2 files changed, 35 insertions(+), 39 deletions(-)
+
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 6c5bb8d..3f37297 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -652,6 +652,7 @@ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
+ 	struct inode *ret;
+ 	ext4_group_t i;
+ 	ext4_group_t flex_group;
++	bool quota_allocated = false;
+ 
+ 	/* Cannot create files in a deleted directory */
+ 	if (!dir || !dir->i_nlink)
+@@ -666,6 +667,23 @@ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
+ 	ei = EXT4_I(inode);
+ 	sbi = EXT4_SB(sb);
+ 
++	/*
++	 * Initalize owners and quota early so that we don't have to account
++	 * for quota initialization worst case in standard inode creating
++	 * transaction
++	 */
++	if (owner) {
++		inode->i_mode = mode;
++		i_uid_write(inode, owner[0]);
++		i_gid_write(inode, owner[1]);
++	} else if (test_opt(sb, GRPID)) {
++		inode->i_mode = mode;
++		inode->i_uid = current_fsuid();
++		inode->i_gid = dir->i_gid;
++	} else
++		inode_init_owner(inode, dir, mode);
++	dquot_initialize(inode);
++
+ 	if (!goal)
+ 		goal = sbi->s_inode_goal;
+ 
+@@ -851,17 +869,6 @@ got:
+ 		flex_group = ext4_flex_group(sbi, group);
+ 		atomic_dec(&sbi->s_flex_groups[flex_group].free_inodes);
+ 	}
+-	if (owner) {
+-		inode->i_mode = mode;
+-		i_uid_write(inode, owner[0]);
+-		i_gid_write(inode, owner[1]);
+-	} else if (test_opt(sb, GRPID)) {
+-		inode->i_mode = mode;
+-		inode->i_uid = current_fsuid();
+-		inode->i_gid = dir->i_gid;
+-	} else
+-		inode_init_owner(inode, dir, mode);
+-
+ 	inode->i_ino = ino + group * EXT4_INODES_PER_GROUP(sb);
+ 	/* This is the optimal IO size (for stat), not the fs block size */
+ 	inode->i_blocks = 0;
+@@ -918,18 +925,18 @@ got:
+ 		ext4_set_inode_state(inode, EXT4_STATE_MAY_INLINE_DATA);
+ 
+ 	ret = inode;
+-	dquot_initialize(inode);
+ 	err = dquot_alloc_inode(inode);
+ 	if (err)
+-		goto fail_drop;
++		goto out;
++	quota_allocated = true;
+ 
+ 	err = ext4_init_acl(handle, inode, dir);
+ 	if (err)
+-		goto fail_free_drop;
++		goto out;
+ 
+ 	err = ext4_init_security(handle, inode, dir, qstr);
+ 	if (err)
+-		goto fail_free_drop;
++		goto out;
+ 
+ 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_EXTENTS)) {
+ 		/* set extent flag only for directory, file and normal symlink*/
+@@ -945,10 +952,8 @@ got:
+ 	}
+ 
+ 	err = ext4_mark_inode_dirty(handle, inode);
+-	if (err) {
+-		ext4_std_error(sb, err);
+-		goto fail_free_drop;
+-	}
++	if (err)
++		goto fail;
+ 
+ 	ext4_debug("allocating inode %lu\n", inode->i_ino);
+ 	trace_ext4_allocate_inode(inode, dir, mode);
+@@ -956,23 +961,18 @@ got:
+ fail:
+ 	ext4_std_error(sb, err);
+ out:
+-	iput(inode);
+-	ret = ERR_PTR(err);
+-really_out:
+-	brelse(inode_bitmap_bh);
+-	return ret;
+-
+-fail_free_drop:
+-	dquot_free_inode(inode);
+-
+-fail_drop:
++	if (quota_allocated)
++		dquot_free_inode(inode);
+ 	dquot_drop(inode);
+ 	inode->i_flags |= S_NOQUOTA;
+ 	clear_nlink(inode);
+-	unlock_new_inode(inode);
++	if (inode->i_state & I_NEW)
++		unlock_new_inode(inode);
+ 	iput(inode);
++	ret = ERR_PTR(err);
++really_out:
+ 	brelse(inode_bitmap_bh);
+-	return ERR_PTR(err);
++	return ret;
+ }
+ 
+ /* Verify that we are loading a valid orphan from disk */
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 3825d6a..ede1337 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -2251,8 +2251,7 @@ static int ext4_create(struct inode *dir, struct dentry *dentry, umode_t mode,
+ 	dquot_initialize(dir);
+ 
+ 	credits = (EXT4_DATA_TRANS_BLOCKS(dir->i_sb) +
+-		   EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3 +
+-		   EXT4_MAXQUOTAS_INIT_BLOCKS(dir->i_sb));
++		   EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3);
+ retry:
+ 	inode = ext4_new_inode_start_handle(dir, mode, &dentry->d_name, 0,
+ 					    NULL, EXT4_HT_DIR, credits);
+@@ -2286,8 +2285,7 @@ static int ext4_mknod(struct inode *dir, struct dentry *dentry,
+ 	dquot_initialize(dir);
+ 
+ 	credits = (EXT4_DATA_TRANS_BLOCKS(dir->i_sb) +
+-		   EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3 +
+-		   EXT4_MAXQUOTAS_INIT_BLOCKS(dir->i_sb));
++		   EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3);
+ retry:
+ 	inode = ext4_new_inode_start_handle(dir, mode, &dentry->d_name, 0,
+ 					    NULL, EXT4_HT_DIR, credits);
+@@ -2396,8 +2394,7 @@ static int ext4_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
+ 	dquot_initialize(dir);
+ 
+ 	credits = (EXT4_DATA_TRANS_BLOCKS(dir->i_sb) +
+-		   EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3 +
+-		   EXT4_MAXQUOTAS_INIT_BLOCKS(dir->i_sb));
++		   EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3);
+ retry:
+ 	inode = ext4_new_inode_start_handle(dir, S_IFDIR | mode,
+ 					    &dentry->d_name,
+@@ -2826,8 +2823,7 @@ static int ext4_symlink(struct inode *dir,
+ 		 * quota blocks, sb is already counted in previous macros).
+ 		 */
+ 		credits = EXT4_DATA_TRANS_BLOCKS(dir->i_sb) +
+-			  EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3 +
+-			  EXT4_MAXQUOTAS_INIT_BLOCKS(dir->i_sb);
++			  EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3;
+ 	}
+ retry:
+ 	inode = ext4_new_inode_start_handle(dir, S_IFLNK|S_IRWXUGO,
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
