@@ -31,18 +31,16 @@ Signed-off-by: Lukas Czerner <lczerner@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Reviewed-by: Carlos Maiolino <cmaiolino@redhat.com>
 ---
-v2: Mount even if there is not enough free space to reserve
-
- Documentation/filesystems/ext4.txt |   11 +++++
- fs/ext4/balloc.c                   |   18 ++++++--
- fs/ext4/ext4.h                     |   13 +++--
- fs/ext4/extents.c                  |   27 ++++++++----
- fs/ext4/inode.c                    |   11 ++++-
- fs/ext4/super.c                    |   84 ++++++++++++++++++++++++++++++++++-
+ Documentation/filesystems/ext4.txt | 11 +++++
+ fs/ext4/balloc.c                   | 18 +++++---
+ fs/ext4/ext4.h                     | 13 +++---
+ fs/ext4/extents.c                  | 27 ++++++++----
+ fs/ext4/inode.c                    | 11 ++++-
+ fs/ext4/super.c                    | 84 ++++++++++++++++++++++++++++++++++++--
  6 files changed, 141 insertions(+), 23 deletions(-)
 
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
-index 34ea4f1..1ce3b3e 100644
+index 5dd957d..f7cbf57 100644
 --- a/Documentation/filesystems/ext4.txt
 +++ b/Documentation/filesystems/ext4.txt
 @@ -494,6 +494,17 @@ Files in /sys/fs/ext4/<devname>
@@ -64,10 +62,10 @@ index 34ea4f1..1ce3b3e 100644
  
  Ioctls
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 92e68b3..3e53020 100644
+index 9e8d8ff..8dcaea6 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
-@@ -478,20 +478,22 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
+@@ -499,20 +499,22 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
  static int ext4_has_free_clusters(struct ext4_sb_info *sbi,
  				  s64 nclusters, unsigned int flags)
  {
@@ -93,7 +91,7 @@ index 92e68b3..3e53020 100644
  					EXT4_FREECLUSTERS_WATERMARK) {
  		free_clusters  = percpu_counter_sum_positive(fcc);
  		dirty_clusters = percpu_counter_sum_positive(dcc);
-@@ -499,15 +501,21 @@ static int ext4_has_free_clusters(struct ext4_sb_info *sbi,
+@@ -520,15 +522,21 @@ static int ext4_has_free_clusters(struct ext4_sb_info *sbi,
  	/* Check whether we have space after accounting for current
  	 * dirty clusters & root reserved clusters.
  	 */
@@ -118,7 +116,7 @@ index 92e68b3..3e53020 100644
  			return 1;
  	}
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 4a01ba3..5dd240f 100644
+index d918715..12b5604 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -121,6 +121,8 @@ typedef unsigned int ext4_group_t;
@@ -154,7 +152,7 @@ index 4a01ba3..5dd240f 100644
  	/* Don't normalize allocation size (used for fallocate) */
  #define EXT4_GET_BLOCKS_NO_NORMALIZE		0x0040
  	/* Request will not result in inode size update (user for fallocate) */
-@@ -1179,6 +1181,7 @@ struct ext4_sb_info {
+@@ -1188,6 +1190,7 @@ struct ext4_sb_info {
  	unsigned int s_mount_flags;
  	unsigned int s_def_mount_opt;
  	ext4_fsblk_t s_sb_block;
@@ -163,10 +161,10 @@ index 4a01ba3..5dd240f 100644
  	kgid_t s_resgid;
  	unsigned short s_mount_state;
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 372b2cb..e61a676 100644
+index a2d67c0..c1c0094 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -1878,8 +1878,8 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
+@@ -1942,8 +1942,8 @@ prepend:
  	 * There is no free space in the found leaf.
  	 * We're gonna add a new leaf in the tree.
  	 */
@@ -177,7 +175,7 @@ index 372b2cb..e61a676 100644
  	err = ext4_ext_create_new_leaf(handle, inode, flags, path, newext);
  	if (err)
  		goto cleanup;
-@@ -2665,12 +2665,14 @@ again:
+@@ -2729,12 +2729,14 @@ again:
  
  			/*
  			 * Split the extent in two so that 'end' is the last
@@ -196,7 +194,7 @@ index 372b2cb..e61a676 100644
  
  			if (err < 0)
  				goto out;
-@@ -3108,7 +3110,8 @@ out:
+@@ -3209,7 +3211,8 @@ out:
  static int ext4_ext_convert_to_initialized(handle_t *handle,
  					   struct inode *inode,
  					   struct ext4_map_blocks *map,
@@ -206,7 +204,7 @@ index 372b2cb..e61a676 100644
  {
  	struct ext4_sb_info *sbi;
  	struct ext4_extent_header *eh;
-@@ -3287,7 +3290,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
+@@ -3435,7 +3438,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
  	}
  
  	allocated = ext4_split_extent(handle, inode, path,
@@ -215,7 +213,7 @@ index 372b2cb..e61a676 100644
  	if (allocated < 0)
  		err = allocated;
  
-@@ -3593,6 +3596,12 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+@@ -3755,6 +3758,12 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  		  flags, allocated);
  	ext4_ext_show_leaf(inode, path);
  
@@ -228,7 +226,7 @@ index 372b2cb..e61a676 100644
  	trace_ext4_ext_handle_uninitialized_extents(inode, map, flags,
  						    allocated, newblock);
  
-@@ -3652,7 +3661,7 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+@@ -3818,7 +3827,7 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  	}
  
  	/* buffered write, writepage time, convert*/
@@ -238,10 +236,10 @@ index 372b2cb..e61a676 100644
  		ext4_update_inode_fsync_trans(handle, inode, 1);
  out:
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 95a0c62..3450829 100644
+index f9b0b47..629d67b 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1601,12 +1601,21 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
+@@ -1688,12 +1688,21 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
  	 */
  	map.m_lblk = next;
  	map.m_len = max_blocks;
@@ -265,7 +263,7 @@ index 95a0c62..3450829 100644
  	if (blks < 0) {
  		struct super_block *sb = mpd->inode->i_sb;
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 9379b7f..1b302fa 100644
+index 968ca93..6fea87d 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -81,6 +81,7 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly);
@@ -276,7 +274,7 @@ index 9379b7f..1b302fa 100644
  
  #if !defined(CONFIG_EXT2_FS) && !defined(CONFIG_EXT2_FS_MODULE) && defined(CONFIG_EXT4_USE_FOR_EXT23)
  static struct file_system_type ext2_fs_type = {
-@@ -2375,6 +2376,17 @@ struct ext4_attr {
+@@ -2382,6 +2383,17 @@ struct ext4_attr {
  	int offset;
  };
  
@@ -294,15 +292,15 @@ index 9379b7f..1b302fa 100644
  static int parse_strtoul(const char *buf,
  		unsigned long max, unsigned long *value)
  {
-@@ -2459,6 +2471,27 @@ static ssize_t sbi_ui_store(struct ext4_attr *a,
+@@ -2466,6 +2478,27 @@ static ssize_t sbi_ui_store(struct ext4_attr *a,
  	return count;
  }
  
 +static ssize_t reserved_clusters_show(struct ext4_attr *a,
 +				  struct ext4_sb_info *sbi, char *buf)
 +{
-+	return snprintf(buf, PAGE_SIZE, "%lu\n",
-+			atomic64_read(&sbi->s_resv_clusters));
++	return snprintf(buf, PAGE_SIZE, "%llu\n",
++		(unsigned long long) atomic64_read(&sbi->s_resv_clusters));
 +}
 +
 +static ssize_t reserved_clusters_store(struct ext4_attr *a,
@@ -322,7 +320,7 @@ index 9379b7f..1b302fa 100644
  static ssize_t trigger_test_error(struct ext4_attr *a,
  				  struct ext4_sb_info *sbi,
  				  const char *buf, size_t count)
-@@ -2496,6 +2529,7 @@ static struct ext4_attr ext4_attr_##name = __ATTR(name, mode, show, store)
+@@ -2503,6 +2536,7 @@ static struct ext4_attr ext4_attr_##name = __ATTR(name, mode, show, store)
  EXT4_RO_ATTR(delayed_allocation_blocks);
  EXT4_RO_ATTR(session_write_kbytes);
  EXT4_RO_ATTR(lifetime_write_kbytes);
@@ -330,7 +328,7 @@ index 9379b7f..1b302fa 100644
  EXT4_ATTR_OFFSET(inode_readahead_blks, 0644, sbi_ui_show,
  		 inode_readahead_blks_store, s_inode_readahead_blks);
  EXT4_RW_ATTR_SBI_UI(inode_goal, s_inode_goal);
-@@ -2513,6 +2547,7 @@ static struct attribute *ext4_attrs[] = {
+@@ -2520,6 +2554,7 @@ static struct attribute *ext4_attrs[] = {
  	ATTR_LIST(delayed_allocation_blocks),
  	ATTR_LIST(session_write_kbytes),
  	ATTR_LIST(lifetime_write_kbytes),
@@ -338,7 +336,7 @@ index 9379b7f..1b302fa 100644
  	ATTR_LIST(inode_readahead_blks),
  	ATTR_LIST(inode_goal),
  	ATTR_LIST(mb_stats),
-@@ -3188,6 +3223,40 @@ int ext4_calculate_overhead(struct super_block *sb)
+@@ -3195,6 +3230,40 @@ int ext4_calculate_overhead(struct super_block *sb)
  	return 0;
  }
  
@@ -379,7 +377,7 @@ index 9379b7f..1b302fa 100644
  static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  {
  	char *orig_data = kstrdup(data, GFP_KERNEL);
-@@ -3907,6 +3976,13 @@ no_journal:
+@@ -3918,6 +3987,13 @@ no_journal:
  			 "available");
  	}
  
@@ -393,7 +391,7 @@ index 9379b7f..1b302fa 100644
  	err = ext4_setup_system_zone(sb);
  	if (err) {
  		ext4_msg(sb, KERN_ERR, "failed to initialize system "
-@@ -4738,9 +4814,10 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+@@ -4750,9 +4826,10 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
  	struct super_block *sb = dentry->d_sb;
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
  	struct ext4_super_block *es = sbi->s_es;
@@ -405,7 +403,7 @@ index 9379b7f..1b302fa 100644
  
  	if (!test_opt(sb, MINIX_DF))
  		overhead = sbi->s_overhead;
-@@ -4752,8 +4829,9 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
+@@ -4764,8 +4841,9 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
  		percpu_counter_sum_positive(&sbi->s_dirtyclusters_counter);
  	/* prevent underflow in case that few free space is available */
  	buf->f_bfree = EXT4_C2B(sbi, max_t(s64, bfree, 0));
@@ -417,7 +415,3 @@ index 9379b7f..1b302fa 100644
  		buf->f_bavail = 0;
  	buf->f_files = le32_to_cpu(es->s_inodes_count);
  	buf->f_ffree = percpu_counter_sum_positive(&sbi->s_freeinodes_counter);
--- 
-1.7.7.6
-
-
