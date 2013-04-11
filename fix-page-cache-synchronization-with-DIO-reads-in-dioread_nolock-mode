@@ -1,0 +1,43 @@
+ext4: fix page cache synchronization with DIO reads in dioread_nolock mode
+
+From: Jan Kara <jack@suse.cz>
+
+When ext4 is mounted in dioread_nolock mode, it calls
+__blockdev_direct_IO() without DIO_LOCKING flag which also means mapping
+is not synced before direct IO starts. As a result consistency between
+buffered writes and following direct IO reads is broken. More
+importantly, if the file is truncated, and extented back, zeroing of the
+tail page is not visible to the following direct IO read which will return
+stale data.
+
+Fix the problem by flushing dirty pages before issuing direct IO read.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/indirect.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/fs/ext4/indirect.c b/fs/ext4/indirect.c
+index b505a14..c18bf1c 100644
+--- a/fs/ext4/indirect.c
++++ b/fs/ext4/indirect.c
+@@ -809,6 +809,10 @@ ssize_t ext4_ind_direct_IO(int rw, struct kiocb *iocb,
+ 
+ retry:
+ 	if (rw == READ && ext4_should_dioread_nolock(inode)) {
++		ret = filemap_write_and_wait_range(inode->i_mapping, offset,
++						   offset + count - 1);
++		if (ret)
++			goto out;
+ 		if (unlikely(atomic_read(&EXT4_I(inode)->i_unwritten))) {
+ 			mutex_lock(&inode->i_mutex);
+ 			ext4_flush_unwritten_io(inode);
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
