@@ -10,13 +10,11 @@ conversion in this case. The problem has been introduced with the commit
 Signed-off-by: Lukas Czerner <lczerner@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
-v2: added to the series
-
- fs/ext4/migrate.c |    4 ++++
- 1 files changed, 4 insertions(+), 0 deletions(-)
+ fs/ext4/migrate.c | 4 ++++
+ 1 file changed, 4 insertions(+)
 
 diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
-index 3464604..f13a289 100644
+index d129a4d..49e8bdf 100644
 --- a/fs/ext4/migrate.c
 +++ b/fs/ext4/migrate.c
 @@ -625,6 +625,10 @@ int ext4_ind_migrate(struct inode *inode)
@@ -27,14 +25,6 @@ index 3464604..f13a289 100644
 +				       EXT4_FEATURE_RO_COMPAT_BIGALLOC))
 +		return -EOPNOTSUPP;
 +
- 	down_write(&EXT4_I(inode)->i_data_sem);
- 	ret = ext4_ext_check_inode(inode);
- 	if (ret)
--- 
-1.7.7.6
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
+ 	handle = ext4_journal_start(inode, EXT4_HT_MIGRATE, 1);
+ 	if (IS_ERR(handle))
+ 		return PTR_ERR(handle);
