@@ -1,0 +1,59 @@
+ext4: limit group search loop for non-extent files
+
+From: Lachlan McIlroy <lmcilroy@redhat.com>
+
+In the case where we are allocating for a non-extent file,
+we must limit the groups we allocate from to those below
+2^32 blocks, and ext4_mb_regular_allocator() attempts to
+do this initially by putting a cap on ngroups for the
+subsequent search loop.
+
+However, the initial target group comes in from the 
+allocation context (ac), and it may already be beyond
+the artificially limited ngroups.  In this case,
+the limit
+
+	if (group == ngroups)
+		group = 0;
+
+at the top of the loop is never true, and the loop will
+run away.
+
+Catch this case inside the loop and reset the search to
+start at group 0.
+
+[sandeen@redhat.com: add commit msg & comments]
+
+Signed-off-by: Lachlan McIlroy <lmcilroy@redhat.com>
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+
+p.s. I suppose this limit could go after the assignment
+from ac->ac_g_ex.fe_group, depending on your sense
+of style...
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index ee6614b..f54baee 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -1994,7 +1994,11 @@ repeat:
+ 		group = ac->ac_g_ex.fe_group;
+ 
+ 		for (i = 0; i < ngroups; group++, i++) {
+-			if (group == ngroups)
++			/*
++			 * Artificially restricted ngroups for non-extent
++			 * files makes group > ngroups possible on first loop.
++			 */
++			if (group >= ngroups)
+ 				group = 0;
+ 
+ 			/* This now checks without needing the buddy page */
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
