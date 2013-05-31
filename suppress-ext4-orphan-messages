@@ -1,0 +1,53 @@
+ext4: suppress ext4 orphan messages on mount
+
+From: Paul Taysom <taysom@chromium.org>
+
+Suppress the messages releating to processing the ext4 orphan list
+("truncating inode" and "deleting unreferenced inode") unless the
+debug option is on, since otherwise they end up taking up space in the
+log that could be used for more useful information.
+
+Tested by opening several files, unlinking them, then
+crashing the system, rebooting the system and examining
+/var/log/messages.
+
+Addresses the problem described in http://crbug.com/220976
+
+Signed-off-by: Paul Taysom <taysom@chromium.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c | 14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index c468560..a9c1438 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -2164,9 +2164,10 @@ static void ext4_orphan_cleanup(struct super_block *sb,
+ 		list_add(&EXT4_I(inode)->i_orphan, &EXT4_SB(sb)->s_orphan);
+ 		dquot_initialize(inode);
+ 		if (inode->i_nlink) {
+-			ext4_msg(sb, KERN_DEBUG,
+-				"%s: truncating inode %lu to %lld bytes",
+-				__func__, inode->i_ino, inode->i_size);
++			if (test_opt(sb, DEBUG))
++				ext4_msg(sb, KERN_DEBUG,
++					"%s: truncating inode %lu to %lld bytes",
++					__func__, inode->i_ino, inode->i_size);
+ 			jbd_debug(2, "truncating inode %lu to %lld bytes\n",
+ 				  inode->i_ino, inode->i_size);
+ 			mutex_lock(&inode->i_mutex);
+@@ -2175,9 +2176,10 @@ static void ext4_orphan_cleanup(struct super_block *sb,
+ 			mutex_unlock(&inode->i_mutex);
+ 			nr_truncates++;
+ 		} else {
+-			ext4_msg(sb, KERN_DEBUG,
+-				"%s: deleting unreferenced inode %lu",
+-				__func__, inode->i_ino);
++			if (test_opt(sb, DEBUG))
++				ext4_msg(sb, KERN_DEBUG,
++					"%s: deleting unreferenced inode %lu",
++					__func__, inode->i_ino);
+ 			jbd_debug(2, "deleting unreferenced inode %lu\n",
+ 				  inode->i_ino);
+ 			nr_orphans++;
