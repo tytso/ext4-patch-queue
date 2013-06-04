@@ -1,0 +1,276 @@
+ext4: use transaction reservation for extent conversion in ext4_end_io
+
+From: Jan Kara <jack@suse.cz>
+
+Later we would like to clear PageWriteback bit only after extent
+conversion from unwritten to written extents is performed.  However it
+is not possible to start a transaction after PageWriteback is set
+because that violates lock ordering (and is easy to deadlock).  So we
+have to reserve a transaction before locking pages and sending them
+for IO and later we use the transaction for extent conversion from
+ext4_end_io().
+
+Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h      | 12 +++++++++---
+ fs/ext4/ext4_jbd2.h |  5 +++--
+ fs/ext4/extents.c   | 40 +++++++++++++++++++++++++++++-----------
+ fs/ext4/inode.c     | 25 ++++++++++++++++++++-----
+ fs/ext4/page-io.c   | 11 ++++++++---
+ 5 files changed, 69 insertions(+), 24 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 406e447..ee436b9 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -184,10 +184,13 @@ struct ext4_map_blocks {
+ #define EXT4_IO_END_DIRECT	0x0004
+ 
+ /*
+- * For converting uninitialized extents on a work queue.
++ * For converting uninitialized extents on a work queue. 'handle' is used for
++ * buffered writeback.
+  */
+ typedef struct ext4_io_end {
+ 	struct list_head	list;		/* per-file finished IO list */
++	handle_t		*handle;	/* handle reserved for extent
++						 * conversion */
+ 	struct inode		*inode;		/* file being written to */
+ 	unsigned int		flag;		/* unwritten or not */
+ 	loff_t			offset;		/* offset in the file */
+@@ -1327,6 +1330,9 @@ static inline void ext4_set_io_unwritten_flag(struct inode *inode,
+ 					      struct ext4_io_end *io_end)
+ {
+ 	if (!(io_end->flag & EXT4_IO_END_UNWRITTEN)) {
++		/* Writeback has to have coversion transaction reserved */
++		WARN_ON(EXT4_SB(inode->i_sb)->s_journal && !io_end->handle &&
++			!(io_end->flag & EXT4_IO_END_DIRECT));
+ 		io_end->flag |= EXT4_IO_END_UNWRITTEN;
+ 		atomic_inc(&EXT4_I(inode)->i_unwritten);
+ 	}
+@@ -2593,8 +2599,8 @@ extern void ext4_ext_init(struct super_block *);
+ extern void ext4_ext_release(struct super_block *);
+ extern long ext4_fallocate(struct file *file, int mode, loff_t offset,
+ 			  loff_t len);
+-extern int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
+-			  ssize_t len);
++extern int ext4_convert_unwritten_extents(handle_t *handle, struct inode *inode,
++					  loff_t offset, ssize_t len);
+ extern int ext4_map_blocks(handle_t *handle, struct inode *inode,
+ 			   struct ext4_map_blocks *map, int flags);
+ extern int ext4_ext_calc_metadata_amount(struct inode *inode,
+diff --git a/fs/ext4/ext4_jbd2.h b/fs/ext4/ext4_jbd2.h
+index fdd865e..2877258 100644
+--- a/fs/ext4/ext4_jbd2.h
++++ b/fs/ext4/ext4_jbd2.h
+@@ -134,7 +134,8 @@ static inline int ext4_jbd2_credits_xattr(struct inode *inode)
+ #define EXT4_HT_MIGRATE          8
+ #define EXT4_HT_MOVE_EXTENTS     9
+ #define EXT4_HT_XATTR           10
+-#define EXT4_HT_MAX             11
++#define EXT4_HT_EXT_CONVERT     11
++#define EXT4_HT_MAX             12
+ 
+ /**
+  *   struct ext4_journal_cb_entry - Base structure for callback information.
+@@ -319,7 +320,7 @@ static inline handle_t *__ext4_journal_start(struct inode *inode,
+ #define ext4_journal_stop(handle) \
+ 	__ext4_journal_stop(__func__, __LINE__, (handle))
+ 
+-#define ext4_journal_start_reserve(handle, type) \
++#define ext4_journal_start_reserved(handle, type) \
+ 	__ext4_journal_start_reserved((handle), __LINE__, (type))
+ 
+ handle_t *__ext4_journal_start_reserved(handle_t *handle, unsigned int line,
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index e455141..f94f8b2 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4546,10 +4546,9 @@ retry:
+  * function, to convert the fallocated extents after IO is completed.
+  * Returns 0 on success.
+  */
+-int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
+-				    ssize_t len)
++int ext4_convert_unwritten_extents(handle_t *handle, struct inode *inode,
++				   loff_t offset, ssize_t len)
+ {
+-	handle_t *handle;
+ 	unsigned int max_blocks;
+ 	int ret = 0;
+ 	int ret2 = 0;
+@@ -4564,16 +4563,32 @@ int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
+ 	max_blocks = ((EXT4_BLOCK_ALIGN(len + offset, blkbits) >> blkbits) -
+ 		      map.m_lblk);
+ 	/*
+-	 * credits to insert 1 extent into extent tree
++	 * This is somewhat ugly but the idea is clear: When transaction is
++	 * reserved, everything goes into it. Otherwise we rather start several
++	 * smaller transactions for conversion of each extent separately.
+ 	 */
+-	credits = ext4_chunk_trans_blocks(inode, max_blocks);
++	if (handle) {
++		handle = ext4_journal_start_reserved(handle,
++						     EXT4_HT_EXT_CONVERT);
++		if (IS_ERR(handle))
++			return PTR_ERR(handle);
++		credits = 0;
++	} else {
++		/*
++		 * credits to insert 1 extent into extent tree
++		 */
++		credits = ext4_chunk_trans_blocks(inode, max_blocks);
++	}
+ 	while (ret >= 0 && ret < max_blocks) {
+ 		map.m_lblk += ret;
+ 		map.m_len = (max_blocks -= ret);
+-		handle = ext4_journal_start(inode, EXT4_HT_MAP_BLOCKS, credits);
+-		if (IS_ERR(handle)) {
+-			ret = PTR_ERR(handle);
+-			break;
++		if (credits) {
++			handle = ext4_journal_start(inode, EXT4_HT_MAP_BLOCKS,
++						    credits);
++			if (IS_ERR(handle)) {
++				ret = PTR_ERR(handle);
++				break;
++			}
+ 		}
+ 		ret = ext4_map_blocks(handle, inode, &map,
+ 				      EXT4_GET_BLOCKS_IO_CONVERT_EXT);
+@@ -4584,10 +4599,13 @@ int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
+ 				     inode->i_ino, map.m_lblk,
+ 				     map.m_len, ret);
+ 		ext4_mark_inode_dirty(handle, inode);
+-		ret2 = ext4_journal_stop(handle);
+-		if (ret <= 0 || ret2 )
++		if (credits)
++			ret2 = ext4_journal_stop(handle);
++		if (ret <= 0 || ret2)
+ 			break;
+ 	}
++	if (!credits)
++		ret2 = ext4_journal_stop(handle);
+ 	return ret > 0 ? ret2 : ret;
+ }
+ 
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index de841d9..1f9a8f9 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1406,6 +1406,7 @@ static void ext4_da_page_release_reservation(struct page *page,
+ struct mpage_da_data {
+ 	struct inode *inode;
+ 	struct writeback_control *wbc;
++
+ 	pgoff_t first_page;	/* The first page to write */
+ 	pgoff_t next_page;	/* Current page to examine */
+ 	pgoff_t last_page;	/* Last page to examine */
+@@ -2104,8 +2105,14 @@ static int mpage_map_one_extent(handle_t *handle, struct mpage_da_data *mpd)
+ 	err = ext4_map_blocks(handle, inode, map, get_blocks_flags);
+ 	if (err < 0)
+ 		return err;
+-	if (map->m_flags & EXT4_MAP_UNINIT)
++	if (map->m_flags & EXT4_MAP_UNINIT) {
++		if (!mpd->io_submit.io_end->handle &&
++		    ext4_handle_valid(handle)) {
++			mpd->io_submit.io_end->handle = handle->h_rsv_handle;
++			handle->h_rsv_handle = NULL;
++		}
+ 		ext4_set_io_unwritten_flag(inode, mpd->io_submit.io_end);
++	}
+ 
+ 	BUG_ON(map->m_len == 0);
+ 	if (map->m_flags & EXT4_MAP_NEW) {
+@@ -2347,7 +2354,7 @@ static int ext4_da_writepages(struct address_space *mapping,
+ 	handle_t *handle = NULL;
+ 	struct mpage_da_data mpd;
+ 	struct inode *inode = mapping->host;
+-	int needed_blocks, ret = 0;
++	int needed_blocks, rsv_blocks = 0, ret = 0;
+ 	struct ext4_sb_info *sbi = EXT4_SB(mapping->host->i_sb);
+ 	bool done;
+ 	struct blk_plug plug;
+@@ -2375,6 +2382,14 @@ static int ext4_da_writepages(struct address_space *mapping,
+ 	if (unlikely(sbi->s_mount_flags & EXT4_MF_FS_ABORTED))
+ 		return -EROFS;
+ 
++	if (ext4_should_dioread_nolock(inode)) {
++		/*
++		 * We may need to convert upto one extent per block in
++		 * the page and we may dirty the inode.
++		 */
++		rsv_blocks = 1 + (PAGE_CACHE_SIZE >> inode->i_blkbits);
++	}
++
+ 	/*
+ 	 * If we have inline data and arrive here, it means that
+ 	 * we will soon create the block for the 1st page, so
+@@ -2434,8 +2449,8 @@ retry:
+ 		needed_blocks = ext4_da_writepages_trans_blocks(inode);
+ 
+ 		/* start a new transaction */
+-		handle = ext4_journal_start(inode, EXT4_HT_WRITE_PAGE,
+-					    needed_blocks);
++		handle = ext4_journal_start_with_reserve(inode,
++				EXT4_HT_WRITE_PAGE, needed_blocks, rsv_blocks);
+ 		if (IS_ERR(handle)) {
+ 			ret = PTR_ERR(handle);
+ 			ext4_msg(inode->i_sb, KERN_CRIT, "%s: jbd2_start: "
+@@ -3112,7 +3127,7 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
+ 		 * for non AIO case, since the IO is already
+ 		 * completed, we could do the conversion right here
+ 		 */
+-		err = ext4_convert_unwritten_extents(inode,
++		err = ext4_convert_unwritten_extents(NULL, inode,
+ 						     offset, ret);
+ 		if (err < 0)
+ 			ret = err;
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index de6860c..5f20bc4 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -66,6 +66,7 @@ static void ext4_release_io_end(ext4_io_end_t *io_end)
+ {
+ 	BUG_ON(!list_empty(&io_end->list));
+ 	BUG_ON(io_end->flag & EXT4_IO_END_UNWRITTEN);
++	WARN_ON(io_end->handle);
+ 
+ 	if (atomic_dec_and_test(&EXT4_I(io_end->inode)->i_ioend_count))
+ 		wake_up_all(ext4_ioend_wq(io_end->inode));
+@@ -92,13 +93,15 @@ static int ext4_end_io(ext4_io_end_t *io)
+ 	struct inode *inode = io->inode;
+ 	loff_t offset = io->offset;
+ 	ssize_t size = io->size;
++	handle_t *handle = io->handle;
+ 	int ret = 0;
+ 
+ 	ext4_debug("ext4_end_io_nolock: io 0x%p from inode %lu,list->next 0x%p,"
+ 		   "list->prev 0x%p\n",
+ 		   io, inode->i_ino, io->list.next, io->list.prev);
+ 
+-	ret = ext4_convert_unwritten_extents(inode, offset, size);
++	io->handle = NULL;	/* Following call will use up the handle */
++	ret = ext4_convert_unwritten_extents(handle, inode, offset, size);
+ 	if (ret < 0) {
+ 		ext4_msg(inode->i_sb, KERN_EMERG,
+ 			 "failed to convert unwritten extents to written "
+@@ -228,8 +231,10 @@ int ext4_put_io_end(ext4_io_end_t *io_end)
+ 
+ 	if (atomic_dec_and_test(&io_end->count)) {
+ 		if (io_end->flag & EXT4_IO_END_UNWRITTEN) {
+-			err = ext4_convert_unwritten_extents(io_end->inode,
+-						io_end->offset, io_end->size);
++			err = ext4_convert_unwritten_extents(io_end->handle,
++						io_end->inode, io_end->offset,
++						io_end->size);
++			io_end->handle = NULL;
+ 			ext4_clear_io_unwritten_flag(io_end);
+ 		}
+ 		ext4_release_io_end(io_end);
+-- 
+1.8.1.4
+
+
