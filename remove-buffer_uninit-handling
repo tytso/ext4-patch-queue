@@ -1,0 +1,97 @@
+ext4: remove buffer_uninit handling
+
+From: Jan Kara <jack@suse.cz>
+
+There isn't any need for setting BH_Uninit on buffers anymore.  It was
+only used to signal we need to mark io_end as needing extent
+conversion in add_bh_to_extent() but now we can mark the io_end
+directly when mapping extent.
+
+Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h    | 15 ++++++---------
+ fs/ext4/inode.c   |  4 ++--
+ fs/ext4/page-io.c |  4 ----
+ 3 files changed, 8 insertions(+), 15 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index f9e6e5a..406e447 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2655,20 +2655,17 @@ extern void ext4_mmp_csum_set(struct super_block *sb, struct mmp_struct *mmp);
+ extern int ext4_mmp_csum_verify(struct super_block *sb,
+ 				struct mmp_struct *mmp);
+ 
+-/* BH_Uninit flag: blocks are allocated but uninitialized on disk */
++/*
++ * Note that these flags will never ever appear in a buffer_head's state flag.
++ * See EXT4_MAP_... to see where this is used.
++ */
+ enum ext4_state_bits {
+ 	BH_Uninit	/* blocks are allocated but uninitialized on disk */
+-	  = BH_JBDPrivateStart,
++	 = BH_JBDPrivateStart,
+ 	BH_AllocFromCluster,	/* allocated blocks were part of already
+-				 * allocated cluster. Note that this flag will
+-				 * never, ever appear in a buffer_head's state
+-				 * flag. See EXT4_MAP_FROM_CLUSTER to see where
+-				 * this is used. */
++				 * allocated cluster. */
+ };
+ 
+-BUFFER_FNS(Uninit, uninit)
+-TAS_BUFFER_FNS(Uninit, uninit)
+-
+ /*
+  * Add new method to test whether block and inode bitmaps are properly
+  * initialized. With uninit_bg reading the block from disk is not enough
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index b7d7ee5..de841d9 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2043,8 +2043,6 @@ static int mpage_map_and_submit_buffers(struct mpage_da_data *mpd)
+ 					clear_buffer_delay(bh);
+ 					bh->b_blocknr = pblock++;
+ 				}
+-				if (mpd->map.m_flags & EXT4_MAP_UNINIT)
+-					set_buffer_uninit(bh);
+ 				clear_buffer_unwritten(bh);
+ 			} while (++lblk < blocks &&
+ 				 (bh = bh->b_this_page) != head);
+@@ -2106,6 +2104,8 @@ static int mpage_map_one_extent(handle_t *handle, struct mpage_da_data *mpd)
+ 	err = ext4_map_blocks(handle, inode, map, get_blocks_flags);
+ 	if (err < 0)
+ 		return err;
++	if (map->m_flags & EXT4_MAP_UNINIT)
++		ext4_set_io_unwritten_flag(inode, mpd->io_submit.io_end);
+ 
+ 	BUG_ON(map->m_len == 0);
+ 	if (map->m_flags & EXT4_MAP_NEW) {
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index 3e58546..de6860c 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -369,7 +369,6 @@ static int io_submit_add_bh(struct ext4_io_submit *io,
+ 			    struct inode *inode,
+ 			    struct buffer_head *bh)
+ {
+-	ext4_io_end_t *io_end;
+ 	int ret;
+ 
+ 	if (io->io_bio && bh->b_blocknr != io->io_next_block) {
+@@ -384,9 +383,6 @@ submit_and_retry:
+ 	ret = bio_add_page(io->io_bio, bh->b_page, bh->b_size, bh_offset(bh));
+ 	if (ret != bh->b_size)
+ 		goto submit_and_retry;
+-	io_end = io->io_end;
+-	if (test_clear_buffer_uninit(bh))
+-		ext4_set_io_unwritten_flag(inode, io_end);
+ 	io->io_next_block++;
+ 	return 0;
+ }
+-- 
+1.8.1.4
+
+
