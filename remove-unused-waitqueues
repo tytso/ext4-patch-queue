@@ -1,0 +1,78 @@
+jbd2: remove unused waitqueues
+
+From: Jan Kara <jack@suse.cz>
+
+j_wait_logspace and j_wait_checkpoint are unused.  Remove them.
+
+Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/checkpoint.c | 4 ----
+ fs/jbd2/journal.c    | 2 --
+ include/linux/jbd2.h | 8 --------
+ 3 files changed, 14 deletions(-)
+
+diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
+index a572383..75a15f3 100644
+--- a/fs/jbd2/checkpoint.c
++++ b/fs/jbd2/checkpoint.c
+@@ -625,10 +625,6 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
+ 
+ 	__jbd2_journal_drop_transaction(journal, transaction);
+ 	jbd2_journal_free_transaction(transaction);
+-
+-	/* Just in case anybody was waiting for more transactions to be
+-           checkpointed... */
+-	wake_up(&journal->j_wait_logspace);
+ 	ret = 1;
+ out:
+ 	return ret;
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index b8827f8..99e6ab3 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -1027,9 +1027,7 @@ static journal_t * journal_init_common (void)
+ 		return NULL;
+ 
+ 	init_waitqueue_head(&journal->j_wait_transaction_locked);
+-	init_waitqueue_head(&journal->j_wait_logspace);
+ 	init_waitqueue_head(&journal->j_wait_done_commit);
+-	init_waitqueue_head(&journal->j_wait_checkpoint);
+ 	init_waitqueue_head(&journal->j_wait_commit);
+ 	init_waitqueue_head(&journal->j_wait_updates);
+ 	mutex_init(&journal->j_barrier);
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 7835719..f5b6f46 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -687,9 +687,7 @@ jbd2_time_diff(unsigned long start, unsigned long end)
+  *  waiting for checkpointing
+  * @j_wait_transaction_locked: Wait queue for waiting for a locked transaction
+  *  to start committing, or for a barrier lock to be released
+- * @j_wait_logspace: Wait queue for waiting for checkpointing to complete
+  * @j_wait_done_commit: Wait queue for waiting for commit to complete
+- * @j_wait_checkpoint:  Wait queue to trigger checkpointing
+  * @j_wait_commit: Wait queue to trigger commit
+  * @j_wait_updates: Wait queue to wait for updates to complete
+  * @j_checkpoint_mutex: Mutex for locking against concurrent checkpoints
+@@ -794,15 +792,9 @@ struct journal_s
+ 	 */
+ 	wait_queue_head_t	j_wait_transaction_locked;
+ 
+-	/* Wait queue for waiting for checkpointing to complete */
+-	wait_queue_head_t	j_wait_logspace;
+-
+ 	/* Wait queue for waiting for commit to complete */
+ 	wait_queue_head_t	j_wait_done_commit;
+ 
+-	/* Wait queue to trigger checkpointing */
+-	wait_queue_head_t	j_wait_checkpoint;
+-
+ 	/* Wait queue to trigger commit */
+ 	wait_queue_head_t	j_wait_commit;
+ 
+-- 
+1.8.1.4
+
+
