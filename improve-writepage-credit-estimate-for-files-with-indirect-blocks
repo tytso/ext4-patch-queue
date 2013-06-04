@@ -1,0 +1,86 @@
+ext4: improve writepage credit estimate for files with indirect blocks
+
+From: Jan Kara <jack@suse.cz>
+
+ext4_ind_trans_blocks() wrongly used 'chunk' argument to decide whether
+blocks mapped are logically contiguous. That is wrong since the argument
+informs whether the blocks are physically contiguous. As the blocks
+mapped are always logically contiguous and that's all
+ext4_ind_trans_blocks() cares about, just remove the 'chunk' argument.
+
+Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h     |  2 +-
+ fs/ext4/indirect.c | 27 +++++++++------------------
+ fs/ext4/inode.c    |  2 +-
+ 3 files changed, 11 insertions(+), 20 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 4667405..25e261d 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2109,7 +2109,7 @@ extern ssize_t ext4_ind_direct_IO(int rw, struct kiocb *iocb,
+ 				const struct iovec *iov, loff_t offset,
+ 				unsigned long nr_segs);
+ extern int ext4_ind_calc_metadata_amount(struct inode *inode, sector_t lblock);
+-extern int ext4_ind_trans_blocks(struct inode *inode, int nrblocks, int chunk);
++extern int ext4_ind_trans_blocks(struct inode *inode, int nrblocks);
+ extern void ext4_ind_truncate(handle_t *, struct inode *inode);
+ extern int ext4_free_hole_blocks(handle_t *handle, struct inode *inode,
+ 				 ext4_lblk_t first, ext4_lblk_t stop);
+diff --git a/fs/ext4/indirect.c b/fs/ext4/indirect.c
+index b8d5d35..f7742f0 100644
+--- a/fs/ext4/indirect.c
++++ b/fs/ext4/indirect.c
+@@ -779,27 +779,18 @@ int ext4_ind_calc_metadata_amount(struct inode *inode, sector_t lblock)
+ 	return (blk_bits / EXT4_ADDR_PER_BLOCK_BITS(inode->i_sb)) + 1;
+ }
+ 
+-int ext4_ind_trans_blocks(struct inode *inode, int nrblocks, int chunk)
++/*
++ * Calculate number of indirect blocks touched by mapping @nrblocks logically
++ * contiguous blocks
++ */
++int ext4_ind_trans_blocks(struct inode *inode, int nrblocks)
+ {
+-	int indirects;
+-
+-	/* if nrblocks are contiguous */
+-	if (chunk) {
+-		/*
+-		 * With N contiguous data blocks, we need at most
+-		 * N/EXT4_ADDR_PER_BLOCK(inode->i_sb) + 1 indirect blocks,
+-		 * 2 dindirect blocks, and 1 tindirect block
+-		 */
+-		return DIV_ROUND_UP(nrblocks,
+-				    EXT4_ADDR_PER_BLOCK(inode->i_sb)) + 4;
+-	}
+ 	/*
+-	 * if nrblocks are not contiguous, worse case, each block touch
+-	 * a indirect block, and each indirect block touch a double indirect
+-	 * block, plus a triple indirect block
++	 * With N contiguous data blocks, we need at most
++	 * N/EXT4_ADDR_PER_BLOCK(inode->i_sb) + 1 indirect blocks,
++	 * 2 dindirect blocks, and 1 tindirect block
+ 	 */
+-	indirects = nrblocks * 2 + 1;
+-	return indirects;
++	return DIV_ROUND_UP(nrblocks, EXT4_ADDR_PER_BLOCK(inode->i_sb)) + 4;
+ }
+ 
+ /*
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 80c710a..23d9a44 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4653,7 +4653,7 @@ int ext4_getattr(struct vfsmount *mnt, struct dentry *dentry,
+ static int ext4_index_trans_blocks(struct inode *inode, int nrblocks, int chunk)
+ {
+ 	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
+-		return ext4_ind_trans_blocks(inode, nrblocks, chunk);
++		return ext4_ind_trans_blocks(inode, nrblocks);
+ 	return ext4_ext_index_trans_blocks(inode, nrblocks, chunk);
+ }
+ 
