@@ -1,0 +1,23 @@
+ext4: add check to io_submit_init_bio
+
+The bio_alloc() function can return NULL if the memory allocation
+fails.  So we need to check for this.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/page-io.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index ce8c15a..48786cd 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -372,6 +372,8 @@ static int io_submit_init_bio(struct ext4_io_submit *io,
+ 	struct bio *bio;
+ 
+ 	bio = bio_alloc(GFP_NOIO, min(nvecs, BIO_MAX_PAGES));
++	if (!bio)
++		return -ENOMEM;
+ 	bio->bi_sector = bh->b_blocknr * (bh->b_size >> 9);
+ 	bio->bi_bdev = bh->b_bdev;
+ 	bio->bi_end_io = ext4_end_bio;
