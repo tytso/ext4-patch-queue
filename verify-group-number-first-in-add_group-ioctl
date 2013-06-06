@@ -1,0 +1,50 @@
+ext4: verify group number in verify_group_input() before using it
+
+Check the group number for sanity earilier, before calling routines
+such as ext4_bg_has_super() or ext4_group_overhead_blocks().
+
+Reported-by: Jonathan Salwan <jonathan.salwan@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/resize.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index b27c96d..6ed4df2 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -79,12 +79,20 @@ static int verify_group_input(struct super_block *sb,
+ 	ext4_fsblk_t end = start + input->blocks_count;
+ 	ext4_group_t group = input->group;
+ 	ext4_fsblk_t itend = input->inode_table + sbi->s_itb_per_group;
+-	unsigned overhead = ext4_group_overhead_blocks(sb, group);
+-	ext4_fsblk_t metaend = start + overhead;
++	unsigned overhead;
++	ext4_fsblk_t metaend;
+ 	struct buffer_head *bh = NULL;
+ 	ext4_grpblk_t free_blocks_count, offset;
+ 	int err = -EINVAL;
+ 
++	if (group != sbi->s_groups_count) {
++		ext4_warning(sb, "Cannot add at group %u (only %u groups)",
++			     input->group, sbi->s_groups_count);
++		return -EINVAL;
++	}
++
++	overhead = ext4_group_overhead_blocks(sb, group);
++	metaend = start + overhead;
+ 	input->free_blocks_count = free_blocks_count =
+ 		input->blocks_count - 2 - overhead - sbi->s_itb_per_group;
+ 
+@@ -96,10 +104,7 @@ static int verify_group_input(struct super_block *sb,
+ 		       free_blocks_count, input->reserved_blocks);
+ 
+ 	ext4_get_group_no_and_offset(sb, start, NULL, &offset);
+-	if (group != sbi->s_groups_count)
+-		ext4_warning(sb, "Cannot add at group %u (only %u groups)",
+-			     input->group, sbi->s_groups_count);
+-	else if (offset != 0)
++	if (offset != 0)
+ 			ext4_warning(sb, "Last group not full");
+ 	else if (input->reserved_blocks > input->blocks_count / 5)
+ 		ext4_warning(sb, "Reserved blocks too high (%u)",
