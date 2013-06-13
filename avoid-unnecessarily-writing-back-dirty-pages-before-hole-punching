@@ -1,4 +1,4 @@
-ext4: Avoid unnecessarily writing back dirty pages before  hole punching
+ext4: Avoid unnecessarily writing back dirty pages before hole punching
 
 From: Li Wang <liwang@ubuntukylin.com>
 
@@ -14,14 +14,14 @@ Cc: Dmitry Monakhov <dmonakhov@openvz.org>
 Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
 Reviewed-by: Jan Kara <jack@suse.cz>
 ---
- fs/ext4/inode.c       | 27 ++++++++++++++++-----------
+ fs/ext4/inode.c       | 28 ++++++++++++++++------------
  fs/jbd2/journal.c     |  2 +-
  fs/jbd2/transaction.c | 29 ++++++-----------------------
  include/linux/jbd2.h  | 33 +++++++++++++++++++++++++++++++--
- 4 files changed, 54 insertions(+), 37 deletions(-)
+ 4 files changed, 54 insertions(+), 38 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 0db830d..4411130 100644
+index 0db830d..2644679 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -3466,6 +3466,16 @@ int ext4_can_truncate(struct inode *inode)
@@ -41,7 +41,15 @@ index 0db830d..4411130 100644
  /*
   * ext4_punch_hole: punches a hole in a file by releaseing the blocks
   * associated with the given offset and length
-@@ -3498,17 +3508,6 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
+@@ -3482,7 +3492,6 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
+ 	struct inode *inode = file_inode(file);
+ 	struct super_block *sb = inode->i_sb;
+ 	ext4_lblk_t first_block, stop_block;
+-	struct address_space *mapping = inode->i_mapping;
+ 	loff_t first_block_offset, last_block_offset;
+ 	handle_t *handle;
+ 	unsigned int credits;
+@@ -3498,17 +3507,6 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
  
  	trace_ext4_punch_hole(inode, offset, length);
  
@@ -59,7 +67,7 @@ index 0db830d..4411130 100644
  	mutex_lock(&inode->i_mutex);
  	/* It's not possible punch hole on append only file */
  	if (IS_APPEND(inode) || IS_IMMUTABLE(inode)) {
-@@ -3537,6 +3536,12 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
+@@ -3537,6 +3535,12 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
  	first_block_offset = round_up(offset, sb->s_blocksize);
  	last_block_offset = round_down((offset + length), sb->s_blocksize) - 1;
  
