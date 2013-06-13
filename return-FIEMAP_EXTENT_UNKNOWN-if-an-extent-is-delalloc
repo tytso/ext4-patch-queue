@@ -1,0 +1,30 @@
+ext4: return FIEMAP_EXTENT_UNKNOWN for delalloc extents
+
+From: Jie Liu <jeff.liu@oracle.com>
+
+Return the FIEMAP_EXTENT_UNKNOWN flag as well except the
+FIEMAP_EXTENT_DELALLOC because the data location of an
+delayed allocation extent is unknown.
+
+Signed-off-by: Jie Liu <jeff.liu@oracle.com>
+---
+ fs/ext4/extents.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index bc0f191..47e17b1 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2125,7 +2125,8 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+ 		next_del = ext4_find_delayed_extent(inode, &es);
+ 		if (!exists && next_del) {
+ 			exists = 1;
+-			flags |= FIEMAP_EXTENT_DELALLOC;
++			flags |= (FIEMAP_EXTENT_DELALLOC |
++				  FIEMAP_EXTENT_UNKNOWN);
+ 		}
+ 		up_read(&EXT4_I(inode)->i_data_sem);
+ 
+-- 
+1.7.9.5
+
