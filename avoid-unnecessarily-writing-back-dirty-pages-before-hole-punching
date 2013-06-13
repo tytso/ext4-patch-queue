@@ -1,0 +1,186 @@
+ext4: Avoid unnecessarily writing back dirty pages before  hole punching
+
+From: Li Wang <liwang@ubuntukylin.com>
+
+For hole punching, currently ext4 will synchronously write back the
+dirty pages fit into the hole, since the data on the disk responding
+to those pages are to be deleted, it is benefical to directly release
+those pages, no matter they are dirty or not, except the ordered case.
+
+Signed-off-by: Li Wang <liwang@ubuntukylin.com>
+Signed-off-by: Yunchuan Wen <yunchuanwen@ubuntukylin.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Dmitry Monakhov <dmonakhov@openvz.org>
+Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/inode.c       | 27 ++++++++++++++++-----------
+ fs/jbd2/journal.c     |  2 +-
+ fs/jbd2/transaction.c | 29 ++++++-----------------------
+ include/linux/jbd2.h  | 33 +++++++++++++++++++++++++++++++--
+ 4 files changed, 54 insertions(+), 37 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 0db830d..4411130 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3466,6 +3466,16 @@ int ext4_can_truncate(struct inode *inode)
+ 	return 0;
+ }
+ 
++static inline int ext4_begin_ordered_punch_hole(struct inode *inode,
++					       loff_t start, loff_t length)
++{
++	if (!EXT4_I(inode)->jinode)
++		return 0;
++	return jbd2_journal_begin_ordered_punch_hole(EXT4_JOURNAL(inode),
++						    EXT4_I(inode)->jinode,
++						    start, start+length-1);
++}
++
+ /*
+  * ext4_punch_hole: punches a hole in a file by releaseing the blocks
+  * associated with the given offset and length
+@@ -3498,17 +3508,6 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
+ 
+ 	trace_ext4_punch_hole(inode, offset, length);
+ 
+-	/*
+-	 * Write out all dirty pages to avoid race conditions
+-	 * Then release them.
+-	 */
+-	if (mapping->nrpages && mapping_tagged(mapping, PAGECACHE_TAG_DIRTY)) {
+-		ret = filemap_write_and_wait_range(mapping, offset,
+-						   offset + length - 1);
+-		if (ret)
+-			return ret;
+-	}
+-
+ 	mutex_lock(&inode->i_mutex);
+ 	/* It's not possible punch hole on append only file */
+ 	if (IS_APPEND(inode) || IS_IMMUTABLE(inode)) {
+@@ -3537,6 +3536,12 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
+ 	first_block_offset = round_up(offset, sb->s_blocksize);
+ 	last_block_offset = round_down((offset + length), sb->s_blocksize) - 1;
+ 
++	if (ext4_should_order_data(inode)) {
++		ret = ext4_begin_ordered_punch_hole(inode, offset, length);
++		if (ret)
++			return ret;
++	}
++
+ 	/* Now release the pages and zero block aligned part of pages*/
+ 	if (last_block_offset > first_block_offset)
+ 		truncate_pagecache_range(inode, first_block_offset,
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index fc9815a..331fd59 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -97,7 +97,7 @@ EXPORT_SYMBOL(jbd2_journal_force_commit);
+ EXPORT_SYMBOL(jbd2_journal_file_inode);
+ EXPORT_SYMBOL(jbd2_journal_init_jbd_inode);
+ EXPORT_SYMBOL(jbd2_journal_release_jbd_inode);
+-EXPORT_SYMBOL(jbd2_journal_begin_ordered_truncate);
++EXPORT_SYMBOL(jbd2_journal_begin_ordered_punch_hole);
+ EXPORT_SYMBOL(jbd2_inode_cache);
+ 
+ static void __journal_abort_soft (journal_t *journal, int errno);
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index dd422e6..91d62e1 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -2419,29 +2419,10 @@ done:
+ 	return 0;
+ }
+ 
+-/*
+- * File truncate and transaction commit interact with each other in a
+- * non-trivial way.  If a transaction writing data block A is
+- * committing, we cannot discard the data by truncate until we have
+- * written them.  Otherwise if we crashed after the transaction with
+- * write has committed but before the transaction with truncate has
+- * committed, we could see stale data in block A.  This function is a
+- * helper to solve this problem.  It starts writeout of the truncated
+- * part in case it is in the committing transaction.
+- *
+- * Filesystem code must call this function when inode is journaled in
+- * ordered mode before truncation happens and after the inode has been
+- * placed on orphan list with the new inode size. The second condition
+- * avoids the race that someone writes new data and we start
+- * committing the transaction after this function has been called but
+- * before a transaction for truncate is started (and furthermore it
+- * allows us to optimize the case where the addition to orphan list
+- * happens in the same transaction as write --- we don't have to write
+- * any data in such case).
+- */
+-int jbd2_journal_begin_ordered_truncate(journal_t *journal,
++
++int jbd2_journal_begin_ordered_punch_hole(journal_t *journal,
+ 					struct jbd2_inode *jinode,
+-					loff_t new_size)
++					loff_t start, loff_t end)
+ {
+ 	transaction_t *inode_trans, *commit_trans;
+ 	int ret = 0;
+@@ -2460,10 +2441,12 @@ int jbd2_journal_begin_ordered_truncate(journal_t *journal,
+ 	spin_unlock(&journal->j_list_lock);
+ 	if (inode_trans == commit_trans) {
+ 		ret = filemap_fdatawrite_range(jinode->i_vfs_inode->i_mapping,
+-			new_size, LLONG_MAX);
++			start, end);
+ 		if (ret)
+ 			jbd2_journal_abort(journal, ret);
+ 	}
+ out:
+ 	return ret;
+ }
++
++
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 0302f3f..5f3c094 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -1157,12 +1157,41 @@ extern int	   jbd2_journal_bmap(journal_t *, unsigned long, unsigned long long *
+ extern int	   jbd2_journal_force_commit(journal_t *);
+ extern int	   jbd2_journal_force_commit_nested(journal_t *);
+ extern int	   jbd2_journal_file_inode(handle_t *handle, struct jbd2_inode *inode);
+-extern int	   jbd2_journal_begin_ordered_truncate(journal_t *journal,
+-				struct jbd2_inode *inode, loff_t new_size);
++extern int	   jbd2_journal_begin_ordered_punch_hole(journal_t *,
++					struct jbd2_inode *,
++					loff_t, loff_t);
+ extern void	   jbd2_journal_init_jbd_inode(struct jbd2_inode *jinode, struct inode *inode);
+ extern void	   jbd2_journal_release_jbd_inode(journal_t *journal, struct jbd2_inode *jinode);
+ 
+ /*
++ * File truncate and transaction commit interact with each other in a
++ * non-trivial way.  If a transaction writing data block A is
++ * committing, we cannot discard the data by truncate until we have
++ * written them.  Otherwise if we crashed after the transaction with
++ * write has committed but before the transaction with truncate has
++ * committed, we could see stale data in block A.  This function is a
++ * helper to solve this problem.  It starts writeout of the truncated
++ * part in case it is in the committing transaction.
++ *
++ * Filesystem code must call this function when inode is journaled in
++ * ordered mode before truncation happens and after the inode has been
++ * placed on orphan list with the new inode size. The second condition
++ * avoids the race that someone writes new data and we start
++ * committing the transaction after this function has been called but
++ * before a transaction for truncate is started (and furthermore it
++ * allows us to optimize the case where the addition to orphan list
++ * happens in the same transaction as write --- we don't have to write
++ * any data in such case).
++ */
++static inline int jbd2_journal_begin_ordered_truncate(journal_t *journal,
++					struct jbd2_inode *jinode,
++					loff_t new_size)
++{
++	return jbd2_journal_begin_ordered_punch_hole(journal, jinode,
++						  new_size, LLONG_MAX);
++}
++
++/*
+  * journal_head management
+  */
+ struct journal_head *jbd2_journal_add_journal_head(struct buffer_head *bh);
