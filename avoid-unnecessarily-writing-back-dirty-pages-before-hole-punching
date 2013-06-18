@@ -1,4 +1,4 @@
-ext4: Avoid unnecessarily writing back dirty pages before hole punching
+ext4: avoid unnecessarily writing back dirty pages before hole punching
 
 From: Li Wang <liwang@ubuntukylin.com>
 
@@ -6,6 +6,10 @@ For hole punching, currently ext4 will synchronously write back the
 dirty pages fit into the hole, since the data on the disk responding
 to those pages are to be deleted, it is benefical to directly release
 those pages, no matter they are dirty or not, except the ordered case.
+
+[ Fixed error return to unlock i_mutex if ext4_begin_ordered_punch_hole()
+  fails.  Thanks to Wei Yongjun <yongjun_wei@trendmicro.com.cn> for
+  pointing this out.]
 
 Signed-off-by: Li Wang <liwang@ubuntukylin.com>
 Signed-off-by: Yunchuan Wen <yunchuanwen@ubuntukylin.com>
@@ -21,7 +25,7 @@ Reviewed-by: Jan Kara <jack@suse.cz>
  4 files changed, 54 insertions(+), 38 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 0db830d..2644679 100644
+index 0db830d..06136b5 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -3466,6 +3466,16 @@ int ext4_can_truncate(struct inode *inode)
@@ -74,14 +78,14 @@ index 0db830d..2644679 100644
 +	if (ext4_should_order_data(inode)) {
 +		ret = ext4_begin_ordered_punch_hole(inode, offset, length);
 +		if (ret)
-+			return ret;
++			goto out_mutex;
 +	}
 +
  	/* Now release the pages and zero block aligned part of pages*/
  	if (last_block_offset > first_block_offset)
  		truncate_pagecache_range(inode, first_block_offset,
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index fc9815a..331fd59 100644
+index 915dd57..4c8b8d4 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
 @@ -97,7 +97,7 @@ EXPORT_SYMBOL(jbd2_journal_force_commit);
