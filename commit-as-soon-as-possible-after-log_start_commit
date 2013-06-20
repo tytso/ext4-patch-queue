@@ -14,24 +14,23 @@ try to get the commit started as soon as possible.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/jbd2/transaction.c | 6 ++++--
- 1 file changed, 4 insertions(+), 2 deletions(-)
+ fs/jbd2/transaction.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
 
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index 735609e..434d525 100644
+index 91d62e1..f502791 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
-@@ -225,7 +225,8 @@ repeat:
- 	 * If the current transaction is locked down for commit, wait for the
- 	 * lock to be released.
+@@ -186,7 +186,7 @@ static int add_transaction_credits(journal_t *journal, int blocks,
+ 	 * If the current transaction is locked down for commit, wait
+ 	 * for the lock to be released.
  	 */
--	if (transaction->t_state == T_LOCKED) {
-+	if (transaction->t_state == T_LOCKED ||
-+	    transaction->t_requested) {
- 		DEFINE_WAIT(wait);
- 
- 		prepare_to_wait(&journal->j_wait_transaction_locked,
-@@ -427,7 +428,8 @@ int jbd2_journal_extend(handle_t *handle, int nblocks)
+-	if (t->t_state == T_LOCKED) {
++	if (t->t_state == T_LOCKED || t->t_requested) {
+ 		wait_transaction_locked(journal);
+ 		return 1;
+ 	}
+@@ -563,7 +563,8 @@ int jbd2_journal_extend(handle_t *handle, int nblocks)
  	read_lock(&journal->j_state_lock);
  
  	/* Don't extend a locked-down transaction! */
