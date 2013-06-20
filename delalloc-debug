@@ -6,14 +6,24 @@ inodes subject to delayed allocation to the console.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/super.c | 78 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 77 insertions(+), 1 deletion(-)
+ fs/ext4/super.c | 81 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 80 insertions(+), 1 deletion(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 85b3dd6..ecb8256 100644
+index 85b3dd6..ae13cd3 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1832,6 +1832,74 @@ static const struct file_operations ext4_seq_options_fops = {
+@@ -790,6 +790,9 @@ static void ext4_put_super(struct super_block *sb)
+ 
+ 	if (sbi->s_proc) {
+ 		remove_proc_entry("options", sbi->s_proc);
++#ifdef CONFIG_EXT4_DEBUG
++		remove_proc_entry("delalloc_debug", sbi->s_proc);
++#endif
+ 		remove_proc_entry(sb->s_id, ext4_proc_root);
+ 	}
+ 	kobject_del(&sbi->s_kobj);
+@@ -1832,6 +1835,74 @@ static const struct file_operations ext4_seq_options_fops = {
  	.release = single_release,
  };
  
@@ -88,7 +98,7 @@ index 85b3dd6..ecb8256 100644
  static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
  			    int read_only)
  {
-@@ -3764,9 +3832,14 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -3764,9 +3835,14 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	if (ext4_proc_root)
  		sbi->s_proc = proc_mkdir(sb->s_id, ext4_proc_root);
  
@@ -104,7 +114,7 @@ index 85b3dd6..ecb8256 100644
  
  	bgl_lock_init(sbi->s_blockgroup_lock);
  
-@@ -4149,6 +4222,9 @@ failed_mount:
+@@ -4149,6 +4225,9 @@ failed_mount:
  		crypto_free_shash(sbi->s_chksum_driver);
  	if (sbi->s_proc) {
  		remove_proc_entry("options", sbi->s_proc);
