@@ -7,16 +7,16 @@ the buffer cache, and it allows us to get the information without
 having to traverse the extent tree for successive extents.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
-Cc: Zheng Liu <wenqing.lz@taobao.com>
+Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
 ---
  fs/ext4/ext4.h              | 14 +++++++-
- fs/ext4/extents.c           | 84 +++++++++++++++++++++++++++++++++---------------
- fs/ext4/extents_status.c    | 39 +++++++++++++++++++++-
+ fs/ext4/extents.c           | 85 +++++++++++++++++++++++++++++++--------------
+ fs/ext4/extents_status.c    | 39 ++++++++++++++++++++-
  fs/ext4/extents_status.h    |  3 ++
  fs/ext4/migrate.c           |  2 +-
  fs/ext4/move_extent.c       |  2 +-
  include/trace/events/ext4.h | 14 +++++++-
- 7 files changed, 127 insertions(+), 31 deletions(-)
+ 7 files changed, 128 insertions(+), 31 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 6ed348d..a8497b0 100644
@@ -51,7 +51,7 @@ index 6ed348d..a8497b0 100644
  extern int ext4_ext_check_inode(struct inode *inode);
  extern int ext4_find_delalloc_range(struct inode *inode,
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index e174814..506c3fe 100644
+index e174814..c746dbe 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -466,7 +466,8 @@ int ext4_ext_check_inode(struct inode *inode)
@@ -64,7 +64,7 @@ index e174814..506c3fe 100644
  {
  	struct buffer_head		*bh;
  	int				err;
-@@ -490,6 +491,31 @@ __read_extent_tree_block(const char *function, unsigned int line,
+@@ -490,6 +491,32 @@ __read_extent_tree_block(const char *function, unsigned int line,
  	if (err)
  		goto errout;
  	set_buffer_verified(bh);
@@ -74,11 +74,12 @@ index e174814..506c3fe 100644
 +	if (!(flags & EXT4_EX_NOCACHE) && depth == 0) {
 +		struct ext4_extent_header *eh = ext_block_hdr(bh);
 +		struct ext4_extent *ex = EXT_FIRST_EXTENT(eh);
++		ext4_lblk_t prev = 0;
 +		int i;
 +
-+		for (i = eh->eh_entries; i > 0; i--, ex++) {
++		for (i = le16_to_cpu(eh->eh_entries); i > 0; i--, ex++) {
 +			unsigned int status = EXTENT_STATUS_WRITTEN;
-+			ext4_lblk_t prev = 0, lblk = le32_to_cpu(ex->ee_block);
++			ext4_lblk_t lblk = le32_to_cpu(ex->ee_block);
 +			int len = ext4_ext_get_actual_len(ex);
 +
 +			if (prev && (prev != lblk))
@@ -96,7 +97,7 @@ index e174814..506c3fe 100644
  	return bh;
  errout:
  	put_bh(bh);
-@@ -497,8 +523,9 @@ errout:
+@@ -497,8 +524,9 @@ errout:
  
  }
  
@@ -108,7 +109,7 @@ index e174814..506c3fe 100644
  
  #ifdef EXT_DEBUG
  static void ext4_ext_show_path(struct inode *inode, struct ext4_ext_path *path)
-@@ -732,7 +759,7 @@ int ext4_ext_tree_init(handle_t *handle, struct inode *inode)
+@@ -732,7 +760,7 @@ int ext4_ext_tree_init(handle_t *handle, struct inode *inode)
  
  struct ext4_ext_path *
  ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
@@ -117,7 +118,7 @@ index e174814..506c3fe 100644
  {
  	struct ext4_extent_header *eh;
  	struct buffer_head *bh;
-@@ -764,7 +791,8 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+@@ -764,7 +792,8 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
  		path[ppos].p_depth = i;
  		path[ppos].p_ext = NULL;
  
@@ -127,7 +128,7 @@ index e174814..506c3fe 100644
  		if (IS_ERR(bh)) {
  			ret = PTR_ERR(bh);
  			goto err;
-@@ -1201,7 +1229,8 @@ out:
+@@ -1201,7 +1230,8 @@ out:
   * if no free index is found, then it requests in-depth growing.
   */
  static int ext4_ext_create_new_leaf(handle_t *handle, struct inode *inode,
@@ -137,7 +138,7 @@ index e174814..506c3fe 100644
  				    struct ext4_ext_path *path,
  				    struct ext4_extent *newext)
  {
-@@ -1223,7 +1252,7 @@ repeat:
+@@ -1223,7 +1253,7 @@ repeat:
  	if (EXT_HAS_FREE_INDEX(curp)) {
  		/* if we found index with free entry, then use that
  		 * entry: create all needed subtree and add new leaf */
@@ -146,7 +147,7 @@ index e174814..506c3fe 100644
  		if (err)
  			goto out;
  
-@@ -1231,12 +1260,12 @@ repeat:
+@@ -1231,12 +1261,12 @@ repeat:
  		ext4_ext_drop_refs(path);
  		path = ext4_ext_find_extent(inode,
  				    (ext4_lblk_t)le32_to_cpu(newext->ee_block),
@@ -161,7 +162,7 @@ index e174814..506c3fe 100644
  		if (err)
  			goto out;
  
-@@ -1244,7 +1273,7 @@ repeat:
+@@ -1244,7 +1274,7 @@ repeat:
  		ext4_ext_drop_refs(path);
  		path = ext4_ext_find_extent(inode,
  				   (ext4_lblk_t)le32_to_cpu(newext->ee_block),
@@ -170,7 +171,7 @@ index e174814..506c3fe 100644
  		if (IS_ERR(path)) {
  			err = PTR_ERR(path);
  			goto out;
-@@ -1417,7 +1446,7 @@ got_index:
+@@ -1417,7 +1447,7 @@ got_index:
  	while (++depth < path->p_depth) {
  		/* subtract from p_depth to get proper eh_depth */
  		bh = read_extent_tree_block(inode, *logical,
@@ -179,7 +180,7 @@ index e174814..506c3fe 100644
  		if (IS_ERR(bh))
  			return PTR_ERR(bh);
  		eh = ext_block_hdr(bh);
-@@ -1426,7 +1455,7 @@ got_index:
+@@ -1426,7 +1456,7 @@ got_index:
  		put_bh(bh);
  	}
  
@@ -188,7 +189,7 @@ index e174814..506c3fe 100644
  	if (IS_ERR(bh))
  		return PTR_ERR(bh);
  	eh = ext_block_hdr(bh);
-@@ -1788,7 +1817,7 @@ out:
+@@ -1788,7 +1818,7 @@ out:
   */
  int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
  				struct ext4_ext_path *path,
@@ -197,7 +198,7 @@ index e174814..506c3fe 100644
  {
  	struct ext4_extent_header *eh;
  	struct ext4_extent *ex, *fex;
-@@ -1797,7 +1826,7 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
+@@ -1797,7 +1827,7 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
  	int depth, len, err;
  	ext4_lblk_t next;
  	unsigned uninitialized = 0;
@@ -206,7 +207,7 @@ index e174814..506c3fe 100644
  
  	if (unlikely(ext4_ext_get_actual_len(newext) == 0)) {
  		EXT4_ERROR_INODE(inode, "ext4_ext_get_actual_len(newext) == 0");
-@@ -1812,7 +1841,7 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
+@@ -1812,7 +1842,7 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
  	}
  
  	/* try to insert block into found extent and return */
@@ -215,7 +216,7 @@ index e174814..506c3fe 100644
  
  		/*
  		 * Try to see whether we should rather test the extent on
-@@ -1915,7 +1944,7 @@ prepend:
+@@ -1915,7 +1945,7 @@ prepend:
  	if (next != EXT_MAX_BLOCKS) {
  		ext_debug("next leaf block - %u\n", next);
  		BUG_ON(npath != NULL);
@@ -224,7 +225,7 @@ index e174814..506c3fe 100644
  		if (IS_ERR(npath))
  			return PTR_ERR(npath);
  		BUG_ON(npath->p_depth != path->p_depth);
-@@ -1934,9 +1963,10 @@ prepend:
+@@ -1934,9 +1964,10 @@ prepend:
  	 * There is no free space in the found leaf.
  	 * We're gonna add a new leaf in the tree.
  	 */
@@ -238,7 +239,7 @@ index e174814..506c3fe 100644
  	if (err)
  		goto cleanup;
  	depth = ext_depth(inode);
-@@ -2002,7 +2032,7 @@ has_space:
+@@ -2002,7 +2033,7 @@ has_space:
  
  merge:
  	/* try to merge extents */
@@ -247,7 +248,7 @@ index e174814..506c3fe 100644
  		ext4_ext_try_to_merge(handle, inode, path, nearex);
  
  
-@@ -2045,7 +2075,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+@@ -2045,7 +2076,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
  			path = NULL;
  		}
  
@@ -256,7 +257,7 @@ index e174814..506c3fe 100644
  		if (IS_ERR(path)) {
  			up_read(&EXT4_I(inode)->i_data_sem);
  			err = PTR_ERR(path);
-@@ -2707,7 +2737,7 @@ again:
+@@ -2707,7 +2738,7 @@ again:
  		ext4_lblk_t ee_block;
  
  		/* find extent for this block */
@@ -265,7 +266,7 @@ index e174814..506c3fe 100644
  		if (IS_ERR(path)) {
  			ext4_journal_stop(handle);
  			return PTR_ERR(path);
-@@ -2749,6 +2779,7 @@ again:
+@@ -2749,6 +2780,7 @@ again:
  			 */
  			err = ext4_split_extent_at(handle, inode, path,
  					end + 1, split_flag,
@@ -273,7 +274,7 @@ index e174814..506c3fe 100644
  					EXT4_GET_BLOCKS_PRE_IO |
  					EXT4_GET_BLOCKS_METADATA_NOFAIL);
  
-@@ -2825,7 +2856,8 @@ again:
+@@ -2825,7 +2857,8 @@ again:
  				  i + 1, ext4_idx_pblock(path[i].p_idx));
  			memset(path + i + 1, 0, sizeof(*path));
  			bh = read_extent_tree_block(inode,
@@ -283,7 +284,7 @@ index e174814..506c3fe 100644
  			if (IS_ERR(bh)) {
  				err = PTR_ERR(bh);
  				break;
-@@ -3168,7 +3200,7 @@ static int ext4_split_extent(handle_t *handle,
+@@ -3168,7 +3201,7 @@ static int ext4_split_extent(handle_t *handle,
  	 * result in split of original leaf or extent zeroout.
  	 */
  	ext4_ext_drop_refs(path);
@@ -292,7 +293,7 @@ index e174814..506c3fe 100644
  	if (IS_ERR(path))
  		return PTR_ERR(path);
  	depth = ext_depth(inode);
-@@ -3552,7 +3584,7 @@ static int ext4_convert_unwritten_extents_endio(handle_t *handle,
+@@ -3552,7 +3585,7 @@ static int ext4_convert_unwritten_extents_endio(handle_t *handle,
  		if (err < 0)
  			goto out;
  		ext4_ext_drop_refs(path);
@@ -301,7 +302,7 @@ index e174814..506c3fe 100644
  		if (IS_ERR(path)) {
  			err = PTR_ERR(path);
  			goto out;
-@@ -4039,7 +4071,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -4039,7 +4072,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	trace_ext4_ext_map_blocks_enter(inode, map->m_lblk, map->m_len, flags);
  
  	/* find extent for this block */

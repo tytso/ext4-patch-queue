@@ -6,15 +6,16 @@ the code, it also makes sure that we call the ext4_ext_load_extent
 tracepoint whenever we need to read an extent tree block from disk.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
 ---
- fs/ext4/extents.c | 100 ++++++++++++++++++++++++++-------------------------------
- 1 file changed, 45 insertions(+), 55 deletions(-)
+ fs/ext4/extents.c | 98 ++++++++++++++++++++++++-------------------------------
+ 1 file changed, 43 insertions(+), 55 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 7097b0f..e174814 100644
+index 7097b0f..7bb8a1e 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -464,25 +464,41 @@ int ext4_ext_check_inode(struct inode *inode)
+@@ -464,25 +464,39 @@ int ext4_ext_check_inode(struct inode *inode)
  	return ext4_ext_check(inode, ext_inode_hdr(inode), ext_depth(inode));
  }
  
@@ -30,13 +31,11 @@ index 7097b0f..e174814 100644
 -	int ret;
 +	struct buffer_head		*bh;
 +	int				err;
-+
-+	BUG_ON(!rwsem_is_locked(&EXT4_I(inode)->i_data_sem));
-+
+ 
 +	bh = sb_getblk(inode->i_sb, pblk);
 +	if (unlikely(!bh))
 +		return ERR_PTR(-ENOMEM);
- 
++
 +	if (!bh_uptodate_or_lock(bh)) {
 +		trace_ext4_ext_load_extent(inode, pblk, _RET_IP_);
 +		err = bh_submit_read(bh);
@@ -69,7 +68,7 @@ index 7097b0f..e174814 100644
  
  #ifdef EXT_DEBUG
  static void ext4_ext_show_path(struct inode *inode, struct ext4_ext_path *path)
-@@ -748,20 +764,12 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+@@ -748,20 +762,12 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
  		path[ppos].p_depth = i;
  		path[ppos].p_ext = NULL;
  
@@ -94,7 +93,7 @@ index 7097b0f..e174814 100644
  		eh = ext_block_hdr(bh);
  		ppos++;
  		if (unlikely(ppos > depth)) {
-@@ -773,11 +781,6 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+@@ -773,11 +779,6 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
  		}
  		path[ppos].p_bh = bh;
  		path[ppos].p_hdr = eh;
@@ -106,7 +105,7 @@ index 7097b0f..e174814 100644
  	}
  
  	path[ppos].p_depth = i;
-@@ -1412,29 +1415,21 @@ got_index:
+@@ -1412,29 +1413,21 @@ got_index:
  	ix++;
  	block = ext4_idx_pblock(ix);
  	while (++depth < path->p_depth) {
@@ -144,7 +143,7 @@ index 7097b0f..e174814 100644
  	ex = EXT_FIRST_EXTENT(eh);
  found_extent:
  	*logical = le32_to_cpu(ex->ee_block);
-@@ -2829,21 +2824,16 @@ again:
+@@ -2829,21 +2822,16 @@ again:
  			ext_debug("move to level %d (block %llu)\n",
  				  i + 1, ext4_idx_pblock(path[i].p_idx));
  			memset(path + i + 1, 0, sizeof(*path));
