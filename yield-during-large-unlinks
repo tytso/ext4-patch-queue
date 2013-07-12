@@ -1,0 +1,26 @@
+ext4: yield during large unlinks
+
+During large unlink operations on files with extents, we can use a lot
+of CPU time.  This adds a cond_resched() call when starting to examine
+the next level of a multi-level extent tree.  Multi-level extent trees
+are rare in the first place, and this should rarely be executed.
+    
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 3d99b18..cc4731fd 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2861,6 +2861,9 @@ again:
+ 				err = PTR_ERR(bh);
+ 				break;
+ 			}
++			/* Yield here to deal with large extent trees. Should be
++			 * a no-op if we did IO for the above sb_bread. */
++			cond_resched();
+ 			if (WARN_ON(i + 1 > depth)) {
+ 				err = -EIO;
+ 				break;
