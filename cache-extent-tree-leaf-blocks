@@ -9,14 +9,14 @@ having to traverse the extent tree for successive extents.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Reviewed-by: Zheng Liu <wenqing.lz@taobao.com>
 ---
- fs/ext4/ext4.h              | 14 +++++++-
- fs/ext4/extents.c           | 85 +++++++++++++++++++++++++++++++--------------
- fs/ext4/extents_status.c    | 39 ++++++++++++++++++++-
- fs/ext4/extents_status.h    |  3 ++
+ fs/ext4/ext4.h              | 14 +++++++++++++-
+ fs/ext4/extents.c           | 87 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++---------------------------
+ fs/ext4/extents_status.c    | 37 ++++++++++++++++++++++++++++++++++++-
+ fs/ext4/extents_status.h    |  3 +++
  fs/ext4/migrate.c           |  2 +-
  fs/ext4/move_extent.c       |  2 +-
- include/trace/events/ext4.h | 14 +++++++-
- 7 files changed, 128 insertions(+), 31 deletions(-)
+ include/trace/events/ext4.h | 14 +++++++++++++-
+ 7 files changed, 127 insertions(+), 32 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 6ed348d..a8497b0 100644
@@ -51,7 +51,7 @@ index 6ed348d..a8497b0 100644
  extern int ext4_ext_check_inode(struct inode *inode);
  extern int ext4_find_delalloc_range(struct inode *inode,
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 2fe96a7..571bb45 100644
+index ba58815..671dd91 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -466,7 +466,8 @@ int ext4_ext_check_inode(struct inode *inode)
@@ -282,9 +282,9 @@ index 2fe96a7..571bb45 100644
 +				ext4_idx_pblock(path[i].p_idx), depth - i - 1,
 +				EXT4_EX_NOCACHE);
  			if (IS_ERR(bh)) {
+ 				/* should we reset i_size? */
  				err = PTR_ERR(bh);
- 				break;
-@@ -3166,7 +3199,7 @@ static int ext4_split_extent(handle_t *handle,
+@@ -3170,7 +3203,7 @@ static int ext4_split_extent(handle_t *handle,
  	 * result in split of original leaf or extent zeroout.
  	 */
  	ext4_ext_drop_refs(path);
@@ -293,7 +293,7 @@ index 2fe96a7..571bb45 100644
  	if (IS_ERR(path))
  		return PTR_ERR(path);
  	depth = ext_depth(inode);
-@@ -3550,7 +3583,7 @@ static int ext4_convert_unwritten_extents_endio(handle_t *handle,
+@@ -3554,7 +3587,7 @@ static int ext4_convert_unwritten_extents_endio(handle_t *handle,
  		if (err < 0)
  			goto out;
  		ext4_ext_drop_refs(path);
@@ -302,7 +302,7 @@ index 2fe96a7..571bb45 100644
  		if (IS_ERR(path)) {
  			err = PTR_ERR(path);
  			goto out;
-@@ -4037,7 +4070,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -4041,7 +4074,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  	trace_ext4_ext_map_blocks_enter(inode, map->m_lblk, map->m_len, flags);
  
  	/* find extent for this block */
@@ -311,8 +311,16 @@ index 2fe96a7..571bb45 100644
  	if (IS_ERR(path)) {
  		err = PTR_ERR(path);
  		path = NULL;
+@@ -4760,6 +4793,6 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 		error = ext4_fill_fiemap_extents(inode, start_blk,
+ 						 len_blks, fieinfo);
+ 	}
+-
++	ext4_es_lru_add(inode);
+ 	return error;
+ }
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index ded2615..75d609f 100644
+index ded2615..1dc5df0 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
 @@ -419,7 +419,7 @@ static void ext4_es_insert_extent_ext_check(struct inode *inode,
@@ -324,7 +332,7 @@ index ded2615..75d609f 100644
  	if (IS_ERR(path))
  		return;
  
-@@ -684,6 +684,43 @@ error:
+@@ -684,6 +684,41 @@ error:
  }
  
  /*
@@ -340,8 +348,12 @@ index ded2615..75d609f 100644
 +	struct extent_status newes;
 +	ext4_lblk_t end = lblk + len - 1;
 +
-+	es_debug("cache [%u/%u) %llu %x to extent status tree of inode %lu\n",
-+		 lblk, len, pblk, status, inode->i_ino);
++	newes.es_lblk = lblk;
++	newes.es_len = len;
++	ext4_es_store_pblock(&newes, pblk);
++	ext4_es_store_status(&newes, status);
++	trace_ext4_es_cache_extent(inode, &newes);
++
 +	if (!len)
 +		return;
 +
@@ -352,12 +364,6 @@ index ded2615..75d609f 100644
 +	es = __es_tree_search(&EXT4_I(inode)->i_es_tree.root, lblk);
 +	if (es && ((es->es_lblk <= lblk) || (es->es_lblk <= end)))
 +		goto out;
-+
-+	newes.es_lblk = lblk;
-+	newes.es_len = len;
-+	ext4_es_store_pblock(&newes, pblk);
-+	ext4_es_store_status(&newes, status);
-+	trace_ext4_es_cache_extent(inode, &newes);
 +
 +	__es_insert_extent(inode, &newes);
 +out:
