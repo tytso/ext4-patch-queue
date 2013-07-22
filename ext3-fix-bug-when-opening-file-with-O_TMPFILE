@@ -1,0 +1,88 @@
+ext3: fix a BUG when opening a file with O_TMPFILE flag
+
+From: Zheng Liu <wenqing.lz@taobao.com>
+
+When we try to open a file with O_TMPFILE flag, we will trigger a bug.
+The root cause is that in ext4_orphan_add() we check ->i_nlink == 0 and
+this check always fails because we set ->i_nlink = 1 in
+inode_init_always().  We can use the following program to trigger it:
+
+int main(int argc, char *argv[])
+{
+	int fd;
+
+	fd = open(argv[1], O_TMPFILE, 0666);
+	if (fd < 0) {
+		perror("open ");
+		return -1;
+	}
+	close(fd);
+	return 0;
+}
+
+The oops message looks like this:
+
+kernel: kernel BUG at fs/ext3/namei.c:1992!
+kernel: invalid opcode: 0000 [#1] SMP
+kernel: Modules linked in: ext4 jbd2 crc16 cpufreq_ondemand ipv6 dm_mirror dm_region_hash dm_log dm_mod parport_pc parport serio_raw sg dcdbas pcspkr i2c_i801 ehci_pci ehci_hcd button acpi_cpufreq mperf e1000e ptp pps_core ttm drm_kms_helper drm hwmon i2c_algo_bit i2c_core ext3 jbd sd_mod ahci libahci libata scsi_mod uhci_hcd
+kernel: CPU: 0 PID: 2882 Comm: tst_tmpfile Not tainted 3.11.0-rc1+ #4
+kernel: Hardware name: Dell Inc. OptiPlex 780 /0V4W66, BIOS A05 08/11/2010
+kernel: task: ffff880112d30050 ti: ffff8801124d4000 task.ti: ffff8801124d4000
+kernel: RIP: 0010:[<ffffffffa00db5ae>] [<ffffffffa00db5ae>] ext3_orphan_add+0x6a/0x1eb [ext3]
+kernel: RSP: 0018:ffff8801124d5cc8  EFLAGS: 00010202
+kernel: RAX: 0000000000000000 RBX: ffff880111510128 RCX: ffff8801114683a0
+kernel: RDX: 0000000000000000 RSI: ffff880111510128 RDI: ffff88010fcf65a8
+kernel: RBP: ffff8801124d5d18 R08: 0080000000000000 R09: ffffffffa00d3b7f
+kernel: R10: ffff8801114683a0 R11: ffff8801032a2558 R12: 0000000000000000
+kernel: R13: ffff88010fcf6800 R14: ffff8801032a2558 R15: ffff8801115100d8
+kernel: FS:  00007f5d172b5700(0000) GS:ffff880117c00000(0000) knlGS:0000000000000000
+kernel: CS:  0010 DS: 0000 ES: 0000 CR0: 000000008005003b
+kernel: CR2: 00007f5d16df15d0 CR3: 0000000110b1d000 CR4: 00000000000407f0
+kernel: Stack:
+kernel: 000000000000000c ffff8801048a7dc8 ffff8801114685a8 ffffffffa00b80d7
+kernel: ffff8801124d5e38 ffff8801032a2558 ffff88010ce24d68 0000000000000000
+kernel: ffff88011146b300 ffff8801124d5d44 ffff8801124d5d78 ffffffffa00db7e1
+kernel: Call Trace:
+kernel: [<ffffffffa00b80d7>] ? journal_start+0x8c/0xbd [jbd]
+kernel: [<ffffffffa00db7e1>] ext3_tmpfile+0xb2/0x13b [ext3]
+kernel: [<ffffffff821076f8>] path_openat+0x11f/0x5e7
+kernel: [<ffffffff821c86b4>] ? list_del+0x11/0x30
+kernel: [<ffffffff82065fa2>] ?  __dequeue_entity+0x33/0x38
+kernel: [<ffffffff82107cd5>] do_filp_open+0x3f/0x8d
+kernel: [<ffffffff82112532>] ? __alloc_fd+0x50/0x102
+kernel: [<ffffffff820f9296>] do_sys_open+0x13b/0x1cd
+kernel: [<ffffffff820f935c>] SyS_open+0x1e/0x20
+kernel: [<ffffffff82398c02>] system_call_fastpath+0x16/0x1b
+kernel: Code: 39 c7 0f 85 67 01 00 00 0f b7 03 25 00 f0 00 00 3d 00 40 00 00 74 18 3d 00 80 00 00 74 11 3d 00 a0 00 00 74 0a 83 7b 48 00 74 04 <0f> 0b eb fe 49 8b 85 50 03 00 00 4c 89 f6 48 c7 c7 c0 99 0e a0
+kernel: RIP  [<ffffffffa00db5ae>] ext3_orphan_add+0x6a/0x1eb [ext3]
+kernel: RSP <ffff8801124d5cc8>
+
+Here we couldn't call clear_nlink() directly because in d_tmpfile() we
+will call inode_dec_link_count() to decrease ->i_nlink.  So this commit
+tries to call d_tmpfile() before ext4_orphan_add() to fix this problem.
+
+Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: Jan Kara <jack@suse.cz>
+Cc: Al Viro <viro@zeniv.linux.org.uk>
+---
+ fs/ext3/namei.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext3/namei.c b/fs/ext3/namei.c
+index 998ea11..1194b1f 100644
+--- a/fs/ext3/namei.c
++++ b/fs/ext3/namei.c
+@@ -1780,11 +1780,11 @@ retry:
+ 		inode->i_op = &ext3_file_inode_operations;
+ 		inode->i_fop = &ext3_file_operations;
+ 		ext3_set_aops(inode);
++		d_tmpfile(dentry, inode);
+ 		err = ext3_orphan_add(handle, inode);
+ 		if (err)
+ 			goto err_drop_inode;
+ 		mark_inode_dirty(inode);
+-		d_tmpfile(dentry, inode);
+ 		unlock_new_inode(inode);
+ 	}
+ 	ext3_journal_stop(handle);
