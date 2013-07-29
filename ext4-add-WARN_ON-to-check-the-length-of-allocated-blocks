@@ -1,0 +1,85 @@
+ext4: add WARN_ON to check the length of allocated blocks
+
+From: Zheng Liu <wenqing.lz@taobao.com>
+
+In commit 921f266b: ext4: add self-testing infrastructure to do a
+sanity check, some sanity checks were added in map_blocks to make sure
+'retval == map->m_len'.
+
+Enable these checks by default and report any assertion failures using
+ext4_warning() and WARN_ON() since they can help us to figure out some
+bugs that are otherwise hard to hit.
+
+Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c | 39 ++++++++++++++++++---------------------
+ 1 file changed, 18 insertions(+), 21 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index ba33c67..dd32a2e 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -555,14 +555,13 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
+ 		int ret;
+ 		unsigned long long status;
+ 
+-#ifdef ES_AGGRESSIVE_TEST
+-		if (retval != map->m_len) {
+-			printk("ES len assertion failed for inode: %lu "
+-			       "retval %d != map->m_len %d "
+-			       "in %s (lookup)\n", inode->i_ino, retval,
+-			       map->m_len, __func__);
++		if (unlikely(retval != map->m_len)) {
++			ext4_warning(inode->i_sb,
++				     "ES len assertion failed for inode "
++				     "%lu: retval %d != map->m_len %d",
++				     inode->i_ino, retval, map->m_len);
++			WARN_ON(1);
+ 		}
+-#endif
+ 
+ 		status = map->m_flags & EXT4_MAP_UNWRITTEN ?
+ 				EXTENT_STATUS_UNWRITTEN : EXTENT_STATUS_WRITTEN;
+@@ -656,14 +655,13 @@ found:
+ 		int ret;
+ 		unsigned long long status;
+ 
+-#ifdef ES_AGGRESSIVE_TEST
+-		if (retval != map->m_len) {
+-			printk("ES len assertion failed for inode: %lu "
+-			       "retval %d != map->m_len %d "
+-			       "in %s (allocation)\n", inode->i_ino, retval,
+-			       map->m_len, __func__);
++		if (unlikely(retval != map->m_len)) {
++			ext4_warning(inode->i_sb,
++				     "ES len assertion failed for inode "
++				     "%lu: retval %d != map->m_len %d",
++				     inode->i_ino, retval, map->m_len);
++			WARN_ON(1);
+ 		}
+-#endif
+ 
+ 		/*
+ 		 * If the extent has been zeroed out, we don't need to update
+@@ -1637,14 +1635,13 @@ add_delayed:
+ 		int ret;
+ 		unsigned long long status;
+ 
+-#ifdef ES_AGGRESSIVE_TEST
+-		if (retval != map->m_len) {
+-			printk("ES len assertion failed for inode: %lu "
+-			       "retval %d != map->m_len %d "
+-			       "in %s (lookup)\n", inode->i_ino, retval,
+-			       map->m_len, __func__);
++		if (unlikely(retval != map->m_len)) {
++			ext4_warning(inode->i_sb,
++				     "ES len assertion failed for inode "
++				     "%lu: retval %d != map->m_len %d",
++				     inode->i_ino, retval, map->m_len);
++			WARN_ON(1);
+ 		}
+-#endif
+ 
+ 		status = map->m_flags & EXT4_MAP_UNWRITTEN ?
+ 				EXTENT_STATUS_UNWRITTEN : EXTENT_STATUS_WRITTEN;
