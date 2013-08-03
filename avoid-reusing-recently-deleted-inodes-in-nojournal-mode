@@ -27,7 +27,7 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 file changed, 51 insertions(+)
 
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index 8bf5999..4c19215 100644
+index 8bf5999..c6d0ce7 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -625,6 +625,51 @@ static int find_group_other(struct super_block *sb, struct inode *parent,
@@ -45,7 +45,7 @@ index 8bf5999..4c19215 100644
 +	struct buffer_head	*bh;
 +	unsigned long		dtime, now;
 +	int	inodes_per_block = EXT4_SB(sb)->s_inodes_per_block;
-+	int	offset, ret = 0, recentcy = 30;
++	int	offset, ret = 0, recentcy = dirty_expire_interval;
 +
 +	gdp = ext4_get_group_desc(sb, group, NULL);
 +	if (unlikely(!gdp))
@@ -55,7 +55,7 @@ index 8bf5999..4c19215 100644
 +		       (ino / inodes_per_block));
 +	if (unlikely(!bh) || !buffer_uptodate(bh))
 +		/*
-+		 * If the block is not in the buffer head, then it
++		 * If the block is not in the buffer cache, then it
 +		 * must have been written out.
 +		 */
 +		goto out;
@@ -64,7 +64,7 @@ index 8bf5999..4c19215 100644
 +	raw_inode = (struct ext4_inode *) (bh->b_data + offset);
 +	dtime = le32_to_cpu(raw_inode->i_dtime);
 +	now = get_seconds();
-+	if (!buffer_dirty(bh))
++	if (!buffer_dirty(bh) && (recentcy > 5))
 +		/*
 +		 * Five seconds should be enough time for a block to be
 +		 * committed to the platter once it is sent to the HDD

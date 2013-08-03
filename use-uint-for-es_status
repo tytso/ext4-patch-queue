@@ -118,13 +118,13 @@ index e936730..ae1be58 100644
 +static inline unsigned int ext4_es_status(struct extent_status *es)
  {
 -	return (es->es_pblk & EXTENT_STATUS_FLAGS);
-+	return (es->es_pblk >> ES_SHIFT);
++	return es->es_pblk >> ES_SHIFT;
  }
  
  static inline ext4_fsblk_t ext4_es_pblock(struct extent_status *es)
  {
 -	return (es->es_pblk & ~EXTENT_STATUS_FLAGS);
-+	return (es->es_pblk & ~ES_MASK);
++	return es->es_pblk & ~ES_MASK;
  }
  
  static inline void ext4_es_store_pblock(struct extent_status *es,
@@ -147,7 +147,7 @@ index e936730..ae1be58 100644
 -	block = (status & EXTENT_STATUS_FLAGS) |
 -		(es->es_pblk & ~EXTENT_STATUS_FLAGS);
 -	es->es_pblk = block;
-+	es->es_pblk = (((unsigned long long)
++	es->es_pblk = (((ext4_fsblk_t)
 +			(status & EXTENT_STATUS_FLAGS) << ES_SHIFT) |
 +		       (es->es_pblk & ~ES_MASK));
  }
