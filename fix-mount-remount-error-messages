@@ -1,0 +1,67 @@
+ext4: fix mount/remount error messages for incompatible mount options
+
+From: Piotr Sarna <p.sarna@partner.samsung.com>
+
+Commit 5688978 ("ext4: improve handling of conflicting mount options")
+introduced incorrect messages shown while choosing wrong mount options.
+
+First of all, both cases of incorrect mount options,
+"data=journal,delalloc" and "data=journal,dioread_nolock" result in
+the same error message.
+
+Secondly, the problem above isn't solved for remount option: the
+mismatched parameter is simply ignored.  Moreover, ext4_msg states
+that remount with options "data=journal,delalloc" succeeded, which is
+not true.
+
+To fix it up, I added a simple check after parse_options() call to
+ensure that data=journal and delalloc/dioread_nolock parameters are
+not present at the same time.
+
+Signed-off-by: Piotr Sarna <p.sarna@partner.samsung.com>
+Acked-by: Bartlomiej Zolnierkiewicz <b.zolnierkie@samsung.com>
+Signed-off-by: Kyungmin Park <kyungmin.park@samsung.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c |   17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 10f9bb0..ab0b23b 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3452,7 +3452,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		}
+ 		if (test_opt(sb, DIOREAD_NOLOCK)) {
+ 			ext4_msg(sb, KERN_ERR, "can't mount with "
+-				 "both data=journal and delalloc");
++				 "both data=journal and dioread_nolock");
+ 			goto failed_mount;
+ 		}
+ 		if (test_opt(sb, DELALLOC))
+@@ -4653,6 +4653,21 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 		goto restore_opts;
+ 	}
+ 
++	if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA) {
++		if (test_opt2(sb, EXPLICIT_DELALLOC)) {
++			ext4_msg(sb, KERN_ERR, "can't mount with "
++				 "both data=journal and delalloc");
++			err = -EINVAL;
++			goto restore_opts;
++		}
++		if (test_opt(sb, DIOREAD_NOLOCK)) {
++			ext4_msg(sb, KERN_ERR, "can't mount with "
++				 "both data=journal and dioread_nolock");
++			err = -EINVAL;
++			goto restore_opts;
++		}
++	}
++
+ 	if (sbi->s_mount_flags & EXT4_MF_FS_ABORTED)
+ 		ext4_abort(sb, "Abort forced by user");
+ 
+-- 
+1.7.9.5
+
+
