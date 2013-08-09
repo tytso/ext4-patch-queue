@@ -1,0 +1,27 @@
+ext4: allow the mount options nodelalloc and data=journal
+
+Commit 26092bf ("ext4: use a table-driven handler for mount options")
+wrongly disallows the specifying the mount options nodelalloc and
+data=journal simultaneously.  This is incorrect; it should have only
+disallowed the combination of delalloc and data=journal
+simultaneously.
+
+Reported-by: Piotr Sarna <p.sarna@partner.samsung.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 36b141e..75b3708 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1359,7 +1359,7 @@ static const struct mount_opts {
+ 	{Opt_delalloc, EXT4_MOUNT_DELALLOC,
+ 	 MOPT_EXT4_ONLY | MOPT_SET | MOPT_EXPLICIT},
+ 	{Opt_nodelalloc, EXT4_MOUNT_DELALLOC,
+-	 MOPT_EXT4_ONLY | MOPT_CLEAR | MOPT_EXPLICIT},
++	 MOPT_EXT4_ONLY | MOPT_CLEAR},
+ 	{Opt_journal_checksum, EXT4_MOUNT_JOURNAL_CHECKSUM,
+ 	 MOPT_EXT4_ONLY | MOPT_SET},
+ 	{Opt_journal_async_commit, (EXT4_MOUNT_JOURNAL_ASYNC_COMMIT |
