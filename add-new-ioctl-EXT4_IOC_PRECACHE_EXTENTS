@@ -1,24 +1,27 @@
-ext4: add new ioctl EXT4_IOC_PRECACHE_EXTENTS
+ext4: add support for extent pre-caching
 
-Add a new ioctl which forces the all of the extents in an inode to be
-cached in the extent_status tree.  This is critically important when
-using AIO to a preallocated file, since if we need to read in blocks
-from the extent tree, the io_submit(2) system call becomes
+Add a new fiemap flag which forces the all of the extents in an inode
+to be cached in the extent_status tree.  This is critically important
+when using AIO to a preallocated file, since if we need to read in
+blocks from the extent tree, the io_submit(2) system call becomes
 synchronous, and the AIO is no longer "A", which is bad.
 
 In addition, for most files which have an external leaf tree block,
 the cost of caching the information in the extent status tree will be
 less than caching the entire 4k block in the buffer cache.  So it is
 generally a win to keep the extent information cached.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h           | 17 ++++++++------
- fs/ext4/extents.c        | 67 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
- fs/ext4/extents_status.c | 65 +++++++++++++++++++++++++++++++++++++---------------
- fs/ext4/ioctl.c          |  3 +++
- 4 files changed, 126 insertions(+), 26 deletions(-)
+ fs/ext4/ext4.h              | 17 ++++++++-----
+ fs/ext4/extents.c           | 73 ++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/extents_status.c    | 72 +++++++++++++++++++++++++++++++++++++---------------
+ fs/ext4/ioctl.c             |  3 +++
+ include/uapi/linux/fiemap.h |  1 +
+ 5 files changed, 137 insertions(+), 29 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 425bfc6..953f504 100644
+index c74b194..635135e 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -561,15 +561,16 @@ enum {
@@ -60,7 +63,7 @@ index 425bfc6..953f504 100644
  };
  
  #define EXT4_INODE_BIT_FNS(name, field, offset)				\
-@@ -2704,7 +2707,7 @@ extern int ext4_find_delalloc_range(struct inode *inode,
+@@ -2705,7 +2708,7 @@ extern int ext4_find_delalloc_range(struct inode *inode,
  extern int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk);
  extern int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
  			__u64 start, __u64 len);
@@ -70,7 +73,7 @@ index 425bfc6..953f504 100644
  /* move_extent.c */
  extern void ext4_double_down_write_data_sem(struct inode *first,
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 08c1ac9..093f5b3 100644
+index 08c1ac9..0183887 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -482,7 +482,7 @@ __read_extent_tree_block(const char *function, unsigned int line,
@@ -94,7 +97,7 @@ index 08c1ac9..093f5b3 100644
 +{
 +	struct ext4_inode_info *ei = EXT4_I(inode);
 +	struct ext4_ext_path *path = NULL;
-+	struct buffer_head *bh = 0;
++	struct buffer_head *bh;
 +	int i = 0, depth, ret = 0;
 +
 +	if (!ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
@@ -154,8 +157,21 @@ index 08c1ac9..093f5b3 100644
  #ifdef EXT_DEBUG
  static void ext4_ext_show_path(struct inode *inode, struct ext4_ext_path *path)
  {
+@@ -4766,6 +4831,12 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 			return error;
+ 	}
+ 
++	if (fieinfo->fi_flags & FIEMAP_FLAG_CACHE) {
++		error = ext4_ext_precache(inode);
++		if (error)
++			return error;
++	}
++
+ 	/* fallback to generic here if not in extents fmt */
+ 	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
+ 		return generic_block_fiemap(inode, fieinfo, start, len,
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index 1dc5df0..00e6589 100644
+index 1dc5df0..0e88a36 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
 @@ -710,11 +710,8 @@ void ext4_es_cache_extent(struct inode *inode, ext4_lblk_t lblk,
@@ -185,9 +201,12 @@ index 1dc5df0..00e6589 100644
  	if (eia->i_touch_when == eib->i_touch_when)
  		return 0;
  	if (time_after(eia->i_touch_when, eib->i_touch_when))
-@@ -945,19 +948,11 @@ static int __ext4_es_shrink(struct ext4_sb_info *sbi, int nr_to_scan,
+@@ -943,21 +946,13 @@ static int __ext4_es_shrink(struct ext4_sb_info *sbi, int nr_to_scan,
+ {
+ 	struct ext4_inode_info *ei;
  	struct list_head *cur, *tmp;
- 	LIST_HEAD(skiped);
+-	LIST_HEAD(skiped);
++	LIST_HEAD(skipped);
  	int ret, nr_shrunk = 0;
 +	int retried = 0, skip_precached = 1, nr_skipped = 0;
  
@@ -207,12 +226,13 @@ index 1dc5df0..00e6589 100644
  	list_for_each_safe(cur, tmp, &sbi->s_es_lru) {
  		/*
  		 * If we have already reclaimed all extents from extent
-@@ -968,8 +963,15 @@ static int __ext4_es_shrink(struct ext4_sb_info *sbi, int nr_to_scan,
+@@ -968,9 +963,16 @@ static int __ext4_es_shrink(struct ext4_sb_info *sbi, int nr_to_scan,
  
  		ei = list_entry(cur, struct ext4_inode_info, i_es_lru);
  
 -		/* Skip the inode that is newer than the last_sorted time */
 -		if (sbi->s_es_last_sorted < ei->i_touch_when) {
+-			list_move_tail(cur, &skiped);
 +		/*
 +		 * Skip the inode that is newer than the last_sorted
 +		 * time.  Normally we try hard to avoid shrinking
@@ -222,13 +242,17 @@ index 1dc5df0..00e6589 100644
 +		    (skip_precached && ext4_test_inode_state(&ei->vfs_inode,
 +						EXT4_STATE_EXT_PRECACHED))) {
 +			nr_skipped++;
- 			list_move_tail(cur, &skiped);
++			list_move_tail(cur, &skipped);
  			continue;
  		}
-@@ -991,10 +993,31 @@ static int __ext4_es_shrink(struct ext4_sb_info *sbi, int nr_to_scan,
+ 
+@@ -990,11 +992,33 @@ static int __ext4_es_shrink(struct ext4_sb_info *sbi, int nr_to_scan,
+ 	}
  
  	/* Move the newer inodes into the tail of the LRU list. */
- 	list_splice_tail(&skiped, &sbi->s_es_lru);
+-	list_splice_tail(&skiped, &sbi->s_es_lru);
++	list_splice_tail(&skipped, &sbi->s_es_lru);
++	INIT_LIST_HEAD(&skipped);
 +
 +	/*
 +	 * If we skipped any inodes, and we weren't able to make any
@@ -258,7 +282,7 @@ index 1dc5df0..00e6589 100644
  
  	return nr_shrunk;
  }
-@@ -1069,10 +1092,16 @@ static int __es_try_to_reclaim_extents(struct ext4_inode_info *ei,
+@@ -1069,10 +1093,16 @@ static int __es_try_to_reclaim_extents(struct ext4_inode_info *ei,
  	struct rb_node *node;
  	struct extent_status *es;
  	int nr_shrunk = 0;
@@ -276,10 +300,10 @@ index 1dc5df0..00e6589 100644
  	while (node != NULL) {
  		es = rb_entry(node, struct extent_status, rb_node);
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 9491ac0..3c7304c 100644
+index c0427e2..5498f75 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -622,6 +622,8 @@ resizefs_out:
+@@ -624,6 +624,8 @@ resizefs_out:
  
  		return 0;
  	}
@@ -288,7 +312,7 @@ index 9491ac0..3c7304c 100644
  
  	default:
  		return -ENOTTY;
-@@ -686,6 +688,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+@@ -688,6 +690,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
  	case EXT4_IOC_MOVE_EXT:
  	case FITRIM:
  	case EXT4_IOC_RESIZE_FS:
@@ -296,3 +320,15 @@ index 9491ac0..3c7304c 100644
  		break;
  	default:
  		return -ENOIOCTLCMD;
+diff --git a/include/uapi/linux/fiemap.h b/include/uapi/linux/fiemap.h
+index d830747..0c51d61 100644
+--- a/include/uapi/linux/fiemap.h
++++ b/include/uapi/linux/fiemap.h
+@@ -40,6 +40,7 @@ struct fiemap {
+ 
+ #define FIEMAP_FLAG_SYNC	0x00000001 /* sync file data before map */
+ #define FIEMAP_FLAG_XATTR	0x00000002 /* map extended attribute tree */
++#define FIEMAP_FLAG_CACHE	0x00000004 /* request caching of the extents */
+ 
+ #define FIEMAP_FLAGS_COMPAT	(FIEMAP_FLAG_SYNC | FIEMAP_FLAG_XATTR)
+ 
