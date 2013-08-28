@@ -1,0 +1,51 @@
+ext4: fix type declaration of ext4_validate_block_bitmap
+
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+
+The block_group parameter to ext4_validate_block_bitmap is both used
+as a ext4_group_t inside the function and the same type is passed in
+by all callers.  We might as well use the typedef consistently instead
+of open-coding the 'unsigned int'.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/balloc.c | 4 ++--
+ fs/ext4/ext4.h   | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index b430afe..a40b1f9 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -305,7 +305,7 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block *sb,
+  */
+ static ext4_fsblk_t ext4_valid_block_bitmap(struct super_block *sb,
+ 					    struct ext4_group_desc *desc,
+-					    unsigned int block_group,
++					    ext4_group_t block_group,
+ 					    struct buffer_head *bh)
+ {
+ 	ext4_grpblk_t offset;
+@@ -352,7 +352,7 @@ static ext4_fsblk_t ext4_valid_block_bitmap(struct super_block *sb,
+ 
+ void ext4_validate_block_bitmap(struct super_block *sb,
+ 			       struct ext4_group_desc *desc,
+-			       unsigned int block_group,
++			       ext4_group_t block_group,
+ 			       struct buffer_head *bh)
+ {
+ 	ext4_fsblk_t	blk;
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 2889665..2e58182 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1930,7 +1930,7 @@ extern ext4_group_t ext4_get_group_number(struct super_block *sb,
+ 
+ extern void ext4_validate_block_bitmap(struct super_block *sb,
+ 				       struct ext4_group_desc *desc,
+-				       unsigned int block_group,
++				       ext4_group_t block_group,
+ 				       struct buffer_head *bh);
+ extern unsigned int ext4_block_group(struct super_block *sb,
+ 			ext4_fsblk_t blocknr);
