@@ -1,0 +1,44 @@
+ext4: convert write_begin methods to stable_page_writes semantics
+
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+
+Use wait_for_stable_page() instead of wait_on_page_writeback()
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/inode.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 62189c8..1be5827 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1028,7 +1028,8 @@ retry_journal:
+ 		ext4_journal_stop(handle);
+ 		goto retry_grab;
+ 	}
+-	wait_on_page_writeback(page);
++	/* In case writeback began while the page was unlocked */
++	wait_for_stable_page(page);
+ 
+ 	if (ext4_should_dioread_nolock(inode))
+ 		ret = __block_write_begin(page, pos, len, ext4_get_block_write);
+@@ -2715,7 +2716,7 @@ retry_journal:
+ 		goto retry_grab;
+ 	}
+ 	/* In case writeback began while the page was unlocked */
+-	wait_on_page_writeback(page);
++	wait_for_stable_page(page);
+ 
+ 	ret = __block_write_begin(page, pos, len, ext4_da_get_block_prep);
+ 	if (ret < 0) {
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
