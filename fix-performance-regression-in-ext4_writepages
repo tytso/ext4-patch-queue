@@ -1,0 +1,87 @@
+ext4: fix performance regression in ext4_writepages
+
+From: Ming Lei <ming.lei@canonical.com>
+
+Commit 4e7ea81db5(ext4: restructure writeback path) introduces another
+performance regression on random write:
+
+- one more page may be added to ext4 extent in
+  mpage_prepare_extent_to_map, and will be submitted for I/O so
+  nr_to_write will become -1 before 'done' is set
+
+- the worse thing is that dirty pages may still be retrieved from page
+  cache after nr_to_write becomes negative, so lots of small chunks
+  can be submitted to block device when page writeback is catching up
+  with write path, and performance is hurted.
+
+On one arm A15 board with sata 3.0 SSD(CPU: 1.5GHz dura core, RAM:
+2GB, SATA controller: 3.0Gbps), this patch can improve below test's
+result from 157MB/sec to 174MB/sec(>10%):
+
+	dd if=/dev/zero of=./z.img bs=8K count=512K
+
+The above test is actually prototype of block write in bonnie++
+utility.
+
+This patch makes sure no more pages than nr_to_write can be added to
+extent for mapping, so that nr_to_write won't become negative.
+
+Cc: linux-ext4@vger.kernel.org
+Acked-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Ming Lei <ming.lei@canonical.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c | 26 +++++++++++++-------------
+ 1 file changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index e7e5b3d..94aac67 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2298,6 +2298,7 @@ static int mpage_prepare_extent_to_map(struct mpage_da_data *mpd)
+ 	struct address_space *mapping = mpd->inode->i_mapping;
+ 	struct pagevec pvec;
+ 	unsigned int nr_pages;
++	long left = mpd->wbc->nr_to_write;
+ 	pgoff_t index = mpd->first_page;
+ 	pgoff_t end = mpd->last_page;
+ 	int tag;
+@@ -2333,6 +2334,17 @@ static int mpage_prepare_extent_to_map(struct mpage_da_data *mpd)
+ 			if (page->index > end)
+ 				goto out;
+ 
++			/*
++			 * Accumulated enough dirty pages? This doesn't apply
++			 * to WB_SYNC_ALL mode. For integrity sync we have to
++			 * keep going because someone may be concurrently
++			 * dirtying pages, and we might have synced a lot of
++			 * newly appeared dirty pages, but have not synced all
++			 * of the old dirty pages.
++			 */
++			if (mpd->wbc->sync_mode == WB_SYNC_NONE && left <= 0)
++				goto out;
++
+ 			/* If we can't merge this page, we are done. */
+ 			if (mpd->map.m_len > 0 && mpd->next_page != page->index)
+ 				goto out;
+@@ -2367,19 +2379,7 @@ static int mpage_prepare_extent_to_map(struct mpage_da_data *mpd)
+ 			if (err <= 0)
+ 				goto out;
+ 			err = 0;
+-
+-			/*
+-			 * Accumulated enough dirty pages? This doesn't apply
+-			 * to WB_SYNC_ALL mode. For integrity sync we have to
+-			 * keep going because someone may be concurrently
+-			 * dirtying pages, and we might have synced a lot of
+-			 * newly appeared dirty pages, but have not synced all
+-			 * of the old dirty pages.
+-			 */
+-			if (mpd->wbc->sync_mode == WB_SYNC_NONE &&
+-			    mpd->next_page - mpd->first_page >=
+-							mpd->wbc->nr_to_write)
+-				goto out;
++			left--;
+ 		}
+ 		pagevec_release(&pvec);
+ 		cond_resched();
