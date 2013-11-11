@@ -1,0 +1,198 @@
+ext4: add BLKDISCARD ioctl
+
+The blkdicard ioctl previously only worked on block devices.  Allow
+this ioctl to work on ext4 files.
+
+Google-Bug-Id: 11517631
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/ext4.h    |  5 ++++
+ fs/ext4/extents.c | 38 ++++++++++++++++++++++--------
+ fs/ext4/ioctl.c   | 73 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 107 insertions(+), 9 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 121da383..e1446e1 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2692,6 +2692,8 @@ extern int ext4_check_blockref(const char *, unsigned int,
+ /* extents.c */
+ struct ext4_ext_path;
+ struct ext4_extent;
++typedef int (*extent_iterator_t)(struct inode *inode, struct extent_status *es,
++				 unsigned int flags, void *private);
+ 
+ /*
+  * Maximum number of logical blocks in a file; ext4_extent's ee_block is
+@@ -2736,6 +2738,9 @@ extern int ext4_find_delalloc_range(struct inode *inode,
+ 				    ext4_lblk_t lblk_start,
+ 				    ext4_lblk_t lblk_end);
+ extern int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk);
++extern int ext4_extent_iterator(struct inode *inode,
++				ext4_lblk_t block, ext4_lblk_t num,
++				extent_iterator_t callback, void *private);
+ extern int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 			__u64 start, __u64 len);
+ extern int ext4_ext_precache(struct inode *inode);
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 6778165..ccd8df4 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2086,9 +2086,13 @@ cleanup:
+ 	return err;
+ }
+ 
+-static int ext4_fill_fiemap_extents(struct inode *inode,
+-				    ext4_lblk_t block, ext4_lblk_t num,
+-				    struct fiemap_extent_info *fieinfo)
++
++typedef int (*extent_iterator_t)(struct inode *inode, struct extent_status *es,
++				 unsigned int flags, void *private);
++
++int ext4_extent_iterator(struct inode *inode,
++			 ext4_lblk_t block, ext4_lblk_t num,
++			 extent_iterator_t callback, void *private)
+ {
+ 	struct ext4_ext_path *path = NULL;
+ 	struct ext4_extent *ex;
+@@ -2097,7 +2101,6 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+ 	ext4_lblk_t last = block + num;
+ 	int exists, depth = 0, err = 0;
+ 	unsigned int flags = 0;
+-	unsigned char blksize_bits = inode->i_sb->s_blocksize_bits;
+ 
+ 	while (block < last && block != EXT_MAX_BLOCKS) {
+ 		num = last - block;
+@@ -2221,11 +2224,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+ 		}
+ 
+ 		if (exists) {
+-			err = fiemap_fill_next_extent(fieinfo,
+-				(__u64)es.es_lblk << blksize_bits,
+-				(__u64)es.es_pblk << blksize_bits,
+-				(__u64)es.es_len << blksize_bits,
+-				flags);
++			err = callback(inode, &es, flags, private);
+ 			if (err < 0)
+ 				break;
+ 			if (err == 1) {
+@@ -2245,6 +2244,27 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+ 	return err;
+ }
+ 
++static int call_fill_fiemap(struct inode *inode, struct extent_status *es,
++			    unsigned int flags, void *private)
++{
++	unsigned char blksize_bits = inode->i_sb->s_blocksize_bits;
++
++	return fiemap_fill_next_extent(private,
++				       (__u64)es->es_lblk << blksize_bits,
++				       (__u64)es->es_pblk << blksize_bits,
++				       (__u64)es->es_len << blksize_bits,
++				       flags);
++}
++
++static int ext4_fill_fiemap_extents(struct inode *inode,
++				    ext4_lblk_t block, ext4_lblk_t num,
++				    struct fiemap_extent_info *fieinfo)
++{
++	return ext4_extent_iterator(inode, block, num,
++				    call_fill_fiemap, fieinfo);
++}
++
++
+ /*
+  * ext4_ext_put_gap_in_cache:
+  * calculate boundaries of the gap that the requested block fits into
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index a569d33..f87bcf1 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -213,6 +213,48 @@ swap_boot_out:
+ 	return err;
+ }
+ 
++struct discard_struct {
++	ext4_lblk_t	start_blk;
++	ext4_lblk_t	end_blk;
++};
++
++static int discard_callback(struct inode *inode, struct extent_status *es,
++			    unsigned int flags, void *private)
++{
++	struct discard_struct *ds = private;
++	ext4_lblk_t es_lblk = es->es_lblk;
++	ext4_lblk_t es_len = es->es_len;
++	ext4_fsblk_t es_pblk = es->es_pblk;
++
++
++	if (flags & (FIEMAP_EXTENT_UNKNOWN |
++		     FIEMAP_EXTENT_ENCODED |
++		     FIEMAP_EXTENT_DATA_ENCRYPTED |
++		     FIEMAP_EXTENT_DELALLOC |
++		     FIEMAP_EXTENT_DATA_TAIL |
++		     FIEMAP_EXTENT_DATA_INLINE |
++		     FIEMAP_EXTENT_NOT_ALIGNED |
++		     FIEMAP_EXTENT_SHARED))
++		return 0;
++
++	if (es_lblk < ds->start_blk) {
++		ext4_lblk_t d = ds->start_blk - es_lblk;
++		if (d > es_len)
++			return 0;
++		es_lblk += d;
++		es_pblk += d;
++		es_len -= d;
++	}
++
++	if (es_lblk + es_len > ds->end_blk)
++		es_len -= es_lblk + es_len - ds->end_blk;
++#if 0
++	ext4_msg(inode->i_sb, KERN_NOTICE, "discard: %lu len %lu",
++		 (unsigned long) es_pblk, (unsigned long) es_len);
++#endif
++	return sb_issue_discard(inode->i_sb, es_pblk, es_len, GFP_KERNEL, 0);
++}
++
+ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
+ 	struct inode *inode = file_inode(filp);
+@@ -626,6 +668,37 @@ resizefs_out:
+ 	case EXT4_IOC_PRECACHE_EXTENTS:
+ 		return ext4_ext_precache(inode);
+ 
++	case BLKDISCARD: {
++		struct inode *inode = file_inode(filp);
++		struct super_block *sb = inode->i_sb;
++		uint64_t range[2];
++		struct discard_struct d;
++		ext4_lblk_t num;
++		u64 maxbytes = sb->s_maxbytes;
++
++		if (!(filp->f_mode & FMODE_WRITE))
++			return -EBADF;
++
++		if (copy_from_user(range, (void __user *)arg, sizeof(range)))
++			return -EFAULT;
++
++		if (range[1] == 0)
++			return 0;
++		if (range[0] > maxbytes)
++			return -EFBIG;
++		if (range[1] > maxbytes || (maxbytes - range[1]) < range[0])
++			range[1] = maxbytes - range[0];
++
++		d.start_blk = range[0] >> sb->s_blocksize_bits;
++		d.end_blk = (range[0] + range[1]) >> sb->s_blocksize_bits;
++		if (d.end_blk >= EXT_MAX_BLOCKS)
++			d.end_blk = EXT_MAX_BLOCKS-1;
++		num = d.end_blk - d.start_blk;
++
++		return ext4_extent_iterator(inode, d.start_blk, num,
++					    discard_callback, &d);
++	}
++
+ 	default:
+ 		return -ENOTTY;
+ 	}
