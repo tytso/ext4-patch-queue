@@ -7,16 +7,16 @@ Google-Bug-Id: 11517631
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h    |  5 ++++
- fs/ext4/extents.c | 38 ++++++++++++++++++++++--------
- fs/ext4/ioctl.c   | 73 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 107 insertions(+), 9 deletions(-)
+ fs/ext4/ext4.h    |   5 ++++
+ fs/ext4/extents.c |  38 +++++++++++++++++++------
+ fs/ext4/ioctl.c   | 132 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 166 insertions(+), 9 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 121da383..e1446e1 100644
+index 2238e60..c009736 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2692,6 +2692,8 @@ extern int ext4_check_blockref(const char *, unsigned int,
+@@ -2698,6 +2698,8 @@ extern int ext4_check_blockref(const char *, unsigned int,
  /* extents.c */
  struct ext4_ext_path;
  struct ext4_extent;
@@ -25,7 +25,7 @@ index 121da383..e1446e1 100644
  
  /*
   * Maximum number of logical blocks in a file; ext4_extent's ee_block is
-@@ -2736,6 +2738,9 @@ extern int ext4_find_delalloc_range(struct inode *inode,
+@@ -2742,6 +2744,9 @@ extern int ext4_find_delalloc_range(struct inode *inode,
  				    ext4_lblk_t lblk_start,
  				    ext4_lblk_t lblk_end);
  extern int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk);
@@ -106,26 +106,20 @@ index 6778165..ccd8df4 100644
   * ext4_ext_put_gap_in_cache:
   * calculate boundaries of the gap that the requested block fits into
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index a569d33..f87bcf1 100644
+index a569d33..c31fd1b 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -213,6 +213,48 @@ swap_boot_out:
+@@ -213,6 +213,126 @@ swap_boot_out:
  	return err;
  }
  
-+struct discard_struct {
-+	ext4_lblk_t	start_blk;
-+	ext4_lblk_t	end_blk;
-+};
-+
 +static int discard_callback(struct inode *inode, struct extent_status *es,
 +			    unsigned int flags, void *private)
 +{
-+	struct discard_struct *ds = private;
++	struct ext4_map_blocks *map = private;
 +	ext4_lblk_t es_lblk = es->es_lblk;
 +	ext4_lblk_t es_len = es->es_len;
 +	ext4_fsblk_t es_pblk = es->es_pblk;
-+
 +
 +	if (flags & (FIEMAP_EXTENT_UNKNOWN |
 +		     FIEMAP_EXTENT_ENCODED |
@@ -137,8 +131,8 @@ index a569d33..f87bcf1 100644
 +		     FIEMAP_EXTENT_SHARED))
 +		return 0;
 +
-+	if (es_lblk < ds->start_blk) {
-+		ext4_lblk_t d = ds->start_blk - es_lblk;
++	if (es_lblk < map->m_lblk) {
++		ext4_lblk_t d = map->m_lblk - es_lblk;
 +		if (d > es_len)
 +			return 0;
 +		es_lblk += d;
@@ -146,29 +140,108 @@ index a569d33..f87bcf1 100644
 +		es_len -= d;
 +	}
 +
-+	if (es_lblk + es_len > ds->end_blk)
-+		es_len -= es_lblk + es_len - ds->end_blk;
-+#if 0
-+	ext4_msg(inode->i_sb, KERN_NOTICE, "discard: %lu len %lu",
-+		 (unsigned long) es_pblk, (unsigned long) es_len);
-+#endif
++	if (es_lblk + es_len > map->m_lblk + map->m_len)
++		es_len -= es_lblk + es_len - (map->m_lblk + map->m_len);
++#ifdef BLKDISCARD_DEBUG
++	ext4_msg(inode->i_sb, KERN_NOTICE, "discard: %llu len %lu",
++		 (unsigned long long) es_pblk, (unsigned long) es_len);
++	return 0;
++#else
 +	return sb_issue_discard(inode->i_sb, es_pblk, es_len, GFP_KERNEL, 0);
++#endif
++}
++
++static int blkdiscard_inode(struct inode *inode, u64 start_offset, u64 len)
++{
++	struct super_block *sb = inode->i_sb;
++	struct ext4_map_blocks map;
++	unsigned int num;
++
++	if (!S_ISREG(inode->i_mode))
++		return -EINVAL;
++
++	num = start_offset & (sb->s_blocksize - 1);
++	if (num) {
++		num = sb->s_blocksize - num;
++		start_offset += num;
++		len = (len > num) ? len - num : 0;
++	}
++	if (len == 0)
++		return 0;
++	if (start_offset > sb->s_maxbytes)
++		return -EFBIG;
++	if (len > sb->s_maxbytes || (sb->s_maxbytes - len) < start_offset)
++		len = sb->s_maxbytes - start_offset;
++
++	map.m_lblk = start_offset >> sb->s_blocksize_bits;
++	map.m_len = len >> sb->s_blocksize_bits;
++
++#ifdef BLKDISCARD_DEBUG
++	ext4_msg(sb, KERN_NOTICE, "blkdiscard range: %lu len %lu",
++		 (unsigned long) map.m_lblk, (unsigned long) map.m_len);
++#endif
++
++	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
++		return ext4_extent_iterator(inode, map.m_lblk, map.m_len,
++					    discard_callback, &map);
++
++	num = map.m_len;
++	while (num) {
++		int ret = ext4_map_blocks(NULL, inode, &map, 0);
++
++		if (ret < 0)
++			return ret;
++
++		if (ret == 0) {
++#ifdef BLKDISCARD_DEBUG
++			ext4_msg(sb, KERN_NOTICE,
++				 "skip: lblk %lu len %lu ret %lu num %lu",
++				 (unsigned long) map.m_lblk,
++				 (unsigned long) map.m_len,
++				 (unsigned long) ret,
++				 (unsigned long) num);
++#endif
++			map.m_lblk++;
++			num--;
++			continue;
++		}
++#ifdef BLKDISCARD_DEBUG
++		ext4_msg(sb, KERN_NOTICE,
++			 "walk: lblk %lu pblk %llu len %lu ret %lu num %lu",
++			 (unsigned long) map.m_lblk,
++			 (unsigned long long) map.m_pblk,
++			 (unsigned long) map.m_len,
++			 (unsigned long) ret,
++			 (unsigned long) num);
++#endif
++		if (ret > num)
++			ret = num;
++		map.m_lblk += ret;
++		num -= ret;
++		map.m_len = num;
++
++#ifdef BLKDISCARD_DEBUG
++		ext4_msg(sb, KERN_NOTICE, "discard: %llu len %lu",
++			 (unsigned long long) map.m_pblk, (unsigned long) ret);
++#else
++		ret = sb_issue_discard(sb, map.m_pblk, ret,
++				       GFP_KERNEL, 0);
++		if (ret)
++			return ret;
++#endif
++	}
++	return 0;
 +}
 +
  long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  {
  	struct inode *inode = file_inode(filp);
-@@ -626,6 +668,37 @@ resizefs_out:
+@@ -626,6 +746,18 @@ resizefs_out:
  	case EXT4_IOC_PRECACHE_EXTENTS:
  		return ext4_ext_precache(inode);
  
 +	case BLKDISCARD: {
-+		struct inode *inode = file_inode(filp);
-+		struct super_block *sb = inode->i_sb;
 +		uint64_t range[2];
-+		struct discard_struct d;
-+		ext4_lblk_t num;
-+		u64 maxbytes = sb->s_maxbytes;
 +
 +		if (!(filp->f_mode & FMODE_WRITE))
 +			return -EBADF;
@@ -176,21 +249,7 @@ index a569d33..f87bcf1 100644
 +		if (copy_from_user(range, (void __user *)arg, sizeof(range)))
 +			return -EFAULT;
 +
-+		if (range[1] == 0)
-+			return 0;
-+		if (range[0] > maxbytes)
-+			return -EFBIG;
-+		if (range[1] > maxbytes || (maxbytes - range[1]) < range[0])
-+			range[1] = maxbytes - range[0];
-+
-+		d.start_blk = range[0] >> sb->s_blocksize_bits;
-+		d.end_blk = (range[0] + range[1]) >> sb->s_blocksize_bits;
-+		if (d.end_blk >= EXT_MAX_BLOCKS)
-+			d.end_blk = EXT_MAX_BLOCKS-1;
-+		num = d.end_blk - d.start_blk;
-+
-+		return ext4_extent_iterator(inode, d.start_blk, num,
-+					    discard_callback, &d);
++		return blkdiscard_inode(file_inode(filp), range[0], range[1]);
 +	}
 +
  	default:
