@@ -1,0 +1,35 @@
+ext4: enable punch hole for bigalloc
+
+From: Zheng Liu <wenqing.lz@taobao.com>
+
+After applied this commit (d23142c6), ext4 has supported punch hole for
+a file system with bigalloc feature.  But we forgot to enable it.  This
+commit fixes it.
+
+Cc: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c |    5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 0757634..2d73587 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3513,11 +3513,6 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
+ 	if (!S_ISREG(inode->i_mode))
+ 		return -EOPNOTSUPP;
+ 
+-	if (EXT4_SB(sb)->s_cluster_ratio > 1) {
+-		/* TODO: Add support for bigalloc file systems */
+-		return -EOPNOTSUPP;
+-	}
+-
+ 	trace_ext4_punch_hole(inode, offset, length);
+ 
+ 	/*
+-- 
+1.7.9.7
+
+
