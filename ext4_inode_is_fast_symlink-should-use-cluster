@@ -1,0 +1,28 @@
+ext4: ext4_inode_is_fast_symlink should use
+
+From: Yongqiang Yang <xiaoqiangnk@gmail.com>
+
+Can be reproduced by xfstests 62 with bigalloc and 128bit size inode.
+
+Signed-off-by: Yongqiang Yang <yangyongqiang01@baidu.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Carlos Maiolino <cmaiolino@redhat.com>
+---
+ fs/ext4/inode.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 90a4ea7..8454ebe 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -144,8 +144,8 @@ static int ext4_meta_trans_blocks(struct inode *inode, int lblocks,
+  */
+ static int ext4_inode_is_fast_symlink(struct inode *inode)
+ {
+-	int ea_blocks = EXT4_I(inode)->i_file_acl ?
+-		(inode->i_sb->s_blocksize >> 9) : 0;
++        int ea_blocks = EXT4_I(inode)->i_file_acl ?
++		EXT4_CLUSTER_SIZE(inode->i_sb) >> 9 : 0;
+ 
+ 	return (S_ISLNK(inode->i_mode) && inode->i_blocks - ea_blocks == 0);
+ }
