@@ -1,0 +1,34 @@
+ext4: avoid clearing beyond i_blocks when truncating an inline data file
+
+A missing cast means that when we are truncating a file which is less
+than 60 bytes, we don't clear the correct area of memory, and in fact
+we can end up truncating the next inode in the inode table, or worse
+yet, some other kernel data structure.
+
+Addresses-Coverity-Id: #751987
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/inline.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
+index c417e52..ed29e72 100644
+--- a/fs/ext4/inline.c
++++ b/fs/ext4/inline.c
+@@ -1928,9 +1928,11 @@ void ext4_inline_data_truncate(struct inode *inode, int *has_inline)
+ 		}
+ 
+ 		/* Clear the content within i_blocks. */
+-		if (i_size < EXT4_MIN_INLINE_DATA_SIZE)
+-			memset(ext4_raw_inode(&is.iloc)->i_block + i_size, 0,
+-					EXT4_MIN_INLINE_DATA_SIZE - i_size);
++		if (i_size < EXT4_MIN_INLINE_DATA_SIZE) {
++			void *p = (void *) ext4_raw_inode(&is.iloc)->i_block;
++			memset(p + i_size, 0,
++			       EXT4_MIN_INLINE_DATA_SIZE - i_size);
++		}
+ 
+ 		EXT4_I(inode)->i_inline_size = i_size <
+ 					EXT4_MIN_INLINE_DATA_SIZE ?
