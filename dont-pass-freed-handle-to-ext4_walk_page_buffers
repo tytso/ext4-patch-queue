@@ -1,0 +1,28 @@
+ext4: don't pass freed handle to ext4_walk_page_buffers
+
+This is harmless, since ext4_walk_page_buffers only passes the handle
+onto the callback function, and in this call site the function in
+question, bput_one(), doesn't actually use the handle.  But there's no
+point passing in an invalid handle, and it creates a Coverity warning,
+so let's just clean it up.
+
+Addresses-Coverity-Id: #1091168
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/inode.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 8454ebe..f33b4eb 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1772,7 +1772,7 @@ static int __ext4_journalled_writepage(struct page *page,
+ 		ret = err;
+ 
+ 	if (!ext4_has_inline_data(inode))
+-		ext4_walk_page_buffers(handle, page_bufs, 0, len,
++		ext4_walk_page_buffers(NULL, page_bufs, 0, len,
+ 				       NULL, bput_one);
+ 	ext4_set_inode_state(inode, EXT4_STATE_JDATA);
+ out:
