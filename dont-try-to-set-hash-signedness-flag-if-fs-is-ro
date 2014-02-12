@@ -14,7 +14,7 @@ Cc: stable@vger.kernel.org
  1 file changed, 13 insertions(+), 7 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 0491c81..8161c28 100644
+index 0491c81..f5c13b8 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -3695,16 +3695,22 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
@@ -33,13 +33,13 @@ index 0491c81..8161c28 100644
  #ifdef __CHAR_UNSIGNED__
 -		es->s_flags |= cpu_to_le32(EXT2_FLAGS_UNSIGNED_HASH);
 -		sbi->s_hash_unsigned = 3;
-+			if (sb->s_flags & MS_RDONLY)
++			if (!(sb->s_flags & MS_RDONLY))
 +				es->s_flags |=
 +					cpu_to_le32(EXT2_FLAGS_UNSIGNED_HASH);
 +			sbi->s_hash_unsigned = 3;
  #else
 -		es->s_flags |= cpu_to_le32(EXT2_FLAGS_SIGNED_HASH);
-+			if (sb->s_flags & MS_RDONLY)
++			if (!(sb->s_flags & MS_RDONLY))
 +				es->s_flags |=
 +					cpu_to_le32(EXT2_FLAGS_SIGNED_HASH);
  #endif
