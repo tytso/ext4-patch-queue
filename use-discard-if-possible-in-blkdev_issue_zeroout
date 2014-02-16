@@ -1,0 +1,108 @@
+block: use discard if possible in blkdev_issue_zeroout()
+
+If the block device supports discards and guarantees that subsequent
+reads will return zeros (sometimes known as DZAT, for Deterministic
+read Zeros After Trim), use this to implement blkdev_issue_zeroout()
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ block/blk-lib.c | 72 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++----------
+ 1 file changed, 62 insertions(+), 10 deletions(-)
+
+diff --git a/block/blk-lib.c b/block/blk-lib.c
+index 2da76c9..62cbf28 100644
+--- a/block/blk-lib.c
++++ b/block/blk-lib.c
+@@ -269,6 +269,32 @@ int __blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
+ 	return ret;
+ }
+ 
++static int issue_zeroout_or_write_same(struct block_device *bdev,
++				       sector_t sector,
++				       sector_t nr_sects, gfp_t gfp_mask)
++{
++	if (bdev_write_same(bdev)) {
++		unsigned char bdn[BDEVNAME_SIZE];
++
++		if (!blkdev_issue_write_same(bdev, sector, nr_sects, gfp_mask,
++					     ZERO_PAGE(0)))
++			return 0;
++
++		bdevname(bdev, bdn);
++		pr_err("%s: WRITE SAME failed. Manually zeroing.\n", bdn);
++	}
++
++	return __blkdev_issue_zeroout(bdev, sector, nr_sects, gfp_mask);
++}
++
++/*
++ * Like sector_div except don't modify s.
++ */
++static unsigned int sector_mod(sector_t s, unsigned int m)
++{
++	return sector_div(s, m);
++}
++
+ /**
+  * blkdev_issue_zeroout - zero-fill a block range
+  * @bdev:	blockdev to write
+@@ -277,23 +303,49 @@ int __blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
+  * @gfp_mask:	memory allocation flags (for bio_alloc)
+  *
+  * Description:
+- *  Generate and issue number of bios with zerofiled pages.
++ *  Issues bios which zeros the requested block range.
+  */
+-
+ int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
+ 			 sector_t nr_sects, gfp_t gfp_mask)
+ {
+-	if (bdev_write_same(bdev)) {
+-		unsigned char bdn[BDEVNAME_SIZE];
++	struct request_queue *q = bdev_get_queue(bdev);
++	unsigned int alignment, granularity;
++	unsigned int c;
++	int ret;
+ 
+-		if (!blkdev_issue_write_same(bdev, sector, nr_sects, gfp_mask,
+-					     ZERO_PAGE(0)))
+-			return 0;
++	if (!q)
++		return -ENXIO;
+ 
+-		bdevname(bdev, bdn);
+-		pr_err("%s: WRITE SAME failed. Manually zeroing.\n", bdn);
++	if (!blk_queue_discard(q) || !queue_discard_zeroes_data(q) ||
++	    q->limits.discard_misaligned)
++		return issue_zeroout_or_write_same(bdev, sector,
++
++						   nr_sects, gfp_mask);
++
++	alignment = q->limits.discard_alignment >> 9;
++	granularity = q->limits.discard_granularity >> 9;
++
++	c = sector_mod(granularity + alignment - sector, granularity);
++	if (c > nr_sects)
++		c = nr_sects;
++
++	if (c) {
++		int ret = issue_zeroout_or_write_same(bdev, sector,
++						      c, gfp_mask);
++		if (ret)
++			return ret;
++		nr_sects -= c;
+ 	}
++	if (nr_sects == 0)
++		return 0;
+ 
+-	return __blkdev_issue_zeroout(bdev, sector, nr_sects, gfp_mask);
++	c = sector_mod(nr_sects, granularity);
++
++	ret = blkdev_issue_discard(bdev, sector, nr_sects - c, gfp_mask, 0);
++	if (ret || c == 0)
++		return ret;
++
++	return issue_zeroout_or_write_same(bdev, sector + nr_sects - c, c,
++					   gfp_mask);
+ }
+ EXPORT_SYMBOL(blkdev_issue_zeroout);
