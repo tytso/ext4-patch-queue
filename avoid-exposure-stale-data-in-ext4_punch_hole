@@ -1,0 +1,39 @@
+ext4: avoid exposure of stale data in ext4_punch_hole()
+
+From: Maxim Patlasov <MPatlasov@parallels.com>
+
+While handling punch-hole fallocate, it's useless to truncate page cache
+before removing the range from extent tree (or block map in indirect case)
+because page cache can be re-populated (by read-ahead or read(2) or mmap-ed
+read) immediately after truncating page cache, but before updating extent
+tree (or block map). In that case the user will see stale data even after
+fallocate is completed.
+
+Until the problem of data corruption resulting from pages backed by
+already freed blocks is fully resolved, the simple thing we can do now
+is to add another truncation of pagecache after punch hole is done.
+
+Signed-off-by: Maxim Patlasov <mpatlasov@parallels.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/inode.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 113458c..5324a38 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3614,6 +3614,12 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
+ 	up_write(&EXT4_I(inode)->i_data_sem);
+ 	if (IS_SYNC(inode))
+ 		ext4_handle_sync(handle);
++
++	/* Now release the pages again to reduce race window */
++	if (last_block_offset > first_block_offset)
++		truncate_pagecache_range(inode, first_block_offset,
++					 last_block_offset);
++
+ 	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
+ 	ext4_mark_inode_dirty(handle, inode);
+ out_stop:

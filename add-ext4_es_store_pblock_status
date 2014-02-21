@@ -11,12 +11,12 @@ Addresses-Coverity-Id: #1080722
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents_status.c | 15 +++++++--------
+ fs/ext4/extents_status.c | 14 ++++++--------
  fs/ext4/extents_status.h |  9 +++++++++
- 2 files changed, 16 insertions(+), 8 deletions(-)
+ 2 files changed, 15 insertions(+), 8 deletions(-)
 
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index 3981ff7..0578b6b 100644
+index 3981ff7..a900004 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
 @@ -658,8 +658,7 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
@@ -25,7 +25,7 @@ index 3981ff7..0578b6b 100644
  	newes.es_len = len;
 -	ext4_es_store_pblock(&newes, pblk);
 -	ext4_es_store_status(&newes, status);
-+	ext4_es_store_pblock_status(&newes, status, pblk);
++	ext4_es_store_pblock_status(&newes, pblk, status);
  	trace_ext4_es_insert_extent(inode, &newes);
  
  	ext4_es_insert_extent_check(inode, &newes);
@@ -39,7 +39,7 @@ index 3981ff7..0578b6b 100644
  	trace_ext4_es_cache_extent(inode, &newes);
  
  	if (!len)
-@@ -812,13 +810,14 @@ retry:
+@@ -812,13 +810,13 @@ retry:
  
  			newes.es_lblk = end + 1;
  			newes.es_len = len2;
@@ -52,9 +52,8 @@ index 3981ff7..0578b6b 100644
 -				ext4_es_store_pblock(&newes, block);
 -			}
 -			ext4_es_store_status(&newes, ext4_es_status(&orig_es));
-+			ext4_es_store_pblock_status(&newes,
-+						    ext4_es_status(&orig_es),
-+						    block);
++			ext4_es_store_pblock_status(&newes, block,
++						    ext4_es_status(&orig_es));
  			err = __es_insert_extent(inode, &newes);
  			if (err) {
  				es->es_lblk = orig_es.es_lblk;
