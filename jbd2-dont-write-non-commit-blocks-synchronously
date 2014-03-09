@@ -1,0 +1,35 @@
+jbd2: don't write non-commit blocks synchronously
+
+We don't need to write the revoke blocks and descriptor blocks using
+WRITE_SYNC, since when we issue the commit block, thos blocks will get
+pushed out via REQ_FLUSH.  This will allow the journal blocks to be
+written in fewer i/o operations (otherwise we end up issuing a whole
+series of 4k writes unnecessarily).
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/commit.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index cf2fc05..fb64629 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -554,7 +554,7 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 
+ 	blk_start_plug(&plug);
+ 	jbd2_journal_write_revoke_records(journal, commit_transaction,
+-					  &log_bufs, WRITE_SYNC);
++					  &log_bufs, WRITE);
+ 	blk_finish_plug(&plug);
+ 
+ 	jbd_debug(3, "JBD2: commit phase 2b\n");
+@@ -739,7 +739,7 @@ start_journal_io:
+ 				clear_buffer_dirty(bh);
+ 				set_buffer_uptodate(bh);
+ 				bh->b_end_io = journal_end_buffer_io_sync;
+-				submit_bh(WRITE_SYNC, bh);
++				submit_bh(WRITE, bh);
+ 			}
+ 			cond_resched();
+ 			stats.run.rs_blocks_logged += bufs;

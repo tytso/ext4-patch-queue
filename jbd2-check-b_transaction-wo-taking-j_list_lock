@@ -1,0 +1,29 @@
+jbd2: check jh->b_transaction without taking j_list_lock
+
+jh->b_transaction is adequately protected for reading by the
+jbd_lock_bh_state(bh), so we don't need to take j_list_lock in
+__journal_try_to_free_buffer().
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd2/transaction.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index 60bb365..78900a1 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -1821,11 +1821,11 @@ __journal_try_to_free_buffer(journal_t *journal, struct buffer_head *bh)
+ 	if (buffer_locked(bh) || buffer_dirty(bh))
+ 		goto out;
+ 
+-	if (jh->b_next_transaction != NULL)
++	if (jh->b_next_transaction != NULL || jh->b_transaction != NULL)
+ 		goto out;
+ 
+ 	spin_lock(&journal->j_list_lock);
+-	if (jh->b_cp_transaction != NULL && jh->b_transaction == NULL) {
++	if (jh->b_cp_transaction != NULL) {
+ 		/* written-back checkpointed metadata buffer */
+ 		JBUFFER_TRACE(jh, "remove from checkpoint list");
+ 		__jbd2_journal_remove_checkpoint(jh);
