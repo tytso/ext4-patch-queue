@@ -1,0 +1,32 @@
+ext4: only call sync_filesystm() when remounting read-only
+
+This is the only time it is required for ext4.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/super.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index aa3842f..01c5088 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4767,8 +4767,6 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ #endif
+ 	char *orig_data = kstrdup(data, GFP_KERNEL);
+ 
+-	sync_filesystem(sb);
+-
+ 	/* Store the original options */
+ 	old_sb_flags = sb->s_flags;
+ 	old_opts.s_mount_opt = sbi->s_mount_opt;
+@@ -4839,6 +4837,9 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 		}
+ 
+ 		if (*flags & MS_RDONLY) {
++			err = sync_filesystem(sb);
++			if (err < 0)
++				goto restore_opts;
+ 			err = dquot_suspend(sb, -1);
+ 			if (err < 0)
+ 				goto restore_opts;
