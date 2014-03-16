@@ -21,16 +21,16 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
  fs/ext4/ext4.h              |   3 ++
- fs/ext4/extents.c           | 308 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/extents.c           | 304 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
  fs/ext4/move_extent.c       |   2 +-
- include/trace/events/ext4.h |  25 +++++++++
- 4 files changed, 336 insertions(+), 2 deletions(-)
+ include/trace/events/ext4.h |  33 +++++++++++-
+ 4 files changed, 339 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index d3a534f..0596657 100644
+index b7207db..beec427 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2757,6 +2757,7 @@ extern int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk);
+@@ -2758,6 +2758,7 @@ extern int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk);
  extern int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
  			__u64 start, __u64 len);
  extern int ext4_ext_precache(struct inode *inode);
@@ -38,7 +38,7 @@ index d3a534f..0596657 100644
  
  /* move_extent.c */
  extern void ext4_double_down_write_data_sem(struct inode *first,
-@@ -2766,6 +2767,8 @@ extern void ext4_double_up_write_data_sem(struct inode *orig_inode,
+@@ -2767,6 +2768,8 @@ extern void ext4_double_up_write_data_sem(struct inode *orig_inode,
  extern int ext4_move_extents(struct file *o_filp, struct file *d_filp,
  			     __u64 start_orig, __u64 start_donor,
  			     __u64 len, __u64 *moved_len);
@@ -48,21 +48,10 @@ index d3a534f..0596657 100644
  /* page-io.c */
  extern int __init ext4_init_pageio(void);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index ef4b535..75612d7 100644
+index 2e0608e..7015917 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -46,6 +46,10 @@
- 
- #include <trace/events/ext4.h>
- 
-+#ifndef FALLOC_FL_COLLAPSE_RANGE
-+#define FALLOC_FL_COLLAPSE_RANGE	0x08
-+#endif
-+
- /*
-  * used by extent splitting.
-  */
-@@ -4582,12 +4586,16 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+@@ -4581,12 +4581,16 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  	unsigned int credits, blkbits = inode->i_blkbits;
  
  	/* Return error if mode is not supported */
@@ -80,7 +69,7 @@ index ef4b535..75612d7 100644
  	ret = ext4_convert_inline_data(inode);
  	if (ret)
  		return ret;
-@@ -4886,3 +4894,301 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+@@ -4885,3 +4889,301 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
  	ext4_es_lru_add(inode);
  	return error;
  }
@@ -396,10 +385,32 @@ index f39a88a..58ee7dc 100644
  		      struct ext4_extent **extent)
  {
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index 197d312..90e2f71 100644
+index 451e020..e9d7ee7 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
-@@ -2410,6 +2410,31 @@ TRACE_EVENT(ext4_es_shrink_exit,
+@@ -16,6 +16,11 @@ struct mpage_da_data;
+ struct ext4_map_blocks;
+ struct extent_status;
+ 
++/* shim until we merge in the xfs_collapse_range branch */
++#ifndef FALLOC_FL_COLLAPSE_RANGE
++#define FALLOC_FL_COLLAPSE_RANGE	0x08
++#endif
++
+ #define EXT4_I(inode) (container_of(inode, struct ext4_inode_info, vfs_inode))
+ 
+ #define show_mballoc_flags(flags) __print_flags(flags, "|",	\
+@@ -71,7 +76,8 @@ struct extent_status;
+ #define show_falloc_mode(mode) __print_flags(mode, "|",		\
+ 	{ FALLOC_FL_KEEP_SIZE,		"KEEP_SIZE"},		\
+ 	{ FALLOC_FL_PUNCH_HOLE,		"PUNCH_HOLE"},		\
+-	{ FALLOC_FL_NO_HIDE_STALE,	"NO_HIDE_STALE"})
++	{ FALLOC_FL_NO_HIDE_STALE,	"NO_HIDE_STALE"},	\
++	{ FALLOC_FL_COLLAPSE_RANGE,	"COLLAPSE_RANGE"})
+ 
+ 
+ TRACE_EVENT(ext4_free_inode,
+@@ -2415,6 +2421,31 @@ TRACE_EVENT(ext4_es_shrink_exit,
  		  __entry->shrunk_nr, __entry->cache_cnt)
  );
  
