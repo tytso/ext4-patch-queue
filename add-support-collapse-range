@@ -3,7 +3,7 @@ ext4: Add support FALLOC_FL_COLLAPSE_RANGE for fallocate
 From: Namjae Jeon <namjae.jeon@samsung.com>
 
 This patch implements fallocate's FALLOC_FL_COLLAPSE_RANGE for Ext4.
-
+ 
 The semantics of this flag are following:
 1) It collapses the range lying between offset and length by removing any data
    blocks which are present in this range and than updates all the logical
@@ -18,11 +18,12 @@ Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
 Signed-off-by: Ashish Sangwan <a.sangwan@samsung.com>
 Tested-by: Dongsu Park <dongsu.park@profitbricks.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+
 ---
- fs/ext4/ext4.h              |   3 +
- fs/ext4/extents.c           | 308 ++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/ext4.h              |   3 ++
+ fs/ext4/extents.c           | 308 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
  fs/ext4/move_extent.c       |   2 +-
- include/trace/events/ext4.h |  25 ++++
+ include/trace/events/ext4.h |  25 +++++++++
  4 files changed, 336 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
@@ -47,7 +48,7 @@ index d3a534f..0596657 100644
  /* page-io.c */
  extern int __init ext4_init_pageio(void);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index ef4b535..d7a78ed 100644
+index ef4b535..75612d7 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -46,6 +46,10 @@
@@ -363,7 +364,7 @@ index ef4b535..d7a78ed 100644
 +	}
 +
 +	new_size = i_size_read(inode) - len;
-+	i_size_write(inode, new_size);
++	truncate_setsize(inode, new_size);
 +	EXT4_I(inode)->i_disksize = new_size;
 +
 +	ext4_discard_preallocations(inode);
