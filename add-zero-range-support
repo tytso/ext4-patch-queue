@@ -19,11 +19,14 @@ Also add appropriate tracepoints.
 Signed-off-by: Lukas Czerner <lczerner@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
+v3: Set EXT4_INODE_EOFBLOCKS when needed in zero_range
+    Fix the problems when rebased on ext4/dev branch
+
  fs/ext4/ext4.h              |   2 +
- fs/ext4/extents.c           | 272 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--------
- fs/ext4/inode.c             |  17 ++++---
- include/trace/events/ext4.h |  74 ++++++++++++++++--------------
- 4 files changed, 308 insertions(+), 57 deletions(-)
+ fs/ext4/extents.c           | 273 +++++++++++++++++++++++++++++++++++++++++---
+ fs/ext4/inode.c             |  17 ++-
+ include/trace/events/ext4.h |  68 +++++------
+ 4 files changed, 307 insertions(+), 53 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index beec427..1b3cbf8 100644
@@ -39,21 +42,10 @@ index beec427..1b3cbf8 100644
  /*
   * The bit position of these flags must not overlap with any of the
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 1a616af..7863316 100644
+index 1c09a09..243a02e 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -45,10 +45,6 @@
- 
- #include <trace/events/ext4.h>
- 
--#ifndef FALLOC_FL_COLLAPSE_RANGE
--#define FALLOC_FL_COLLAPSE_RANGE	0x08
--#endif
--
- /*
-  * used by extent splitting.
-  */
-@@ -3606,6 +3602,8 @@ out:
+@@ -3602,6 +3602,8 @@ out:
   *   b> Splits in two extents: Write is happening at either end of the extent
   *   c> Splits in three extents: Somone is writing in middle of the extent
   *
@@ -62,7 +54,7 @@ index 1a616af..7863316 100644
   * One of more index blocks maybe needed if the extent tree grow after
   * the uninitialized extent split. To prevent ENOSPC occur at the IO
   * complete, we need to split the uninitialized extent before DIO submit
-@@ -3616,7 +3614,7 @@ out:
+@@ -3612,7 +3614,7 @@ out:
   *
   * Returns the size of uninitialized extent to be written on success.
   */
@@ -71,7 +63,7 @@ index 1a616af..7863316 100644
  					struct inode *inode,
  					struct ext4_map_blocks *map,
  					struct ext4_ext_path *path,
-@@ -3628,9 +3626,9 @@ static int ext4_split_unwritten_extents(handle_t *handle,
+@@ -3624,9 +3626,9 @@ static int ext4_split_unwritten_extents(handle_t *handle,
  	unsigned int ee_len;
  	int split_flag = 0, depth;
  
@@ -84,7 +76,7 @@ index 1a616af..7863316 100644
  
  	eof_block = (inode->i_size + inode->i_sb->s_blocksize - 1) >>
  		inode->i_sb->s_blocksize_bits;
-@@ -3645,14 +3643,73 @@ static int ext4_split_unwritten_extents(handle_t *handle,
+@@ -3641,14 +3643,73 @@ static int ext4_split_unwritten_extents(handle_t *handle,
  	ee_block = le32_to_cpu(ex->ee_block);
  	ee_len = ext4_ext_get_actual_len(ex);
  
@@ -162,7 +154,7 @@ index 1a616af..7863316 100644
  static int ext4_convert_unwritten_extents_endio(handle_t *handle,
  						struct inode *inode,
  						struct ext4_map_blocks *map,
-@@ -3686,8 +3743,8 @@ static int ext4_convert_unwritten_extents_endio(handle_t *handle,
+@@ -3682,8 +3743,8 @@ static int ext4_convert_unwritten_extents_endio(handle_t *handle,
  			     inode->i_ino, (unsigned long long)ee_block, ee_len,
  			     (unsigned long long)map->m_lblk, map->m_len);
  #endif
@@ -173,7 +165,7 @@ index 1a616af..7863316 100644
  		if (err < 0)
  			goto out;
  		ext4_ext_drop_refs(path);
-@@ -3888,6 +3945,42 @@ get_reserved_cluster_alloc(struct inode *inode, ext4_lblk_t lblk_start,
+@@ -3884,6 +3945,38 @@ get_reserved_cluster_alloc(struct inode *inode, ext4_lblk_t lblk_start,
  }
  
  static int
@@ -205,10 +197,6 @@ index 1a616af..7863316 100644
 +		allocated = map->m_len;
 +	map->m_len = allocated;
 +
-+	if (path) {
-+		ext4_ext_drop_refs(path);
-+		kfree(path);
-+	}
 +	return err ? err : allocated;
 +}
 +
@@ -216,7 +204,7 @@ index 1a616af..7863316 100644
  ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  			struct ext4_map_blocks *map,
  			struct ext4_ext_path *path, int flags,
-@@ -3914,8 +4007,8 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
+@@ -3910,8 +4003,8 @@ ext4_ext_handle_uninitialized_extents(handle_t *handle, struct inode *inode,
  
  	/* get_block() before submit the IO, split the extent */
  	if ((flags & EXT4_GET_BLOCKS_PRE_IO)) {
@@ -227,7 +215,15 @@ index 1a616af..7863316 100644
  		if (ret <= 0)
  			goto out;
  		/*
-@@ -4219,7 +4312,17 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -4199,6 +4292,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 		ext4_fsblk_t ee_start = ext4_ext_pblock(ex);
+ 		unsigned short ee_len;
+ 
++
+ 		/*
+ 		 * Uninitialized extents are treated as holes, except that
+ 		 * we split out initialized portions during a write.
+@@ -4215,7 +4309,17 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  			ext_debug("%u fit into %u:%d -> %llu\n", map->m_lblk,
  				  ee_block, ee_len, newblock);
  
@@ -246,7 +242,7 @@ index 1a616af..7863316 100644
  				goto out;
  
  			ret = ext4_ext_handle_uninitialized_extents(
-@@ -4608,6 +4711,136 @@ retry:
+@@ -4604,6 +4708,144 @@ retry:
  	return ret > 0 ? ret2 : ret;
  }
  
@@ -363,7 +359,15 @@ index 1a616af..7863316 100644
 +			i_size_write(inode, new_size);
 +		if (new_size > EXT4_I(inode)->i_disksize)
 +			ext4_update_i_disksize(inode, new_size);
++	} else if (!ret && !new_size) {
++		/*
++		* Mark that we allocate beyond EOF so the subsequent truncate
++		* can proceed even if the new size is the same as i_size.
++		*/
++		if ((offset + len) > i_size_read(inode))
++			ext4_set_inode_flag(inode, EXT4_INODE_EOFBLOCKS);
 +	}
++
 +	ext4_mark_inode_dirty(handle, inode);
 +
 +	/* Zero out partial block at the edges of the range */
@@ -383,7 +387,7 @@ index 1a616af..7863316 100644
  /*
   * preallocate space for a file. This implements ext4's fallocate file
   * operation, which gets called from sys_fallocate system call.
-@@ -4629,7 +4862,7 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+@@ -4625,7 +4867,7 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  
  	/* Return error if mode is not supported */
  	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE |
@@ -392,7 +396,7 @@ index 1a616af..7863316 100644
  		return -EOPNOTSUPP;
  
  	if (mode & FALLOC_FL_PUNCH_HOLE)
-@@ -4649,6 +4882,9 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+@@ -4645,6 +4887,9 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
  		return -EOPNOTSUPP;
  
@@ -473,37 +477,31 @@ index ab3e835..7cc2455 100644
  	/*
  	 * Write out all dirty pages to avoid race conditions
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index dc29153..207288f 100644
+index e9d7ee7..010ea89 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
-@@ -16,6 +16,15 @@ struct mpage_da_data;
- struct ext4_map_blocks;
- struct extent_status;
+@@ -21,6 +21,10 @@ struct extent_status;
+ #define FALLOC_FL_COLLAPSE_RANGE	0x08
+ #endif
  
-+/* shim until we merge in the xfs_collapse_range branch */
-+#ifndef FALLOC_FL_COLLAPSE_RANGE
-+#define FALLOC_FL_COLLAPSE_RANGE	0x08
-+#endif
-+
 +#ifndef FALLOC_FL_ZERO_RANGE
-+#define FALLOC_FL_ZERO_RANGE		0x10
++#define FALLOC_FL_ZERO_RANGE           0x10
 +#endif
 +
  #define EXT4_I(inode) (container_of(inode, struct ext4_inode_info, vfs_inode))
  
  #define show_mballoc_flags(flags) __print_flags(flags, "|",	\
-@@ -71,7 +80,9 @@ struct extent_status;
- #define show_falloc_mode(mode) __print_flags(mode, "|",		\
+@@ -77,7 +81,8 @@ struct extent_status;
  	{ FALLOC_FL_KEEP_SIZE,		"KEEP_SIZE"},		\
  	{ FALLOC_FL_PUNCH_HOLE,		"PUNCH_HOLE"},		\
--	{ FALLOC_FL_NO_HIDE_STALE,	"NO_HIDE_STALE"})
-+	{ FALLOC_FL_NO_HIDE_STALE,	"NO_HIDE_STALE"},	\
+ 	{ FALLOC_FL_NO_HIDE_STALE,	"NO_HIDE_STALE"},	\
+-	{ FALLOC_FL_COLLAPSE_RANGE,	"COLLAPSE_RANGE"})
 +	{ FALLOC_FL_COLLAPSE_RANGE,	"COLLAPSE_RANGE"},	\
 +	{ FALLOC_FL_ZERO_RANGE,		"ZERO_RANGE"})
  
  
  TRACE_EVENT(ext4_free_inode,
-@@ -1333,7 +1344,7 @@ TRACE_EVENT(ext4_direct_IO_exit,
+@@ -1339,7 +1344,7 @@ TRACE_EVENT(ext4_direct_IO_exit,
  		  __entry->rw, __entry->ret)
  );
  
@@ -512,7 +510,7 @@ index dc29153..207288f 100644
  	TP_PROTO(struct inode *inode, loff_t offset, loff_t len, int mode),
  
  	TP_ARGS(inode, offset, len, mode),
-@@ -1341,23 +1352,45 @@ TRACE_EVENT(ext4_fallocate_enter,
+@@ -1347,23 +1352,45 @@ TRACE_EVENT(ext4_fallocate_enter,
  	TP_STRUCT__entry(
  		__field(	dev_t,	dev			)
  		__field(	ino_t,	ino			)
@@ -564,7 +562,7 @@ index dc29153..207288f 100644
  );
  
  TRACE_EVENT(ext4_fallocate_exit,
-@@ -1389,31 +1422,6 @@ TRACE_EVENT(ext4_fallocate_exit,
+@@ -1395,31 +1422,6 @@ TRACE_EVENT(ext4_fallocate_exit,
  		  __entry->ret)
  );
  
@@ -596,3 +594,7 @@ index dc29153..207288f 100644
  TRACE_EVENT(ext4_unlink_enter,
  	TP_PROTO(struct inode *parent, struct dentry *dentry),
  
+-- 
+1.8.3.1
+
+

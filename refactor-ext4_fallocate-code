@@ -10,14 +10,14 @@ is commit in the next patch.
 Signed-off-by: Lukas Czerner <lczerner@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/extents.c | 127 +++++++++++++++++++++++++++++++-----------------------
- 1 file changed, 73 insertions(+), 54 deletions(-)
+ fs/ext4/extents.c | 129 +++++++++++++++++++++++++++++++-----------------------
+ 1 file changed, 74 insertions(+), 55 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 67c7917..0e675bc 100644
+index ce3d371..1c09a09 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -4513,6 +4513,64 @@ retry:
+@@ -4546,6 +4546,64 @@ retry:
  	ext4_std_error(inode->i_sb, err);
  }
  
@@ -82,7 +82,7 @@ index 67c7917..0e675bc 100644
  /*
   * preallocate space for a file. This implements ext4's fallocate file
   * operation, which gets called from sys_fallocate system call.
-@@ -4527,12 +4585,10 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+@@ -4560,12 +4618,10 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  	loff_t new_size = 0;
  	unsigned int max_blocks;
  	int ret = 0;
@@ -96,8 +96,8 @@ index 67c7917..0e675bc 100644
 +	unsigned int blkbits = inode->i_blkbits;
  
  	/* Return error if mode is not supported */
- 	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE))
-@@ -4553,17 +4609,18 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+ 	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE |
+@@ -4590,17 +4646,18 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  		return -EOPNOTSUPP;
  
  	trace_ext4_fallocate_enter(inode, offset, len, mode);
@@ -122,7 +122,7 @@ index 67c7917..0e675bc 100644
  	mutex_lock(&inode->i_mutex);
  
  	if (!(mode & FALLOC_FL_KEEP_SIZE) &&
-@@ -4574,46 +4631,9 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+@@ -4611,46 +4668,9 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  			goto out;
  	}
  
@@ -172,7 +172,7 @@ index 67c7917..0e675bc 100644
  
  	handle = ext4_journal_start(inode, EXT4_HT_INODE, 2);
  	if (IS_ERR(handle))
-@@ -4621,7 +4641,7 @@ retry:
+@@ -4658,14 +4678,14 @@ retry:
  
  	tv = inode->i_ctime = ext4_current_time(inode);
  
@@ -181,7 +181,15 @@ index 67c7917..0e675bc 100644
  		if (new_size > i_size_read(inode)) {
  			i_size_write(inode, new_size);
  			inode->i_mtime = tv;
-@@ -4636,9 +4656,8 @@ retry:
+ 		}
+ 		if (new_size > EXT4_I(inode)->i_disksize)
+ 			ext4_update_i_disksize(inode, new_size);
+-	} else if (ret > 0 && !new_size) {
++	} else if (!ret && !new_size) {
+ 		/*
+ 		* Mark that we allocate beyond EOF so the subsequent truncate
+ 		* can proceed even if the new size is the same as i_size.
+@@ -4680,9 +4700,8 @@ retry:
  	ext4_journal_stop(handle);
  out:
  	mutex_unlock(&inode->i_mutex);

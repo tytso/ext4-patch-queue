@@ -24,16 +24,18 @@ Also use ext4_debug, instead of ext4_warning in #ifdef EXT4FS_DEBUG
 section.
 
 Signed-off-by: Lukas Czerner <lczerner@redhat.com>
-Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
----
- fs/ext4/extents.c | 89 ++++++++++++++++++++++---------------------------------
- 1 file changed, 35 insertions(+), 54 deletions(-)
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>-
+--
+v3: Do not remove the code to set EXT4_INODE_EOFBLOCKS flag
+
+ fs/ext4/extents.c | 96 ++++++++++++++++++++++++-------------------------------
+ 1 file changed, 42 insertions(+), 54 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 10cff47..67c7917 100644
+index 202e8e3..ce3d371 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -4513,36 +4513,6 @@ retry:
+@@ -4546,36 +4546,6 @@ retry:
  	ext4_std_error(inode->i_sb, err);
  }
  
@@ -70,7 +72,7 @@ index 10cff47..67c7917 100644
  /*
   * preallocate space for a file. This implements ext4's fallocate file
   * operation, which gets called from sys_fallocate system call.
-@@ -4554,13 +4524,14 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+@@ -4587,13 +4557,14 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  {
  	struct inode *inode = file_inode(file);
  	handle_t *handle;
@@ -86,7 +88,7 @@ index 10cff47..67c7917 100644
  	unsigned int credits, blkbits = inode->i_blkbits;
  
  	/* Return error if mode is not supported */
-@@ -4594,12 +4565,15 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+@@ -4631,12 +4602,15 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  	 */
  	credits = ext4_chunk_trans_blocks(inode, max_blocks);
  	mutex_lock(&inode->i_mutex);
@@ -107,7 +109,7 @@ index 10cff47..67c7917 100644
  	flags = EXT4_GET_BLOCKS_CREATE_UNINIT_EXT;
  	if (mode & FALLOC_FL_KEEP_SIZE)
  		flags |= EXT4_GET_BLOCKS_KEEP_SIZE;
-@@ -4623,28 +4597,14 @@ retry:
+@@ -4660,28 +4634,14 @@ retry:
  		}
  		ret = ext4_map_blocks(handle, inode, &map, flags);
  		if (ret <= 0) {
@@ -140,7 +142,7 @@ index 10cff47..67c7917 100644
  		ret2 = ext4_journal_stop(handle);
  		if (ret2)
  			break;
-@@ -4654,6 +4614,27 @@ retry:
+@@ -4691,6 +4651,34 @@ retry:
  		ret = 0;
  		goto retry;
  	}
@@ -158,6 +160,13 @@ index 10cff47..67c7917 100644
 +		}
 +		if (new_size > EXT4_I(inode)->i_disksize)
 +			ext4_update_i_disksize(inode, new_size);
++	} else if (ret > 0 && !new_size) {
++		/*
++		* Mark that we allocate beyond EOF so the subsequent truncate
++		* can proceed even if the new size is the same as i_size.
++		*/
++		if ((offset + len) > i_size_read(inode))
++			ext4_set_inode_flag(inode, EXT4_INODE_EOFBLOCKS);
 +	}
 +	ext4_mark_inode_dirty(handle, inode);
 +	if (file->f_flags & O_SYNC)
@@ -168,7 +177,3 @@ index 10cff47..67c7917 100644
  	mutex_unlock(&inode->i_mutex);
  	trace_ext4_fallocate_exit(inode, offset, max_blocks,
  				ret > 0 ? ret2 : ret);
--- 
-1.8.3.1
-
-
