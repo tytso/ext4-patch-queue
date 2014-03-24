@@ -1,0 +1,59 @@
+ext4: atomically set inode->i_flags in ext4_set_inode_flags()
+
+Use cmpxchg() to atomically set i_flags instead of clearing out the
+S_IMMUTABLE, S_APPEND, etc. flags and then setting them from the
+EXT4_IMMUTABLE_FL, EXT4_APPEND_FL flags, since this opens up a race
+where an immutable file has the immutable flag cleared for a brief
+window of time.
+
+Reported-by: Petr Matousek <pmatouse@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@kernel.org
+---
+ fs/ext4/inode.c | 33 ++++++++++++++++++++-------------
+ 1 file changed, 20 insertions(+), 13 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index b5e182a..169fff3 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3937,19 +3937,26 @@ int ext4_get_inode_loc(struct inode *inode, struct ext4_iloc *iloc)
+ 
+ void ext4_set_inode_flags(struct inode *inode)
+ {
+-	unsigned int flags = EXT4_I(inode)->i_flags;
+-
+-	inode->i_flags &= ~(S_SYNC|S_APPEND|S_IMMUTABLE|S_NOATIME|S_DIRSYNC);
+-	if (flags & EXT4_SYNC_FL)
+-		inode->i_flags |= S_SYNC;
+-	if (flags & EXT4_APPEND_FL)
+-		inode->i_flags |= S_APPEND;
+-	if (flags & EXT4_IMMUTABLE_FL)
+-		inode->i_flags |= S_IMMUTABLE;
+-	if (flags & EXT4_NOATIME_FL)
+-		inode->i_flags |= S_NOATIME;
+-	if (flags & EXT4_DIRSYNC_FL)
+-		inode->i_flags |= S_DIRSYNC;
++	unsigned int flags;
++	unsigned int old_fl, new_fl;
++
++	do {
++		flags = EXT4_I(inode)->i_flags;
++		old_fl = inode->i_flags;
++		new_fl = old_fl &
++			~(S_SYNC|S_APPEND|S_IMMUTABLE|S_NOATIME|S_DIRSYNC);
++
++		if (flags & EXT4_SYNC_FL)
++			new_fl |= S_SYNC;
++		if (flags & EXT4_APPEND_FL)
++			new_fl |= S_APPEND;
++		if (flags & EXT4_IMMUTABLE_FL)
++			new_fl |= S_IMMUTABLE;
++		if (flags & EXT4_NOATIME_FL)
++			new_fl |= S_NOATIME;
++		if (flags & EXT4_DIRSYNC_FL)
++			new_fl |= S_DIRSYNC;
++	} while (cmpxchg(&inode->i_flags, old_fl, new_fl) != old_fl);
+ }
+ 
+ /* Propagate flags from i_flags to EXT4_I(inode)->i_flags */
