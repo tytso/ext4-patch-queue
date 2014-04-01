@@ -19,13 +19,10 @@ Also add appropriate tracepoints.
 Signed-off-by: Lukas Czerner <lczerner@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
-v3: Set EXT4_INODE_EOFBLOCKS when needed in zero_range
-    Fix the problems when rebased on ext4/dev branch
-
  fs/ext4/ext4.h              |   2 +
- fs/ext4/extents.c           | 273 +++++++++++++++++++++++++++++++++++++++++---
- fs/ext4/inode.c             |  17 ++-
- include/trace/events/ext4.h |  68 +++++------
+ fs/ext4/extents.c           | 273 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++----
+ fs/ext4/inode.c             |  17 +++--
+ include/trace/events/ext4.h |  68 +++++++++--------
  4 files changed, 307 insertions(+), 53 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
@@ -42,7 +39,7 @@ index beec427..1b3cbf8 100644
  /*
   * The bit position of these flags must not overlap with any of the
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 1c09a09..243a02e 100644
+index 1c09a09..491208c 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -3602,6 +3602,8 @@ out:
@@ -85,13 +82,13 @@ index 1c09a09..243a02e 100644
 -	if (flags & EXT4_GET_BLOCKS_CONVERT)
 -		split_flag |= EXT4_EXT_DATA_VALID2;
 +	/* Convert to unwritten */
-+	if (flags | EXT4_GET_BLOCKS_CONVERT_UNWRITTEN) {
++	if (flags & EXT4_GET_BLOCKS_CONVERT_UNWRITTEN) {
 +		split_flag |= EXT4_EXT_DATA_VALID1;
 +	/* Convert to initialized */
-+	} else if (flags | EXT4_GET_BLOCKS_CONVERT) {
++	} else if (flags & EXT4_GET_BLOCKS_CONVERT) {
 +		split_flag |= ee_block + ee_len <= eof_block ?
 +			      EXT4_EXT_MAY_ZEROOUT : 0;
-+		split_flag |= (EXT4_EXT_MARK_UNINIT2 & EXT4_EXT_DATA_VALID2);
++		split_flag |= (EXT4_EXT_MARK_UNINIT2 | EXT4_EXT_DATA_VALID2);
 +	}
  	flags |= EXT4_GET_BLOCKS_PRE_IO;
  	return ext4_split_extent(handle, inode, path, map, split_flag, flags);
@@ -594,7 +591,3 @@ index e9d7ee7..010ea89 100644
  TRACE_EVENT(ext4_unlink_enter,
  	TP_PROTO(struct inode *parent, struct dentry *dentry),
  
--- 
-1.8.3.1
-
-
