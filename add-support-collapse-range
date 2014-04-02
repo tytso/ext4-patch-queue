@@ -20,11 +20,11 @@ Tested-by: Dongsu Park <dongsu.park@profitbricks.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 
 ---
- fs/ext4/ext4.h              |   3 ++
- fs/ext4/extents.c           | 304 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/ext4.h              |   3 +
+ fs/ext4/extents.c           | 307 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
  fs/ext4/move_extent.c       |   2 +-
- include/trace/events/ext4.h |  33 +++++++++++-
- 4 files changed, 339 insertions(+), 3 deletions(-)
+ include/trace/events/ext4.h |  33 ++++++-
+ 4 files changed, 342 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index b7207db..beec427 100644
@@ -48,7 +48,7 @@ index b7207db..beec427 100644
  /* page-io.c */
  extern int __init ext4_init_pageio(void);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 2e0608e..7015917 100644
+index 2e0608e..bbba1ef 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -4581,12 +4581,16 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
@@ -69,7 +69,7 @@ index 2e0608e..7015917 100644
  	ret = ext4_convert_inline_data(inode);
  	if (ret)
  		return ret;
-@@ -4885,3 +4889,301 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+@@ -4885,3 +4889,304 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
  	ext4_es_lru_add(inode);
  	return error;
  }
@@ -85,6 +85,9 @@ index 2e0608e..7015917 100644
 +		struct ext4_ext_path *path)
 +{
 +	int credits, err;
++
++	if (!ext4_handle_valid(handle))
++		return 0;
 +
 +	/*
 +	 * Check if need to extend journal credits
