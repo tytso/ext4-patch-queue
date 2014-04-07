@@ -1,0 +1,35 @@
+ext4: fix 64-bit number truncation warning
+
+From: Chen Gang <gang.chen.5i5j@gmail.com>
+
+'0x7FDEADBEEF' will be truncated to 32-bit number under unicore32. Need
+append 'ULL' for it.
+
+The related warning (with allmodconfig under unicore32):
+
+    CC [M]  fs/ext4/extents_status.o
+  fs/ext4/extents_status.c: In function "__es_remove_extent":
+  fs/ext4/extents_status.c:813: warning: integer constant is too large for "long" type
+
+Signed-off-by: Chen Gang <gang.chen.5i5j@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents_status.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
+index 0a014a7..0ebc212 100644
+--- a/fs/ext4/extents_status.c
++++ b/fs/ext4/extents_status.c
+@@ -810,7 +810,7 @@ retry:
+ 
+ 			newes.es_lblk = end + 1;
+ 			newes.es_len = len2;
+-			block = 0x7FDEADBEEF;
++			block = 0x7FDEADBEEFULL;
+ 			if (ext4_es_is_written(&orig_es) ||
+ 			    ext4_es_is_unwritten(&orig_es))
+ 				block = ext4_es_pblock(&orig_es) +
+-- 
+1.7.9.5
+
