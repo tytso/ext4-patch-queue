@@ -1,0 +1,70 @@
+ext4: return ENOMEM rather than EIO when find_###_page() fails
+
+From: Younger Liu <younger.liucn@gmail.com>
+
+Return ENOMEM rather than EIO when find_get_page() fails in
+ext4_mb_get_buddy_page_lock() and find_or_create_page() fails in
+ext4_mb_load_buddy().
+
+Signed-off-by: Younger Liu <younger.liucn@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c |   16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index a888cac..73ccbb3 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -989,7 +989,7 @@ static int ext4_mb_get_buddy_page_lock(struct super_block *sb,
+ 	poff = block % blocks_per_page;
+ 	page = find_or_create_page(inode->i_mapping, pnum, GFP_NOFS);
+ 	if (!page)
+-		return -EIO;
++		return -ENOMEM;
+ 	BUG_ON(page->mapping != inode->i_mapping);
+ 	e4b->bd_bitmap_page = page;
+ 	e4b->bd_bitmap = page_address(page) + (poff * sb->s_blocksize);
+@@ -1003,7 +1003,7 @@ static int ext4_mb_get_buddy_page_lock(struct super_block *sb,
+ 	pnum = block / blocks_per_page;
+ 	page = find_or_create_page(inode->i_mapping, pnum, GFP_NOFS);
+ 	if (!page)
+-		return -EIO;
++		return -ENOMEM;
+ 	BUG_ON(page->mapping != inode->i_mapping);
+ 	e4b->bd_buddy_page = page;
+ 	return 0;
+@@ -1168,7 +1168,11 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
+ 			unlock_page(page);
+ 		}
+ 	}
+-	if (page == NULL || !PageUptodate(page)) {
++	if (page == NULL) {
++		ret = -ENOMEM;
++		goto err;
++	}
++	if (!PageUptodate(page)) {
+ 		ret = -EIO;
+ 		goto err;
+ 	}
+@@ -1197,7 +1201,11 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
+ 			unlock_page(page);
+ 		}
+ 	}
+-	if (page == NULL || !PageUptodate(page)) {
++	if (page == NULL) {
++		ret = -ENOMEM;
++		goto err;
++	}
++	if (!PageUptodate(page)) {
+ 		ret = -EIO;
+ 		goto err;
+ 	}
+-- 
+1.7.9.5
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
