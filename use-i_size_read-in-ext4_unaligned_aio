@@ -1,0 +1,23 @@
+ext4: use i_size_read in ext4_unaligned_aio()
+
+We haven't taken i_mutex yet, so we need to use i_size_read().
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/file.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 6db7f7d..bc76559 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -82,7 +82,7 @@ ext4_unaligned_aio(struct inode *inode, const struct iovec *iov,
+ 	size_t count = iov_length(iov, nr_segs);
+ 	loff_t final_size = pos + count;
+ 
+-	if (pos >= inode->i_size)
++	if (pos >= i_size_read(inode))
+ 		return 0;
+ 
+ 	if ((pos & blockmask) || (final_size & blockmask))
