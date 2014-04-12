@@ -1,0 +1,41 @@
+fs: prevent doing FALLOC_FL_ZERO_RANGE on append only file
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Currently punch hole and collapse range fallocate operation are not
+allowed on append only file. This should be case for zero range as well.
+Fix it.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/open.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/fs/open.c b/fs/open.c
+index 631aea81..7882ff5 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -254,10 +254,11 @@ int do_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+ 		return -EBADF;
+ 
+ 	/*
+-	 * It's not possible to punch hole or perform collapse range
+-	 * on append only file
++	 * It's not possible to punch hole, perform collapse range
++	 * or zero range on append only file
+ 	 */
+-	if (mode & (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_COLLAPSE_RANGE)
++	if (mode & (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_COLLAPSE_RANGE |
++		    FALLOC_FL_ZERO_RANGE)
+ 	    && IS_APPEND(inode))
+ 		return -EPERM;
+ 
+-- 
+1.8.3.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
