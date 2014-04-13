@@ -1,0 +1,29 @@
+ext4: silence sparse check warning for function ext4_trim_extent
+
+From: jon ernst <jonernst07@gmail.com>
+
+This fixes the following sparse warning:
+
+     CHECK   fs/ext4/mballoc.c
+   fs/ext4/mballoc.c:5019:9: warning: context imbalance in
+   'ext4_trim_extent' - unexpected unlock
+
+Signed-off-by: "Jon Ernst" <jonernst07@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 73ccbb3..c8238a2 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -5016,6 +5016,8 @@ error_return:
+  */
+ static int ext4_trim_extent(struct super_block *sb, int start, int count,
+ 			     ext4_group_t group, struct ext4_buddy *e4b)
++__releases(bitlock)
++__acquires(bitlock)
+ {
+ 	struct ext4_free_extent ex;
+ 	int ret = 0;
