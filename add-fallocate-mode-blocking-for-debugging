@@ -1,0 +1,54 @@
+ext4: add fallocate mode blocking for debugging purposes
+
+If a particular fallocate mode is causing test failures, give the
+tester the ability to block a particular fallocate mode so that the
+use of a particular fallocate mode will be reported as not supported.
+
+For example, if the COLLAPSE_RANGE fallocate mode is causing test
+failures, this allows us to suppress it so we can more easily test the
+rest of the file system code.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 64b4003..1bb3e4b 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -29,6 +29,7 @@
+  *   - smart tree reduction
+  */
+ 
++#include <linux/module.h>
+ #include <linux/fs.h>
+ #include <linux/time.h>
+ #include <linux/jbd2.h>
+@@ -4862,6 +4863,12 @@ out_mutex:
+ 	return ret;
+ }
+ 
++int ext4_fallocate_mode_block __read_mostly;
++
++module_param_named(fallocate_mode_block, ext4_fallocate_mode_block, int, 0644);
++MODULE_PARM_DESC(fallocate_mode_block,
++		 "Fallocate modes which are blocked for debugging purposes");
++
+ /*
+  * preallocate space for a file. This implements ext4's fallocate file
+  * operation, which gets called from sys_fallocate system call.
+@@ -4881,6 +4888,13 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+ 	struct timespec tv;
+ 	unsigned int blkbits = inode->i_blkbits;
+ 
++	/*
++	 * for debugging purposes, allow certain fallocate operations
++	 * to be disabled
++	 */
++	if (unlikely(mode & ext4_fallocate_mode_block))
++		return -EOPNOTSUPP;
++
+ 	/* Return error if mode is not supported */
+ 	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE |
+ 		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE))
