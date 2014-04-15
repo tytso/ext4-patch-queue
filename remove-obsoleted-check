@@ -1,0 +1,30 @@
+ext4: remove obsoleted check
+
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+
+BH can not be NULL at this point, ext4_read_dirblock() always return
+non null value, and we already have done all necessery checks.
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+---
+ fs/ext4/namei.c |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 1cb84f7..a683f95 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -2510,8 +2510,7 @@ static int empty_dir(struct inode *inode)
+ 		 ext4_rec_len_from_disk(de1->rec_len, sb->s_blocksize);
+ 	de = ext4_next_entry(de1, sb->s_blocksize);
+ 	while (offset < inode->i_size) {
+-		if (!bh ||
+-		    (void *) de >= (void *) (bh->b_data+sb->s_blocksize)) {
++		if ((void *) de >= (void *) (bh->b_data+sb->s_blocksize)) {
+ 			unsigned int lblock;
+ 			err = 0;
+ 			brelse(bh);
+-- 
+1.7.1
+
+
