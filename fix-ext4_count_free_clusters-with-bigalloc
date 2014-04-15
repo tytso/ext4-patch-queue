@@ -1,0 +1,77 @@
+ext4: fix ext4_count_free_clusters() with EXT4FS_DEBUG and bigalloc enabled
+
+From: Azat Khuzhin <a3at.mail@gmail.com>
+
+With bigalloc enabled we must use EXT4_CLUSTERS_PER_GROUP() instead of
+EXT4_BLOCKS_PER_GROUP() otherwise we will go beyond the allocated buffer.
+
+$ mount -t ext4 /dev/vde /vde
+[   70.573993] EXT4-fs DEBUG (fs/ext4/mballoc.c, 2346): ext4_mb_alloc_groupinfo:
+[   70.575174] allocated s_groupinfo array for 1 meta_bg's
+[   70.576172] EXT4-fs DEBUG (fs/ext4/super.c, 2092): ext4_check_descriptors:
+[   70.576972] Checking group descriptorsBUG: unable to handle kernel paging request at ffff88006ab56000
+[   72.463686] IP: [<ffffffff81394eb9>] __bitmap_weight+0x2a/0x7f
+[   72.464168] PGD 295e067 PUD 2961067 PMD 7fa8e067 PTE 800000006ab56060
+[   72.464738] Oops: 0000 [#1] SMP DEBUG_PAGEALLOC
+[   72.465139] Modules linked in:
+[   72.465402] CPU: 1 PID: 3560 Comm: mount Tainted: G        W    3.14.0-rc2-00069-ge57bce1 #60
+[   72.466079] Hardware name: Bochs Bochs, BIOS Bochs 01/01/2011
+[   72.466505] task: ffff88007ce6c8a0 ti: ffff88006b7f0000 task.ti: ffff88006b7f0000
+[   72.466505] RIP: 0010:[<ffffffff81394eb9>]  [<ffffffff81394eb9>] __bitmap_weight+0x2a/0x7f
+[   72.466505] RSP: 0018:ffff88006b7f1c00  EFLAGS: 00010206
+[   72.466505] RAX: 0000000000000000 RBX: 000000000000050a RCX: 0000000000000040
+[   72.466505] RDX: 0000000000000000 RSI: 0000000000080000 RDI: 0000000000000000
+[   72.466505] RBP: ffff88006b7f1c28 R08: 0000000000000002 R09: 0000000000000000
+[   72.466505] R10: 000000000000babe R11: 0000000000000400 R12: 0000000000080000
+[   72.466505] R13: 0000000000000200 R14: 0000000000002000 R15: ffff88006ab55000
+[   72.466505] FS:  00007f43ba1fa840(0000) GS:ffff88007f800000(0000) knlGS:0000000000000000
+[   72.466505] CS:  0010 DS: 0000 ES: 0000 CR0: 000000008005003b
+[   72.466505] CR2: ffff88006ab56000 CR3: 000000006b7e6000 CR4: 00000000000006e0
+[   72.466505] Stack:
+[   72.466505]  ffff88006ab65000 0000000000000000 0000000000000000 0000000000010000
+[   72.466505]  ffff88006ab6f400 ffff88006b7f1c58 ffffffff81396bb8 0000000000010000
+[   72.466505]  0000000000000000 ffff88007b869a90 ffff88006a48a000 ffff88006b7f1c70
+[   72.466505] Call Trace:
+[   72.466505]  [<ffffffff81396bb8>] memweight+0x5f/0x8a
+[   72.466505]  [<ffffffff811c3b19>] ext4_count_free+0x13/0x21
+[   72.466505]  [<ffffffff811c396c>] ext4_count_free_clusters+0xdb/0x171
+[   72.466505]  [<ffffffff811e3bdd>] ext4_fill_super+0x117c/0x28ef
+[   72.466505]  [<ffffffff81391569>] ? vsnprintf+0x1c7/0x3f7
+[   72.466505]  [<ffffffff8114d8dc>] mount_bdev+0x145/0x19c
+[   72.466505]  [<ffffffff811e2a61>] ? ext4_calculate_overhead+0x2a1/0x2a1
+[   72.466505]  [<ffffffff811dab1d>] ext4_mount+0x15/0x17
+[   72.466505]  [<ffffffff8114e3aa>] mount_fs+0x67/0x150
+[   72.466505]  [<ffffffff811637ea>] vfs_kern_mount+0x64/0xde
+[   72.466505]  [<ffffffff81165d19>] do_mount+0x6fe/0x7f5
+[   72.466505]  [<ffffffff81126cc8>] ? strndup_user+0x3a/0xd9
+[   72.466505]  [<ffffffff8116604b>] SyS_mount+0x85/0xbe
+[   72.466505]  [<ffffffff81619e90>] tracesys+0xdd/0xe2
+[   72.466505] Code: c3 89 f0 b9 40 00 00 00 55 99 48 89 e5 41 57 f7 f9 41 56 49 89 ff 41 55 45 31 ed 41 54 41 89 f4 53 31 db 41 89 c6 45 39 ee 7e 10 <4b> 8b 3c ef 49 ff c5 e8 bf ff ff ff 01 c3 eb eb 31 c0 45 85 f6
+[   72.466505] RIP  [<ffffffff81394eb9>] __bitmap_weight+0x2a/0x7f
+[   72.466505]  RSP <ffff88006b7f1c00>
+[   72.466505] CR2: ffff88006ab56000
+[   72.466505] ---[ end trace 7d051a08ae138573 ]---
+Killed
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/balloc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index 6ea7b14..5c56785 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -667,7 +667,7 @@ ext4_fsblk_t ext4_count_free_clusters(struct super_block *sb)
+ 			continue;
+ 
+ 		x = ext4_count_free(bitmap_bh->b_data,
+-				    EXT4_BLOCKS_PER_GROUP(sb) / 8);
++				    EXT4_CLUSTERS_PER_GROUP(sb) / 8);
+ 		printk(KERN_DEBUG "group %u: stored = %d, counted = %u\n",
+ 			i, ext4_free_group_clusters(sb, gdp), x);
+ 		bitmap_count += x;
+-- 
+1.9.1
+
+
