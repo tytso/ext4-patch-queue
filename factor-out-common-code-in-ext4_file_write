@@ -5,31 +5,56 @@ This shouldn't change any logic flow; just delete duplicated code.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Reviewed-by: Jan Kara <jack@suse.cz>
 ---
- fs/ext4/file.c | 37 +++++++++++++------------------------
- 1 file changed, 13 insertions(+), 24 deletions(-)
+ fs/ext4/file.c | 58 ++++++++++++++++++++++------------------------------------
+ 1 file changed, 22 insertions(+), 36 deletions(-)
 
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 5005391..6ac33da 100644
+index 3ec0c09..4925c5a 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
-@@ -98,6 +98,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+@@ -97,8 +97,9 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+ {
  	struct file *file = iocb->ki_filp;
  	struct inode *inode = file_inode(iocb->ki_filp);
++	struct mutex *aio_mutex = NULL;
  	struct blk_plug plug;
+-	int unaligned_aio = 0;
 +	int o_direct = file->f_flags & O_DIRECT;
  	int overwrite = 0;
  	size_t length = iov_length(iov, nr_segs);
  	ssize_t ret;
-@@ -122,7 +123,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+@@ -123,15 +124,13 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  		}
  	}
  
 -	if (unlikely(iocb->ki_filp->f_flags & O_DIRECT)) {
+-		if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS) &&
+-		    !is_sync_kiocb(iocb))
+-			unaligned_aio = ext4_unaligned_aio(inode, iov,
+-							   nr_segs, pos);
+-
 +	if (o_direct) {
- 		struct mutex *aio_mutex = NULL;
- 
  		/* Unaligned direct AIO must be serialized; see comment above */
-@@ -169,33 +170,21 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+-		if (unaligned_aio) {
+-			mutex_lock(ext4_aio_mutex(inode));
++		if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS) &&
++		    !is_sync_kiocb(iocb) &&
++		    ext4_unaligned_aio(inode, iov, nr_segs, pos)) {
++			aio_mutex = ext4_aio_mutex(inode);
++			mutex_lock(aio_mutex);
+ 			ext4_unwritten_wait(inode);
+ 		}
+ 
+@@ -141,7 +140,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+ 		iocb->private = &overwrite;
+ 
+ 		/* check whether we do a DIO overwrite or not */
+-		if (ext4_should_dioread_nolock(inode) && !unaligned_aio &&
++		if (ext4_should_dioread_nolock(inode) && !aio_mutex &&
+ 		    !file->f_mapping->nrpages && pos + length <= i_size_read(inode)) {
+ 			struct ext4_map_blocks map;
+ 			unsigned int blkbits = inode->i_blkbits;
+@@ -168,37 +167,24 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  			if (err == len && (map.m_flags & EXT4_MAP_MAPPED))
  				overwrite = 1;
  		}
@@ -46,6 +71,9 @@ index 5005391..6ac33da 100644
 -				ret = err;
 -		}
 -		blk_finish_plug(&plug);
+-
+-		if (unaligned_aio)
+-			mutex_unlock(ext4_aio_mutex(inode));
 -	} else {
 +	} else
  		mutex_lock(&inode->i_mutex);
@@ -72,5 +100,8 @@ index 5005391..6ac33da 100644
 +	if (o_direct)
 +		blk_finish_plug(&plug);
  
++	if (aio_mutex)
++		mutex_unlock(aio_mutex);
  	return ret;
  }
+ 

@@ -1,38 +1,49 @@
-ext4: add locking for O_APPEND writes
+ext4: fix locking for O_APPEND writes
 
-Al Viro pointed out that we need to make sure we only allow one
+Al Viro pointed out that locking for O_APPEND writes was problematic,
+since the location of the write isn't known until after we take the
+i_mutex, which impacts the ext4_unaligned_aio() and s_bitmap_maxbytes
+check.
+
+For O_APPEND always assume that the write is unaligned so call
+ext4_unwritten_wait().  And to solve the second problem, take the
+i_mutex earlier before we start the s_bitmap_maxbytes check.
+
+we need to make sure we only allow one
 O_APPEND write to proceed at a time so that the the s_bitmap_maxbytes
 check can be properly checked.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/file.c | 46 +++++++++++++++++++++++++++++-----------------
- 1 file changed, 29 insertions(+), 17 deletions(-)
+ fs/ext4/file.c | 42 ++++++++++++++++++++++++++----------------
+ 1 file changed, 26 insertions(+), 16 deletions(-)
 
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 6ac33da..16eef81 100644
+index 4925c5a..01a2f15 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
-@@ -98,24 +98,32 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
- 	struct file *file = iocb->ki_filp;
- 	struct inode *inode = file_inode(iocb->ki_filp);
- 	struct blk_plug plug;
-+	struct mutex *aio_mutex = NULL;
- 	int o_direct = file->f_flags & O_DIRECT;
--	int overwrite = 0;
-+	int overwrite = 0, i_mutex_grabbed = 0;
- 	size_t length = iov_length(iov, nr_segs);
- 	ssize_t ret;
- 
+@@ -107,16 +107,36 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  	BUG_ON(iocb->ki_pos != pos);
  
-+	if (file->f_flags & O_APPEND) {
-+		mutex_lock(&inode->i_mutex);
-+		i_mutex_grabbed = 1;
-+		iocb->ki_pos = pos = i_size_read(inode);
+ 	/*
++	 * Unaligned direct AIO must be serialized; see comment above
++	 * In the case of O_APPEND, assume that we must always serialize
++	 */
++	if (o_direct &&
++	    ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS) &&
++	    !is_sync_kiocb(iocb) &&
++	    (file->f_flags & O_APPEND ||
++	     ext4_unaligned_aio(inode, iov, nr_segs, pos))) {
++		aio_mutex = ext4_aio_mutex(inode);
++		mutex_lock(aio_mutex);
++		ext4_unwritten_wait(inode);
 +	}
 +
- 	/*
++	mutex_lock(&inode->i_mutex);
++	if (file->f_flags & O_APPEND)
++		iocb->ki_pos = pos = i_size_read(inode);
++
++	/*
  	 * If we have encountered a bitmap-format file, the size limit
  	 * is smaller than s_maxbytes, which is for extent-mapped files.
  	 */
@@ -40,23 +51,22 @@ index 6ac33da..16eef81 100644
  	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))) {
  		struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
  
- 		if ((pos > sbi->s_bitmap_maxbytes ||
+-		if ((pos > sbi->s_bitmap_maxbytes ||
 -		    (pos == sbi->s_bitmap_maxbytes && length > 0)))
 -			return -EFBIG;
-+		     (pos == sbi->s_bitmap_maxbytes && length > 0))) {
++		if ((pos > sbi->s_bitmap_maxbytes) ||
++		    (pos == sbi->s_bitmap_maxbytes && length > 0)) {
++			mutex_unlock(&inode->i_mutex);
 +			ret = -EFBIG;
 +			goto errout;
 +		}
  
  		if (pos + length > sbi->s_bitmap_maxbytes) {
  			nr_segs = iov_shorten((struct iovec *)iov, nr_segs,
-@@ -123,19 +131,20 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
- 		}
+@@ -125,16 +145,6 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  	}
  
--	if (o_direct) {
--		struct mutex *aio_mutex = NULL;
--
+ 	if (o_direct) {
 -		/* Unaligned direct AIO must be serialized; see comment above */
 -		if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS) &&
 -		    !is_sync_kiocb(iocb) &&
@@ -65,24 +75,12 @@ index 6ac33da..16eef81 100644
 -			mutex_lock(aio_mutex);
 -			ext4_unwritten_wait(inode);
 -		}
-+	/* Unaligned direct AIO must be serialized; see comment above */
-+	if (o_direct && ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS) &&
-+	    !is_sync_kiocb(iocb) &&
-+	    ext4_unaligned_aio(inode, iov, nr_segs, pos)) {
-+		aio_mutex = ext4_aio_mutex(inode);
-+		mutex_lock(aio_mutex);
-+		ext4_unwritten_wait(inode);
-+	}
- 
-+	if (!i_mutex_grabbed)
- 		mutex_lock(&inode->i_mutex);
-+	i_mutex_grabbed = 1;
-+
-+	if (o_direct) {
- 		if (aio_mutex)
- 			mutex_unlock(aio_mutex);
+-
+-		mutex_lock(&inode->i_mutex);
  		blk_start_plug(&plug);
-@@ -170,11 +179,11 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+ 
+ 		iocb->private = &overwrite;
+@@ -167,8 +177,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  			if (err == len && (map.m_flags & EXT4_MAP_MAPPED))
  				overwrite = 1;
  		}
@@ -92,17 +90,11 @@ index 6ac33da..16eef81 100644
  
  	ret = __generic_file_aio_write(iocb, iov, nr_segs, &iocb->ki_pos);
  	mutex_unlock(&inode->i_mutex);
-+	i_mutex_grabbed = 0;
- 
- 	if (ret > 0) {
- 		ssize_t err;
-@@ -186,6 +195,9 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+@@ -183,6 +192,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  	if (o_direct)
  		blk_finish_plug(&plug);
  
 +errout:
-+	if (i_mutex_grabbed)
-+		mutex_unlock(&inode->i_mutex);
+ 	if (aio_mutex)
+ 		mutex_unlock(aio_mutex);
  	return ret;
- }
- 
