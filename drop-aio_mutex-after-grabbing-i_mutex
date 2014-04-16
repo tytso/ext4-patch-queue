@@ -3,10 +3,11 @@ ext4: drop aio_mutex after grabbing i_mutex in ext4_file_write()
 Once we have grabbed i_mutex, this will prevent any other writes from
 proceeding, so we don't need to worry about any writes to unwritten
 regions from taking place.  So drop the aio_mutex so that if there are
-any other parallel writes happen to some other inode that happens to
+any other contemporaneous writes to some other inode that happen to
 hash to the same hash table entry, we won't end up blocking that work.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
 ---
  fs/ext4/file.c | 20 +++++++++-----------
  1 file changed, 9 insertions(+), 11 deletions(-)

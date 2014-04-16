@@ -1,13 +1,25 @@
 ext4: move ext4_update_i_disksize() into mpage_map_and_submit_extent()
 
 The function ext4_update_i_disksize() is used in only one place, in
-the function mpage_map_and_submit_extent().  Move there to simplify
+the function mpage_map_and_submit_extent().  Move its code to simplify
 the code paths, and also move the call to ext4_mark_inode_dirty() into
 the i_data_sem's critical region, to be consistent with all of the
 other places where we update i_disksize.  That way, we also keep the
-raw_inode's i_disksize protected.
+raw_inode's i_disksize protected, to avoid the following race:
+
+      CPU #1                                 CPU #2
+
+   down_write(&i_data_sem)
+   Modify i_disk_size
+   up_write(&i_data_sem)
+                                        down_write(&i_data_sem)
+                                        Modify i_disk_size
+                                        Copy i_disk_size to on-disk inode
+                                        up_write(&i_data_sem)
+   Copy i_disk_size to on-disk inode
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
 Cc: stable@vger.kernel.org
 ---
  fs/ext4/ext4.h  | 17 -----------------

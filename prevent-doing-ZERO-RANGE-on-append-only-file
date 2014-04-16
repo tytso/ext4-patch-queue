@@ -4,38 +4,39 @@ From: Lukas Czerner <lczerner@redhat.com>
 
 Currently punch hole and collapse range fallocate operation are not
 allowed on append only file. This should be case for zero range as well.
-Fix it.
+Fix it by allowing only pure fallocate (possibly with keep size set).
 
 Signed-off-by: Lukas Czerner <lczerner@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/open.c | 7 ++++---
- 1 file changed, 4 insertions(+), 3 deletions(-)
+v2: Change the condition to be future proof as suggested by hch
+
+ fs/open.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
 
 diff --git a/fs/open.c b/fs/open.c
-index 631aea81..7882ff5 100644
+index 631aea81..fe48b2f 100644
 --- a/fs/open.c
 +++ b/fs/open.c
-@@ -254,10 +254,11 @@ int do_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+@@ -254,11 +254,9 @@ int do_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  		return -EBADF;
  
  	/*
 -	 * It's not possible to punch hole or perform collapse range
 -	 * on append only file
-+	 * It's not possible to punch hole, perform collapse range
-+	 * or zero range on append only file
++	 * We can only allow pure fallocate on append only files
  	 */
 -	if (mode & (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_COLLAPSE_RANGE)
-+	if (mode & (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_COLLAPSE_RANGE |
-+		    FALLOC_FL_ZERO_RANGE)
- 	    && IS_APPEND(inode))
+-	    && IS_APPEND(inode))
++	if ((mode & ~FALLOC_FL_KEEP_SIZE) && IS_APPEND(inode))
  		return -EPERM;
  
+ 	if (IS_IMMUTABLE(inode))
 -- 
 1.8.3.1
 
 --
-To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
 the body of a message to majordomo@vger.kernel.org
 More majordomo info at  http://vger.kernel.org/majordomo-info.html
 

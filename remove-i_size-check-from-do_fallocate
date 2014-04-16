@@ -1,24 +1,30 @@
-fs: remove i_size check from do_fallocate
+fs: move falloc collapse range check into the filesystem methods
 
 From: Lukas Czerner <lczerner@redhat.com>
 
-Currently in do_fallocate in collapse range case we're checking whether
-offset + len is not bigger than i_size. However there is nothing which
-would prevent i_size from changing so the check is pointless. It should
-be done in the file system itself and the file system needs to make sure
-that i_size is not going to change.
+Currently in do_fallocate in collapse range case we're checking
+whether offset + len is not bigger than i_size.  However there is
+nothing which would prevent i_size from changing so the check is
+pointless.  It should be done in the file system itself and the file
+system needs to make sure that i_size is not going to change.  The
+i_size check for the other fallocate modes are also done in the
+filesystems.
 
-As it is now we can easily crash kernel by having two processes doing
-truncate and fallocate collapse range at the same time. This can be
-reproduced on ext4 and it is theoretically possible on xfs even though I
-was not able to trigger it with this simple test.
+As it is now we can easily crash the kernel by having two processes
+doing truncate and fallocate collapse range at the same time.  This
+can be reproduced on ext4 and it is theoretically possible on xfs even
+though I was not able to trigger it with this simple test.
 
-This commit removes the check from do_fallocate and adds it to the file
-system.
+This commit removes the check from do_fallocate and adds it to the
+file system.
 
 Signed-off-by: Lukas Czerner <lczerner@redhat.com>
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Acked-by: Dave Chinner <david@fromorbit.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
 ---
+v2: Update description and change subject as suggested by hch
+
  fs/ext4/extents.c | 11 +++++++++--
  fs/open.c         |  8 --------
  fs/xfs/xfs_file.c | 10 +++++++++-
@@ -54,10 +60,10 @@ index 0177150..ff823b7 100644
  		ret = -ETXTBSY;
  		goto out_mutex;
 diff --git a/fs/open.c b/fs/open.c
-index 7882ff5..14af6be 100644
+index fe48b2f..bd42341 100644
 --- a/fs/open.c
 +++ b/fs/open.c
-@@ -287,14 +287,6 @@ int do_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+@@ -284,14 +284,6 @@ int do_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  	if (((offset + len) > inode->i_sb->s_maxbytes) || ((offset + len) < 0))
  		return -EFBIG;
  
@@ -97,7 +103,7 @@ index 003c005..4ba0ae9 100644
 1.8.3.1
 
 --
-To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
 the body of a message to majordomo@vger.kernel.org
 More majordomo info at  http://vger.kernel.org/majordomo-info.html
 
