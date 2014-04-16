@@ -1,0 +1,31 @@
+ext4: remove temporary shim used to merge COLLAPSE_RANGE and ZERO_RANGE
+
+In retrospect, this was a bad way to handle things, since it limited
+testing of these patches.  We should just get the VFS level changes
+merged in first.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ include/trace/events/ext4.h | 9 ---------
+ 1 file changed, 9 deletions(-)
+
+diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
+index 010ea89..6a1a024 100644
+--- a/include/trace/events/ext4.h
++++ b/include/trace/events/ext4.h
+@@ -16,15 +16,6 @@ struct mpage_da_data;
+ struct ext4_map_blocks;
+ struct extent_status;
+ 
+-/* shim until we merge in the xfs_collapse_range branch */
+-#ifndef FALLOC_FL_COLLAPSE_RANGE
+-#define FALLOC_FL_COLLAPSE_RANGE	0x08
+-#endif
+-
+-#ifndef FALLOC_FL_ZERO_RANGE
+-#define FALLOC_FL_ZERO_RANGE           0x10
+-#endif
+-
+ #define EXT4_I(inode) (container_of(inode, struct ext4_inode_info, vfs_inode))
+ 
+ #define show_mballoc_flags(flags) __print_flags(flags, "|",	\
