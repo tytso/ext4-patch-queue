@@ -1,0 +1,60 @@
+ext4: fix extent merging in ext4_ext_shift_path_extents()
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+There is a bug in ext4_ext_shift_path_extents() where if we actually
+manage to merge a extent we would skip shifting the next extent. This
+will result in in one extent in the extent tree not being properly
+shifted.
+
+This is causing failure in various xfstests tests using fsx or fsstress
+with collapse range support. It will also cause file system corruption
+which looks something like:
+
+ e2fsck 1.42.9 (4-Feb-2014)
+ Pass 1: Checking inodes, blocks, and sizes
+ Inode 20 has out of order extents
+        (invalid logical block 3, physical block 492938, len 2)
+ Clear? yes
+ ...
+
+when running e2fsck.
+
+It's also very easily reproducible just by running fsx without any
+parameters. I can usually hit the problem within a minute.
+
+Fix it by increasing ex_start only if we're not merging the extent.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+---
+ fs/ext4/extents.c | 15 ++++++++-------
+ 1 file changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 283e2e8..0503b43 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -5263,13 +5263,14 @@ ext4_ext_shift_path_extents(struct ext4_ext_path *path, ext4_lblk_t shift,
+ 
+ 			while (ex_start <= ex_last) {
+ 				le32_add_cpu(&ex_start->ee_block, -shift);
+-				if (ex_start >
+-					EXT_FIRST_EXTENT(path[depth].p_hdr)) {
+-					if (ext4_ext_try_to_merge_right(inode,
+-						path, ex_start - 1))
+-						ex_last--;
+-				}
+-				ex_start++;
++				/* Try to merge to the left. */
++				if ((ex_start >
++				     EXT_FIRST_EXTENT(path[depth].p_hdr)) &&
++				    ext4_ext_try_to_merge_right(inode,
++							path, ex_start - 1))
++					ex_last--;
++				else
++					ex_start++;
+ 			}
+ 			err = ext4_ext_dirty(handle, inode, path + depth);
+ 			if (err)
