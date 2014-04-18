@@ -1,0 +1,40 @@
+ext4: fix removing status extents in ext4_collapse_range()
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Currently in ext4_collapse_range() when calling ext4_es_remove_extent() to
+remove status extents we're passing (EXT_MAX_BLOCKS - punch_start - 1)
+in order to remove all extents from start of the collapse range to the
+end of the file. However this is wrong because we might miss the
+possible extent covering the last block of the file.
+
+Fix it by removing the -1.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+---
+ fs/ext4/extents.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 821c1d4..25ed60f 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -5422,7 +5422,7 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
+ 	ext4_discard_preallocations(inode);
+ 
+ 	ret = ext4_es_remove_extent(inode, punch_start,
+-				    EXT_MAX_BLOCKS - punch_start - 1);
++				    EXT_MAX_BLOCKS - punch_start);
+ 	if (ret) {
+ 		up_write(&EXT4_I(inode)->i_data_sem);
+ 		goto out_stop;
+-- 
+1.8.3.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
