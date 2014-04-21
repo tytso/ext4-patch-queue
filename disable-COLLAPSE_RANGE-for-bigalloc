@@ -1,0 +1,38 @@
+ext4: disable COLLAPSE_RANGE for bigalloc
+
+From: Namjae Jeon <namjae.jeon@samsung.com>
+
+Once COLLAPSE RANGE is be disable for ext4 with bigalloc feature till finding
+root-cause of problem. It will be enable with fixing that regression of
+xfstest(generic 075 and 091) again.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Ashish Sangwan <a.sangwan@samsung.com>
+Reviewed-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 4cf8c5b..3276865 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -5406,6 +5406,9 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
+ 	if (!S_ISREG(inode->i_mode))
+ 		return -EINVAL;
+ 
++	if (EXT4_SB(inode->i_sb)->s_cluster_ratio > 1)
++		return -EOPNOTSUPP;
++
+ 	trace_ext4_collapse_range(inode, offset, len);
+ 
+ 	punch_start = offset >> EXT4_BLOCK_SIZE_BITS(sb);
+-- 
+1.7.11-rc0
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
