@@ -1,0 +1,28 @@
+From: Zhang Zhen <zhenzhang.zhang@huawei.com>
+
+ext4: avoid unneeded lookup when xattr name is invalid
+
+In ext4_xattr_set_handle() we have checked the xattr name's length. So
+we should also check it in ext4_xattr_get() to avoid unneeded lookup
+caused by invalid name.
+
+Signed-off-by: Zhang Zhen <zhenzhang.zhang@huawei.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/xattr.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index 1f5cf58..340bdfa 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -369,6 +369,9 @@ ext4_xattr_get(struct inode *inode, int name_index, const char *name,
+ {
+ 	int error;
+
++	if (strlen(name) > 255)
++		return -ERANGE;
++
+ 	down_read(&EXT4_I(inode)->xattr_sem);
+ 	error = ext4_xattr_ibody_get(inode, name_index, name, buffer,
+ 				     buffer_size);
