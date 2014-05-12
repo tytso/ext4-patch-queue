@@ -5,11 +5,11 @@ This shouldn't change any logic flow; just delete duplicated code.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Reviewed-by: Jan Kara <jack@suse.cz>
 ---
- fs/ext4/file.c | 58 ++++++++++++++++++++++------------------------------------
- 1 file changed, 22 insertions(+), 36 deletions(-)
+ fs/ext4/file.c | 56 ++++++++++++++++++++++----------------------------------
+ 1 file changed, 22 insertions(+), 34 deletions(-)
 
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 3ec0c09..4925c5a 100644
+index 20f1c03..3736d9d 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
 @@ -97,8 +97,9 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
@@ -54,13 +54,12 @@ index 3ec0c09..4925c5a 100644
  		    !file->f_mapping->nrpages && pos + length <= i_size_read(inode)) {
  			struct ext4_map_blocks map;
  			unsigned int blkbits = inode->i_blkbits;
-@@ -168,37 +167,24 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+@@ -168,35 +167,24 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  			if (err == len && (map.m_flags & EXT4_MAP_MAPPED))
  				overwrite = 1;
  		}
 -
--		ret = __generic_file_aio_write(iocb, iov, nr_segs,
--					       &iocb->ki_pos);
+-		ret = __generic_file_aio_write(iocb, iov, nr_segs);
 -		mutex_unlock(&inode->i_mutex);
 -
 -		if (ret > 0) {
@@ -77,13 +76,12 @@ index 3ec0c09..4925c5a 100644
 -	} else {
 +	} else
  		mutex_lock(&inode->i_mutex);
--		ret = __generic_file_aio_write(iocb, iov, nr_segs,
--					       &iocb->ki_pos);
+-		ret = __generic_file_aio_write(iocb, iov, nr_segs);
 -		mutex_unlock(&inode->i_mutex);
  
 -		if (ret > 0) {
 -			ssize_t err;
-+	ret = __generic_file_aio_write(iocb, iov, nr_segs, &iocb->ki_pos);
++	ret = __generic_file_aio_write(iocb, iov, nr_segs);
 +	mutex_unlock(&inode->i_mutex);
  
 -			err = generic_write_sync(file, iocb->ki_pos - ret, ret);

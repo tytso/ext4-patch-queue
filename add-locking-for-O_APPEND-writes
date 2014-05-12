@@ -9,17 +9,13 @@ For O_APPEND always assume that the write is unaligned so call
 ext4_unwritten_wait().  And to solve the second problem, take the
 i_mutex earlier before we start the s_bitmap_maxbytes check.
 
-we need to make sure we only allow one
-O_APPEND write to proceed at a time so that the the s_bitmap_maxbytes
-check can be properly checked.
-
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
  fs/ext4/file.c | 42 ++++++++++++++++++++++++++----------------
  1 file changed, 26 insertions(+), 16 deletions(-)
 
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 4925c5a..01a2f15 100644
+index 3736d9d..7d55a59 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
 @@ -107,16 +107,36 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
@@ -88,7 +84,7 @@ index 4925c5a..01a2f15 100644
 -		mutex_lock(&inode->i_mutex);
 +	}
  
- 	ret = __generic_file_aio_write(iocb, iov, nr_segs, &iocb->ki_pos);
+ 	ret = __generic_file_aio_write(iocb, iov, nr_segs);
  	mutex_unlock(&inode->i_mutex);
 @@ -183,6 +192,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  	if (o_direct)

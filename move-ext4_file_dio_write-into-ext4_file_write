@@ -6,11 +6,11 @@ around in preparation for some code simplification work.
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Reviewed-by: Jan Kara <jack@suse.cz>
 ---
- fs/ext4/file.c | 139 +++++++++++++++++++++++++++-------------------------------
- 1 file changed, 65 insertions(+), 74 deletions(-)
+ fs/ext4/file.c | 138 ++++++++++++++++++++++++++-------------------------------
+ 1 file changed, 64 insertions(+), 74 deletions(-)
 
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 7a24d1c..64c3de7 100644
+index 79b77a5..20f1c03 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
 @@ -92,82 +92,15 @@ ext4_unaligned_aio(struct inode *inode, const struct iovec *iov,
@@ -72,7 +72,7 @@ index 7a24d1c..64c3de7 100644
 -			overwrite = 1;
 -	}
 -
--	ret = __generic_file_aio_write(iocb, iov, nr_segs, &iocb->ki_pos);
+-	ret = __generic_file_aio_write(iocb, iov, nr_segs);
 -	mutex_unlock(&inode->i_mutex);
 -
 -	if (ret > 0) {
@@ -107,7 +107,7 @@ index 7a24d1c..64c3de7 100644
  
  		if ((pos > sbi->s_bitmap_maxbytes ||
  		    (pos == sbi->s_bitmap_maxbytes && length > 0)))
-@@ -191,9 +123,68 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+@@ -191,9 +123,67 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  		}
  	}
  
@@ -160,8 +160,7 @@ index 7a24d1c..64c3de7 100644
 +				overwrite = 1;
 +		}
 +
-+		ret = __generic_file_aio_write(iocb, iov, nr_segs,
-+					       &iocb->ki_pos);
++		ret = __generic_file_aio_write(iocb, iov, nr_segs);
 +		mutex_unlock(&inode->i_mutex);
 +
 +		if (ret > 0) {
@@ -177,5 +176,5 @@ index 7a24d1c..64c3de7 100644
 +			mutex_unlock(ext4_aio_mutex(inode));
 +	} else {
  		mutex_lock(&inode->i_mutex);
- 		ret = __generic_file_aio_write(iocb, iov, nr_segs,
- 					       &iocb->ki_pos);
+ 		ret = __generic_file_aio_write(iocb, iov, nr_segs);
+ 		mutex_unlock(&inode->i_mutex);
