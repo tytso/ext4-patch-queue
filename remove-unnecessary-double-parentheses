@@ -1,0 +1,133 @@
+ext4: remove unnecessary double parentheses
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/ext4/extents.c |  6 +++---
+ fs/ext4/inode.c   | 10 +++++-----
+ fs/ext4/migrate.c |  2 +-
+ fs/ext4/super.c   |  2 +-
+ fs/ext4/xattr.c   |  2 +-
+ 5 files changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index e305a31..662e94c 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4018,7 +4018,7 @@ ext4_ext_handle_unwritten_extents(handle_t *handle, struct inode *inode,
+ 						    allocated, newblock);
+ 
+ 	/* get_block() before submit the IO, split the extent */
+-	if ((flags & EXT4_GET_BLOCKS_PRE_IO)) {
++	if (flags & EXT4_GET_BLOCKS_PRE_IO) {
+ 		ret = ext4_split_convert_extents(handle, inode, map,
+ 					 path, flags | EXT4_GET_BLOCKS_CONVERT);
+ 		if (ret <= 0)
+@@ -4036,7 +4036,7 @@ ext4_ext_handle_unwritten_extents(handle_t *handle, struct inode *inode,
+ 		goto out;
+ 	}
+ 	/* IO end_io complete, convert the filled extent to written */
+-	if ((flags & EXT4_GET_BLOCKS_CONVERT)) {
++	if (flags & EXT4_GET_BLOCKS_CONVERT) {
+ 		ret = ext4_convert_unwritten_extents_endio(handle, inode, map,
+ 							path);
+ 		if (ret >= 0) {
+@@ -4475,7 +4475,7 @@ got_allocated_blocks:
+ 		 * For non asycn direct IO case, flag the inode state
+ 		 * that we need to perform conversion when IO is done.
+ 		 */
+-		if ((flags & EXT4_GET_BLOCKS_PRE_IO))
++		if (flags & EXT4_GET_BLOCKS_PRE_IO)
+ 			set_unwritten = 1;
+ 	}
+ 
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 574c6dd..2bdbfcb 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -443,7 +443,7 @@ static void ext4_map_blocks_es_recheck(handle_t *handle,
+ 	 * could be converted.
+ 	 */
+ 	if (!(flags & EXT4_GET_BLOCKS_NO_LOCK))
+-		down_read((&EXT4_I(inode)->i_data_sem));
++		down_read(&EXT4_I(inode)->i_data_sem);
+ 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)) {
+ 		retval = ext4_ext_map_blocks(handle, inode, map, flags &
+ 					     EXT4_GET_BLOCKS_KEEP_SIZE);
+@@ -555,7 +555,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
+ 	 * file system block.
+ 	 */
+ 	if (!(flags & EXT4_GET_BLOCKS_NO_LOCK))
+-		down_read((&EXT4_I(inode)->i_data_sem));
++		down_read(&EXT4_I(inode)->i_data_sem);
+ 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)) {
+ 		retval = ext4_ext_map_blocks(handle, inode, map, flags &
+ 					     EXT4_GET_BLOCKS_KEEP_SIZE);
+@@ -627,7 +627,7 @@ found:
+ 	 * the write lock of i_data_sem, and call get_blocks()
+ 	 * with create == 1 flag.
+ 	 */
+-	down_write((&EXT4_I(inode)->i_data_sem));
++	down_write(&EXT4_I(inode)->i_data_sem);
+ 
+ 	/*
+ 	 * if the caller is from delayed allocation writeout path
+@@ -1540,7 +1540,7 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
+ 		ext4_es_lru_add(inode);
+ 		if (ext4_es_is_hole(&es)) {
+ 			retval = 0;
+-			down_read((&EXT4_I(inode)->i_data_sem));
++			down_read(&EXT4_I(inode)->i_data_sem);
+ 			goto add_delayed;
+ 		}
+ 
+@@ -1577,7 +1577,7 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
+ 	 * Try to see if we can get the block without requesting a new
+ 	 * file system block.
+ 	 */
+-	down_read((&EXT4_I(inode)->i_data_sem));
++	down_read(&EXT4_I(inode)->i_data_sem);
+ 	if (ext4_has_inline_data(inode)) {
+ 		/*
+ 		 * We will soon create blocks for this page, and let
+diff --git a/fs/ext4/migrate.c b/fs/ext4/migrate.c
+index 2ae73a8..ec09243 100644
+--- a/fs/ext4/migrate.c
++++ b/fs/ext4/migrate.c
+@@ -505,7 +505,7 @@ int ext4_ext_migrate(struct inode *inode)
+ 	 * with i_data_sem held to prevent racing with block
+ 	 * allocation.
+ 	 */
+-	down_read((&EXT4_I(inode)->i_data_sem));
++	down_read(&EXT4_I(inode)->i_data_sem);
+ 	ext4_set_inode_state(inode, EXT4_STATE_EXT_MIGRATE);
+ 	up_read((&EXT4_I(inode)->i_data_sem));
+ 
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index b26a395..84e3303 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1904,7 +1904,7 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+ 	if (!(sbi->s_mount_state & EXT4_VALID_FS))
+ 		ext4_msg(sb, KERN_WARNING, "warning: mounting unchecked fs, "
+ 			 "running e2fsck is recommended");
+-	else if ((sbi->s_mount_state & EXT4_ERROR_FS))
++	else if (sbi->s_mount_state & EXT4_ERROR_FS)
+ 		ext4_msg(sb, KERN_WARNING,
+ 			 "warning: mounting fs with errors, "
+ 			 "running e2fsck is recommended");
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index c6ae6fa..3a5ac7c 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -899,7 +899,7 @@ inserted:
+ 			 * take i_data_sem because we will test
+ 			 * i_delalloc_reserved_flag in ext4_mb_new_blocks
+ 			 */
+-			down_read((&EXT4_I(inode)->i_data_sem));
++			down_read(&EXT4_I(inode)->i_data_sem);
+ 			block = ext4_new_meta_blocks(handle, inode, goal, 0,
+ 						     NULL, &error);
+ 			up_read((&EXT4_I(inode)->i_data_sem));
