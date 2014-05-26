@@ -1,0 +1,32 @@
+ext4: fix wrong assert in ext4_mb_normalize_request()
+
+From: Maurizio Lombardi <mlombard@redhat.com>
+
+The variable "size" is expressed as number of blocks and not as
+number of clusters, this could trigger a kernel panic when using
+ext4 with the size of a cluster different from the size of a block.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Maurizio Lombardi <mlombard@redhat.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 04a5c75..08ddfda 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -3135,7 +3135,7 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 	}
+ 	BUG_ON(start + size <= ac->ac_o_ex.fe_logical &&
+ 			start > ac->ac_o_ex.fe_logical);
+-	BUG_ON(size <= 0 || size > EXT4_CLUSTERS_PER_GROUP(ac->ac_sb));
++	BUG_ON(size <= 0 || size > EXT4_BLOCKS_PER_GROUP(ac->ac_sb));
+ 
+ 	/* now prepare goal request */
+ 
+-- 
+Maurizio Lombardi
+
+
