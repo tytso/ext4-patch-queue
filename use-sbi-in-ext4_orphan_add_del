@@ -1,4 +1,4 @@
-ext4: Use sbi in ext4_orphan_{add|del}()
+ext4: use sbi in ext4_orphan_{add|del}()
 
 From: Jan Kara <jack@suse.cz>
 
@@ -13,10 +13,10 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  1 file changed, 15 insertions(+), 16 deletions(-)
 
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 1cb84f78909e..5fcaa85b6dc5 100644
+index 7ac6167..eb61584 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
-@@ -2550,13 +2550,14 @@ static int empty_dir(struct inode *inode)
+@@ -2551,13 +2551,14 @@ static int empty_dir(struct inode *inode)
  int ext4_orphan_add(handle_t *handle, struct inode *inode)
  {
  	struct super_block *sb = inode->i_sb;
@@ -33,7 +33,7 @@ index 1cb84f78909e..5fcaa85b6dc5 100644
  	if (!list_empty(&EXT4_I(inode)->i_orphan))
  		goto out_unlock;
  
-@@ -2569,8 +2570,8 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
+@@ -2570,8 +2571,8 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
  	J_ASSERT((S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
  		  S_ISLNK(inode->i_mode)) || inode->i_nlink == 0);
  
@@ -44,7 +44,7 @@ index 1cb84f78909e..5fcaa85b6dc5 100644
  	if (err)
  		goto out_unlock;
  
-@@ -2582,12 +2583,12 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
+@@ -2583,12 +2584,12 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
  	 * orphan list. If so skip on-disk list modification.
  	 */
  	if (NEXT_ORPHAN(inode) && NEXT_ORPHAN(inode) <=
@@ -60,7 +60,7 @@ index 1cb84f78909e..5fcaa85b6dc5 100644
  	err = ext4_handle_dirty_super(handle, sb);
  	rc = ext4_mark_iloc_dirty(handle, inode, &iloc);
  	if (!err)
-@@ -2603,14 +2604,14 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
+@@ -2604,14 +2605,14 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
  	 * anyway on the next recovery. */
  mem_insert:
  	if (!err)
@@ -78,7 +78,7 @@ index 1cb84f78909e..5fcaa85b6dc5 100644
  	return err;
  }
  
-@@ -2622,22 +2623,20 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
+@@ -2623,22 +2624,20 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
  {
  	struct list_head *prev;
  	struct ext4_inode_info *ei = EXT4_I(inode);
@@ -104,7 +104,7 @@ index 1cb84f78909e..5fcaa85b6dc5 100644
  
  	jbd_debug(4, "remove inode %lu from orphan list\n", inode->i_ino);
  
-@@ -2683,7 +2682,7 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
+@@ -2684,7 +2683,7 @@ int ext4_orphan_del(handle_t *handle, struct inode *inode)
  out_err:
  	ext4_std_error(inode->i_sb, err);
  out:
@@ -113,11 +113,3 @@ index 1cb84f78909e..5fcaa85b6dc5 100644
  	return err;
  
  out_brelse:
--- 
-1.8.1.4
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
