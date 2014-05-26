@@ -1,0 +1,44 @@
+ext4: fix ZERO_RANGE test failure in data journalling
+
+From: Namjae Jeon <namjae.jeon@samsung.com>
+
+xfstests generic/091 is failing when mounting ext4 with data=journal.
+I think that this regression is same problem that occurred prior to collapse
+range issue. So ZERO RANGE also need to call ext4_force_commit as
+collapse range.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Ashish Sangwan <a.sangwan@samsung.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/extents.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 1c5e877..02143d6 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4743,6 +4743,15 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+ 
+ 	mutex_lock(&EXT4_I(inode)->i_write_mutex);
+ 
++	/* Call ext4_force_commit to flush all data in case of data=journal. */
++	if (ext4_should_journal_data(inode)) {
++		ret = ext4_force_commit(inode->i_sb);
++		if (ret) {
++			mutex_unlock(&EXT4_I(inode)->i_write_mutex);
++			return ret;
++		}
++	}
++
+ 	/*
+ 	 * Write out all dirty pages to avoid race conditions
+ 	 * Then release them.
+-- 
+1.7.11-rc0
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
