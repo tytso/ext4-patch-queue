@@ -12,10 +12,10 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/ext4.h    |  6 +++---
  fs/ext4/extents.c | 18 +++++++++++++++---
- fs/ext4/file.c    | 18 +++++++++++-------
+ fs/ext4/file.c    | 23 +++++++++++++----------
  fs/ext4/inode.c   |  7 ++++++-
  fs/ext4/super.c   |  3 +--
- 5 files changed, 36 insertions(+), 16 deletions(-)
+ 5 files changed, 38 insertions(+), 19 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 1479e2a..0519715 100644
@@ -112,7 +112,7 @@ index 5bbe4256..8ffab40 100644
  	return ret;
  }
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 4e8bc284..8c39305 100644
+index 4e8bc284..e5cd87f 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
 @@ -97,7 +97,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
@@ -143,6 +143,17 @@ index 4e8bc284..8c39305 100644
  		ext4_unwritten_wait(inode);
  	}
  
+@@ -134,8 +135,8 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+ 		if ((pos > sbi->s_bitmap_maxbytes) ||
+ 		    (pos == sbi->s_bitmap_maxbytes && length > 0)) {
+ 			mutex_unlock(&inode->i_mutex);
+-			ret = -EFBIG;
+-			goto errout;
++			mutex_unlock(&EXT4_I(inode)->i_write_mutex);
++			return -EFBIG;
+ 		}
+ 
+ 		if (pos + length > sbi->s_bitmap_maxbytes) {
 @@ -150,8 +151,9 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
  		iocb->private = &overwrite;
  
@@ -164,10 +175,11 @@ index 4e8bc284..8c39305 100644
  
  	if (ret > 0) {
  		ssize_t err;
-@@ -193,8 +197,8 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+@@ -192,9 +196,8 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+ 	if (o_direct)
  		blk_finish_plug(&plug);
  
- errout:
+-errout:
 -	if (aio_mutex)
 -		mutex_unlock(aio_mutex);
 +	if (unaligned_direct_aio)
