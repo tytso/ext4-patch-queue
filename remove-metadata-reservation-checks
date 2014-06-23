@@ -7,12 +7,12 @@ no longer necessary.
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/balloc.c  |  1 -
- fs/ext4/ext4.h    |  1 -
- fs/ext4/extents.c |  3 +-
- fs/ext4/inode.c   | 93 +++---------------------------------------------------
- fs/ext4/mballoc.c | 15 +--------
- 5 files changed, 7 insertions(+), 106 deletions(-)
+ fs/ext4/balloc.c  |   1 -
+ fs/ext4/ext4.h    |   1 -
+ fs/ext4/extents.c |   3 +-
+ fs/ext4/inode.c   | 128 +++--------------------------------------------------
+ fs/ext4/mballoc.c |  15 +------
+ 5 files changed, 7 insertions(+), 141 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
 index 0762d14..807071d 100644
@@ -53,10 +53,29 @@ index 4da228a..b30172d 100644
  
  /*
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 8a06473..4ccb624 100644
+index 8a06473..027ee8c 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -357,35 +357,10 @@ void ext4_da_update_reserve_space(struct inode *inode,
+@@ -325,18 +325,6 @@ qsize_t *ext4_get_reserved_space(struct inode *inode)
+ #endif
+ 
+ /*
+- * Calculate the number of metadata blocks need to reserve
+- * to allocate a block located at @lblock
+- */
+-static int ext4_calc_metadata_amount(struct inode *inode, ext4_lblk_t lblock)
+-{
+-	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
+-		return ext4_ext_calc_metadata_amount(inode, lblock);
+-
+-	return ext4_ind_calc_metadata_amount(inode, lblock);
+-}
+-
+-/*
+  * Called with i_data_sem down, which is important since we can call
+  * ext4_discard_preallocations() from here.
+  */
+@@ -357,35 +345,10 @@ void ext4_da_update_reserve_space(struct inode *inode,
  		used = ei->i_reserved_data_blocks;
  	}
  
@@ -93,10 +112,20 @@ index 8a06473..4ccb624 100644
  	spin_unlock(&EXT4_I(inode)->i_block_reservation_lock);
  
  	/* Update quota subsystem for data blocks */
-@@ -1232,35 +1207,6 @@ static int ext4_da_reserve_metadata(struct inode *inode, ext4_lblk_t lblock)
- 	ext4_lblk_t save_last_lblock;
- 	int save_len;
+@@ -1222,49 +1185,6 @@ static int ext4_journalled_write_end(struct file *file,
+ }
  
+ /*
+- * Reserve a metadata for a single block located at lblock
+- */
+-static int ext4_da_reserve_metadata(struct inode *inode, ext4_lblk_t lblock)
+-{
+-	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+-	struct ext4_inode_info *ei = EXT4_I(inode);
+-	unsigned int md_needed;
+-	ext4_lblk_t save_last_lblock;
+-	int save_len;
+-
 -	/*
 -	 * recalculate the amount of metadata blocks to reserve
 -	 * in order to allocate nrblocks
@@ -126,10 +155,23 @@ index 8a06473..4ccb624 100644
 -	ei->i_reserved_meta_blocks += md_needed;
 -	spin_unlock(&ei->i_block_reservation_lock);
 -
- 	return 0;       /* success */
- }
+-	return 0;       /* success */
+-}
+-
+-/*
+  * Reserve a single cluster located at lblock
+  */
+ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
+@@ -1273,8 +1193,6 @@ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
+ 	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	unsigned int md_needed;
+ 	int ret;
+-	ext4_lblk_t save_last_lblock;
+-	int save_len;
  
-@@ -1295,25 +1241,15 @@ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
+ 	/*
+ 	 * We will charge metadata quota at writeout time; this saves
+@@ -1295,25 +1213,15 @@ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
  	 * ext4_calc_metadata_amount() has side effects, which we have
  	 * to be prepared undo if we fail to claim space.
  	 */
@@ -158,7 +200,7 @@ index 8a06473..4ccb624 100644
  	spin_unlock(&ei->i_block_reservation_lock);
  
  	return 0;       /* success */
-@@ -1346,20 +1282,6 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
+@@ -1346,20 +1254,6 @@ static void ext4_da_release_space(struct inode *inode, int to_free)
  	}
  	ei->i_reserved_data_blocks -= to_free;
  
@@ -179,7 +221,7 @@ index 8a06473..4ccb624 100644
  	/* update fs dirty data blocks counter */
  	percpu_counter_sub(&sbi->s_dirtyclusters_counter, to_free);
  
-@@ -1500,10 +1422,6 @@ static void ext4_print_free_blocks(struct inode *inode)
+@@ -1500,10 +1394,6 @@ static void ext4_print_free_blocks(struct inode *inode)
  	ext4_msg(sb, KERN_CRIT, "Block reservation details");
  	ext4_msg(sb, KERN_CRIT, "i_reserved_data_blocks=%u",
  		 ei->i_reserved_data_blocks);
@@ -190,7 +232,21 @@ index 8a06473..4ccb624 100644
  	return;
  }
  
-@@ -2843,8 +2761,7 @@ int ext4_alloc_da_blocks(struct inode *inode)
+@@ -1620,13 +1510,6 @@ add_delayed:
+ 				retval = ret;
+ 				goto out_unlock;
+ 			}
+-		} else {
+-			ret = ext4_da_reserve_metadata(inode, iblock);
+-			if (ret) {
+-				/* not enough space to reserve */
+-				retval = ret;
+-				goto out_unlock;
+-			}
+ 		}
+ 
+ 		ret = ext4_es_insert_extent(inode, map->m_lblk, map->m_len,
+@@ -2843,8 +2726,7 @@ int ext4_alloc_da_blocks(struct inode *inode)
  {
  	trace_ext4_alloc_da_blocks(inode);
  
