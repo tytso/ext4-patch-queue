@@ -37,10 +37,10 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  3 files changed, 207 insertions(+), 76 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 1479e2a..22113a73 100644
+index d35c78c..5535ed2 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2145,8 +2145,8 @@ extern ssize_t ext4_ind_direct_IO(int rw, struct kiocb *iocb,
+@@ -2143,8 +2143,8 @@ extern ssize_t ext4_ind_direct_IO(int rw, struct kiocb *iocb,
  extern int ext4_ind_calc_metadata_amount(struct inode *inode, sector_t lblock);
  extern int ext4_ind_trans_blocks(struct inode *inode, int nrblocks);
  extern void ext4_ind_truncate(handle_t *, struct inode *inode);
@@ -52,10 +52,10 @@ index 1479e2a..22113a73 100644
  /* ioctl.c */
  extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
 diff --git a/fs/ext4/indirect.c b/fs/ext4/indirect.c
-index 594009f..adae538 100644
+index fd69da1..e75f840 100644
 --- a/fs/ext4/indirect.c
 +++ b/fs/ext4/indirect.c
-@@ -1291,89 +1291,220 @@ do_indirects:
+@@ -1295,97 +1295,220 @@ do_indirects:
  	}
  }
  
@@ -94,11 +94,7 @@ index 594009f..adae538 100644
 -		blk = *i_data;
 -		if (level > 0) {
 -			ext4_lblk_t first2;
--			bh = sb_bread(inode->i_sb, le32_to_cpu(blk));
--			if (!bh) {
--				EXT4_ERROR_INODE_BLOCK(inode, le32_to_cpu(blk),
--						       "Read failure");
--				return -EIO;
+-			ext4_lblk_t count2;
 +	ext4_lblk_t offsets[4], offsets2[4];
 +	Indirect chain[4], chain2[4];
 +	Indirect *partial, *partial2;
@@ -106,7 +102,16 @@ index 594009f..adae538 100644
 +	__le32 nr = 0, nr2 = 0;
 +	int n = 0, n2 = 0;
 +	unsigned blocksize = inode->i_sb->s_blocksize;
-+
+ 
+-			bh = sb_bread(inode->i_sb, le32_to_cpu(blk));
+-			if (!bh) {
+-				EXT4_ERROR_INODE_BLOCK(inode, le32_to_cpu(blk),
+-						       "Read failure");
+-				return -EIO;
+-			}
+-			if (first > offset) {
+-				first2 = first - offset;
+-				count2 = count;
 +	max_block = (EXT4_SB(inode->i_sb)->s_bitmap_maxbytes + blocksize-1)
 +					>> EXT4_BLOCK_SIZE_BITS(inode->i_sb);
 +	if (end >= max_block)
@@ -150,17 +155,18 @@ index 594009f..adae538 100644
 +				ext4_free_branches(handle, inode, NULL,
 +					   &nr, &nr+1, (chain+n-1) - partial);
 +				*partial->p = 0;
-+			} else {
+ 			} else {
+-				first2 = 0;
+-				count2 = count - (offset - first);
 +				/* Shared branch grows from an indirect block */
 +				BUFFER_TRACE(partial->bh, "get_write_access");
 +				ext4_free_branches(handle, inode, partial->bh,
 +					partial->p,
 +					partial->p+1, (chain+n-1) - partial);
  			}
--			first2 = (first > offset) ? first - offset : 0;
 -			ret = free_hole_blocks(handle, inode, bh,
 -					       (__le32 *)bh->b_data, level - 1,
--					       first2, count - offset,
+-					       first2, count2,
 -					       inode->i_sb->s_blocksize >> 2);
 -			if (ret) {
 -				brelse(bh);
@@ -208,8 +214,8 @@ index 594009f..adae538 100644
 -		if (level == 0 ||
 -		    (bh && all_zeroes((__le32 *)bh->b_data,
 -				      (__le32 *)bh->b_data + addr_per_block))) {
--			ext4_free_data(handle, inode, parent_bh, &blk, &blk+1);
--			*i_data = 0;
+-			ext4_free_data(handle, inode, parent_bh,
+-				       i_data, i_data + 1);
 +
 +		/*
 +		 * Clear the ends of indirect blocks on the shared branch
@@ -350,10 +356,10 @@ index 594009f..adae538 100644
  }
 -
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 7fcd68e..a5adc09 100644
+index 027ee8c..367a60c 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -3626,7 +3626,7 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
+@@ -3506,7 +3506,7 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
  		ret = ext4_ext_remove_space(inode, first_block,
  					    stop_block - 1);
  	else
@@ -362,11 +368,3 @@ index 7fcd68e..a5adc09 100644
  					    stop_block);
  
  	up_write(&EXT4_I(inode)->i_data_sem);
--- 
-1.8.3.1
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
