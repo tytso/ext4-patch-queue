@@ -1,0 +1,59 @@
+ext4: disable synchronous transaction batching if max_batch_time==0
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+The mount manpage says of the max_batch_time option,
+
+	This optimization can be turned off entirely
+	by setting max_batch_time to 0.
+
+But the code doesn't do that.  So fix the code to do
+that.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+
+Lightly tested: it mounts, accepts the mount option == 0,
+shows "0" in /proc/mounts, and does basic IO & unmounts
+without crashing.  ;)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 6f9e6fa..ab5a791 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1524,8 +1524,6 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
+ 			arg = JBD2_DEFAULT_MAX_COMMIT_AGE;
+ 		sbi->s_commit_interval = HZ * arg;
+ 	} else if (token == Opt_max_batch_time) {
+-		if (arg == 0)
+-			arg = EXT4_DEF_MAX_BATCH_TIME;
+ 		sbi->s_max_batch_time = arg;
+ 	} else if (token == Opt_min_batch_time) {
+ 		sbi->s_min_batch_time = arg;
+
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index 38cfcf5..6f0f590 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -1588,9 +1588,12 @@ int jbd2_journal_stop(handle_t *handle)
+ 	 * to perform a synchronous write.  We do this to detect the
+ 	 * case where a single process is doing a stream of sync
+ 	 * writes.  No point in waiting for joiners in that case.
++	 *
++	 * Setting max_batch_time to 0 disables this completely.
+ 	 */
+ 	pid = current->pid;
+-	if (handle->h_sync && journal->j_last_sync_writer != pid) {
++	if (handle->h_sync && journal->j_last_sync_writer != pid &&
++	    journal->j_max_batch_time) {
+ 		u64 commit_time, trans_time;
+ 
+ 		journal->j_last_sync_writer = pid;
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
