@@ -1,0 +1,30 @@
+ext4: fix potential null pointer dereference in ext4_free_inode
+
+From: Namjae Jeon <namjae.jeon@samsung.com>
+
+Fix potential null pointer dereferencing problem caused by e43bb4e612
+("ext4: decrement free clusters/inodes counters when block group declared bad")
+
+Reported-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Ashish Sangwan <a.sangwan@samsung.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Lukas Czerner <lczerner@redhat.com>
+
+---
+fs/ext4/ialloc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index a87455d..6bfe7eb 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -338,7 +338,7 @@ out:
+ 			fatal = err;
+ 	} else {
+ 		ext4_error(sb, "bit already cleared for inode %lu", ino);
+-		if (!EXT4_MB_GRP_IBITMAP_CORRUPT(grp)) {
++		if (gdp && !EXT4_MB_GRP_IBITMAP_CORRUPT(grp)) {
+ 			int count;
+ 			count = ext4_free_inodes_count(sb, gdp);
+ 			percpu_counter_sub(&sbi->s_freeinodes_counter,
