@@ -1,0 +1,37 @@
+ext4: remove readpage() check in ext4_mmap_file()
+
+From: Zhang Zhen <zhenzhang.zhang@huawei.com>
+
+There is no kind of file which does not supply a page reading function.
+
+Signed-off-by: Zhang Zhen <zhenzhang.zhang@huawei.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/file.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 8695f70..aca7b24 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -200,10 +200,6 @@ static const struct vm_operations_struct ext4_file_vm_ops = {
+
+ static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
+ {
+-	struct address_space *mapping = file->f_mapping;
+-
+-	if (!mapping->a_ops->readpage)
+-		return -ENOEXEC;
+ 	file_accessed(file);
+ 	vma->vm_ops = &ext4_file_vm_ops;
+ 	return 0;
+-- 
+1.8.1.2
+
+
+.
+
+
+
+
+
