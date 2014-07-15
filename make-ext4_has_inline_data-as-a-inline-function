@@ -1,0 +1,123 @@
+ext4: make ext4_has_inline_data() as a inline function
+
+From: Zheng Liu <wenqing.lz@taobao.com>
+
+Now ext4_has_inline_data() is used in wide spread codepaths.  So we need
+to make it as a inline function to avoid burning some CPU cycles.
+
+Change in text size:
+
+         text     data      bss     dec     hex filename
+before: 326110    19258    5528  350896   55ab0 fs/ext4/ext4.o
+after:  326227    19258    5528  351013   55b25 fs/ext4/ext4.o
+
+I use the following script to measure the CPU usage.
+
+  #!/bin/bash
+
+  shm_base='/dev/shm'
+  img=${shm_base}/ext4-img
+  mnt=/mnt/loop
+
+  e2fsprgs_base=$HOME/e2fsprogs
+  mkfs=${e2fsprgs_base}/misc/mke2fs
+  fsck=${e2fsprgs_base}/e2fsck/e2fsck
+
+  sudo umount $mnt
+  dd if=/dev/zero of=$img bs=4k count=3145728
+  ${mkfs} -t ext4 -O inline_data -F $img
+  sudo mount -t ext4 -o loop $img $mnt
+
+  # start testing...
+  testdir="${mnt}/testdir"
+  mkdir $testdir
+  cd $testdir
+
+  echo "start testing..."
+  for ((cnt=0;cnt<100;cnt++)); do
+
+  for ((i=0;i<5;i++)); do
+  	for ((j=0;j<5;j++)); do
+  		for ((k=0;k<5;k++)); do
+  			for ((l=0;l<5;l++)); do
+  				mkdir -p $i/$j/$k/$l
+  				echo "$i-$j-$k-$l" > $i/$j/$k/$l/testfile
+  			done
+  		done
+  	done
+  done
+
+  ls -R $testdir > /dev/null
+  rm -rf $testdir/*
+
+  done
+
+The result of `perf top -G -U` is as below.
+
+vanilla:
+ 13.92%  [ext4]  [k] ext4_do_update_inode
+  9.36%  [ext4]  [k] __ext4_get_inode_loc
+  4.07%  [ext4]  [k] ftrace_define_fields_ext4_writepages
+  3.83%  [ext4]  [k] __ext4_handle_dirty_metadata
+  3.42%  [ext4]  [k] ext4_get_inode_flags
+  2.71%  [ext4]  [k] ext4_mark_iloc_dirty
+  2.46%  [ext4]  [k] ftrace_define_fields_ext4_direct_IO_enter
+  2.26%  [ext4]  [k] ext4_get_inode_loc
+  2.22%  [ext4]  [k] ext4_has_inline_data
+  [...]
+
+After applied the patch, we don't see ext4_has_inline_data() because it
+has been inlined and perf couldn't sample it.  Although it doesn't mean
+that the CPU cycles can be saved but at least the overhead of function
+calls can be eliminated.  So IMHO we'd better inline this function.
+
+Cc: Andreas Dilger <adilger.kernel@dilger.ca>
+Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4.h   | 7 ++++++-
+ fs/ext4/inline.c | 6 ------
+ 2 files changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 5535ed2..321760d 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2559,7 +2559,6 @@ extern const struct file_operations ext4_file_operations;
+ extern loff_t ext4_llseek(struct file *file, loff_t offset, int origin);
+ 
+ /* inline.c */
+-extern int ext4_has_inline_data(struct inode *inode);
+ extern int ext4_get_max_inline_size(struct inode *inode);
+ extern int ext4_find_inline_data_nolock(struct inode *inode);
+ extern int ext4_init_inline_data(handle_t *handle, struct inode *inode,
+@@ -2625,6 +2624,12 @@ extern void ext4_inline_data_truncate(struct inode *inode, int *has_inline);
+ 
+ extern int ext4_convert_inline_data(struct inode *inode);
+ 
++static inline int ext4_has_inline_data(struct inode *inode)
++{
++	return ext4_test_inode_flag(inode, EXT4_INODE_INLINE_DATA) &&
++	       EXT4_I(inode)->i_inline_off;
++}
++
+ /* namei.c */
+ extern const struct inode_operations ext4_dir_inode_operations;
+ extern const struct inode_operations ext4_special_inode_operations;
+diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
+index 645205d..141b6ac 100644
+--- a/fs/ext4/inline.c
++++ b/fs/ext4/inline.c
+@@ -120,12 +120,6 @@ int ext4_get_max_inline_size(struct inode *inode)
+ 	return max_inline_size + EXT4_MIN_INLINE_DATA_SIZE;
+ }
+ 
+-int ext4_has_inline_data(struct inode *inode)
+-{
+-	return ext4_test_inode_flag(inode, EXT4_INODE_INLINE_DATA) &&
+-	       EXT4_I(inode)->i_inline_off;
+-}
+-
+ /*
+  * this function does not take xattr_sem, which is OK because it is
+  * currently only used in a code path coming form ext4_iget, before
