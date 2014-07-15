@@ -11,13 +11,18 @@ initialized.
 This also allows us to only call ext4_count_free_clusters() once, and
 simplifies the code somewhat.
 
+(Thanks to Chen Gang <gang.chen.5i5j@gmail.com> for pointing out a
+!CONFIG_SMP compile breakage in the original patch.)
+
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Lukas Czerner <lczerner@redhat.com>
+
 ---
- fs/ext4/super.c | 88 ++++++++++++++++++++++++++++++++----------------------------------------
+ fs/ext4/super.c | 88 ++++++++++++++++++++++++++++++++++++---------------------------------------------
  1 file changed, 39 insertions(+), 49 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 6df7bc6..cc6c0ff 100644
+index 6df7bc6..32b43ad 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -2142,10 +2142,6 @@ static int ext4_check_descriptors(struct super_block *sb,
@@ -154,13 +159,13 @@ index 6df7bc6..cc6c0ff 100644
  		es->s_kbytes_written =
  			cpu_to_le64(EXT4_SB(sb)->s_kbytes_written);
 -	ext4_free_blocks_count_set(es,
-+	if (EXT4_SB(sb)->s_freeclusters_counter.counters)
++	if (percpu_counter_initialized(&EXT4_SB(sb)->s_freeclusters_counter))
 +		ext4_free_blocks_count_set(es,
  			EXT4_C2B(EXT4_SB(sb), percpu_counter_sum_positive(
  				&EXT4_SB(sb)->s_freeclusters_counter)));
 -	es->s_free_inodes_count =
 -		cpu_to_le32(percpu_counter_sum_positive(
-+	if (EXT4_SB(sb)->s_freeinodes_counter.counters)
++	if (percpu_counter_initialized(&EXT4_SB(sb)->s_freeinodes_counter))
 +		es->s_free_inodes_count =
 +			cpu_to_le32(percpu_counter_sum_positive(
  				&EXT4_SB(sb)->s_freeinodes_counter));
