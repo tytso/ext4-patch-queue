@@ -1,0 +1,36 @@
+ext4: fix incorrect locking in move_extent_per_page
+
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+
+If we have to copy data we must drop i_data_sem because of
+get_blocks() will be called inside mext_page_mkuptodate(), but later we must
+reacquire it again because we are about to change extent's tree
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/move_extent.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
+index 2484c7e..671a74b 100644
+--- a/fs/ext4/move_extent.c
++++ b/fs/ext4/move_extent.c
+@@ -1013,10 +1013,11 @@ data_copy:
+ 		*err = -EBUSY;
+ 		goto unlock_pages;
+ 	}
+-
++	ext4_double_down_write_data_sem(orig_inode, donor_inode);
+ 	replaced_count = mext_replace_branches(handle, orig_inode, donor_inode,
+ 					       orig_blk_offset,
+ 					       block_len_in_page, err);
++	ext4_double_up_write_data_sem(orig_inode, donor_inode);
+ 	if (*err) {
+ 		if (replaced_count) {
+ 			block_len_in_page = replaced_count;
+-- 
+1.7.1
+
+
