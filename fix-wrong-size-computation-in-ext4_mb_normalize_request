@@ -1,0 +1,31 @@
+ext4: fix wrong size computation in ext4_mb_normalize_request()
+
+From: Xiaoguang Wang <wangxg.fnst@cn.fujitsu.com>
+
+As the member fe_len defined in struct ext4_free_extent is expressed as
+number of clusters, the variable "size" computation is wrong, we need to
+first translate fe_len to block number, then to bytes.
+
+Signed-off-by: Xiaoguang Wang <wangxg.fnst@cn.fujitsu.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Lukas Czerner <lczerner@redhat.com>
+---
+ fs/ext4/mballoc.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 18a1619..0e9466f 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -3075,8 +3075,9 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 							(23 - bsbits)) << 23;
+ 		size = 8 * 1024 * 1024;
+ 	} else {
+-		start_off = (loff_t)ac->ac_o_ex.fe_logical << bsbits;
+-		size	  = ac->ac_o_ex.fe_len << bsbits;
++		start_off = (loff_t) ac->ac_o_ex.fe_logical << bsbits;
++		size	  = (loff_t) EXT4_C2B(EXT4_SB(ac->ac_sb),
++					      ac->ac_o_ex.fe_len) << bsbits;
+ 	}
+ 	size = size >> bsbits;
+ 	start = start_off >> bsbits;
