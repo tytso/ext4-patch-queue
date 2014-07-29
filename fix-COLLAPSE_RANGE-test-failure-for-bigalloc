@@ -1,0 +1,45 @@
+ext4: fix COLLAPSE RANGE test for bigalloc file systems
+
+From: Namjae Jeon <namjae.jeon@samsung.com>
+
+Blocks in collapse range should be collapsed per cluster unit when
+bigalloc is enable. If bigalloc is not enable, EXT4_CLUSTER_SIZE will
+be same with EXT4_BLOCK_SIZE.
+
+With this bug fixed, patch enables COLLAPSE_RANGE for bigalloc, which
+fixes a large number of xfstest failures which use fsx.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Ashish Sangwan <a.sangwan@samsung.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/extents.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 4da228a..2b9f5f3 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -5403,16 +5403,13 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
+ 	int ret;
+ 
+ 	/* Collapse range works only on fs block size aligned offsets. */
+-	if (offset & (EXT4_BLOCK_SIZE(sb) - 1) ||
+-	    len & (EXT4_BLOCK_SIZE(sb) - 1))
++	if (offset & (EXT4_CLUSTER_SIZE(sb) - 1) ||
++	    len & (EXT4_CLUSTER_SIZE(sb) - 1))
+ 		return -EINVAL;
+ 
+ 	if (!S_ISREG(inode->i_mode))
+ 		return -EINVAL;
+ 
+-	if (EXT4_SB(inode->i_sb)->s_cluster_ratio > 1)
+-		return -EOPNOTSUPP;
+-
+ 	trace_ext4_collapse_range(inode, offset, len);
+ 
+ 	punch_start = offset >> EXT4_BLOCK_SIZE_BITS(sb);
+-- 
+1.7.11-rc0
+
+
