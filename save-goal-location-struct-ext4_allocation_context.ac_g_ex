@@ -1,0 +1,50 @@
+ext4: save goal group and offset in struct ext4_allocation_context.ac_g_ex
+
+From: Xiaoguang Wang <wangxg.fnst@cn.fujitsu.com>
+
+In ext4_mb_normalize_request(), if ac_g_ex.fe_logical is adjacent to
+the closest logical allocated block to the left or if
+(ac_g_ex.fe_logical+len) adjacent to the closest logical allocated
+block to the right, we'll attach EXT4_MB_HINT_TRY_GOAL flag taking the
+physical block (ext4_allocation_request.lleft+1) or
+(ext4_allocation_request.pright-len) as a goal, and put this
+information in ext4_allocation_context.ac_f_ex.
+
+But look at the ext4_mb_find_by_goal(), indeed it use ac_g_ex to look
+up, so this is wrong, we should save goal group and offset in struct
+ext4_allocation_context.ac_g_ex.
+
+Signed-off-by: Xiaoguang Wang <wangxg.fnst@cn.fujitsu.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 2dcb936..6d939d79 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -3168,15 +3168,15 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+ 	if (ar->pright && (ar->lright == (start + size))) {
+ 		/* merge to the right */
+ 		ext4_get_group_no_and_offset(ac->ac_sb, ar->pright - size,
+-						&ac->ac_f_ex.fe_group,
+-						&ac->ac_f_ex.fe_start);
++						&ac->ac_g_ex.fe_group,
++						&ac->ac_g_ex.fe_start);
+ 		ac->ac_flags |= EXT4_MB_HINT_TRY_GOAL;
+ 	}
+ 	if (ar->pleft && (ar->lleft + 1 == start)) {
+ 		/* merge to the left */
+ 		ext4_get_group_no_and_offset(ac->ac_sb, ar->pleft + 1,
+-						&ac->ac_f_ex.fe_group,
+-						&ac->ac_f_ex.fe_start);
++						&ac->ac_g_ex.fe_group,
++						&ac->ac_g_ex.fe_start);
+ 		ac->ac_flags |= EXT4_MB_HINT_TRY_GOAL;
+ 	}
+ 
+-- 
+1.8.2.1
+
+
