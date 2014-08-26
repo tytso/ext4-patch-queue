@@ -1,0 +1,41 @@
+ext4: fix incorect journal credits reservation in ext4_zero_range
+
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+
+Currently we reserve only 4 blocks but in worst case scenario
+ext4_zero_partial_blocks() may want to zeroout and convert two
+non adjacent blocks.
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/extents.c |    6 ++++--
+ 1 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 5bf718b..f09dbe7 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4740,6 +4740,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+ 	loff_t new_size = 0;
+ 	int ret = 0;
+ 	int flags;
++	int credits;
+ 	int partial;
+ 	loff_t start, end;
+ 	ext4_lblk_t lblk;
+@@ -4839,8 +4840,9 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+ 		if (ret)
+ 			goto out_dio;
+ 	}
+-
+-	handle = ext4_journal_start(inode, EXT4_HT_MISC, 4);
++	/* In worst case we have to writeout two nonadjacent unwritten blocks */
++	credits = ext4_ext_index_trans_blocks(inode, 2) + 2;
++	handle = ext4_journal_start(inode, EXT4_HT_MISC, credits);
+ 	if (IS_ERR(handle)) {
+ 		ret = PTR_ERR(handle);
+ 		ext4_std_error(inode->i_sb, ret);
+-- 
+1.7.1
+
