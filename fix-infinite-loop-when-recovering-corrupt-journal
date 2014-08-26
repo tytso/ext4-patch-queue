@@ -1,0 +1,54 @@
+jbd2: fix infinite loop when recovering corrupt journal blocks
+
+From: Darrick J. Wong <darrick.wong@oracle.com>
+
+When recovering the journal, don't fall into an infinite loop if we
+encounter a corrupt journal block.  Instead, just skip the block and
+return an error, which fails the mount and thus forces the user to run
+a full filesystem fsck.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+ fs/jbd2/recovery.c |    7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
+index 3b6bb19..00e9703 100644
+--- a/fs/jbd2/recovery.c
++++ b/fs/jbd2/recovery.c
+@@ -426,6 +426,7 @@ static int do_one_pass(journal_t *journal,
+ 	int			tag_bytes = journal_tag_bytes(journal);
+ 	__u32			crc32_sum = ~0; /* Transactional Checksums */
+ 	int			descr_csum_size = 0;
++	int			block_error = 0;
+ 
+ 	/*
+ 	 * First thing is to establish what we expect to find in the log
+@@ -598,7 +599,8 @@ static int do_one_pass(journal_t *journal,
+ 						       "checksum recovering "
+ 						       "block %llu in log\n",
+ 						       blocknr);
+-						continue;
++						block_error = 1;
++						goto skip_write;
+ 					}
+ 
+ 					/* Find a buffer for the new
+@@ -797,7 +799,8 @@ static int do_one_pass(journal_t *journal,
+ 				success = -EIO;
+ 		}
+ 	}
+-
++	if (block_error && success == 0)
++		success = -EIO;
+ 	return success;
+ 
+  failed:
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
