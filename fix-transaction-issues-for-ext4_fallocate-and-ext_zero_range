@@ -15,14 +15,14 @@ Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 Cc: stable@vger.kernel.org
 ---
- fs/ext4/extents.c |   68 +++++++++++++++++++++++++++-------------------------
- 1 files changed, 35 insertions(+), 33 deletions(-)
+ fs/ext4/extents.c | 68 +++++++++++++++++++++++++++++----------------------------
+ 1 file changed, 35 insertions(+), 33 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 39fbcbb..3fae328 100644
+index 0e9de23..74292a7 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -4674,7 +4674,8 @@ retry:
+@@ -4665,7 +4665,8 @@ retry:
  }
  
  static int ext4_alloc_file_blocks(struct file *file, ext4_lblk_t offset,
@@ -32,7 +32,7 @@ index 39fbcbb..3fae328 100644
  {
  	struct inode *inode = file_inode(file);
  	handle_t *handle;
-@@ -4683,8 +4684,10 @@ static int ext4_alloc_file_blocks(struct file *file, ext4_lblk_t offset,
+@@ -4674,8 +4675,10 @@ static int ext4_alloc_file_blocks(struct file *file, ext4_lblk_t offset,
  	int retries = 0;
  	struct ext4_map_blocks map;
  	unsigned int credits;
@@ -43,7 +43,7 @@ index 39fbcbb..3fae328 100644
  	/*
  	 * Don't normalize the request if it can fit in one extent so
  	 * that it doesn't get unnecessarily split into multiple
-@@ -4699,9 +4702,7 @@ static int ext4_alloc_file_blocks(struct file *file, ext4_lblk_t offset,
+@@ -4690,9 +4693,7 @@ static int ext4_alloc_file_blocks(struct file *file, ext4_lblk_t offset,
  	credits = ext4_chunk_trans_blocks(inode, len);
  
  retry:
@@ -54,7 +54,7 @@ index 39fbcbb..3fae328 100644
  		handle = ext4_journal_start(inode, EXT4_HT_MAP_BLOCKS,
  					    credits);
  		if (IS_ERR(handle)) {
-@@ -4718,6 +4719,21 @@ retry:
+@@ -4709,6 +4710,21 @@ retry:
  			ret2 = ext4_journal_stop(handle);
  			break;
  		}
@@ -76,7 +76,7 @@ index 39fbcbb..3fae328 100644
  		ret2 = ext4_journal_stop(handle);
  		if (ret2)
  			break;
-@@ -4741,7 +4757,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+@@ -4732,7 +4748,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
  	int ret = 0;
  	int flags;
  	int credits;
@@ -85,7 +85,7 @@ index 39fbcbb..3fae328 100644
  	loff_t start, end;
  	ext4_lblk_t lblk;
  	struct address_space *mapping = inode->i_mapping;
-@@ -4781,7 +4797,8 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+@@ -4772,7 +4788,8 @@ static long ext4_zero_range(struct file *file, loff_t offset,
  
  	if (start < offset || end > offset + len)
  		return -EINVAL;
@@ -95,7 +95,7 @@ index 39fbcbb..3fae328 100644
  
  	lblk = start >> blkbits;
  	max_blocks = (end >> blkbits);
-@@ -4815,7 +4832,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+@@ -4806,7 +4823,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
  		 * If we have a partial block after EOF we have to allocate
  		 * the entire block.
  		 */
@@ -104,7 +104,7 @@ index 39fbcbb..3fae328 100644
  			max_blocks += 1;
  	}
  
-@@ -4823,6 +4840,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+@@ -4814,6 +4831,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
  
  		/* Now release the pages and zero block aligned part of pages*/
  		truncate_pagecache_range(inode, start, end - 1);
@@ -112,7 +112,7 @@ index 39fbcbb..3fae328 100644
  
  		/* Wait all existing dio workers, newcomers will block on i_mutex */
  		ext4_inode_block_unlocked_dio(inode);
-@@ -4835,11 +4853,14 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+@@ -4826,11 +4844,14 @@ static long ext4_zero_range(struct file *file, loff_t offset,
  		if (ret)
  			goto out_dio;
  
@@ -126,10 +126,10 @@ index 39fbcbb..3fae328 100644
 +	if (!partial_begin && !partial_end)
 +		goto out_dio;
 +
- 	/* In worst case we have to writeout two nonadjacent unwritten blocks */
- 	credits = ext4_chunk_trans_blocks(inode, 1) * 2 -
- 		EXT4_META_TRANS_BLOCKS(inode->i_sb);
-@@ -4861,7 +4882,6 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+ 	/*
+ 	 * In worst case we have to writeout two nonadjacent unwritten
+ 	 * blocks and update the inode
+@@ -4856,7 +4877,6 @@ static long ext4_zero_range(struct file *file, loff_t offset,
  		if ((offset + len) > i_size_read(inode))
  			ext4_set_inode_flag(inode, EXT4_INODE_EOFBLOCKS);
  	}
@@ -137,7 +137,7 @@ index 39fbcbb..3fae328 100644
  	ext4_mark_inode_dirty(handle, inode);
  
  	/* Zero out partial block at the edges of the range */
-@@ -4888,7 +4908,6 @@ out_mutex:
+@@ -4883,7 +4903,6 @@ out_mutex:
  long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  {
  	struct inode *inode = file_inode(file);
@@ -145,7 +145,7 @@ index 39fbcbb..3fae328 100644
  	loff_t new_size = 0;
  	unsigned int max_blocks;
  	int ret = 0;
-@@ -4944,32 +4963,15 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+@@ -4939,32 +4958,15 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
  			goto out;
  	}
  
@@ -183,11 +183,3 @@ index 39fbcbb..3fae328 100644
  out:
  	mutex_unlock(&inode->i_mutex);
  	trace_ext4_fallocate_exit(inode, offset, max_blocks, ret);
--- 
-1.7.1
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
