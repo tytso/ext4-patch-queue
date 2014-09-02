@@ -1,0 +1,70 @@
+jbd2: don't call get_bh() before calling __jbd2_journal_remove_checkpoint()
+
+The __jbd2_journal_remove_checkpoint() doesn't require an elevated
+b_count; indeed, until the jh structure gets released by the call to
+jbd2_journal_put_journal_head(), the bh's b_count is elevated by
+virtue of the existence of the jh structure.
+
+Suggested-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/jbd2/checkpoint.c | 12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
+index 22fcd50..cb6e17c 100644
+--- a/fs/jbd2/checkpoint.c
++++ b/fs/jbd2/checkpoint.c
+@@ -100,11 +100,8 @@ static int __try_to_free_cp_buf(struct journal_head *jh)
+ 		 * Get our reference so that bh cannot be freed before
+ 		 * we unlock it
+ 		 */
+-		get_bh(bh);
+ 		JBUFFER_TRACE(jh, "remove from checkpoint list");
+ 		ret = __jbd2_journal_remove_checkpoint(jh) + 1;
+-		BUFFER_TRACE(bh, "release");
+-		__brelse(bh);
+ 	}
+ 	return ret;
+ }
+@@ -216,7 +213,7 @@ int jbd2_log_do_checkpoint(journal_t *journal)
+ 	struct buffer_head	*bh;
+ 	transaction_t		*transaction;
+ 	tid_t			this_tid;
+-	int			result, batch_count = 0, done = 0;
++	int			result, batch_count = 0;
+ 
+ 	jbd_debug(1, "Start checkpoint\n");
+ 
+@@ -291,11 +288,9 @@ restart:
+ 		if (!buffer_dirty(bh)) {
+ 			if (unlikely(buffer_write_io_error(bh)) && !result)
+ 				result = -EIO;
+-			get_bh(bh);
+ 			BUFFER_TRACE(bh, "remove from checkpoint");
+ 			__jbd2_journal_remove_checkpoint(jh);
+ 			spin_unlock(&journal->j_list_lock);
+-			__brelse(bh);
+ 			goto retry;
+ 		}
+ 		/*
+@@ -338,7 +333,7 @@ restart2:
+ 	    transaction->t_tid != this_tid)
+ 		goto out;
+ 
+-	while (!done && transaction->t_checkpoint_io_list) {
++	while (transaction->t_checkpoint_io_list) {
+ 		jh = transaction->t_checkpoint_io_list;
+ 		bh = jh2bh(jh);
+ 		get_bh(bh);
+@@ -359,8 +354,9 @@ restart2:
+ 		 * know that it has been written out and so we can
+ 		 * drop it from the list
+ 		 */
+-		done = __jbd2_journal_remove_checkpoint(jh);
+ 		__brelse(bh);
++		if (__jbd2_journal_remove_checkpoint(jh))
++			break;
+ 	}
+ out:
+ 	spin_unlock(&journal->j_list_lock);
