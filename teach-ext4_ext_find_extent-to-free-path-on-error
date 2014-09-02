@@ -1,0 +1,181 @@
+ext4: teach ext4_ext_find_extent() to free path on error
+
+Right now, there are a places where it is all to easy to leak memory
+on an error path, via a usage like this:
+
+	struct ext4_ext_path *path = NULL
+
+	while (...) {
+		...
+		path = ext4_ext_find_extent(inode, block, path, 0);
+		if (IS_ERR(path)) {
+			/* oops, if path was non-NULL before the call to
+			   ext4_ext_find_extent, we've leaked it!  :-(  */
+			...
+			return PTR_ERR(path);
+		}
+		...
+	}
+
+Unfortunately, there some code paths where we are doing the following
+instead:
+
+	path = ext4_ext_find_extent(inode, block, orig_path, 0);
+
+and where it's important that we _not_ free orig_path in the case
+where ext4_ext_find_extent() returns an error.
+
+So change the function signature of ext4_ext_find_extent() so that it
+takes a struct ext4_ext_path ** for its third argument, and by
+default, on an error, it will free the struct ext4_ext_path, and then
+zero out the struct ext4_ext_path * pointer.  In order to avoid
+causing problems, we add a flag EXT4_EX_NOFREE_ON_ERR which causes
+ext4_ext_find_extent() to use the original behavior of forcing the
+caller to deal with freeing the original path pointer on the error
+case.
+
+The goal is to get rid of EXT4_EX_NOFREE_ON_ERR entirely, but this
+allows for a gentle transition and makes the patches easier to verify.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+		
+---
+ fs/ext4/ext4.h        |  3 ++-
+ fs/ext4/extents.c     | 28 ++++++++++++++++++----------
+ fs/ext4/move_extent.c |  2 +-
+ 3 files changed, 21 insertions(+), 12 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 550b4f9..696e51a 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -582,6 +582,7 @@ enum {
+  */
+ #define EXT4_EX_NOCACHE				0x0800
+ #define EXT4_EX_FORCE_CACHE			0x1000
++#define EXT4_EX_NOFREE_ON_ERR			0x2000
+ 
+ /*
+  * Flags used by ext4_free_blocks
+@@ -2733,7 +2734,7 @@ extern int ext4_ext_insert_extent(handle_t *, struct inode *,
+ 				  struct ext4_ext_path *,
+ 				  struct ext4_extent *, int);
+ extern struct ext4_ext_path *ext4_ext_find_extent(struct inode *, ext4_lblk_t,
+-						  struct ext4_ext_path *,
++						  struct ext4_ext_path **,
+ 						  int flags);
+ extern void ext4_ext_drop_refs(struct ext4_ext_path *);
+ extern int ext4_ext_check_inode(struct inode *inode);
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index bc3b49f..fc76be8 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -848,11 +848,13 @@ int ext4_ext_tree_init(handle_t *handle, struct inode *inode)
+ 
+ struct ext4_ext_path *
+ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+-		     struct ext4_ext_path *path, int flags)
++		     struct ext4_ext_path **orig_path, int flags)
+ {
+ 	struct ext4_extent_header *eh;
+ 	struct buffer_head *bh;
+-	short int depth, i, ppos = 0, alloc = 0;
++	struct ext4_ext_path *path = orig_path ? *orig_path : NULL;
++	short int depth, i, ppos = 0;
++	short free_on_err = (flags & EXT4_EX_NOFREE_ON_ERR) == 0;
+ 	int ret;
+ 
+ 	eh = ext_inode_hdr(inode);
+@@ -864,7 +866,7 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+ 				GFP_NOFS);
+ 		if (unlikely(!path))
+ 			return ERR_PTR(-ENOMEM);
+-		alloc = 1;
++		free_on_err = 1;
+ 	}
+ 	path[0].p_hdr = eh;
+ 	path[0].p_bh = NULL;
+@@ -916,8 +918,11 @@ ext4_ext_find_extent(struct inode *inode, ext4_lblk_t block,
+ 
+ err:
+ 	ext4_ext_drop_refs(path);
+-	if (alloc)
++	if (free_on_err) {
+ 		kfree(path);
++		if (orig_path)
++			*orig_path = NULL;
++	}
+ 	return ERR_PTR(ret);
+ }
+ 
+@@ -1349,7 +1354,7 @@ repeat:
+ 		ext4_ext_drop_refs(path);
+ 		path = ext4_ext_find_extent(inode,
+ 				    (ext4_lblk_t)le32_to_cpu(newext->ee_block),
+-				    path, gb_flags);
++				    &path, gb_flags | EXT4_EX_NOFREE_ON_ERR);
+ 		if (IS_ERR(path))
+ 			err = PTR_ERR(path);
+ 	} else {
+@@ -1362,7 +1367,7 @@ repeat:
+ 		ext4_ext_drop_refs(path);
+ 		path = ext4_ext_find_extent(inode,
+ 				   (ext4_lblk_t)le32_to_cpu(newext->ee_block),
+-				    path, gb_flags);
++				    &path, gb_flags | EXT4_EX_NOFREE_ON_ERR);
+ 		if (IS_ERR(path)) {
+ 			err = PTR_ERR(path);
+ 			goto out;
+@@ -2145,7 +2150,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+ 			path = NULL;
+ 		}
+ 
+-		path = ext4_ext_find_extent(inode, block, path, 0);
++		path = ext4_ext_find_extent(inode, block, &path, 0);
+ 		if (IS_ERR(path)) {
+ 			up_read(&EXT4_I(inode)->i_data_sem);
+ 			err = PTR_ERR(path);
+@@ -3319,7 +3324,8 @@ static int ext4_split_extent(handle_t *handle,
+ 	 * result in split of original leaf or extent zeroout.
+ 	 */
+ 	ext4_ext_drop_refs(path);
+-	path = ext4_ext_find_extent(inode, map->m_lblk, path, 0);
++	path = ext4_ext_find_extent(inode, map->m_lblk, &path,
++				    EXT4_EX_NOFREE_ON_ERR);
+ 	if (IS_ERR(path))
+ 		return PTR_ERR(path);
+ 	depth = ext_depth(inode);
+@@ -3703,7 +3709,8 @@ static int ext4_convert_initialized_extents(handle_t *handle,
+ 		if (err < 0)
+ 			goto out;
+ 		ext4_ext_drop_refs(path);
+-		path = ext4_ext_find_extent(inode, map->m_lblk, path, 0);
++		path = ext4_ext_find_extent(inode, map->m_lblk, &path,
++					    EXT4_EX_NOFREE_ON_ERR);
+ 		if (IS_ERR(path)) {
+ 			err = PTR_ERR(path);
+ 			goto out;
+@@ -3775,7 +3782,8 @@ static int ext4_convert_unwritten_extents_endio(handle_t *handle,
+ 		if (err < 0)
+ 			goto out;
+ 		ext4_ext_drop_refs(path);
+-		path = ext4_ext_find_extent(inode, map->m_lblk, path, 0);
++		path = ext4_ext_find_extent(inode, map->m_lblk, &path,
++					    EXT4_EX_NOFREE_ON_ERR);
+ 		if (IS_ERR(path)) {
+ 			err = PTR_ERR(path);
+ 			goto out;
+diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
+index c8f895b..5e2465a 100644
+--- a/fs/ext4/move_extent.c
++++ b/fs/ext4/move_extent.c
+@@ -37,7 +37,7 @@ get_ext_path(struct inode *inode, ext4_lblk_t lblock,
+ 	int ret = 0;
+ 	struct ext4_ext_path *path;
+ 
+-	path = ext4_ext_find_extent(inode, lblock, *orig_path, EXT4_EX_NOCACHE);
++	path = ext4_ext_find_extent(inode, lblock, orig_path, EXT4_EX_NOCACHE);
+ 	if (IS_ERR(path))
+ 		ret = PTR_ERR(path);
+ 	else if (path[ext_depth(inode)].p_ext == NULL)
