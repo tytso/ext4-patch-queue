@@ -1,0 +1,34 @@
+ext4: enable block_validity by default
+
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+
+Enable by default the block_validity feature, which checks for
+collisions between newly allocated blocks and critical system
+metadata.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/super.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 0b28b36..bbf515c 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3519,8 +3519,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		set_opt(sb, ERRORS_CONT);
+ 	else
+ 		set_opt(sb, ERRORS_RO);
+-	if (def_mount_opts & EXT4_DEFM_BLOCK_VALIDITY)
+-		set_opt(sb, BLOCK_VALIDITY);
++	/* block_validity enabled by default; disable with noblock_validity */
++	set_opt(sb, BLOCK_VALIDITY);
+ 	if (def_mount_opts & EXT4_DEFM_DISCARD)
+ 		set_opt(sb, DISCARD);
+ 
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
