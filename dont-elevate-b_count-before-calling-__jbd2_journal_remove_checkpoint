@@ -6,19 +6,24 @@ jbd2_journal_put_journal_head(), the bh's b_count is elevated by
 virtue of the existence of the jh structure.
 
 Suggested-by: Jan Kara <jack@suse.cz>
+Reviewed-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/jbd2/checkpoint.c | 12 ++++--------
- 1 file changed, 4 insertions(+), 8 deletions(-)
+ fs/jbd2/checkpoint.c | 19 +++++--------------
+ 1 file changed, 5 insertions(+), 14 deletions(-)
 
 diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
-index 22fcd50..cb6e17c 100644
+index 18c7a8d..90d6091 100644
 --- a/fs/jbd2/checkpoint.c
 +++ b/fs/jbd2/checkpoint.c
-@@ -100,11 +100,8 @@ static int __try_to_free_cp_buf(struct journal_head *jh)
- 		 * Get our reference so that bh cannot be freed before
- 		 * we unlock it
- 		 */
+@@ -96,15 +96,8 @@ static int __try_to_free_cp_buf(struct journal_head *jh)
+ 
+ 	if (jh->b_transaction == NULL && !buffer_locked(bh) &&
+ 	    !buffer_dirty(bh) && !buffer_write_io_error(bh)) {
+-		/*
+-		 * Get our reference so that bh cannot be freed before
+-		 * we unlock it
+-		 */
 -		get_bh(bh);
  		JBUFFER_TRACE(jh, "remove from checkpoint list");
  		ret = __jbd2_journal_remove_checkpoint(jh) + 1;
@@ -27,7 +32,7 @@ index 22fcd50..cb6e17c 100644
  	}
  	return ret;
  }
-@@ -216,7 +213,7 @@ int jbd2_log_do_checkpoint(journal_t *journal)
+@@ -216,7 +209,7 @@ int jbd2_log_do_checkpoint(journal_t *journal)
  	struct buffer_head	*bh;
  	transaction_t		*transaction;
  	tid_t			this_tid;
@@ -36,7 +41,7 @@ index 22fcd50..cb6e17c 100644
  
  	jbd_debug(1, "Start checkpoint\n");
  
-@@ -291,11 +288,9 @@ restart:
+@@ -291,11 +284,9 @@ restart:
  		if (!buffer_dirty(bh)) {
  			if (unlikely(buffer_write_io_error(bh)) && !result)
  				result = -EIO;
@@ -48,7 +53,7 @@ index 22fcd50..cb6e17c 100644
  			goto retry;
  		}
  		/*
-@@ -338,7 +333,7 @@ restart2:
+@@ -338,12 +329,12 @@ restart2:
  	    transaction->t_tid != this_tid)
  		goto out;
  
@@ -56,13 +61,19 @@ index 22fcd50..cb6e17c 100644
 +	while (transaction->t_checkpoint_io_list) {
  		jh = transaction->t_checkpoint_io_list;
  		bh = jh2bh(jh);
- 		get_bh(bh);
-@@ -359,8 +354,9 @@ restart2:
+-		get_bh(bh);
+ 		if (buffer_locked(bh)) {
+ 			spin_unlock(&journal->j_list_lock);
++			get_bh(bh);
+ 			wait_on_buffer(bh);
+ 			/* the journal_head may have gone by now */
+ 			BUFFER_TRACE(bh, "brelse");
+@@ -359,8 +350,8 @@ restart2:
  		 * know that it has been written out and so we can
  		 * drop it from the list
  		 */
 -		done = __jbd2_journal_remove_checkpoint(jh);
- 		__brelse(bh);
+-		__brelse(bh);
 +		if (__jbd2_journal_remove_checkpoint(jh))
 +			break;
  	}
