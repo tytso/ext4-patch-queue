@@ -1,0 +1,332 @@
+ext4: add EXT4 encryption read callback support
+
+From: Michael Halcrow <mhalcrow@google.com>
+
+Adds EXT4 encryption read callback support.
+
+Copies block_read_full_page() to ext4_read_full_page() and adds some
+callback logic near the end.
+
+Signed-off-by: Michael Halcrow <mhalcrow@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/file.c      |   9 ++-
+ fs/ext4/inode.c     | 185 ++++++++++++++++++++++++++++++++++++++++++++++++++--
+ include/linux/bio.h |   3 +
+ 3 files changed, 191 insertions(+), 6 deletions(-)
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 8695f70..c8bb4db 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -206,6 +206,7 @@ static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
+ 		return -ENOEXEC;
+ 	file_accessed(file);
+ 	vma->vm_ops = &ext4_file_vm_ops;
++	ext4_get_crypto_key(file);
+ 	return 0;
+ }
+ 
+@@ -216,6 +217,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+ 	struct vfsmount *mnt = filp->f_path.mnt;
+ 	struct path path;
+ 	char buf[64], *cp;
++	int ret;
+ 
+ 	if (unlikely(!(sbi->s_mount_flags & EXT4_MF_MNTDIR_SAMPLED) &&
+ 		     !(sb->s_flags & MS_RDONLY))) {
+@@ -254,11 +256,14 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+ 	 * writing and the journal is present
+ 	 */
+ 	if (filp->f_mode & FMODE_WRITE) {
+-		int ret = ext4_inode_attach_jinode(inode);
++		ret = ext4_inode_attach_jinode(inode);
+ 		if (ret < 0)
+ 			return ret;
+ 	}
+-	return dquot_file_open(inode, filp);
++	ret = dquot_file_open(inode, filp);
++	if (!ret)
++		ext4_get_crypto_key(filp);
++	return ret;
+ }
+ 
+ /*
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 42385c9..14585c5 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -837,6 +837,8 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
+ 			       ext4_lblk_t block, int create, int *err)
+ {
+ 	struct buffer_head *bh;
++	struct ext4_inode_info *ei = EXT4_I(inode);
++	struct ext4_crypto_ctx *ctx;
+ 
+ 	bh = ext4_getblk(handle, inode, block, create, err);
+ 	if (!bh)
+@@ -845,8 +847,16 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
+ 		return bh;
+ 	ll_rw_block(READ | REQ_META | REQ_PRIO, 1, &bh);
+ 	wait_on_buffer(bh);
+-	if (buffer_uptodate(bh))
++	if (buffer_uptodate(bh)) {
++		if (ext4_is_encryption_enabled(ei)) {
++			BUG_ON(!bh->b_page);
++			BUG_ON(bh->b_size != PAGE_CACHE_SIZE);
++			ctx = ext4_get_crypto_ctx(false, &ei->i_encryption_key);
++			WARN_ON_ONCE(ext4_decrypt(ctx, bh->b_page));
++			ext4_release_crypto_ctx(ctx);
++		}
+ 		return bh;
++	}
+ 	put_bh(bh);
+ 	*err = -EIO;
+ 	return NULL;
+@@ -2951,20 +2961,152 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
+ 	return generic_block_bmap(mapping, block, ext4_get_block);
+ }
+ 
++static void ext4_completion_work(struct work_struct *work)
++{
++	struct ext4_crypto_ctx *ctx =
++		container_of(work, struct ext4_crypto_ctx, work);
++	struct page *page = ctx->control_page;
++	WARN_ON_ONCE(ext4_decrypt(ctx, page));
++	ext4_release_crypto_ctx(ctx);
++	SetPageUptodate(page);
++	unlock_page(page);
++}
++
++static int ext4_complete_cb(struct bio *bio, int res)
++{
++	struct ext4_crypto_ctx *ctx = bio->bi_cb_ctx;
++	struct page *page = ctx->control_page;
++	BUG_ON(atomic_read(&ctx->dbg_refcnt) != 1);
++	if (res) {
++		ext4_release_crypto_ctx(ctx);
++		unlock_page(page);
++		return res;
++	}
++	INIT_WORK(&ctx->work, ext4_completion_work);
++	queue_work(mpage_read_workqueue, &ctx->work);
++	return 0;
++}
++
++static int ext4_read_full_page(struct page *page)
++{
++	struct inode *inode = page->mapping->host;
++	sector_t iblock, lblock;
++	struct buffer_head *bh, *head, *arr[MAX_BUF_PER_PAGE];
++	unsigned int blocksize, bbits;
++	int nr, i;
++	int fully_mapped = 1;
++
++	head = create_page_buffers(page, inode, 0);
++	blocksize = head->b_size;
++	bbits = ilog2(blocksize);
++
++	iblock = (sector_t)page->index << (PAGE_CACHE_SHIFT - bbits);
++	lblock = (i_size_read(inode)+blocksize-1) >> bbits;
++	bh = head;
++	nr = 0;
++	i = 0;
++
++	do {
++		if (buffer_uptodate(bh))
++			continue;
++
++		if (!buffer_mapped(bh)) {
++			int err = 0;
++
++			fully_mapped = 0;
++			if (iblock < lblock) {
++				WARN_ON(bh->b_size != blocksize);
++				err = ext4_get_block(inode, iblock, bh, 0);
++				if (err)
++					SetPageError(page);
++			}
++			if (!buffer_mapped(bh)) {
++				zero_user(page, i * blocksize, blocksize);
++				if (!err)
++					set_buffer_uptodate(bh);
++				continue;
++			}
++			/*
++			 * get_block() might have updated the buffer
++			 * synchronously
++			 */
++			if (buffer_uptodate(bh))
++				continue;
++		}
++		arr[nr++] = bh;
++	} while (i++, iblock++, (bh = bh->b_this_page) != head);
++
++	if (fully_mapped)
++		SetPageMappedToDisk(page);
++
++	if (!nr) {
++		/*
++		 * All buffers are uptodate - we can set the page uptodate
++		 * as well. But not if get_block() returned an error.
++		 */
++		if (!PageError(page))
++			SetPageUptodate(page);
++		unlock_page(page);
++		return 0;
++	}
++
++	/* TODO(mhalcrow): For the development phase, encryption
++	 * requires that the block size be equal to the page size. To
++	 * make this the case for release (if we go that route), we'll
++	 * need a super.c change to verify. */
++	BUG_ON(nr != 1);
++
++	/* Stage two: lock the buffers */
++	for (i = 0; i < nr; i++) {
++		bh = arr[i];
++		lock_buffer(bh);
++		mark_buffer_async_read(bh);
++	}
++
++	/*
++	 * Stage 3: start the IO.  Check for uptodateness
++	 * inside the buffer lock in case another process reading
++	 * the underlying blockdev brought it uptodate (the sct fix).
++	 */
++	for (i = 0; i < nr; i++) {
++		bh = arr[i];
++		if (buffer_uptodate(bh))
++			end_buffer_async_read(bh, 1);
++		else {
++			struct ext4_inode_info *ei = EXT4_I(inode);
++			struct ext4_crypto_ctx *ctx = ext4_get_crypto_ctx(
++				false, &ei->i_encryption_key);
++			BUG_ON(atomic_read(&ctx->dbg_refcnt) != 0);
++			atomic_inc(&ctx->dbg_refcnt);
++			BUG_ON(ctx->control_page);
++			ctx->control_page = page;
++			BUG_ON(atomic_read(&ctx->dbg_refcnt) != 1);
++			if (submit_bh_cb(READ, bh, ext4_complete_cb, ctx))
++				ext4_release_crypto_ctx(ctx);
++		}
++	}
++	return 0;
++}
++
+ static int ext4_readpage(struct file *file, struct page *page)
+ {
+ 	int ret = -EAGAIN;
+ 	struct inode *inode = page->mapping->host;
++	struct ext4_inode_info *ei = EXT4_I(inode);
+ 
+ 	trace_ext4_readpage(page);
+ 
+ 	if (ext4_has_inline_data(inode))
+ 		ret = ext4_readpage_inline(inode, page);
+ 
+-	if (ret == -EAGAIN)
++	if (ext4_is_encryption_enabled(ei)) {
++		BUG_ON(ret != -EAGAIN);
++		ext4_read_full_page(page);
++	} else if (ret == -EAGAIN) {
+ 		return mpage_readpage(page, ext4_get_block);
++	}
+ 
+-	return ret;
++	return 0;
+ }
+ 
+ static int
+@@ -2972,12 +3114,35 @@ ext4_readpages(struct file *file, struct address_space *mapping,
+ 		struct list_head *pages, unsigned nr_pages)
+ {
+ 	struct inode *inode = mapping->host;
++	struct ext4_inode_info *ei = EXT4_I(inode);
++	struct page *page = NULL;
++	unsigned page_idx;
+ 
+ 	/* If the file has inline data, no need to do readpages. */
+ 	if (ext4_has_inline_data(inode))
+ 		return 0;
+ 
+-	return mpage_readpages(mapping, pages, nr_pages, ext4_get_block);
++	if (ext4_is_encryption_enabled(ei)) {
++		for (page_idx = 0; page_idx < nr_pages; page_idx++) {
++			page = list_entry(pages->prev, struct page, lru);
++			prefetchw(&page->flags);
++			list_del(&page->lru);
++			if (!add_to_page_cache_lru(page, mapping, page->index,
++						   GFP_KERNEL)) {
++				if (!PageUptodate(page)) {
++					ext4_read_full_page(page);
++				} else {
++					unlock_page(page);
++				}
++			}
++			page_cache_release(page);
++		}
++		BUG_ON(!list_empty(pages));
++		return 0;
++	} else {
++		return mpage_readpages(mapping, pages, nr_pages,
++				       ext4_get_block);
++	}
+ }
+ 
+ static void ext4_invalidatepage(struct page *page, unsigned int offset,
+@@ -3236,9 +3401,13 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
+ {
+ 	struct file *file = iocb->ki_filp;
+ 	struct inode *inode = file->f_mapping->host;
++	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	size_t count = iov_iter_count(iter);
+ 	ssize_t ret;
+ 
++	if (ext4_is_encryption_enabled(ei))
++		return 0;
++
+ 	/*
+ 	 * If we are doing data journalling we don't support O_DIRECT
+ 	 */
+@@ -3361,8 +3530,10 @@ static int ext4_block_zero_page_range(handle_t *handle,
+ 	unsigned blocksize, max, pos;
+ 	ext4_lblk_t iblock;
+ 	struct inode *inode = mapping->host;
++	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	struct buffer_head *bh;
+ 	struct page *page;
++	struct ext4_crypto_ctx *ctx;
+ 	int err = 0;
+ 
+ 	page = find_or_create_page(mapping, from >> PAGE_CACHE_SHIFT,
+@@ -3418,6 +3589,12 @@ static int ext4_block_zero_page_range(handle_t *handle,
+ 		/* Uhhuh. Read error. Complain and punt. */
+ 		if (!buffer_uptodate(bh))
+ 			goto unlock;
++		if (ext4_is_encryption_enabled(ei)) {
++			BUG_ON(blocksize != PAGE_CACHE_SIZE);
++			ctx = ext4_get_crypto_ctx(false, &ei->i_encryption_key);
++			WARN_ON_ONCE(ext4_decrypt(ctx, page));
++			ext4_release_crypto_ctx(ctx);
++		}
+ 	}
+ 	if (ext4_should_journal_data(inode)) {
+ 		BUFFER_TRACE(bh, "get write access");
+diff --git a/include/linux/bio.h b/include/linux/bio.h
+index d2633ee..6ec3bee 100644
+--- a/include/linux/bio.h
++++ b/include/linux/bio.h
+@@ -375,6 +375,9 @@ static inline struct bio *bio_clone_kmalloc(struct bio *bio, gfp_t gfp_mask)
+ 
+ }
+ 
++/* TODO(mhalcrow): Only here for test; remove before release */
++extern atomic_t global_bio_count;
++
+ extern void bio_endio(struct bio *, int);
+ extern void bio_endio_nodec(struct bio *, int);
+ struct request_queue;
+-- 
+2.1.0.rc2.206.gedb03e5
+
