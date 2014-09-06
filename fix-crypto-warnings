@@ -1,0 +1,80 @@
+ext4 crypto: fix compile warnings
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/crypto.c | 19 ++++++++++---------
+ 1 file changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
+index e892d68..0428608 100644
+--- a/fs/ext4/crypto.c
++++ b/fs/ext4/crypto.c
+@@ -27,6 +27,7 @@
+ #include <linux/random.h>
+ #include <linux/scatterlist.h>
+ #include <linux/spinlock_types.h>
++#include <linux/key.h>
+ 
+ #include "ext4.h"
+ #include "xattr.h"
+@@ -35,10 +36,10 @@
+ 
+ /* Encryption added and removed here! (L: */
+ 
+-mempool_t *ext4_bounce_page_pool = NULL;
++static mempool_t *ext4_bounce_page_pool = NULL;
+ 
+-LIST_HEAD(ext4_free_crypto_ctxs);
+-DEFINE_SPINLOCK(ext4_crypto_ctx_lock);
++static LIST_HEAD(ext4_free_crypto_ctxs);
++static DEFINE_SPINLOCK(ext4_crypto_ctx_lock);
+ 
+ /* TODO(mhalcrow): Remove for release */
+ atomic_t ext4_dbg_pages = ATOMIC_INIT(0);
+@@ -87,7 +88,7 @@ void ext4_release_crypto_ctx(struct ext4_crypto_ctx *ctx)
+  * Return: An allocated and initialized encryption context on
+  * success. An error value or NULL otherwise.
+  */
+-static struct ext4_crypto_ctx *ext4_alloc_and_init_crypto_ctx(u32 mask)
++static struct ext4_crypto_ctx *ext4_alloc_and_init_crypto_ctx(gfp_t mask)
+ {
+ 	struct ext4_crypto_ctx *ctx = kzalloc(sizeof(struct ext4_crypto_ctx),
+ 					      mask);
+@@ -373,8 +374,8 @@ static void ext4_prep_pages_for_write(struct page *ciphertext_page,
+  * Return: An allocated page with the encrypted content on
+  * success. Else, an error value or NULL.
+  */
+-struct page *ext4_xts_encrypt(struct ext4_crypto_ctx *ctx,
+-			      struct page *plaintext_page)
++static struct page *ext4_xts_encrypt(struct ext4_crypto_ctx *ctx,
++				     struct page *plaintext_page)
+ {
+ 	struct page *ciphertext_page = ctx->bounce_page;
+ 	u8 xts_tweak[EXT4_XTS_TWEAK_SIZE];
+@@ -493,7 +494,7 @@ struct page *ext4_encrypt(struct ext4_crypto_ctx *ctx,
+  *
+  * Return: Zero on success, non-zero otherwise.
+  */
+-int ext4_xts_decrypt(struct ext4_crypto_ctx *ctx, struct page *page)
++static int ext4_xts_decrypt(struct ext4_crypto_ctx *ctx, struct page *page)
+ {
+ 	u8 xts_tweak[EXT4_XTS_TWEAK_SIZE];
+ 	struct ablkcipher_request *req = NULL;
+@@ -607,7 +608,7 @@ static int ext4_get_wrapping_key_from_keyring(
+ 	if (WARN_ON_ONCE(create_key->datalen !=
+ 			 sizeof(struct ecryptfs_auth_tok))) {
+ 		printk(KERN_ERR
+-		       "%s: Got auth tok length [%d], expected [%ld]\n",
++		       "%s: Got auth tok length [%d], expected [%zd]\n",
+ 		       __func__, create_key->datalen,
+ 		       sizeof(struct ecryptfs_auth_tok));
+ 		return -EINVAL;
+@@ -706,7 +707,7 @@ static uint32_t ext4_validate_encryption_key_size(uint32_t mode, uint32_t size)
+ struct ext4_hmac_result {
+ 	struct completion completion;
+ 	int res;
+-} ext4_hmac_result;
++};
+ 
+ /**
+  * ext4_hmac_complete() - Completion for async HMAC
