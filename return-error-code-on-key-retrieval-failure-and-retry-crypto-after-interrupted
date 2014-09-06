@@ -1,0 +1,44 @@
+ext4 crypto: Return error code on key retrieval failure and retry crypto after interrupted
+
+From: Michael Halcrow <mhalcrow@google.com>
+
+Signed-of-by: Michael Halcrow <mhalcrow@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/crypto.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
+index f81b804..ead3111 100644
+--- a/fs/ext4/crypto.c
++++ b/fs/ext4/crypto.c
+@@ -629,7 +629,7 @@ static int ext4_get_wrapping_key(
+ 	}
+ 	BUG_ON(sig[EXT4_WRAPPING_KEY_SIG_NULL_TERMINATED_SIZE - 1] != '\0');
+ 	res = ext4_get_wrapping_key_from_keyring(wrapping_key, sig);
+-	return 0;
++	return res;
+ }
+ 
+ /**
+@@ -1048,6 +1048,7 @@ int ext4_set_crypto_key(struct dentry *dentry)
+ 	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	int res = 0;
+ 
++try_again:
+ 	ext4_generate_encryption_key(dentry);
+ 	res = ext4_wrap_key(wrapped_key_packet, &wrapped_key_packet_size,
+ 			    &ei->i_encryption_key, inode);
+@@ -1062,6 +1063,8 @@ int ext4_set_crypto_key(struct dentry *dentry)
+ 			     root_packet, root_packet_size, 0);
+ out:
+ 	if (res) {
++		if (res == -EINTR)
++			goto try_again;
+ 		ei->i_encryption_key.mode = EXT4_ENCRYPTION_MODE_INVALID;
+ 		printk_ratelimited(KERN_ERR "%s: res = [%d]\n", __func__, res);
+ 	}
+-- 
+2.1.0.rc2.206.gedb03e5
+
+

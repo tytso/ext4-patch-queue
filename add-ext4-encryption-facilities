@@ -1,6 +1,6 @@
 ext4: add EXT4 encryption facilities
 
-From: Michael Halcrow <mhalcrow@google.com>
+From: Mike Halcrow <mhalcrow@google.com>
 
 On encrypt, we will re-assign the buffer_heads to point to a bounce
 page rather than the control_page (which is the original page to write
@@ -21,12 +21,12 @@ Signed-off-by: Michael Halcrow <mhalcrow@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/Makefile      |    9 +-
- fs/ext4/crypto.c      | 1132 +++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/crypto.c      | 1135 +++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/ext4.h        |   25 ++
  fs/ext4/ext4_crypto.h |  175 ++++++++
  fs/ext4/super.c       |   38 +-
  fs/ext4/xattr.h       |    1 +
- 6 files changed, 1374 insertions(+), 6 deletions(-)
+ 6 files changed, 1377 insertions(+), 6 deletions(-)
  create mode 100644 fs/ext4/crypto.c
  create mode 100644 fs/ext4/ext4_crypto.h
 
@@ -52,10 +52,10 @@ index 0310fec..de4de1c 100644
  ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
 new file mode 100644
-index 0000000..f81b804
+index 0000000..ead3111
 --- /dev/null
 +++ b/fs/ext4/crypto.c
-@@ -0,0 +1,1132 @@
+@@ -0,0 +1,1135 @@
 +/*
 + * linux/fs/ext4/crypto.c
 + *
@@ -687,7 +687,7 @@ index 0000000..f81b804
 +	}
 +	BUG_ON(sig[EXT4_WRAPPING_KEY_SIG_NULL_TERMINATED_SIZE - 1] != '\0');
 +	res = ext4_get_wrapping_key_from_keyring(wrapping_key, sig);
-+	return 0;
++	return res;
 +}
 +
 +/**
@@ -1106,6 +1106,7 @@ index 0000000..f81b804
 +	struct ext4_inode_info *ei = EXT4_I(inode);
 +	int res = 0;
 +
++try_again:
 +	ext4_generate_encryption_key(dentry);
 +	res = ext4_wrap_key(wrapped_key_packet, &wrapped_key_packet_size,
 +			    &ei->i_encryption_key, inode);
@@ -1120,6 +1121,8 @@ index 0000000..f81b804
 +			     root_packet, root_packet_size, 0);
 +out:
 +	if (res) {
++		if (res == -EINTR)
++			goto try_again;
 +		ei->i_encryption_key.mode = EXT4_ENCRYPTION_MODE_INVALID;
 +		printk_ratelimited(KERN_ERR "%s: res = [%d]\n", __func__, res);
 +	}
@@ -1548,4 +1551,5 @@ index 29bedf5..29d47c7 100644
  	__le32	h_magic;	/* magic number for identification */
 -- 
 2.1.0.rc2.206.gedb03e5
+
 

@@ -1,8 +1,6 @@
 ext4: add EXT4 encryption read callback support
 
-From: Michael Halcrow <mhalcrow@google.com>
-
-Adds EXT4 encryption read callback support.
+From: Mike Halcrow <mhalcrow@google.com>
 
 Copies block_read_full_page() to ext4_read_full_page() and adds some
 callback logic near the end.
@@ -10,24 +8,30 @@ callback logic near the end.
 Signed-off-by: Michael Halcrow <mhalcrow@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/file.c      |   9 ++-
- fs/ext4/inode.c     | 185 ++++++++++++++++++++++++++++++++++++++++++++++++++--
- include/linux/bio.h |   3 +
- 3 files changed, 191 insertions(+), 6 deletions(-)
+ fs/ext4/file.c      |  16 ++++++-
+ fs/ext4/inode.c     | 186 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ include/linux/bio.h |   3 ++
+ 3 files changed, 199 insertions(+), 6 deletions(-)
 
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 8695f70..c8bb4db 100644
+index aca7b24..6958f1a 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
-@@ -206,6 +206,7 @@ static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
- 		return -ENOEXEC;
+@@ -200,8 +200,13 @@ static const struct vm_operations_struct ext4_file_vm_ops = {
+ 
+ static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
+ {
++	int res;
++
  	file_accessed(file);
  	vma->vm_ops = &ext4_file_vm_ops;
-+	ext4_get_crypto_key(file);
++	res = ext4_get_crypto_key(file);
++	if (res == -EACCES) /* If it's encrypted and we don't have the key */
++		return res;
  	return 0;
  }
  
-@@ -216,6 +217,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+@@ -212,6 +217,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
  	struct vfsmount *mnt = filp->f_path.mnt;
  	struct path path;
  	char buf[64], *cp;
@@ -35,7 +39,7 @@ index 8695f70..c8bb4db 100644
  
  	if (unlikely(!(sbi->s_mount_flags & EXT4_MF_MNTDIR_SAMPLED) &&
  		     !(sb->s_flags & MS_RDONLY))) {
-@@ -254,11 +256,14 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+@@ -250,11 +256,17 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
  	 * writing and the journal is present
  	 */
  	if (filp->f_mode & FMODE_WRITE) {
@@ -46,26 +50,37 @@ index 8695f70..c8bb4db 100644
  	}
 -	return dquot_file_open(inode, filp);
 +	ret = dquot_file_open(inode, filp);
-+	if (!ret)
-+		ext4_get_crypto_key(filp);
++	if (!ret) {
++		ret = ext4_get_crypto_key(filp);
++		if (ret != -EACCES)
++			ret = 0;
++	}
 +	return ret;
  }
  
  /*
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 42385c9..14585c5 100644
+index 3aedf18..bd7a7d5 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -837,6 +837,8 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
- 			       ext4_lblk_t block, int create, int *err)
+@@ -39,6 +39,7 @@
+ #include <linux/ratelimit.h>
+ #include <linux/aio.h>
+ #include <linux/bitops.h>
++#include <linux/prefetch.h>
+ 
+ #include "ext4_jbd2.h"
+ #include "xattr.h"
+@@ -784,6 +785,8 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
+ 			       ext4_lblk_t block, int create)
  {
  	struct buffer_head *bh;
 +	struct ext4_inode_info *ei = EXT4_I(inode);
 +	struct ext4_crypto_ctx *ctx;
  
- 	bh = ext4_getblk(handle, inode, block, create, err);
- 	if (!bh)
-@@ -845,8 +847,16 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
+ 	bh = ext4_getblk(handle, inode, block, create);
+ 	if (IS_ERR(bh))
+@@ -792,8 +795,16 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
  		return bh;
  	ll_rw_block(READ | REQ_META | REQ_PRIO, 1, &bh);
  	wait_on_buffer(bh);
@@ -81,9 +96,9 @@ index 42385c9..14585c5 100644
  		return bh;
 +	}
  	put_bh(bh);
- 	*err = -EIO;
- 	return NULL;
-@@ -2951,20 +2961,152 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
+ 	return ERR_PTR(-EIO);
+ }
+@@ -2799,20 +2810,152 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
  	return generic_block_bmap(mapping, block, ext4_get_block);
  }
  
@@ -238,7 +253,7 @@ index 42385c9..14585c5 100644
  }
  
  static int
-@@ -2972,12 +3114,35 @@ ext4_readpages(struct file *file, struct address_space *mapping,
+@@ -2820,12 +2963,35 @@ ext4_readpages(struct file *file, struct address_space *mapping,
  		struct list_head *pages, unsigned nr_pages)
  {
  	struct inode *inode = mapping->host;
@@ -275,7 +290,7 @@ index 42385c9..14585c5 100644
  }
  
  static void ext4_invalidatepage(struct page *page, unsigned int offset,
-@@ -3236,9 +3401,13 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
+@@ -3084,9 +3250,13 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
  {
  	struct file *file = iocb->ki_filp;
  	struct inode *inode = file->f_mapping->host;
@@ -289,7 +304,7 @@ index 42385c9..14585c5 100644
  	/*
  	 * If we are doing data journalling we don't support O_DIRECT
  	 */
-@@ -3361,8 +3530,10 @@ static int ext4_block_zero_page_range(handle_t *handle,
+@@ -3209,8 +3379,10 @@ static int ext4_block_zero_page_range(handle_t *handle,
  	unsigned blocksize, max, pos;
  	ext4_lblk_t iblock;
  	struct inode *inode = mapping->host;
@@ -300,7 +315,7 @@ index 42385c9..14585c5 100644
  	int err = 0;
  
  	page = find_or_create_page(mapping, from >> PAGE_CACHE_SHIFT,
-@@ -3418,6 +3589,12 @@ static int ext4_block_zero_page_range(handle_t *handle,
+@@ -3266,6 +3438,12 @@ static int ext4_block_zero_page_range(handle_t *handle,
  		/* Uhhuh. Read error. Complain and punt. */
  		if (!buffer_uptodate(bh))
  			goto unlock;
@@ -314,10 +329,10 @@ index 42385c9..14585c5 100644
  	if (ext4_should_journal_data(inode)) {
  		BUFFER_TRACE(bh, "get write access");
 diff --git a/include/linux/bio.h b/include/linux/bio.h
-index d2633ee..6ec3bee 100644
+index b39e500..6b42e2a 100644
 --- a/include/linux/bio.h
 +++ b/include/linux/bio.h
-@@ -375,6 +375,9 @@ static inline struct bio *bio_clone_kmalloc(struct bio *bio, gfp_t gfp_mask)
+@@ -376,6 +376,9 @@ static inline struct bio *bio_clone_kmalloc(struct bio *bio, gfp_t gfp_mask)
  
  }
  
@@ -327,6 +342,3 @@ index d2633ee..6ec3bee 100644
  extern void bio_endio(struct bio *, int);
  extern void bio_endio_nodec(struct bio *, int);
  struct request_queue;
--- 
-2.1.0.rc2.206.gedb03e5
-
