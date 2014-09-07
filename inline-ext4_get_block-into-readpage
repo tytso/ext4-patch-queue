@@ -1,0 +1,171 @@
+ext4: call ext4_map_blocks() directly from read_page.c
+
+Use ext4_map_blocks() directly instead of going through
+ext4_get_block().  This allows us to drop out a lot of generic code
+that was not needed for ext4.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+
+---
+ fs/ext4/readpage.c | 83 ++++++++++++++++++-----------------------------------------------------------------
+ 1 file changed, 18 insertions(+), 65 deletions(-)
+
+diff --git a/fs/ext4/readpage.c b/fs/ext4/readpage.c
+index 3b29da1..ce3ecc1 100644
+--- a/fs/ext4/readpage.c
++++ b/fs/ext4/readpage.c
+@@ -85,49 +85,6 @@ mpage_alloc(struct block_device *bdev,
+ }
+ 
+ /*
+- * support function for mpage_readpages.  The fs supplied get_block might
+- * return an up to date buffer.  This is used to map that buffer into
+- * the page, which allows readpage to avoid triggering a duplicate call
+- * to get_block.
+- *
+- * The idea is to avoid adding buffers to pages that don't already have
+- * them.  So when the buffer is up to date and the page size == block size,
+- * this marks the page up to date instead of adding new buffers.
+- */
+-static void
+-map_buffer_to_page(struct page *page, struct buffer_head *bh, int page_block)
+-{
+-	struct inode *inode = page->mapping->host;
+-	struct buffer_head *page_bh, *head;
+-	int block = 0;
+-
+-	if (!page_has_buffers(page)) {
+-		/*
+-		 * don't make any buffers if there is only one buffer on
+-		 * the page and the page just needs to be set up to date
+-		 */
+-		if (inode->i_blkbits == PAGE_CACHE_SHIFT &&
+-		    buffer_uptodate(bh)) {
+-			SetPageUptodate(page);
+-			return;
+-		}
+-		create_empty_buffers(page, 1 << inode->i_blkbits, 0);
+-	}
+-	head = page_buffers(page);
+-	page_bh = head;
+-	do {
+-		if (block == page_block) {
+-			page_bh->b_state = bh->b_state;
+-			page_bh->b_bdev = bh->b_bdev;
+-			page_bh->b_blocknr = bh->b_blocknr;
+-			break;
+-		}
+-		page_bh = page_bh->b_this_page;
+-		block++;
+-	} while (page_bh != head);
+-}
+-
+-/*
+  * This is the worker routine which does all the work of mapping the disk
+  * blocks and constructs largest possible bios, submits them for IO if the
+  * blocks are not contiguous on the disk.
+@@ -138,8 +95,8 @@ map_buffer_to_page(struct page *page, struct buffer_head *bh, int page_block)
+  */
+ static struct bio *
+ do_mpage_readpage(struct bio *bio, struct page *page, unsigned nr_pages,
+-		sector_t *last_block_in_bio, struct buffer_head *map_bh,
+-		unsigned long *first_logical_block, get_block_t get_block)
++		  sector_t *last_block_in_bio, struct buffer_head *map_bh,
++		  unsigned long *first_logical_block)
+ {
+ 	struct inode *inode = page->mapping->host;
+ 	const unsigned blkbits = inode->i_blkbits;
+@@ -151,7 +108,7 @@ do_mpage_readpage(struct bio *bio, struct page *page, unsigned nr_pages,
+ 	sector_t blocks[MAX_BUF_PER_PAGE];
+ 	unsigned page_block;
+ 	unsigned first_hole = blocks_per_page;
+-	struct block_device *bdev = NULL;
++	struct block_device *bdev = inode->i_sb->s_bdev;
+ 	int length;
+ 	int fully_mapped = 1;
+ 	unsigned nblocks;
+@@ -188,7 +145,6 @@ do_mpage_readpage(struct bio *bio, struct page *page, unsigned nr_pages,
+ 			page_block++;
+ 			block_in_file++;
+ 		}
+-		bdev = map_bh->b_bdev;
+ 	}
+ 
+ 	/*
+@@ -200,9 +156,19 @@ do_mpage_readpage(struct bio *bio, struct page *page, unsigned nr_pages,
+ 		map_bh->b_size = 0;
+ 
+ 		if (block_in_file < last_block) {
+-			map_bh->b_size = (last_block-block_in_file) << blkbits;
+-			if (get_block(inode, block_in_file, map_bh, 0))
++			struct ext4_map_blocks map;
++			int ret;
++
++			map.m_lblk = block_in_file;
++			map.m_len = last_block - block_in_file;
++			ret = ext4_map_blocks(NULL, inode, &map, 0);
++			if (ret < 0)
+ 				goto confused;
++			map_bh->b_blocknr = map.m_pblk;
++			map_bh->b_bdev = bdev;
++			map_bh->b_size = inode->i_sb->s_blocksize * map.m_len;
++			map_bh->b_state = map.m_flags;
++
+ 			*first_logical_block = block_in_file;
+ 		}
+ 
+@@ -215,17 +181,6 @@ do_mpage_readpage(struct bio *bio, struct page *page, unsigned nr_pages,
+ 			continue;
+ 		}
+ 
+-		/* some filesystems will copy data into the page during
+-		 * the get_block call, in which case we don't want to
+-		 * read it again.  map_buffer_to_page copies the data
+-		 * we just collected from get_block into the page's buffers
+-		 * so readpage doesn't have to repeat the get_block call
+-		 */
+-		if (buffer_uptodate(map_bh)) {
+-			map_buffer_to_page(page, map_bh, page_block);
+-			goto confused;
+-		}
+-
+ 		if (first_hole != blocks_per_page)
+ 			goto confused;		/* hole -> non-hole */
+ 
+@@ -243,7 +198,6 @@ do_mpage_readpage(struct bio *bio, struct page *page, unsigned nr_pages,
+ 			page_block++;
+ 			block_in_file++;
+ 		}
+-		bdev = map_bh->b_bdev;
+ 	}
+ 
+ 	if (first_hole != blocks_per_page) {
+@@ -303,7 +257,7 @@ confused:
+ 	if (bio)
+ 		bio = mpage_bio_submit(READ, bio);
+ 	if (!PageUptodate(page))
+-	        block_read_full_page(page, get_block);
++	        block_read_full_page(page, ext4_get_block);
+ 	else
+ 		unlock_page(page);
+ 	goto out;
+@@ -329,7 +283,7 @@ int ext4_readpage(struct file *file, struct page *page)
+ 	map_bh.b_state = 0;
+ 	map_bh.b_size = 0;
+ 	bio = do_mpage_readpage(bio, page, 1, &last_block_in_bio,
+-			&map_bh, &first_logical_block, ext4_get_block);
++			&map_bh, &first_logical_block);
+ 	if (bio)
+ 		mpage_bio_submit(READ, bio);
+ 	return 0;
+@@ -361,8 +315,7 @@ int ext4_readpages(struct file *file, struct address_space *mapping,
+ 			bio = do_mpage_readpage(bio, page,
+ 					nr_pages - page_idx,
+ 					&last_block_in_bio, &map_bh,
+-					&first_logical_block,
+-					ext4_get_block);
++					&first_logical_block);
+ 		}
+ 		page_cache_release(page);
+ 	}
