@@ -1,0 +1,33 @@
+ext4 crypto: enables delayed allocation
+
+From: Michael Halcrow <mhalcrow@google.com>
+
+I had delayed allocation disabled because it seemed like the
+conservative/safe thing to do during initial development of the
+feature. However, it seems that we don't have much (if anything) to do
+to support delayed allocation with encryption, so I'm re-enabling that
+code path for further test and development.
+
+Signed-off-by: Michael Halcrow <mhalcrow@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/inode.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 8b654c1..631c635 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2309,7 +2309,7 @@ static int ext4_writepages(struct address_space *mapping,
+ 	if (!mapping->nrpages || !mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
+ 		goto out_writepages;
+ 
+-	if (ext4_should_journal_data(inode) || ext4_is_encryption_enabled(ei)) {
++	if (ext4_should_journal_data(inode)) {
+ 		struct blk_plug plug;
+ 
+ 		blk_start_plug(&plug);
+-- 
+2.1.0.rc2.206.gedb03e5
+
+
