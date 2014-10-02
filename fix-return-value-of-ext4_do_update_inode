@@ -1,0 +1,37 @@
+ext4: fix return value of ext4_do_update_inode
+
+From: Li Xi <pkuelelixi@gmail.com>
+
+When ext4_do_update_inode() gets error from ext4_inode_blocks_set(),
+error number should be returned.
+
+Signed-off-by: Li Xi <lixi@ddn.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Eric Sandeen <sandeen@redhat.com>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/inode.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index d5dd7d4..03ddfd7 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4204,7 +4204,8 @@ static int ext4_do_update_inode(handle_t *handle,
+ 	EXT4_INODE_SET_XTIME(i_atime, inode, raw_inode);
+ 	EXT4_EINODE_SET_XTIME(i_crtime, ei, raw_inode);
+ 
+-	if (ext4_inode_blocks_set(handle, raw_inode, ei)) {
++	err = ext4_inode_blocks_set(handle, raw_inode, ei);
++	if (err) {
+ 		spin_unlock(&ei->i_raw_lock);
+ 		goto out_brelse;
+ 	}
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
