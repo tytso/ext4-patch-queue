@@ -1,0 +1,91 @@
+ext4: add ext4_iget_normal() which is to be used for dir tree lookups
+
+If there is a corrupted file system which has directory entries that
+point at reserved, metadata inodes, prohibit them from being used by
+treating them the same way we treat Boot Loader inodes --- that is,
+mark them to be bad inodes.  This prohibits them from being opened,
+deleted, or modified via chmod, chown, utimes, etc.
+
+In particular, this prevents a corrupted file system which has a
+directory entry which points at the journal inode from being deleted
+and its blocks released, after which point Much Hilarity Ensues.
+
+Reported-by: Sami Liedes <sami.liedes@iki.fi>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+
+---
+ fs/ext4/ext4.h  |  1 +
+ fs/ext4/inode.c | 10 ++++++++++
+ fs/ext4/namei.c |  4 ++--
+ fs/ext4/super.c |  2 +-
+ 4 files changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 1eb5b7b..012e89b 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2109,6 +2109,7 @@ int do_journal_get_write_access(handle_t *handle,
+ #define CONVERT_INLINE_DATA	 2
+ 
+ extern struct inode *ext4_iget(struct super_block *, unsigned long);
++extern struct inode *ext4_iget_normal(struct super_block *, unsigned long);
+ extern int  ext4_write_inode(struct inode *, struct writeback_control *);
+ extern int  ext4_setattr(struct dentry *, struct iattr *);
+ extern int  ext4_getattr(struct vfsmount *mnt, struct dentry *dentry,
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 59983b2..437622c 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4104,6 +4104,16 @@ bad_inode:
+ 	return ERR_PTR(ret);
+ }
+ 
++struct inode *ext4_iget_normal(struct super_block *sb, unsigned long ino)
++{
++	struct inode *ret_inode = ext4_iget(sb, ino);
++
++	if (ret_inode && !IS_ERR(ret_inode) &&
++	    ino < EXT4_FIRST_INO(sb) && ino != EXT4_ROOT_INO)
++		make_bad_inode(ret_inode);
++	return ret_inode;
++}
++
+ static int ext4_inode_blocks_set(handle_t *handle,
+ 				struct ext4_inode *raw_inode,
+ 				struct ext4_inode_info *ei)
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index a2a9d40..7037ecf 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1417,7 +1417,7 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
+ 					 dentry);
+ 			return ERR_PTR(-EIO);
+ 		}
+-		inode = ext4_iget(dir->i_sb, ino);
++		inode = ext4_iget_normal(dir->i_sb, ino);
+ 		if (inode == ERR_PTR(-ESTALE)) {
+ 			EXT4_ERROR_INODE(dir,
+ 					 "deleted inode referenced: %u",
+@@ -1450,7 +1450,7 @@ struct dentry *ext4_get_parent(struct dentry *child)
+ 		return ERR_PTR(-EIO);
+ 	}
+ 
+-	return d_obtain_alias(ext4_iget(child->d_inode->i_sb, ino));
++	return d_obtain_alias(ext4_iget_normal(child->d_inode->i_sb, ino));
+ }
+ 
+ /*
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 1070d6e..a0811cc 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1001,7 +1001,7 @@ static struct inode *ext4_nfs_get_inode(struct super_block *sb,
+ 	 * Currently we don't know the generation for parent directory, so
+ 	 * a generation of 0 means "accept any"
+ 	 */
+-	inode = ext4_iget(sb, ino);
++	inode = ext4_iget_normal(sb, ino);
+ 	if (IS_ERR(inode))
+ 		return ERR_CAST(inode);
+ 	if (generation && inode->i_generation != generation) {
