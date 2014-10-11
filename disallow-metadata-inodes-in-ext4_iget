@@ -15,11 +15,11 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 Cc: stable@vger.kernel.org
 
 ---
- fs/ext4/ext4.h  |  1 +
- fs/ext4/inode.c | 10 ++++++++++
- fs/ext4/namei.c |  4 ++--
- fs/ext4/super.c |  2 +-
- 4 files changed, 14 insertions(+), 3 deletions(-)
+ fs/ext4/ext4.h  | 1 +
+ fs/ext4/inode.c | 7 +++++++
+ fs/ext4/namei.c | 4 ++--
+ fs/ext4/super.c | 2 +-
+ 4 files changed, 11 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 1eb5b7b..012e89b 100644
@@ -34,21 +34,18 @@ index 1eb5b7b..012e89b 100644
  extern int  ext4_setattr(struct dentry *, struct iattr *);
  extern int  ext4_getattr(struct vfsmount *mnt, struct dentry *dentry,
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 59983b2..437622c 100644
+index 59983b2..e204d8a 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -4104,6 +4104,16 @@ bad_inode:
+@@ -4104,6 +4104,13 @@ bad_inode:
  	return ERR_PTR(ret);
  }
  
 +struct inode *ext4_iget_normal(struct super_block *sb, unsigned long ino)
 +{
-+	struct inode *ret_inode = ext4_iget(sb, ino);
-+
-+	if (ret_inode && !IS_ERR(ret_inode) &&
-+	    ino < EXT4_FIRST_INO(sb) && ino != EXT4_ROOT_INO)
-+		make_bad_inode(ret_inode);
-+	return ret_inode;
++	if (ino < EXT4_FIRST_INO(sb) && ino != EXT4_ROOT_INO)
++		return ERR_PTR(-EIO);
++	return ext4_iget(sb, ino);
 +}
 +
  static int ext4_inode_blocks_set(handle_t *handle,
