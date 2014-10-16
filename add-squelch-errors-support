@@ -18,18 +18,18 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
  2 files changed, 4 insertions(+)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index d6f57c0..88e1729 100644
+index 7600dbd..ef9bf04 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1155,6 +1155,7 @@ struct ext4_super_block {
+@@ -1179,6 +1179,7 @@ struct ext4_super_block {
   */
  #define EXT4_MF_MNTDIR_SAMPLED	0x0001
  #define EXT4_MF_FS_ABORTED	0x0002	/* Fatal error detected */
 +#define EXT4_MF_FS_SQUELCH	0x0004	/* Squelch file system errors */
  
- /*
-  * fourth extended-fs super-block data in memory
-@@ -1387,6 +1388,7 @@ enum {
+ /* Number of quota types we support */
+ #define EXT4_MAXQUOTAS 2
+@@ -1417,6 +1418,7 @@ enum {
  	EXT4_STATE_MAY_INLINE_DATA,	/* may have in-inode data */
  	EXT4_STATE_ORDERED_MODE,	/* data=ordered mode */
  	EXT4_STATE_EXT_PRECACHED,	/* extents have been precached */
@@ -38,21 +38,21 @@ index d6f57c0..88e1729 100644
  
  #define EXT4_INODE_BIT_FNS(name, field, offset)				\
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index bbad399..4ec18ec 100644
+index 2d294b7..54ac1e5 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -2738,6 +2738,7 @@ EXT4_RW_ATTR_SBI_UI(warning_ratelimit_interval_ms, s_warning_ratelimit_state.int
- EXT4_RW_ATTR_SBI_UI(warning_ratelimit_burst, s_warning_ratelimit_state.burst);
- EXT4_RW_ATTR_SBI_UI(msg_ratelimit_interval_ms, s_msg_ratelimit_state.interval);
- EXT4_RW_ATTR_SBI_UI(msg_ratelimit_burst, s_msg_ratelimit_state.burst);
+@@ -2774,6 +2774,7 @@ EXT4_RW_ATTR_SBI_UI(msg_ratelimit_burst, s_msg_ratelimit_state.burst);
+ EXT4_RO_ATTR_ES_UI(errors_count, s_error_count);
+ EXT4_RO_ATTR_ES_UI(first_error_time, s_first_error_time);
+ EXT4_RO_ATTR_ES_UI(last_error_time, s_last_error_time);
 +EXT4_RW_ATTR_SBI_BOOL(squelch_errors, s_mount_flags, EXT4_MF_FS_SQUELCH);
  
  static struct attribute *ext4_attrs[] = {
  	ATTR_LIST(delayed_allocation_blocks),
-@@ -2761,6 +2762,7 @@ static struct attribute *ext4_attrs[] = {
- 	ATTR_LIST(warning_ratelimit_burst),
- 	ATTR_LIST(msg_ratelimit_interval_ms),
- 	ATTR_LIST(msg_ratelimit_burst),
+@@ -2800,6 +2801,7 @@ static struct attribute *ext4_attrs[] = {
+ 	ATTR_LIST(errors_count),
+ 	ATTR_LIST(first_error_time),
+ 	ATTR_LIST(last_error_time),
 +	ATTR_LIST(squelch_errors),
  	NULL,
  };

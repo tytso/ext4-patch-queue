@@ -2,14 +2,14 @@ ext4: add support for adding boolean toggles to ext4's sysfs directory
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/super.c | 36 +++++++++++++++++++++++++++++++++---
- 1 file changed, 33 insertions(+), 3 deletions(-)
+ fs/ext4/super.c | 38 ++++++++++++++++++++++++++++++++++----
+ 1 file changed, 34 insertions(+), 4 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 85b3dd6..d31f51b 100644
+index bf1b8a8..2d294b7 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -2400,6 +2400,7 @@ struct ext4_attr {
+@@ -2535,6 +2535,7 @@ struct ext4_attr {
  		int offset;
  		int deprecated_val;
  	} u;
@@ -17,7 +17,7 @@ index 85b3dd6..d31f51b 100644
  };
  
  static int parse_strtoull(const char *buf,
-@@ -2532,7 +2533,33 @@ static ssize_t sbi_deprecated_show(struct ext4_attr *a,
+@@ -2677,7 +2678,33 @@ static ssize_t sbi_deprecated_show(struct ext4_attr *a,
  	return snprintf(buf, PAGE_SIZE, "%d\n", a->u.deprecated_val);
  }
  
@@ -52,26 +52,28 @@ index 85b3dd6..d31f51b 100644
  static struct ext4_attr ext4_attr_##_name = {			\
  	.attr = {.name = __stringify(_name), .mode = _mode },	\
  	.show	= _show,					\
-@@ -2540,6 +2567,7 @@ static struct ext4_attr ext4_attr_##_name = {			\
+@@ -2685,6 +2712,7 @@ static struct ext4_attr ext4_attr_##_name = {			\
  	.u = {							\
  		.offset = offsetof(struct ext4_sb_info, _elname),\
  	},							\
 +	.mask   = (_mask),                                      	\
  }
- #define EXT4_ATTR(name, mode, show, store) \
- static struct ext4_attr ext4_attr_##name = __ATTR(name, mode, show, store)
-@@ -2548,7 +2576,9 @@ static struct ext4_attr ext4_attr_##name = __ATTR(name, mode, show, store)
- #define EXT4_RO_ATTR(name) EXT4_ATTR(name, 0444, name##_show, NULL)
- #define EXT4_RW_ATTR(name) EXT4_ATTR(name, 0644, name##_show, name##_store)
+ 
+ #define EXT4_ATTR_OFFSET_ES(_name,_mode,_show,_store,_elname)		\
+@@ -2707,8 +2735,10 @@ static struct ext4_attr ext4_attr_##name = __ATTR(name, mode, show, store)
+ #define EXT4_RO_ATTR_ES_UI(name, elname)	\
+ 	EXT4_ATTR_OFFSET_ES(name, 0444, es_ui_show, NULL, elname)
  #define EXT4_RW_ATTR_SBI_UI(name, elname)	\
 -	EXT4_ATTR_OFFSET(name, 0644, sbi_ui_show, sbi_ui_store, elname)
+-
 +	EXT4_ATTR_OFFSET(name, 0644, sbi_ui_show, sbi_ui_store, elname, 0)
 +#define EXT4_RW_ATTR_SBI_BOOL(name, elname, mask)			\
-+EXT4_ATTR_OFFSET(name, 0644, sbi_bool_show, sbi_bool_store, elname, mask)
++	EXT4_ATTR_OFFSET(name, 0644, sbi_bool_show, sbi_bool_store,	\
++			 elname, mask)
  #define ATTR_LIST(name) &ext4_attr_##name.attr
  #define EXT4_DEPRECATED_ATTR(_name, _val)	\
  static struct ext4_attr ext4_attr_##_name = {			\
-@@ -2564,7 +2594,7 @@ EXT4_RO_ATTR(session_write_kbytes);
+@@ -2724,7 +2754,7 @@ EXT4_RO_ATTR(session_write_kbytes);
  EXT4_RO_ATTR(lifetime_write_kbytes);
  EXT4_RW_ATTR(reserved_clusters);
  EXT4_ATTR_OFFSET(inode_readahead_blks, 0644, sbi_ui_show,

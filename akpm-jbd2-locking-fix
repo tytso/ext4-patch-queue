@@ -11,18 +11,18 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: akpm@linux-foundation.org
 ---
  fs/ext4/ext4.h        |  3 +++
- fs/ext4/super.c       | 11 +++++++++++
+ fs/ext4/super.c       | 13 ++++++++++++-
  fs/jbd2/transaction.c | 12 ++++++++++--
  include/linux/jbd2.h  |  1 +
- 4 files changed, 25 insertions(+), 2 deletions(-)
+ 4 files changed, 26 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 4a17e88..d19ef59 100644
+index ef9bf04..5c64ba6 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -977,6 +977,9 @@ struct ext4_inode_info {
- 						      size of blocksize * 8
- 						      blocks */
+@@ -1010,6 +1010,9 @@ struct ext4_inode_info {
+ 						      file systems */
+ #define EXT4_MOUNT2_DUMMY_ENCRYPTION	0x80000000 /* Use dummy encryption */
  
 +#define EXT4_MOUNT2_AKPM_LOCK_HACK	0x80000000 /* akpm lock hack */
 +
@@ -31,13 +31,15 @@ index 4a17e88..d19ef59 100644
  						~EXT4_MOUNT_##opt
  #define set_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt |= \
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 79de0b1..86a80d2 100644
+index 54ac1e5..d179efc 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1151,6 +1151,7 @@ enum {
+@@ -1149,7 +1149,8 @@ enum {
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
  	Opt_dioread_nolock, Opt_dioread_lock,
  	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
- 	Opt_max_dir_size_kb,
+-	Opt_max_dir_size_kb, Opt_encrypt_key_sig, Opt_dummy_encryption
++	Opt_max_dir_size_kb, Opt_encrypt_key_sig, Opt_dummy_encryption,
 +	Opt_akpm_lock_hack,
  };
  
@@ -50,7 +52,7 @@ index 79de0b1..86a80d2 100644
  	{Opt_delalloc, "delalloc"},
  	{Opt_nodelalloc, "nodelalloc"},
  	{Opt_removed, "mblk_io_submit"},
-@@ -1460,6 +1462,9 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
+@@ -1466,6 +1468,9 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
  	case Opt_i_version:
  		sb->s_flags |= MS_I_VERSION;
  		return 1;
@@ -60,7 +62,7 @@ index 79de0b1..86a80d2 100644
  	}
  
  	for (m = ext4_mount_opts; m->token != Opt_err; m++)
-@@ -1779,6 +1784,8 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
+@@ -1834,6 +1839,8 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
  		SEQ_OPTS_PRINT("min_batch_time=%u", sbi->s_min_batch_time);
  	if (nodefs || sbi->s_max_batch_time != EXT4_DEF_MAX_BATCH_TIME)
  		SEQ_OPTS_PRINT("max_batch_time=%u", sbi->s_max_batch_time);
@@ -69,7 +71,7 @@ index 79de0b1..86a80d2 100644
  	if (sb->s_flags & MS_I_VERSION)
  		SEQ_OPTS_PUTS("i_version");
  	if (nodefs || sbi->s_stripe)
-@@ -4299,6 +4306,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -4431,6 +4438,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
@@ -81,10 +83,10 @@ index 79de0b1..86a80d2 100644
  }
  
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index e1c0b4a..6d6b6bc 100644
+index 93ffee2..4ba2b76 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
-@@ -788,6 +788,7 @@ do_get_write_access(handle_t *handle, struct journal_head *jh,
+@@ -784,6 +784,7 @@ do_get_write_access(handle_t *handle, struct journal_head *jh,
  	char *frozen_buffer = NULL;
  	int need_copy = 0;
  	unsigned long start_lock, time_lock;
@@ -92,7 +94,7 @@ index e1c0b4a..6d6b6bc 100644
  
  	WARN_ON(!transaction);
  	if (is_handle_aborted(handle))
-@@ -803,7 +804,13 @@ repeat:
+@@ -799,7 +800,13 @@ repeat:
  	/* @@@ Need to check for errors here at some point. */
  
   	start_lock = jiffies;
@@ -107,7 +109,7 @@ index e1c0b4a..6d6b6bc 100644
  	jbd_lock_bh_state(bh);
  
  	/* If it takes too long to lock the buffer, trace it */
-@@ -850,7 +857,8 @@ repeat:
+@@ -846,7 +853,8 @@ repeat:
  		set_buffer_jbddirty(bh);
  	}
  
@@ -118,10 +120,10 @@ index e1c0b4a..6d6b6bc 100644
  	error = -EROFS;
  	if (is_handle_aborted(handle)) {
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index d5b50a1..6f850b4 100644
+index 704b9a5..907a108 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
-@@ -996,6 +996,7 @@ struct journal_s
+@@ -1007,6 +1007,7 @@ struct journal_s
  #define JBD2_ABORT_ON_SYNCDATA_ERR	0x040	/* Abort the journal on file
  						 * data write error in ordered
  						 * mode */

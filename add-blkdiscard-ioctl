@@ -7,16 +7,16 @@ Google-Bug-Id: 11517631
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h    |   5 +++++
- fs/ext4/extents.c |  38 +++++++++++++++++++++++++++++---------
- fs/ext4/ioctl.c   | 139 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/ext4.h    |   5 ++++
+ fs/ext4/extents.c |  38 +++++++++++++++++++++-------
+ fs/ext4/ioctl.c   | 139 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  3 files changed, 173 insertions(+), 9 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index ece5556..92bcf9f 100644
+index 4ce413a..7600dbd 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2708,6 +2708,8 @@ extern int ext4_check_blockref(const char *, unsigned int,
+@@ -2717,6 +2717,8 @@ extern int ext4_check_blockref(const char *, unsigned int,
  /* extents.c */
  struct ext4_ext_path;
  struct ext4_extent;
@@ -25,10 +25,10 @@ index ece5556..92bcf9f 100644
  
  /*
   * Maximum number of logical blocks in a file; ext4_extent's ee_block is
-@@ -2752,6 +2754,9 @@ extern int ext4_find_delalloc_range(struct inode *inode,
- 				    ext4_lblk_t lblk_start,
+@@ -2762,6 +2764,9 @@ extern int ext4_find_delalloc_range(struct inode *inode,
  				    ext4_lblk_t lblk_end);
  extern int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk);
+ extern ext4_lblk_t ext4_ext_next_allocated_block(struct ext4_ext_path *path);
 +extern int ext4_extent_iterator(struct inode *inode,
 +				ext4_lblk_t block, ext4_lblk_t num,
 +				extent_iterator_t callback, void *private);
@@ -36,10 +36,10 @@ index ece5556..92bcf9f 100644
  			__u64 start, __u64 len);
  extern int ext4_ext_precache(struct inode *inode);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 4410cc3..50103e9 100644
+index 556d6b6..dbb8e01 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2101,9 +2101,13 @@ cleanup:
+@@ -2148,9 +2148,13 @@ cleanup:
  	return err;
  }
  
@@ -56,7 +56,7 @@ index 4410cc3..50103e9 100644
  {
  	struct ext4_ext_path *path = NULL;
  	struct ext4_extent *ex;
-@@ -2112,7 +2116,6 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+@@ -2159,7 +2163,6 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
  	ext4_lblk_t last = block + num;
  	int exists, depth = 0, err = 0;
  	unsigned int flags = 0;
@@ -64,7 +64,7 @@ index 4410cc3..50103e9 100644
  
  	while (block < last && block != EXT_MAX_BLOCKS) {
  		num = last - block;
-@@ -2236,11 +2239,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+@@ -2276,11 +2279,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
  		}
  
  		if (exists) {
@@ -77,7 +77,7 @@ index 4410cc3..50103e9 100644
  			if (err < 0)
  				break;
  			if (err == 1) {
-@@ -2260,6 +2259,27 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+@@ -2297,6 +2296,27 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
  	return err;
  }
  
@@ -106,10 +106,10 @@ index 4410cc3..50103e9 100644
   * ext4_ext_put_gap_in_cache:
   * calculate boundaries of the gap that the requested block fits into
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 60589b6..34964d4 100644
+index 7b377c4..75848bb 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -213,6 +213,132 @@ swap_boot_out:
+@@ -198,6 +198,132 @@ journal_err_out:
  	return err;
  }
  
@@ -242,7 +242,7 @@ index 60589b6..34964d4 100644
  long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  {
  	struct inode *inode = file_inode(filp);
-@@ -626,6 +752,18 @@ resizefs_out:
+@@ -618,6 +744,18 @@ resizefs_out:
  	case EXT4_IOC_PRECACHE_EXTENTS:
  		return ext4_ext_precache(inode);
  
@@ -261,7 +261,7 @@ index 60589b6..34964d4 100644
  	default:
  		return -ENOTTY;
  	}
-@@ -690,6 +828,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+@@ -682,6 +820,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
  	case FITRIM:
  	case EXT4_IOC_RESIZE_FS:
  	case EXT4_IOC_PRECACHE_EXTENTS:
