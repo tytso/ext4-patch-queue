@@ -26,19 +26,19 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/ext4.h              |  10 +--
  fs/ext4/extents.c           |   4 +-
- fs/ext4/extents_status.c    | 217 ++++++++++++++++++++--------------------------
+ fs/ext4/extents_status.c    | 217 +++++++++++++++++++++++++---------------------------------
  fs/ext4/extents_status.h    |   7 +-
  fs/ext4/inode.c             |   4 +-
  fs/ext4/ioctl.c             |   4 +-
  fs/ext4/super.c             |   7 +-
- include/trace/events/ext4.h |  11 +--
+ include/trace/events/ext4.h |  11 ++-
  8 files changed, 113 insertions(+), 151 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index f70c3fc..cff567d 100644
+index 612b079..4ce413a 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -889,10 +889,9 @@ struct ext4_inode_info {
+@@ -890,10 +890,9 @@ struct ext4_inode_info {
  	/* extents status tree */
  	struct ext4_es_tree i_es_tree;
  	rwlock_t i_es_lock;
@@ -51,7 +51,7 @@ index f70c3fc..cff567d 100644
  
  	/* ialloc */
  	ext4_group_t	i_last_alloc_group;
-@@ -1330,10 +1329,11 @@ struct ext4_sb_info {
+@@ -1339,10 +1338,11 @@ struct ext4_sb_info {
  
  	/* Reclaim extents from extent status tree */
  	struct shrinker s_es_shrinker;
@@ -66,10 +66,10 @@ index f70c3fc..cff567d 100644
  	/* Ratelimit ext4 messages. */
  	struct ratelimit_state s_err_ratelimit_state;
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 8170b32..02d871a 100644
+index cd504d9..8d20b12 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -4615,7 +4615,7 @@ out2:
+@@ -4616,7 +4616,7 @@ out2:
  
  	trace_ext4_ext_map_blocks_exit(inode, flags, map,
  				       err ? err : allocated);
@@ -78,7 +78,7 @@ index 8170b32..02d871a 100644
  	return err ? err : allocated;
  }
  
-@@ -5174,7 +5174,7 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+@@ -5177,7 +5177,7 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
  		error = ext4_fill_fiemap_extents(inode, start_blk,
  						 len_blks, fieinfo);
  	}
@@ -88,7 +88,7 @@ index 8170b32..02d871a 100644
  }
  
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index 09fd576..4768f7f 100644
+index 94e7855..e57ac7c 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
 @@ -149,8 +149,8 @@ static int __es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
@@ -422,11 +422,11 @@ index 09fd576..4768f7f 100644
  	sbi->s_es_stats.es_stats_cache_hits = 0;
  	sbi->s_es_stats.es_stats_cache_misses = 0;
 @@ -1192,7 +1186,7 @@ int ext4_es_register_shrinker(struct ext4_sb_info *sbi)
- 	err = percpu_counter_init(&sbi->s_es_stats.es_stats_all_cnt, 0);
+ 	err = percpu_counter_init(&sbi->s_es_stats.es_stats_all_cnt, 0, GFP_KERNEL);
  	if (err)
  		return err;
--	err = percpu_counter_init(&sbi->s_es_stats.es_stats_lru_cnt, 0);
-+	err = percpu_counter_init(&sbi->s_es_stats.es_stats_shk_cnt, 0);
+-	err = percpu_counter_init(&sbi->s_es_stats.es_stats_lru_cnt, 0, GFP_KERNEL);
++	err = percpu_counter_init(&sbi->s_es_stats.es_stats_shk_cnt, 0, GFP_KERNEL);
  	if (err)
  		goto err1;
  
@@ -518,10 +518,10 @@ index efd5f97..0e6a33e 100644
  
  #endif /* _EXT4_EXTENTS_STATUS_H */
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index d5dd7d4..d2e12b9 100644
+index eeaffd0..2424875 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -494,7 +494,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
+@@ -492,7 +492,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
  
  	/* Lookup extent status tree firstly */
  	if (ext4_es_lookup_extent(inode, map->m_lblk, &es)) {
@@ -530,7 +530,7 @@ index d5dd7d4..d2e12b9 100644
  		if (ext4_es_is_written(&es) || ext4_es_is_unwritten(&es)) {
  			map->m_pblk = ext4_es_pblock(&es) +
  					map->m_lblk - es.es_lblk;
-@@ -1396,7 +1396,7 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
+@@ -1404,7 +1404,7 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
  
  	/* Lookup extent status tree firstly */
  	if (ext4_es_lookup_extent(inode, iblock, &es)) {
@@ -540,7 +540,7 @@ index d5dd7d4..d2e12b9 100644
  			retval = 0;
  			down_read(&EXT4_I(inode)->i_data_sem);
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 0f2252e..25c9ef0 100644
+index bfda18a..7b377c4 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
 @@ -78,8 +78,8 @@ static void swap_inode_data(struct inode *inode1, struct inode *inode2)
@@ -555,10 +555,10 @@ index 0f2252e..25c9ef0 100644
  	isize = i_size_read(inode1);
  	i_size_write(inode1, i_size_read(inode2));
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 487c65b..3fa98a9 100644
+index 240bce4..0d67cda 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -883,10 +883,9 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
+@@ -880,10 +880,9 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
  	spin_lock_init(&ei->i_prealloc_lock);
  	ext4_es_init_tree(&ei->i_es_tree);
  	rwlock_init(&ei->i_es_lock);
@@ -571,7 +571,7 @@ index 487c65b..3fa98a9 100644
  	ei->i_reserved_data_blocks = 0;
  	ei->i_reserved_meta_blocks = 0;
  	ei->i_allocated_meta_blocks = 0;
-@@ -975,7 +974,7 @@ void ext4_clear_inode(struct inode *inode)
+@@ -973,7 +972,7 @@ void ext4_clear_inode(struct inode *inode)
  	dquot_drop(inode);
  	ext4_discard_preallocations(inode);
  	ext4_es_remove_extent(inode, 0, EXT_MAX_BLOCKS);
@@ -581,10 +581,10 @@ index 487c65b..3fa98a9 100644
  		jbd2_journal_release_jbd_inode(EXT4_JOURNAL(inode),
  					       EXT4_I(inode)->jinode);
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index ff4bd1b..12312ea 100644
+index d905f3a..7b3fe2f 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
-@@ -2452,15 +2452,14 @@ TRACE_EVENT(ext4_collapse_range,
+@@ -2497,15 +2497,14 @@ TRACE_EVENT(ext4_collapse_range,
  
  TRACE_EVENT(ext4_es_shrink,
  	TP_PROTO(struct super_block *sb, int nr_shrunk, u64 scan_time,
@@ -602,7 +602,7 @@ index ff4bd1b..12312ea 100644
  		__field(	int,		nr_skipped	)
  		__field(	int,		retried		)
  	),
-@@ -2469,16 +2468,14 @@ TRACE_EVENT(ext4_es_shrink,
+@@ -2514,16 +2513,14 @@ TRACE_EVENT(ext4_es_shrink,
  		__entry->dev		= sb->s_dev;
  		__entry->nr_shrunk	= nr_shrunk;
  		__entry->scan_time	= div_u64(scan_time, 1000);
