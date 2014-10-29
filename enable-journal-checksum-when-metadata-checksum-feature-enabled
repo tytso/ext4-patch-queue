@@ -1,0 +1,32 @@
+ext4: enable journal checksum when metadata checksum feature enabled
+
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+
+If metadata checksumming is turned on for the FS, we need to tell the
+journal to use checksumming too.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/super.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 1eda6ab..5c11e21 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3526,6 +3526,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ #ifdef CONFIG_EXT4_FS_POSIX_ACL
+ 	set_opt(sb, POSIX_ACL);
+ #endif
++	/* don't forget to enable journal_csum when metadata_csum is enabled. */
++	if (ext4_has_metadata_csum(sb))
++		set_opt(sb, JOURNAL_CHECKSUM);
++
+ 	if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_DATA)
+ 		set_opt(sb, JOURNAL_DATA);
+ 	else if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_ORDERED)
+
+
