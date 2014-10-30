@@ -1,0 +1,81 @@
+ext4: bail out from make_indexed_dir() on first error
+
+From: Jan Kara <jack@suse.cz>
+
+When ext4_handle_dirty_dx_node() or ext4_handle_dirty_dirent_node()
+fail, there's really something wrong with the fs and there's no point in
+continuing further. Just return error from make_indexed_dir() in that
+case. Also initialize frames array so that if we return early due to
+error, dx_release() doesn't try to dereference uninitialized memory
+(which could happen also due to error in do_split()).
+
+Coverity-id: 741300
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/namei.c | 28 ++++++++++++++++++----------
+ 1 file changed, 18 insertions(+), 10 deletions(-)
+
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index adb559de23c1..cec7257aa74a 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1816,31 +1816,39 @@ static int make_indexed_dir(handle_t *handle, struct dentry *dentry,
+ 		hinfo.hash_version += EXT4_SB(dir->i_sb)->s_hash_unsigned;
+ 	hinfo.seed = EXT4_SB(dir->i_sb)->s_hash_seed;
+ 	ext4fs_dirhash(name, namelen, &hinfo);
++	memset(frames, 0, sizeof(frames));
+ 	frame = frames;
+ 	frame->entries = entries;
+ 	frame->at = entries;
+ 	frame->bh = bh;
+ 	bh = bh2;
+ 
+-	ext4_handle_dirty_dx_node(handle, dir, frame->bh);
+-	ext4_handle_dirty_dirent_node(handle, dir, bh);
++	retval = ext4_handle_dirty_dx_node(handle, dir, frame->bh);
++	if (retval)
++		goto out_frames;	
++	retval = ext4_handle_dirty_dirent_node(handle, dir, bh);
++	if (retval)
++		goto out_frames;	
+ 
+ 	de = do_split(handle,dir, &bh, frame, &hinfo);
+ 	if (IS_ERR(de)) {
+-		/*
+-		 * Even if the block split failed, we have to properly write
+-		 * out all the changes we did so far. Otherwise we can end up
+-		 * with corrupted filesystem.
+-		 */
+-		ext4_mark_inode_dirty(handle, dir);
+-		dx_release(frames);
+-		return PTR_ERR(de);
++		retval = PTR_ERR(de);
++		goto out_frames;
+ 	}
+ 	dx_release(frames);
+ 
+ 	retval = add_dirent_to_buf(handle, dentry, inode, de, bh);
+ 	brelse(bh);
+ 	return retval;
++out_frames:
++	/*
++	 * Even if the block split failed, we have to properly write
++	 * out all the changes we did so far. Otherwise we can end up
++	 * with corrupted filesystem.
++	 */
++	ext4_mark_inode_dirty(handle, dir);
++	dx_release(frames);
++	return retval;
+ }
+ 
+ /*
+-- 
+1.8.1.4
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
