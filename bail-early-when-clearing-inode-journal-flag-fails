@@ -1,0 +1,36 @@
+ext4: bail early when clearing inode journal flag fails
+
+From: Jan Kara <jack@suse.cz>
+
+When clearing inode journal flag, we call jbd2_journal_flush() to force
+all the journalled data to their final locations. Currently we ignore
+when this fails and continue clearing inode journal flag. This isn't a
+big problem because when jbd2_journal_flush() fails, journal is likely
+aborted anyway. But it can still lead to somewhat confusing results so
+rather bail out early.
+
+Coverity-id: 989044
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/inode.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index e9777f9..3356ab5 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4959,7 +4959,12 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
+ 	if (val)
+ 		ext4_set_inode_flag(inode, EXT4_INODE_JOURNAL_DATA);
+ 	else {
+-		jbd2_journal_flush(journal);
++		err = jbd2_journal_flush(journal);
++		if (err < 0) {
++			jbd2_journal_unlock_updates(journal);
++			ext4_inode_resume_unlocked_dio(inode);
++			return err;
++		}
+ 		ext4_clear_inode_flag(inode, EXT4_INODE_JOURNAL_DATA);
+ 	}
+ 	ext4_set_aops(inode);
