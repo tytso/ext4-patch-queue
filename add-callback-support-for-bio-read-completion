@@ -1,27 +1,32 @@
-ext4: add callback support for bio read completion
+ext4: Add callback support for bio read completion
 
-From: Make Halcrow <mhalcrow@google.com>
+From: Michael Halcrow <mhalcrow@google.com>
 
-Adds callback support for bio read completion. This supports data
+Add callback support for bio read completion. This supports data
 transformation such as encryption.
 
 This change deliberately targets only file systems that use struct
 bio, including ext4. A more invasive change would be required for
 other file systems such as NFS.
 
+ext4 encryption patches depend on this one. Those patches need to
+create page buffers, and so we're exporting that functionality in this
+patch.
+
 Signed-off-by: Michael Halcrow <mhalcrow@google.com>
+Signed-off-by: Ildar Muslukhov <ildarm@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/buffer.c                 | 46 +++++++++++++++++++++++++++++++++++++++------
+ fs/buffer.c                 | 43 ++++++++++++++++++++++++++++++++++++++-----
  include/linux/blk_types.h   |  4 ++++
  include/linux/buffer_head.h |  8 ++++++++
- 3 files changed, 52 insertions(+), 6 deletions(-)
+ 3 files changed, 50 insertions(+), 5 deletions(-)
 
 diff --git a/fs/buffer.c b/fs/buffer.c
-index eba6e4f..a5527c5 100644
+index 6c48f20..3790a53 100644
 --- a/fs/buffer.c
 +++ b/fs/buffer.c
-@@ -296,7 +296,7 @@ static void free_more_memory(void)
+@@ -289,7 +289,7 @@ static void free_more_memory(void)
   * I/O completion handler for block_read_full_page() - pages
   * which come unlocked at the end of I/O.
   */
@@ -30,7 +35,7 @@ index eba6e4f..a5527c5 100644
  {
  	unsigned long flags;
  	struct buffer_head *first;
-@@ -339,6 +339,13 @@ static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
+@@ -332,6 +332,13 @@ static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
  	bit_spin_unlock(BH_Uptodate_Lock, &first->b_state);
  	local_irq_restore(flags);
  
@@ -44,7 +49,7 @@ index eba6e4f..a5527c5 100644
  	/*
  	 * If none of the buffers had errors and they are all
  	 * uptodate then we can set the page uptodate.
-@@ -346,6 +353,7 @@ static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
+@@ -339,6 +346,7 @@ static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
  	if (page_uptodate && !PageError(page))
  		SetPageUptodate(page);
  	unlock_page(page);
@@ -52,7 +57,7 @@ index eba6e4f..a5527c5 100644
  	return;
  
  still_busy:
-@@ -353,6 +361,7 @@ still_busy:
+@@ -346,6 +354,7 @@ still_busy:
  	local_irq_restore(flags);
  	return;
  }
@@ -60,7 +65,7 @@ index eba6e4f..a5527c5 100644
  
  /*
   * Completion handler for block_write_full_page() - pages which are unlocked
-@@ -431,11 +440,12 @@ EXPORT_SYMBOL(end_buffer_async_write);
+@@ -424,11 +433,12 @@ EXPORT_SYMBOL(end_buffer_async_write);
   * PageLocked prevents anyone from starting writeback of a page which is
   * under read I/O (PageWriteback is only ever set against a locked page).
   */
@@ -74,7 +79,7 @@ index eba6e4f..a5527c5 100644
  
  static void mark_buffer_async_write_endio(struct buffer_head *bh,
  					  bh_end_io_t *handler)
-@@ -1654,14 +1664,17 @@ static inline int block_size_bits(unsigned int blocksize)
+@@ -1656,7 +1666,8 @@ static inline int block_size_bits(unsigned int blocksize)
  	return ilog2(blocksize);
  }
  
@@ -84,17 +89,15 @@ index eba6e4f..a5527c5 100644
  {
  	BUG_ON(!PageLocked(page));
  
- 	if (!page_has_buffers(page))
--		create_empty_buffers(page, 1 << ACCESS_ONCE(inode->i_blkbits), b_state);
-+		create_empty_buffers(page, 1 << ACCESS_ONCE(inode->i_blkbits),
-+				     b_state);
+@@ -1664,6 +1675,7 @@ static struct buffer_head *create_page_buffers(struct page *page, struct inode *
+ 		create_empty_buffers(page, 1 << ACCESS_ONCE(inode->i_blkbits), b_state);
  	return page_buffers(page);
  }
 +EXPORT_SYMBOL_GPL(create_page_buffers);
  
  /*
   * NOTE! All mapped/uptodate combinations are valid:
-@@ -3009,7 +3022,8 @@ static void guard_bh_eod(int rw, struct bio *bio, struct buffer_head *bh)
+@@ -3017,7 +3029,8 @@ void guard_bio_eod(int rw, struct bio *bio)
  	}
  }
  
@@ -104,7 +107,7 @@ index eba6e4f..a5527c5 100644
  {
  	struct bio *bio;
  	int ret = 0;
-@@ -3043,6 +3057,8 @@ int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
+@@ -3051,6 +3064,8 @@ int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
  
  	bio->bi_end_io = end_bio_bh_io_sync;
  	bio->bi_private = bh;
@@ -113,7 +116,7 @@ index eba6e4f..a5527c5 100644
  	bio->bi_flags |= bio_flags;
  
  	/* Take care of bh's that straddle the end of the device */
-@@ -3054,6 +3070,12 @@ int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
+@@ -3062,6 +3077,12 @@ int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
  		rw |= REQ_PRIO;
  
  	bio_get(bio);
@@ -126,7 +129,7 @@ index eba6e4f..a5527c5 100644
  	submit_bio(rw, bio);
  
  	if (bio_flagged(bio, BIO_EOPNOTSUPP))
-@@ -3062,14 +3084,26 @@ int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
+@@ -3070,14 +3091,26 @@ int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
  	bio_put(bio);
  	return ret;
  }
@@ -155,7 +158,7 @@ index eba6e4f..a5527c5 100644
   * ll_rw_block: low-level access to block devices (DEPRECATED)
   * @rw: whether to %READ or %WRITE or maybe %READA (readahead)
 diff --git a/include/linux/blk_types.h b/include/linux/blk_types.h
-index 66c2167..06102df 100644
+index 445d592..6df4c7b 100644
 --- a/include/linux/blk_types.h
 +++ b/include/linux/blk_types.h
 @@ -16,6 +16,7 @@ struct io_context;
@@ -166,7 +169,7 @@ index 66c2167..06102df 100644
  
  /*
   * was unsigned short, but we might as well be ready for > 64kB I/O pages
-@@ -96,6 +97,9 @@ struct bio {
+@@ -98,6 +99,9 @@ struct bio {
  
  	struct bio_set		*bi_pool;
  
@@ -177,7 +180,7 @@ index 66c2167..06102df 100644
  	 * We can inline a number of vecs at the end of the bio, to avoid
  	 * double allocations for a small number of bio_vecs. This member
 diff --git a/include/linux/buffer_head.h b/include/linux/buffer_head.h
-index 324329c..24ea03a 100644
+index 73b4522..eecde95 100644
 --- a/include/linux/buffer_head.h
 +++ b/include/linux/buffer_head.h
 @@ -160,7 +160,9 @@ void create_empty_buffers(struct page *, unsigned long,
@@ -199,7 +202,7 @@ index 324329c..24ea03a 100644
  
  void mark_buffer_async_write(struct buffer_head *bh);
  void __wait_on_buffer(struct buffer_head *);
-@@ -191,7 +195,11 @@ int sync_dirty_buffer(struct buffer_head *bh);
+@@ -192,7 +196,11 @@ int sync_dirty_buffer(struct buffer_head *bh);
  int __sync_dirty_buffer(struct buffer_head *bh, int rw);
  void write_dirty_buffer(struct buffer_head *bh, int rw);
  int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags);

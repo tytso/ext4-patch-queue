@@ -1,32 +1,28 @@
-ext4: add EXT4 encryption facilities
+ext4 crypto: add ext4 encryption facilities
 
-From: Mike Halcrow <mhalcrow@google.com>
+From: Michael Halcrow <mhalcrow@google.com>
 
-On encrypt, we will re-assign the buffer_heads to point to a bounce
-page rather than the control_page (which is the original page to write
-that contains the plaintext). The block I/O occurs against the bounce
-page. On write completion, we re-assign the buffer_heads to the
-original plaintext page.
+We encrypt into bounce pages and schedule them for block I/O. We
+decrypt in-place in the newly added read completion callback.
 
-On decrypt, we will attach a read completion callback to the bio
-struct. This read completion will decrypt the read contents in-place
-prior to setting the page up-to-date.
-
-The current encryption mode, AES-256-XTS, represents the first of
-several encryption modes on the roadmap. Future in-plan modes are
-HMAC-SHA1 (integrity only), AES-256-XTS+RANDOM_TWEAK+HMAC-SHA1, and
-AES-256-GCM.
+The current encryption mode, AES-256-XTS, is the first of several
+encryption modes on the roadmap. In-plan modes include HMAC-SHA1 for
+integrity-only and AES-256-GCM for authenticated encryption. These
+future modes depend on anticipated functionality for storing per-block
+metadata.
 
 Signed-off-by: Michael Halcrow <mhalcrow@google.com>
+Signed-off-by: Ildar Muslukhov <ildarm@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/Makefile      |    9 +-
- fs/ext4/crypto.c      | 1135 +++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/ext4.h        |   25 ++
- fs/ext4/ext4_crypto.h |  175 ++++++++
+ fs/ext4/crypto.c      | 1133 +++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/ext4.h        |   29 ++
+ fs/ext4/ext4_crypto.h |  172 ++++++++
+ fs/ext4/extents.c     |    4 +-
  fs/ext4/super.c       |   38 +-
  fs/ext4/xattr.h       |    1 +
- 6 files changed, 1377 insertions(+), 6 deletions(-)
+ 7 files changed, 1379 insertions(+), 7 deletions(-)
  create mode 100644 fs/ext4/crypto.c
  create mode 100644 fs/ext4/ext4_crypto.h
 
@@ -52,10 +48,10 @@ index 0310fec..de4de1c 100644
  ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
 new file mode 100644
-index 0000000..ead3111
+index 0000000..80e6fac
 --- /dev/null
 +++ b/fs/ext4/crypto.c
-@@ -0,0 +1,1135 @@
+@@ -0,0 +1,1133 @@
 +/*
 + * linux/fs/ext4/crypto.c
 + *
@@ -96,16 +92,12 @@ index 0000000..ead3111
 +LIST_HEAD(ext4_free_crypto_ctxs);
 +DEFINE_SPINLOCK(ext4_crypto_ctx_lock);
 +
-+/* TODO(mhalcrow): Remove for release */
-+atomic_t ext4_dbg_pages = ATOMIC_INIT(0);
-+atomic_t ext4_dbg_ctxs = ATOMIC_INIT(0);
-+
 +/**
 + * ext4_release_crypto_ctx() - Releases an encryption context
 + * @ctx: The encryption context to release.
 + *
-+ * If the encryption context was allocated from the pre-allocated
-+ * pool, returns it to that pool. Else, frees it.
++ * If the encryption context was allocated from the pre-allocated pool, returns
++ * it to that pool. Else, frees it.
 + *
 + * If there's a bounce page in the context, this frees that.
 + */
@@ -117,7 +109,6 @@ index 0000000..ead3111
 +	if (ctx->bounce_page) {
 +		if (ctx->flags & EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL) {
 +			__free_page(ctx->bounce_page);
-+			atomic_dec(&ext4_dbg_pages);
 +		} else {
 +			mempool_free(ctx->bounce_page, ext4_bounce_page_pool);
 +		}
@@ -128,7 +119,6 @@ index 0000000..ead3111
 +		if (ctx->tfm)
 +			crypto_free_tfm(ctx->tfm);
 +		kfree(ctx);
-+		atomic_dec(&ext4_dbg_ctxs);
 +	} else {
 +		spin_lock_irqsave(&ext4_crypto_ctx_lock, flags);
 +		list_add(&ctx->free_list, &ext4_free_crypto_ctxs);
@@ -140,8 +130,8 @@ index 0000000..ead3111
 + * ext4_alloc_and_init_crypto_ctx() - Allocates and inits an encryption context
 + * @mask: The allocation mask.
 + *
-+ * Return: An allocated and initialized encryption context on
-+ * success. An error value or NULL otherwise.
++ * Return: An allocated and initialized encryption context on success. An error
++ * value or NULL otherwise.
 + */
 +static struct ext4_crypto_ctx *ext4_alloc_and_init_crypto_ctx(u32 mask)
 +{
@@ -150,7 +140,6 @@ index 0000000..ead3111
 +
 +	if (!ctx)
 +		return ERR_PTR(-ENOMEM);
-+	atomic_inc(&ext4_dbg_ctxs);
 +	return ctx;
 +}
 +
@@ -161,8 +150,8 @@ index 0000000..ead3111
 + *
 + * Allocates and initializes an encryption context.
 + *
-+ * Return: An allocated and initialized encryption context on success;
-+ * error value or NULL otherwise.
++ * Return: An allocated and initialized encryption context on success; error
++ * value or NULL otherwise.
 + */
 +struct ext4_crypto_ctx *ext4_get_crypto_ctx(
 +	bool with_page, const struct ext4_encryption_key *key)
@@ -171,14 +160,13 @@ index 0000000..ead3111
 +	int res = 0;
 +	unsigned long flags;
 +
-+	/* We first try getting the ctx from a free list because in
-+	 * the common case the ctx will have an allocated and
-+	 * initialized crypto tfm, so it's probably a worthwhile
-+	 * optimization. For the bounce page, we first try getting it
-+	 * from the kernel allocator because that's just about as fast
-+	 * as getting it from a list and because a cache of free pages
-+	 * should generally be a "last resort" option for a filesystem
-+	 * to be able to do its job. */
++	/* We first try getting the ctx from a free list because in the common
++	 * case the ctx will have an allocated and initialized crypto tfm, so
++	 * it's probably a worthwhile optimization. For the bounce page, we
++	 * first try getting it from the kernel allocator because that's just
++	 * about as fast as getting it from a list and because a cache of free
++	 * pages should generally be a "last resort" option for a filesystem to
++	 * be able to do its job. */
 +	spin_lock_irqsave(&ext4_crypto_ctx_lock, flags);
 +	ctx = list_first_entry_or_null(&ext4_free_crypto_ctxs,
 +				       struct ext4_crypto_ctx, free_list);
@@ -197,8 +185,8 @@ index 0000000..ead3111
 +	}
 +	atomic_set(&ctx->dbg_refcnt, 0);
 +
-+	/* Allocate a new Crypto API context if we don't already have
-+	 * one or if it isn't the right mode. */
++	/* Allocate a new Crypto API context if we don't already have one or if
++	 * it isn't the right mode. */
 +	BUG_ON(key->mode == EXT4_ENCRYPTION_MODE_INVALID);
 +	if (ctx->tfm && (ctx->mode != key->mode)) {
 +		crypto_free_tfm(ctx->tfm);
@@ -240,8 +228,8 @@ index 0000000..ead3111
 +	/* The encryption operation will require a bounce page. */
 +	ctx->bounce_page = alloc_page(GFP_NOFS);
 +	if (!ctx->bounce_page) {
-+		/* This is a potential bottleneck, but at least we'll
-+		 * have forward progress. */
++		/* This is a potential bottleneck, but at least we'll have
++		 * forward progress. */
 +		ctx->bounce_page = mempool_alloc(ext4_bounce_page_pool,
 +						 GFP_NOFS);
 +		if (WARN_ON_ONCE(!ctx->bounce_page)) {
@@ -250,7 +238,6 @@ index 0000000..ead3111
 +		}
 +		ctx->flags &= ~EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL;
 +	} else {
-+		atomic_inc(&ext4_dbg_pages);
 +		ctx->flags |= EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL;
 +	}
 +out:
@@ -389,6 +376,11 @@ index 0000000..ead3111
 +	int res;
 +};
 +
++/**
++ * ext4_crypt_complete() - The completion callback for page encryption
++ * @req: The asynchronous encryption request context
++ * @res: The result of the encryption operation
++ */
 +static void ext4_crypt_complete(struct crypto_async_request *req, int res)
 +{
 +	struct ext4_crypt_result *ecr = req->data;
@@ -400,7 +392,7 @@ index 0000000..ead3111
 +}
 +
 +/**
-+ * ext4_prep_pages_for_write() - Prepare pages for write
++ * ext4_prep_pages_for_write() - Prepares pages for write
 + * @ciphertext_page: Ciphertext page that will actually be written.
 + * @plaintext_page:  Plaintext page that acts as a control page.
 + * @ctx:             Encryption context for the pages.
@@ -421,13 +413,13 @@ index 0000000..ead3111
 + * @ctx:            The encryption context.
 + * @plaintext_page: The page to encrypt. Must be locked.
 + *
-+ * Allocates a ciphertext page and encrypts plaintext_page into it
-+ * using the ctx encryption context. Uses AES-256-XTS.
++ * Allocates a ciphertext page and encrypts plaintext_page into it using the ctx
++ * encryption context. Uses AES-256-XTS.
 + *
 + * Called on the page write path.
 + *
-+ * Return: An allocated page with the encrypted content on
-+ * success. Else, an error value or NULL.
++ * Return: An allocated page with the encrypted content on success. Else, an
++ * error value or NULL.
 + */
 +struct page *ext4_xts_encrypt(struct ext4_crypto_ctx *ctx,
 +			      struct page *plaintext_page)
@@ -447,10 +439,9 @@ index 0000000..ead3111
 +	crypto_ablkcipher_clear_flags(atfm, ~0);
 +	crypto_tfm_set_flags(ctx->tfm, CRYPTO_TFM_REQ_WEAK_KEY);
 +
-+	/* Since in AES-256-XTS mode we only perform one cryptographic
-+	 * operation on each block and there are no constraints about
-+	 * how many blocks a single key can encrypt, we directly use
-+	 * the inode master key */
++	/* Since in AES-256-XTS mode we only perform one cryptographic operation
++	 * on each block and there are no constraints about how many blocks a
++	 * single key can encrypt, we directly use the inode master key */
 +	res = crypto_ablkcipher_setkey(atfm, ei->i_encryption_key.raw,
 +				       ei->i_encryption_key.size);
 +	req = ablkcipher_request_alloc(atfm, GFP_NOFS);
@@ -479,8 +470,10 @@ index 0000000..ead3111
 +	}
 +	ablkcipher_request_free(req);
 +	if (res) {
-+		printk_ratelimited(KERN_ERR "%s: crypto_ablkcipher_encrypt() returned %d\n",
-+				   __func__, res);
++		printk_ratelimited(
++			KERN_ERR
++			"%s: crypto_ablkcipher_encrypt() returned %d\n",
++			__func__, res);
 +		ciphertext_page = ERR_PTR(res);
 +		goto out;
 +	}
@@ -493,13 +486,13 @@ index 0000000..ead3111
 + * @ctx:            The encryption context.
 + * @plaintext_page: The page to encrypt. Must be locked.
 + *
-+ * Allocates a ciphertext page and encrypts plaintext_page into it
-+ * using the ctx encryption context.
++ * Allocates a ciphertext page and encrypts plaintext_page into it using the ctx
++ * encryption context.
 + *
 + * Called on the page write path.
 + *
-+ * Return: An allocated page with the encrypted content on
-+ * success. Else, an error value or NULL.
++ * Return: An allocated page with the encrypted content on success. Else, an
++ * error value or NULL.
 + */
 +struct page *ext4_encrypt(struct ext4_crypto_ctx *ctx,
 +			  struct page *plaintext_page)
@@ -549,10 +542,9 @@ index 0000000..ead3111
 +	crypto_ablkcipher_clear_flags(atfm, ~0);
 +	crypto_tfm_set_flags(ctx->tfm, CRYPTO_TFM_REQ_WEAK_KEY);
 +
-+	/* Since in AES-256-XTS mode we only perform one cryptographic
-+	 * operation on each block and there are no constraints about
-+	 * how many blocks a single key can encrypt, we directly use
-+	 * the inode master key */
++	/* Since in AES-256-XTS mode we only perform one cryptographic operation
++	 * on each block and there are no constraints about how many blocks a
++	 * single key can encrypt, we directly use the inode master key */
 +	res = crypto_ablkcipher_setkey(atfm, ei->i_encryption_key.raw,
 +				       ei->i_encryption_key.size);
 +	req = ablkcipher_request_alloc(atfm, GFP_NOFS);
@@ -650,7 +642,7 @@ index 0000000..ead3111
 +/**
 + * ext4_wrapping_key_sig_for_parent_dir() - Gets the key signature for
 + *                                          the parent directory
-+ * @sig:          Buffer into which this writes the wrapping key signature.
++ * @sig: Buffer into which this writes the wrapping key signature.
 + *
 + * Return: Zero on success, non-zero otherwise.
 + */
@@ -691,11 +683,10 @@ index 0000000..ead3111
 +}
 +
 +/**
-+ * ext4_validate_encryption_mode() - Validate the encryption key mode
++ * ext4_validate_encryption_mode() - Validates the encryption key mode
 + * @mode: The key mode to validate.
 + *
-+ * Return: The validated key mode. EXT4_ENCRYPTION_MODE_INVALID if
-+ * invalid.
++ * Return: The validated key mode. EXT4_ENCRYPTION_MODE_INVALID if invalid.
 + */
 +static uint32_t ext4_validate_encryption_mode(uint32_t mode)
 +{
@@ -743,7 +734,7 @@ index 0000000..ead3111
 +}
 +
 +/**
-+ * ext4_hmac_derive_key() - Generate an HMAC
++ * ext4_hmac() - Generates an HMAC
 + * @derivation: If true, derive a key. Else, generate an integrity HMAC.
 + * @key:        The HMAC key.
 + * @key_size:   The size of @key.
@@ -803,7 +794,7 @@ index 0000000..ead3111
 +}
 +
 +/**
-+ * ext4_hmac_derive_key() - Generate an HMAC for an key derivation (HKDF)
++ * ext4_hmac_derive_key() - Generates an HMAC for an key derivation (HKDF)
 + * @key:      The master key.
 + * @key_size: The size of @key.
 + * @src:      The derivation data.
@@ -821,7 +812,7 @@ index 0000000..ead3111
 +}
 +
 +/**
-+ * ext4_hmac_integrity() - Generate an HMAC for an integrity measurement
++ * ext4_hmac_integrity() - Generates an HMAC for an integrity measurement
 + * @key:      The HMAC key.
 + * @key_size: The size of @key.
 + * @src:      The data to generate the HMAC over.
@@ -839,7 +830,7 @@ index 0000000..ead3111
 +}
 +
 +/**
-+ * ext4_crypt_wrapper_virt() - Encrypt a key
++ * ext4_crypt_wrapper_virt() - Encrypts a key
 + * @enc_key:  The wrapping key.
 + * @iv:       The initialization vector for the key encryption.
 + * @src_virt: The source key object to wrap.
@@ -941,8 +932,10 @@ index 0000000..ead3111
 +	for (i = 0; i < EXT4_HMAC_SIZE; ++i)
 +		hmac_invalid |= (packet->hmac[i] ^ hmac[i]);
 +	if (hmac_invalid) {
-+		printk_ratelimited(KERN_ERR "%s: Security advisory: Wrapped key HMAC check failed\n",
-+				   __func__);
++		printk_ratelimited(
++			KERN_ERR
++			"%s: Security warning: Wrapped key HMAC check failed\n",
++			__func__);
 +		res = -EINVAL;
 +		goto out;
 +	}
@@ -990,8 +983,8 @@ index 0000000..ead3111
 + * @key:                The encryption key.
 + * @inode:              The inode for the encryption key.
 + *
-+ * Generates a wrapped key packet from an encryption key and a
-+ * wrapping key for an inode.
++ * Generates a wrapped key packet from an encryption key and a wrapping key for
++ * an inode.
 + *
 + * Return: Zero on success, non-zero otherwise.
 + */
@@ -1090,8 +1083,8 @@ index 0000000..ead3111
 + * ext4_set_crypto_key() - Generates and sets the encryption key for the inode
 + * @dentry: The dentry for the encryption key.
 + *
-+ * Generates the encryption key for the inode. Generates and writes
-+ * the encryption metadata for the inode.
++ * Generates the encryption key for the inode. Generates and writes the
++ * encryption metadata for the inode.
 + *
 + * Return: Zero on success, non-zero otherwise.
 + */
@@ -1154,9 +1147,10 @@ index 0000000..ead3111
 +	res = ext4_xattr_get(inode, EXT4_XATTR_INDEX_ENCRYPTION_METADATA, "",
 +			     root_packet, res);
 +	if (root_packet[0] != EXT4_PACKET_SET_VERSION_V0) {
-+		printk_ratelimited(KERN_ERR "%s: Expected root packet version [%d]; got [%d]\n",
-+				   __func__, EXT4_PACKET_SET_VERSION_V0,
-+				   root_packet[0]);
++		printk_ratelimited(
++			KERN_ERR
++			"%s: Expected root packet version [%d]; got [%d]\n",
++			__func__, EXT4_PACKET_SET_VERSION_V0, root_packet[0]);
 +		return -EINVAL;
 +	}
 +	return 0;
@@ -1192,7 +1186,7 @@ index 0000000..ead3111
 +	return res;
 +}
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 7cc5a0e..ef89b61 100644
+index c55a1fa..11a9960 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -32,6 +32,7 @@
@@ -1203,7 +1197,7 @@ index 7cc5a0e..ef89b61 100644
  #ifdef __KERNEL__
  #include <linux/compat.h>
  #endif
-@@ -809,6 +810,8 @@ do {									       \
+@@ -808,6 +809,8 @@ do {									       \
  
  #endif /* defined(__KERNEL__) || defined(__linux__) */
  
@@ -1223,7 +1217,7 @@ index 7cc5a0e..ef89b61 100644
  };
  
  /*
-@@ -1340,6 +1347,10 @@ struct ext4_sb_info {
+@@ -1342,6 +1349,10 @@ struct ext4_sb_info {
  	struct ratelimit_state s_err_ratelimit_state;
  	struct ratelimit_state s_warning_ratelimit_state;
  	struct ratelimit_state s_msg_ratelimit_state;
@@ -1234,7 +1228,7 @@ index 7cc5a0e..ef89b61 100644
  };
  
  static inline struct ext4_sb_info *EXT4_SB(struct super_block *sb)
-@@ -2783,6 +2794,20 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
+@@ -2817,6 +2828,24 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
  	set_bit(BH_BITMAP_UPTODATE, &(bh)->b_state);
  }
  
@@ -1251,16 +1245,20 @@ index 7cc5a0e..ef89b61 100644
 +int ext4_decrypt(struct ext4_crypto_ctx *ctx, struct page *page);
 +int ext4_get_crypto_key(const struct file *file);
 +int ext4_set_crypto_key(struct dentry *dentry);
++static inline bool ext4_is_encryption_enabled(struct ext4_inode_info *ei)
++{
++	return ei->i_encryption_key.mode != EXT4_ENCRYPTION_MODE_INVALID;
++}
 +
  /*
   * Disable DIO read nolock optimization, so new dioreaders will be forced
   * to grab i_mutex
 diff --git a/fs/ext4/ext4_crypto.h b/fs/ext4/ext4_crypto.h
 new file mode 100644
-index 0000000..8eaf273
+index 0000000..6cb5ba9
 --- /dev/null
 +++ b/fs/ext4/ext4_crypto.h
-@@ -0,0 +1,175 @@
+@@ -0,0 +1,172 @@
 +/*
 + * linux/fs/ext4/ext4_crypto.h
 + *
@@ -1432,15 +1430,34 @@ index 0000000..8eaf273
 +	return 0;
 +}
 +
-+extern atomic_t ext4_dbg_pages; /* TODO(mhalcrow): Remove for release */
-+extern atomic_t ext4_dbg_ctxs; /* TODO(mhalcrow): Remove for release */
-+
 +#endif	/* _EXT4_CRYPTO_H */
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 37043d0..b8e8a82 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4905,6 +4905,7 @@ out_mutex:
+ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+ {
+ 	struct inode *inode = file_inode(file);
++	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	loff_t new_size = 0;
+ 	unsigned int max_blocks;
+ 	int ret = 0;
+@@ -4914,7 +4915,8 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+ 
+ 	/* Return error if mode is not supported */
+ 	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE |
+-		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE))
++		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE) ||
++		ext4_is_encryption_enabled(ei))
+ 		return -EOPNOTSUPP;
+ 
+ 	if (mode & FALLOC_FL_PUNCH_HOLE)
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 6df7bc6..a0355a0 100644
+index 1eda6ab..c3f4d4c 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -904,6 +904,7 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
+@@ -901,6 +901,7 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
  	atomic_set(&ei->i_ioend_count, 0);
  	atomic_set(&ei->i_unwritten, 0);
  	INIT_WORK(&ei->i_rsv_conversion_work, ext4_end_io_rsv_work);
@@ -1448,7 +1465,7 @@ index 6df7bc6..a0355a0 100644
  
  	return &ei->vfs_inode;
  }
-@@ -1168,7 +1169,7 @@ enum {
+@@ -1146,7 +1147,7 @@ enum {
  	Opt_inode_readahead_blks, Opt_journal_ioprio,
  	Opt_dioread_nolock, Opt_dioread_lock,
  	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
@@ -1457,7 +1474,7 @@ index 6df7bc6..a0355a0 100644
  };
  
  static const match_table_t tokens = {
-@@ -1244,6 +1245,7 @@ static const match_table_t tokens = {
+@@ -1222,6 +1223,7 @@ static const match_table_t tokens = {
  	{Opt_init_itable, "init_itable"},
  	{Opt_noinit_itable, "noinit_itable"},
  	{Opt_max_dir_size_kb, "max_dir_size_kb=%u"},
@@ -1465,7 +1482,7 @@ index 6df7bc6..a0355a0 100644
  	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
  	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
  	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
-@@ -1442,6 +1444,7 @@ static const struct mount_opts {
+@@ -1420,6 +1422,7 @@ static const struct mount_opts {
  	{Opt_jqfmt_vfsv0, QFMT_VFS_V0, MOPT_QFMT},
  	{Opt_jqfmt_vfsv1, QFMT_VFS_V1, MOPT_QFMT},
  	{Opt_max_dir_size_kb, 0, MOPT_GTE0},
@@ -1473,7 +1490,7 @@ index 6df7bc6..a0355a0 100644
  	{Opt_err, 0, 0}
  };
  
-@@ -1543,6 +1546,28 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
+@@ -1521,6 +1524,28 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
  		sbi->s_li_wait_mult = arg;
  	} else if (token == Opt_max_dir_size_kb) {
  		sbi->s_max_dir_size_kb = arg;
@@ -1502,7 +1519,7 @@ index 6df7bc6..a0355a0 100644
  	} else if (token == Opt_stripe) {
  		sbi->s_stripe = arg;
  	} else if (token == Opt_resuid) {
-@@ -5517,6 +5542,8 @@ struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
+@@ -5523,6 +5548,8 @@ struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
  static int __init ext4_init_fs(void)
  {
  	int i, err;
@@ -1511,7 +1528,7 @@ index 6df7bc6..a0355a0 100644
  
  	ext4_li_info = NULL;
  	mutex_init(&ext4_li_mtx);
-@@ -5529,10 +5556,15 @@ static int __init ext4_init_fs(void)
+@@ -5535,10 +5562,15 @@ static int __init ext4_init_fs(void)
  		init_waitqueue_head(&ext4__ioend_wq[i]);
  	}
  
@@ -1528,7 +1545,7 @@ index 6df7bc6..a0355a0 100644
  	err = ext4_init_pageio();
  	if (err)
  		goto out7;
-@@ -5585,6 +5617,8 @@ out6:
+@@ -5591,6 +5623,8 @@ out6:
  	ext4_exit_pageio();
  out7:
  	ext4_exit_es();
