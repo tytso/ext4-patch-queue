@@ -6,26 +6,26 @@ Currently extent status tree doesn't cache extent hole when a write
 looks up in extent tree to make sure whether a block has been allocated
 or not.  In this case, we don't put extent hole in extent cache because
 later this extent might be removed and a new delayed extent might be
-added back.  But it will cause a defect when we do a lot of writes.
-If we don't put extent hole in extent cache, the following writes also
-need to access extent tree to look at whether or not a block has been
+added back.  But it will cause a defect when we do a lot of writes.  If
+we don't put extent hole in extent cache, the following writes also need
+to access extent tree to look at whether or not a block has been
 allocated.  It brings a cache miss.  This commit fixes this defect.
-Meanwhile, if an inode has no any extent, this extent hole also will
-be cached.
+Also if the inode doesn't have any extent, this extent hole will be
+cached as well.
 
+Cc: "Theodore Ts'o" <tytso@mit.edu>
 Cc: Andreas Dilger <adilger.kernel@dilger.ca>
-Cc: Jan Kara <jack@suse.cz>
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
-Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Jan Kara <jack@suse.cz>
 ---
- fs/ext4/ext4.h              |    4 +---
- fs/ext4/extents.c           |   23 +++++++++--------------
- fs/ext4/inode.c             |    6 ++----
- include/trace/events/ext4.h |    3 +--
- 4 files changed, 13 insertions(+), 23 deletions(-)
+ fs/ext4/ext4.h              |  4 +---
+ fs/ext4/extents.c           | 31 ++++++++++++++++---------------
+ fs/ext4/inode.c             |  6 ++----
+ include/trace/events/ext4.h |  3 +--
+ 4 files changed, 20 insertions(+), 24 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 6f294d3..7df9220 100644
+index c55a1faaed58..0718fc9743fb 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -565,10 +565,8 @@ enum {
@@ -41,18 +41,19 @@ index 6f294d3..7df9220 100644
  /*
   * The bit position of these flags must not overlap with any of the
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 76c2df3..6463d34 100644
+index 37043d0b2be8..0a97e039d0a0 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2284,16 +2284,15 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
+@@ -2306,16 +2306,16 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
  				ext4_lblk_t block)
  {
  	int depth = ext_depth(inode);
 -	unsigned long len = 0;
 -	ext4_lblk_t lblock = 0;
-+	unsigned long len;
++	ext4_lblk_t len;
 +	ext4_lblk_t lblock;
  	struct ext4_extent *ex;
++	struct extent_status es;
  
  	ex = path[depth].p_ext;
  	if (ex == NULL) {
@@ -66,7 +67,7 @@ index 76c2df3..6463d34 100644
  		ext_debug("cache gap(whole file):");
  	} else if (block < le32_to_cpu(ex->ee_block)) {
  		lblock = block;
-@@ -2302,9 +2301,6 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
+@@ -2324,9 +2324,6 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
  				block,
  				le32_to_cpu(ex->ee_block),
  				 ext4_ext_get_actual_len(ex));
@@ -76,7 +77,7 @@ index 76c2df3..6463d34 100644
  	} else if (block >= le32_to_cpu(ex->ee_block)
  			+ ext4_ext_get_actual_len(ex)) {
  		ext4_lblk_t next;
-@@ -2318,14 +2314,14 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
+@@ -2340,14 +2337,19 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
  				block);
  		BUG_ON(next == lblock);
  		len = next - lblock;
@@ -87,14 +88,20 @@ index 76c2df3..6463d34 100644
  		BUG();
  	}
  
- 	ext_debug(" -> %u:%lu\n", lblock, len);
-+	if (!ext4_find_delalloc_range(inode, lblock, lblock + len - 1))
-+		ext4_es_insert_extent(inode, lblock, len, ~0,
-+				      EXTENT_STATUS_HOLE);
+-	ext_debug(" -> %u:%lu\n", lblock, len);
++	ext4_es_find_delayed_extent_range(inode, lblock, lblock + len - 1, &es);
++	if (es.es_len) {
++		/* There's delayed extent containing lblock? */
++		if (es.es_lblk <= lblock)
++			return;
++		len = min(es.es_lblk - lblock, len);
++	}
++	ext_debug(" -> %u:%u\n", lblock, len);
++	ext4_es_insert_extent(inode, lblock, len, ~0, EXTENT_STATUS_HOLE);
  }
  
  /*
-@@ -4362,8 +4358,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -4357,8 +4359,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		 * put just found gap into cache to speed up
  		 * subsequent requests
  		 */
@@ -105,10 +112,10 @@ index 76c2df3..6463d34 100644
  	}
  
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 367a60c..d1ad9f9 100644
+index e9777f93cf05..69601d288119 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1485,11 +1485,9 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
+@@ -1447,11 +1447,9 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
  			map->m_flags |= EXT4_MAP_FROM_CLUSTER;
  		retval = 0;
  	} else if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
@@ -123,7 +130,7 @@ index 367a60c..d1ad9f9 100644
  add_delayed:
  	if (retval == 0) {
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index ff4bd1b..9337d36 100644
+index ff4bd1b35246..9337d36ff8c9 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
 @@ -43,8 +43,7 @@ struct extent_status;
@@ -137,6 +144,6 @@ index ff4bd1b..9337d36 100644
  #define show_mflags(flags) __print_flags(flags, "",	\
  	{ EXT4_MAP_NEW,		"N" },			\
 -- 
-1.7.9.7
+1.8.1.4
 
 
