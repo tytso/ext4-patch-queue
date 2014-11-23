@@ -5,10 +5,10 @@ stale.
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/fs-writeback.c  | 1 +
- fs/inode.c         | 7 ++++++-
- include/linux/fs.h | 1 +
- 3 files changed, 8 insertions(+), 1 deletion(-)
+ fs/fs-writeback.c  |  1 +
+ fs/inode.c         | 16 +++++++++++++++-
+ include/linux/fs.h |  1 +
+ 3 files changed, 17 insertions(+), 1 deletion(-)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
 index ce7de22..eb04277 100644
@@ -23,25 +23,36 @@ index ce7de22..eb04277 100644
  			sb->s_op->dirty_inode(inode, flags);
  
 diff --git a/fs/inode.c b/fs/inode.c
-index 6e91aca..f0d6232 100644
+index 11fe81b..0d939a8 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -1511,6 +1511,7 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
   */
  static int update_time(struct inode *inode, struct timespec *time, int flags)
  {
-+	int days_since_boot = jiffies / (HZ * 86400);
++	unsigned short days_since_boot = jiffies / (HZ * 86400);
  	int ret;
  
  	if (inode->i_op->update_time) {
-@@ -1527,12 +1528,16 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+@@ -1527,14 +1528,27 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  		if (flags & S_MTIME)
  			inode->i_mtime = *time;
  	}
 -	if (inode->i_sb->s_flags & MS_LAZYTIME) {
++	/*
++	 * If i_ts_dirty_day is zero, then either we have not deferred
++	 * timestamp updates, or the system has been up for less than
++	 * a day (so days_since_boot is zero), so we defer timestamp
++	 * updates in that case and set the I_DIRTY_TIME flag.  If a
++	 * day or more has passed, then i_ts_dirty_day will be
++	 * different from days_since_boot, and then we should update
++	 * the on-disk inode and then we can clear i_ts_dirty_day.
++	 */
 +	if ((inode->i_sb->s_flags & MS_LAZYTIME) &&
 +	    (!inode->i_ts_dirty_day ||
 +	     inode->i_ts_dirty_day == days_since_boot)) {
+ 		if (inode->i_state & I_DIRTY_TIME)
+ 			return 0;
  		spin_lock(&inode->i_lock);
  		inode->i_state |= I_DIRTY_TIME;
  		spin_unlock(&inode->i_lock);

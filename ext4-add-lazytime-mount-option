@@ -14,17 +14,18 @@ Google-Bug-Id: 18297052
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/inode.c    | 46 +++++++++++++++++++++++++++++++++++++++++++++-
- fs/ext4/super.c    |  9 +++++++++
- fs/inode.c         | 36 ++++++++++++++++++++++++++++++++++++
- include/linux/fs.h |  2 ++
- 4 files changed, 92 insertions(+), 1 deletion(-)
+ fs/ext4/inode.c             | 48 +++++++++++++++++++++++++++++++++++++++++++++---
+ fs/ext4/super.c             |  9 +++++++++
+ fs/inode.c                  | 36 ++++++++++++++++++++++++++++++++++++
+ include/linux/fs.h          |  2 ++
+ include/trace/events/ext4.h | 29 +++++++++++++++++++++++++++++
+ 5 files changed, 121 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 3356ab5..07ceafb 100644
+index 3356ab5..03149b4 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -4163,6 +4163,49 @@ static int ext4_inode_blocks_set(handle_t *handle,
+@@ -4163,6 +4163,50 @@ static int ext4_inode_blocks_set(handle_t *handle,
  }
  
  /*
@@ -47,17 +48,17 @@ index 3356ab5..07ceafb 100644
 +			continue;
 +		inode = find_active_inode_nowait(sb, ino);
 +		if (!inode ||
-+		    (inode->i_state & I_DIRTY_TIME) == 0) {
++		    (inode->i_state & I_DIRTY_TIME) == 0 ||
++		    !spin_trylock(&inode->i_lock)) {
 +			iput(inode);
 +			continue;
 +		}
-+		raw_inode = (struct ext4_inode *) buf;
-+		ei = EXT4_I(inode);
-+
-+		spin_lock(&inode->i_lock);
 +		inode->i_state &= ~I_DIRTY_TIME;
 +		inode->i_ts_dirty_day = 0;
 +		spin_unlock(&inode->i_lock);
++
++		ei = EXT4_I(inode);
++		raw_inode = (struct ext4_inode *) buf;
 +
 +		spin_lock(&ei->i_raw_lock);
 +		EXT4_INODE_SET_XTIME(i_ctime, inode, raw_inode);
@@ -65,6 +66,7 @@ index 3356ab5..07ceafb 100644
 +		EXT4_INODE_SET_XTIME(i_atime, inode, raw_inode);
 +		ext4_inode_csum_set(inode, raw_inode, ei);
 +		spin_unlock(&ei->i_raw_lock);
++		trace_ext4_other_inode_update_time(inode, orig_ino);
 +		iput(inode);
 +	}
 +}
@@ -74,18 +76,26 @@ index 3356ab5..07ceafb 100644
   * Post the struct inode info into an on-disk inode location in the
   * buffer-cache.  This gobbles the caller's reference to the
   * buffer_head in the inode location struct.
-@@ -4273,9 +4316,10 @@ static int ext4_do_update_inode(handle_t *handle,
+@@ -4260,7 +4304,6 @@ static int ext4_do_update_inode(handle_t *handle,
+ 		for (block = 0; block < EXT4_N_BLOCKS; block++)
+ 			raw_inode->i_block[block] = ei->i_data[block];
  	}
- 
+-
+ 	if (likely(!test_opt2(inode->i_sb, HURD_COMPAT))) {
+ 		raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
+ 		if (ei->i_extra_isize) {
+@@ -4271,10 +4314,9 @@ static int ext4_do_update_inode(handle_t *handle,
+ 				cpu_to_le16(ei->i_extra_isize);
+ 		}
+ 	}
+-
  	ext4_inode_csum_set(inode, raw_inode, ei);
 -
  	spin_unlock(&ei->i_raw_lock);
- 
 +	ext4_update_other_inodes_time(inode->i_sb, inode->i_ino, bh->b_data);
-+
+ 
  	BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");
  	rc = ext4_handle_dirty_metadata(handle, NULL, bh);
- 	if (!err)
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
 index 4b79f39..1ac1914 100644
 --- a/fs/ext4/super.c
@@ -121,10 +131,10 @@ index 4b79f39..1ac1914 100644
  
  	for (m = ext4_mount_opts; m->token != Opt_err; m++)
 diff --git a/fs/inode.c b/fs/inode.c
-index f0d6232..89cfca7 100644
+index 5a9a7b0..17eb1c0 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
-@@ -1292,6 +1292,42 @@ struct inode *ilookup(struct super_block *sb, unsigned long ino)
+@@ -1296,6 +1296,42 @@ struct inode *ilookup(struct super_block *sb, unsigned long ino)
  }
  EXPORT_SYMBOL(ilookup);
  
@@ -180,3 +190,43 @@ index e3574cd..dbbd642 100644
  extern int insert_inode_locked4(struct inode *, unsigned long, int (*test)(struct inode *, void *), void *);
  extern int insert_inode_locked(struct inode *);
  #ifdef CONFIG_DEBUG_LOCK_ALLOC
+diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
+index ff4bd1b..aca53c0 100644
+--- a/include/trace/events/ext4.h
++++ b/include/trace/events/ext4.h
+@@ -75,6 +75,35 @@ struct extent_status;
+ 	{ FALLOC_FL_ZERO_RANGE,		"ZERO_RANGE"})
+ 
+ 
++TRACE_EVENT(ext4_other_inode_update_time,
++	TP_PROTO(struct inode *inode, ino_t orig_ino),
++
++	TP_ARGS(inode, orig_ino),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(	ino_t,	ino			)
++		__field(	ino_t,	orig_ino		)
++		__field(	uid_t,	uid			)
++		__field(	gid_t,	gid			)
++		__field(	__u16, mode			)
++	),
++
++	TP_fast_assign(
++		__entry->orig_ino = orig_ino;
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->uid	= i_uid_read(inode);
++		__entry->gid	= i_gid_read(inode);
++		__entry->mode	= inode->i_mode;
++	),
++
++	TP_printk("dev %d,%d orig_ino %lu ino %lu mode 0%o uid %u gid %u",
++		  MAJOR(__entry->dev), MINOR(__entry->dev),
++		  (unsigned long) __entry->orig_ino, __entry->ino,
++		  __entry->mode, __entry->uid, __entry->gid)
++);
++
+ TRACE_EVENT(ext4_free_inode,
+ 	TP_PROTO(struct inode *inode),
+ 
