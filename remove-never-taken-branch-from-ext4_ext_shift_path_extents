@@ -1,0 +1,32 @@
+ext4: remove never taken branch from ext4_ext_shift_path_extents()
+
+From: Jan Kara <jack@suse.cz>
+
+path[depth].p_hdr can never be NULL for a path passed to us (and even if
+it could, EXT_LAST_EXTENT() would make something != NULL from it). So
+just remove the branch.
+
+Coverity-id: 1196498
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/extents.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 0b16fb4c06d3..31cd9b5c6419 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -5239,8 +5239,6 @@ ext4_ext_shift_path_extents(struct ext4_ext_path *path, ext4_lblk_t shift,
+ 				return -EIO;
+ 
+ 			ex_last = EXT_LAST_EXTENT(path[depth].p_hdr);
+-			if (!ex_last)
+-				return -EIO;
+ 
+ 			err = ext4_access_path(handle, inode, path + depth);
+ 			if (err)
+-- 
+1.8.1.4
+
+
