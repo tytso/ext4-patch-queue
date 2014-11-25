@@ -13,10 +13,10 @@ allocated.  It brings a cache miss.  This commit fixes this defect.
 Also if the inode doesn't have any extent, this extent hole will be
 cached as well.
 
-Cc: "Theodore Ts'o" <tytso@mit.edu>
 Cc: Andreas Dilger <adilger.kernel@dilger.ca>
 Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/ext4.h              |  4 +---
  fs/ext4/extents.c           | 31 ++++++++++++++++---------------
@@ -25,10 +25,10 @@ Signed-off-by: Jan Kara <jack@suse.cz>
  4 files changed, 20 insertions(+), 24 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index c55a1faaed58..0718fc9743fb 100644
+index 7b3f3b1..98da4cd 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -565,10 +565,8 @@ enum {
+@@ -556,10 +556,8 @@ enum {
  #define EXT4_GET_BLOCKS_KEEP_SIZE		0x0080
  	/* Do not take i_data_sem locking in ext4_map_blocks */
  #define EXT4_GET_BLOCKS_NO_LOCK			0x0100
@@ -41,7 +41,7 @@ index c55a1faaed58..0718fc9743fb 100644
  /*
   * The bit position of these flags must not overlap with any of the
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 37043d0b2be8..0a97e039d0a0 100644
+index 7ef2f11..1ee24d7 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -2306,16 +2306,16 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
@@ -101,7 +101,7 @@ index 37043d0b2be8..0a97e039d0a0 100644
  }
  
  /*
-@@ -4357,8 +4359,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+@@ -4368,8 +4370,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
  		 * put just found gap into cache to speed up
  		 * subsequent requests
  		 */
@@ -112,13 +112,13 @@ index 37043d0b2be8..0a97e039d0a0 100644
  	}
  
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index e9777f93cf05..69601d288119 100644
+index ddd8e43..7bd272f 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -1447,11 +1447,9 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
- 			map->m_flags |= EXT4_MAP_FROM_CLUSTER;
+@@ -1432,11 +1432,9 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
+ 	if (ext4_has_inline_data(inode))
  		retval = 0;
- 	} else if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
+ 	else if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
 -		retval = ext4_ext_map_blocks(NULL, inode, map,
 -					     EXT4_GET_BLOCKS_NO_PUT_HOLE);
 +		retval = ext4_ext_map_blocks(NULL, inode, map, 0);
@@ -130,7 +130,7 @@ index e9777f93cf05..69601d288119 100644
  add_delayed:
  	if (retval == 0) {
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index ff4bd1b35246..9337d36ff8c9 100644
+index 06343e1..d71b00d3 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
 @@ -43,8 +43,7 @@ struct extent_status;
@@ -143,7 +143,3 @@ index ff4bd1b35246..9337d36ff8c9 100644
  
  #define show_mflags(flags) __print_flags(flags, "",	\
  	{ EXT4_MAP_NEW,		"N" },			\
--- 
-1.8.1.4
-
-

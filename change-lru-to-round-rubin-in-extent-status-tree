@@ -1,4 +1,4 @@
-ext4: change lru to round-robin in extent status tree shrinker
+ext4: change LRU to round-robin in extent status tree shrinker
 
 From: Zheng Liu <wenqing.lz@taobao.com>
 
@@ -16,18 +16,21 @@ Signed-off-by: Zheng Liu <wenqing.lz@taobao.com>
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/ext4.h              |  10 +--
- fs/ext4/extents_status.c    | 230 ++++++++++++++++++++---------------------------
- fs/ext4/extents_status.h    |   3 +-
- fs/ext4/super.c             |   5 +-
+ fs/ext4/ext4.h              |  10 +-
+ fs/ext4/extents.c           |   4 +-
+ fs/ext4/extents_status.c    | 224 +++++++++++++++++++-------------------------
+ fs/ext4/extents_status.h    |   7 +-
+ fs/ext4/inode.c             |   4 +-
+ fs/ext4/ioctl.c             |   4 +-
+ fs/ext4/super.c             |   7 +-
  include/trace/events/ext4.h |  11 +--
- 5 files changed, 111 insertions(+), 148 deletions(-)
+ 8 files changed, 118 insertions(+), 153 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index cbdadf8..2e5f1e0 100644
+index b9e9fdb3793a..ede6dd43fe13 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -887,10 +887,9 @@ struct ext4_inode_info {
+@@ -878,10 +878,9 @@ struct ext4_inode_info {
  	/* extents status tree */
  	struct ext4_es_tree i_es_tree;
  	rwlock_t i_es_lock;
@@ -40,7 +43,7 @@ index cbdadf8..2e5f1e0 100644
  
  	/* ialloc */
  	ext4_group_t	i_last_alloc_group;
-@@ -1331,10 +1330,11 @@ struct ext4_sb_info {
+@@ -1322,10 +1321,11 @@ struct ext4_sb_info {
  
  	/* Reclaim extents from extent status tree */
  	struct shrinker s_es_shrinker;
@@ -54,28 +57,48 @@ index cbdadf8..2e5f1e0 100644
  
  	/* Ratelimit ext4 messages. */
  	struct ratelimit_state s_err_ratelimit_state;
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index d0e502da8fbe..60569277584a 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4618,7 +4618,7 @@ out2:
+ 
+ 	trace_ext4_ext_map_blocks_exit(inode, flags, map,
+ 				       err ? err : allocated);
+-	ext4_es_lru_add(inode);
++	ext4_es_list_add(inode);
+ 	return err ? err : allocated;
+ }
+ 
+@@ -5177,7 +5177,7 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 		error = ext4_fill_fiemap_extents(inode, start_blk,
+ 						 len_blks, fieinfo);
+ 	}
+-	ext4_es_lru_add(inode);
++	ext4_es_list_add(inode);
+ 	return error;
+ }
+ 
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index dba77c7..de2d9d8b 100644
+index 94e7855ae71b..0193ca107396 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
-@@ -149,10 +149,8 @@ static int __es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
+@@ -149,8 +149,8 @@ static int __es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
  			      ext4_lblk_t end);
  static int __es_try_to_reclaim_extents(struct ext4_inode_info *ei,
  				       int nr_to_scan);
 -static int __ext4_es_shrink(struct ext4_sb_info *sbi, int nr_to_scan,
 -			    struct ext4_inode_info *locked_ei);
--static void ext4_es_lru_add(struct inode *inode);
--static void ext4_es_lru_del(struct inode *inode);
 +static int __es_shrink(struct ext4_sb_info *sbi, int nr_to_scan,
 +		       struct ext4_inode_info *locked_ei);
  
  int __init ext4_init_es(void)
  {
-@@ -300,6 +298,36 @@ out:
+@@ -298,6 +298,36 @@ out:
  	trace_ext4_es_find_delayed_extent_range_exit(inode, es);
  }
  
-+static void ext4_es_list_add(struct inode *inode)
++void ext4_es_list_add(struct inode *inode)
 +{
 +	struct ext4_inode_info *ei = EXT4_I(inode);
 +	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
@@ -91,7 +114,7 @@ index dba77c7..de2d9d8b 100644
 +	spin_unlock(&sbi->s_es_lock);
 +}
 +
-+static void ext4_es_list_del(struct inode *inode)
++void ext4_es_list_del(struct inode *inode)
 +{
 +	struct ext4_inode_info *ei = EXT4_I(inode);
 +	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
@@ -108,21 +131,19 @@ index dba77c7..de2d9d8b 100644
  static struct extent_status *
  ext4_es_alloc_extent(struct inode *inode, ext4_lblk_t lblk, ext4_lblk_t len,
  		     ext4_fsblk_t pblk)
-@@ -316,10 +344,10 @@ ext4_es_alloc_extent(struct inode *inode, ext4_lblk_t lblk, ext4_lblk_t len,
+@@ -314,9 +344,9 @@ ext4_es_alloc_extent(struct inode *inode, ext4_lblk_t lblk, ext4_lblk_t len,
  	 * We don't count delayed extent because we never try to reclaim them
  	 */
  	if (!ext4_es_is_delayed(es)) {
--		if (!EXT4_I(inode)->i_es_lru_nr++)
--			ext4_es_lru_add(inode);
-+		if (!EXT4_I(inode)->i_es_shk_nr++)
-+			ext4_es_list_add(inode);
+-		EXT4_I(inode)->i_es_lru_nr++;
++		EXT4_I(inode)->i_es_shk_nr++;
  		percpu_counter_inc(&EXT4_SB(inode->i_sb)->
 -					s_es_stats.es_stats_lru_cnt);
 +					s_es_stats.es_stats_shk_cnt);
  	}
  
  	EXT4_I(inode)->i_es_all_nr++;
-@@ -333,13 +361,13 @@ static void ext4_es_free_extent(struct inode *inode, struct extent_status *es)
+@@ -330,12 +360,12 @@ static void ext4_es_free_extent(struct inode *inode, struct extent_status *es)
  	EXT4_I(inode)->i_es_all_nr--;
  	percpu_counter_dec(&EXT4_SB(inode->i_sb)->s_es_stats.es_stats_all_cnt);
  
@@ -130,18 +151,16 @@ index dba77c7..de2d9d8b 100644
 +	/* Decrease the shrink counter when this es is not delayed */
  	if (!ext4_es_is_delayed(es)) {
 -		BUG_ON(EXT4_I(inode)->i_es_lru_nr == 0);
--		if (!--EXT4_I(inode)->i_es_lru_nr)
--			ext4_es_lru_del(inode);
+-		EXT4_I(inode)->i_es_lru_nr--;
 +		BUG_ON(EXT4_I(inode)->i_es_shk_nr == 0);
-+		if (!--EXT4_I(inode)->i_es_shk_nr)
-+			ext4_es_list_del(inode);
++		EXT4_I(inode)->i_es_shk_nr--;
  		percpu_counter_dec(&EXT4_SB(inode->i_sb)->
 -					s_es_stats.es_stats_lru_cnt);
 +					s_es_stats.es_stats_shk_cnt);
  	}
  
  	kmem_cache_free(ext4_es_cachep, es);
-@@ -687,8 +715,8 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
+@@ -683,8 +713,8 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
  		goto error;
  retry:
  	err = __es_insert_extent(inode, &newes);
@@ -152,7 +171,7 @@ index dba77c7..de2d9d8b 100644
  		goto retry;
  	if (err == -ENOMEM && !ext4_es_is_delayed(&newes))
  		err = 0;
-@@ -845,8 +873,8 @@ retry:
+@@ -841,8 +871,8 @@ retry:
  				es->es_lblk = orig_es.es_lblk;
  				es->es_len = orig_es.es_len;
  				if ((err == -ENOMEM) &&
@@ -163,7 +182,7 @@ index dba77c7..de2d9d8b 100644
  					goto retry;
  				goto out;
  			}
-@@ -918,6 +946,11 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
+@@ -914,6 +944,11 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
  	end = lblk + len - 1;
  	BUG_ON(end < lblk);
  
@@ -175,7 +194,7 @@ index dba77c7..de2d9d8b 100644
  	write_lock(&EXT4_I(inode)->i_es_lock);
  	err = __es_remove_extent(inode, lblk, end);
  	write_unlock(&EXT4_I(inode)->i_es_lock);
-@@ -925,114 +958,80 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
+@@ -921,114 +956,80 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
  	return err;
  }
  
@@ -323,7 +342,7 @@ index dba77c7..de2d9d8b 100644
  	scan_time = ktime_to_ns(ktime_sub(ktime_get(), start_time));
  	if (likely(es_stats->es_stats_scan_time))
  		es_stats->es_stats_scan_time = (scan_time +
-@@ -1047,7 +1046,7 @@ retry:
+@@ -1043,7 +1044,7 @@ retry:
  	else
  		es_stats->es_stats_shrunk = nr_shrunk;
  
@@ -332,7 +351,7 @@ index dba77c7..de2d9d8b 100644
  			     nr_skipped, retried);
  	return nr_shrunk;
  }
-@@ -1059,7 +1058,7 @@ static unsigned long ext4_es_count(struct shrinker *shrink,
+@@ -1055,7 +1056,7 @@ static unsigned long ext4_es_count(struct shrinker *shrink,
  	struct ext4_sb_info *sbi;
  
  	sbi = container_of(shrink, struct ext4_sb_info, s_es_shrinker);
@@ -341,7 +360,7 @@ index dba77c7..de2d9d8b 100644
  	trace_ext4_es_shrink_count(sbi->s_sb, sc->nr_to_scan, nr);
  	return nr;
  }
-@@ -1072,13 +1071,13 @@ static unsigned long ext4_es_scan(struct shrinker *shrink,
+@@ -1068,13 +1069,13 @@ static unsigned long ext4_es_scan(struct shrinker *shrink,
  	int nr_to_scan = sc->nr_to_scan;
  	int ret, nr_shrunk;
  
@@ -357,7 +376,7 @@ index dba77c7..de2d9d8b 100644
  
  	trace_ext4_es_shrink_scan_exit(sbi->s_sb, nr_shrunk, ret);
  	return nr_shrunk;
-@@ -1106,28 +1105,24 @@ static int ext4_es_seq_shrinker_info_show(struct seq_file *seq, void *v)
+@@ -1102,28 +1103,24 @@ static int ext4_es_seq_shrinker_info_show(struct seq_file *seq, void *v)
  		return 0;
  
  	/* here we just find an inode that has the max nr. of objects */
@@ -391,7 +410,7 @@ index dba77c7..de2d9d8b 100644
  
  	seq_printf(seq, "average:\n  %llu us scan time\n",
  	    div_u64(es_stats->es_stats_scan_time, 1000));
-@@ -1136,7 +1131,7 @@ static int ext4_es_seq_shrinker_info_show(struct seq_file *seq, void *v)
+@@ -1132,7 +1129,7 @@ static int ext4_es_seq_shrinker_info_show(struct seq_file *seq, void *v)
  		seq_printf(seq,
  		    "maximum:\n  %lu inode (%u objects, %u reclaimable)\n"
  		    "  %llu us max scan time\n",
@@ -400,7 +419,7 @@ index dba77c7..de2d9d8b 100644
  		    div_u64(es_stats->es_stats_max_scan_time, 1000));
  
  	return 0;
-@@ -1185,9 +1180,9 @@ int ext4_es_register_shrinker(struct ext4_sb_info *sbi)
+@@ -1181,9 +1178,9 @@ int ext4_es_register_shrinker(struct ext4_sb_info *sbi)
  {
  	int err;
  
@@ -413,7 +432,7 @@ index dba77c7..de2d9d8b 100644
  	sbi->s_es_stats.es_stats_shrunk = 0;
  	sbi->s_es_stats.es_stats_cache_hits = 0;
  	sbi->s_es_stats.es_stats_cache_misses = 0;
-@@ -1196,7 +1191,7 @@ int ext4_es_register_shrinker(struct ext4_sb_info *sbi)
+@@ -1192,7 +1189,7 @@ int ext4_es_register_shrinker(struct ext4_sb_info *sbi)
  	err = percpu_counter_init(&sbi->s_es_stats.es_stats_all_cnt, 0, GFP_KERNEL);
  	if (err)
  		return err;
@@ -422,7 +441,7 @@ index dba77c7..de2d9d8b 100644
  	if (err)
  		goto err1;
  
-@@ -1214,7 +1209,7 @@ int ext4_es_register_shrinker(struct ext4_sb_info *sbi)
+@@ -1210,7 +1207,7 @@ int ext4_es_register_shrinker(struct ext4_sb_info *sbi)
  	return 0;
  
  err2:
@@ -431,7 +450,7 @@ index dba77c7..de2d9d8b 100644
  err1:
  	percpu_counter_destroy(&sbi->s_es_stats.es_stats_all_cnt);
  	return err;
-@@ -1225,37 +1220,10 @@ void ext4_es_unregister_shrinker(struct ext4_sb_info *sbi)
+@@ -1221,37 +1218,10 @@ void ext4_es_unregister_shrinker(struct ext4_sb_info *sbi)
  	if (sbi->s_proc)
  		remove_proc_entry("es_shrinker_info", sbi->s_proc);
  	percpu_counter_destroy(&sbi->s_es_stats.es_stats_all_cnt);
@@ -440,7 +459,7 @@ index dba77c7..de2d9d8b 100644
  	unregister_shrinker(&sbi->s_es_shrinker);
  }
  
--static void ext4_es_lru_add(struct inode *inode)
+-void ext4_es_lru_add(struct inode *inode)
 -{
 -	struct ext4_inode_info *ei = EXT4_I(inode);
 -	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
@@ -456,7 +475,7 @@ index dba77c7..de2d9d8b 100644
 -	spin_unlock(&sbi->s_es_lru_lock);
 -}
 -
--static void ext4_es_lru_del(struct inode *inode)
+-void ext4_es_lru_del(struct inode *inode)
 -{
 -	struct ext4_inode_info *ei = EXT4_I(inode);
 -	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
@@ -470,7 +489,7 @@ index dba77c7..de2d9d8b 100644
  static int __es_try_to_reclaim_extents(struct ext4_inode_info *ei,
  				       int nr_to_scan)
  {
-@@ -1267,7 +1235,7 @@ static int __es_try_to_reclaim_extents(struct ext4_inode_info *ei,
+@@ -1263,7 +1233,7 @@ static int __es_try_to_reclaim_extents(struct ext4_inode_info *ei,
  	static DEFINE_RATELIMIT_STATE(_rs, DEFAULT_RATELIMIT_INTERVAL,
  				      DEFAULT_RATELIMIT_BURST);
  
@@ -480,7 +499,7 @@ index dba77c7..de2d9d8b 100644
  
  	if (ext4_test_inode_state(inode, EXT4_STATE_EXT_PRECACHED) &&
 diff --git a/fs/ext4/extents_status.h b/fs/ext4/extents_status.h
-index 9b5e761..b0b78b9 100644
+index efd5f970b501..0e6a33e81e5f 100644
 --- a/fs/ext4/extents_status.h
 +++ b/fs/ext4/extents_status.h
 @@ -65,14 +65,13 @@ struct ext4_es_tree {
@@ -499,11 +518,58 @@ index 9b5e761..b0b78b9 100644
  };
  
  extern int __init ext4_init_es(void);
+@@ -151,7 +150,7 @@ static inline void ext4_es_store_pblock_status(struct extent_status *es,
+ 
+ extern int ext4_es_register_shrinker(struct ext4_sb_info *sbi);
+ extern void ext4_es_unregister_shrinker(struct ext4_sb_info *sbi);
+-extern void ext4_es_lru_add(struct inode *inode);
+-extern void ext4_es_lru_del(struct inode *inode);
++extern void ext4_es_list_add(struct inode *inode);
++extern void ext4_es_list_del(struct inode *inode);
+ 
+ #endif /* _EXT4_EXTENTS_STATUS_H */
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index d0e9cbb56f94..dd21ab011a2a 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -486,7 +486,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
+ 
+ 	/* Lookup extent status tree firstly */
+ 	if (ext4_es_lookup_extent(inode, map->m_lblk, &es)) {
+-		ext4_es_lru_add(inode);
++		ext4_es_list_add(inode);
+ 		if (ext4_es_is_written(&es) || ext4_es_is_unwritten(&es)) {
+ 			map->m_pblk = ext4_es_pblock(&es) +
+ 					map->m_lblk - es.es_lblk;
+@@ -1388,7 +1388,7 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
+ 
+ 	/* Lookup extent status tree firstly */
+ 	if (ext4_es_lookup_extent(inode, iblock, &es)) {
+-		ext4_es_lru_add(inode);
++		ext4_es_list_add(inode);
+ 		if (ext4_es_is_hole(&es)) {
+ 			retval = 0;
+ 			down_read(&EXT4_I(inode)->i_data_sem);
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index bfda18a15592..7b377c41dd81 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -78,8 +78,8 @@ static void swap_inode_data(struct inode *inode1, struct inode *inode2)
+ 	memswap(&ei1->i_disksize, &ei2->i_disksize, sizeof(ei1->i_disksize));
+ 	ext4_es_remove_extent(inode1, 0, EXT_MAX_BLOCKS);
+ 	ext4_es_remove_extent(inode2, 0, EXT_MAX_BLOCKS);
+-	ext4_es_lru_del(inode1);
+-	ext4_es_lru_del(inode2);
++	ext4_es_list_del(inode1);
++	ext4_es_list_del(inode2);
+ 
+ 	isize = i_size_read(inode1);
+ 	i_size_write(inode1, i_size_read(inode2));
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 7dafd6b..1aa6f66 100644
+index 1eda6ab0ef9d..6f64086ac495 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -871,10 +871,9 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
+@@ -880,10 +880,9 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
  	spin_lock_init(&ei->i_prealloc_lock);
  	ext4_es_init_tree(&ei->i_es_tree);
  	rwlock_init(&ei->i_es_lock);
@@ -516,11 +582,20 @@ index 7dafd6b..1aa6f66 100644
  	ei->i_reserved_data_blocks = 0;
  	ei->i_reserved_meta_blocks = 0;
  	ei->i_allocated_meta_blocks = 0;
+@@ -972,7 +971,7 @@ void ext4_clear_inode(struct inode *inode)
+ 	dquot_drop(inode);
+ 	ext4_discard_preallocations(inode);
+ 	ext4_es_remove_extent(inode, 0, EXT_MAX_BLOCKS);
+-	ext4_es_lru_del(inode);
++	ext4_es_list_del(inode);
+ 	if (EXT4_I(inode)->jinode) {
+ 		jbd2_journal_release_jbd_inode(EXT4_JOURNAL(inode),
+ 					       EXT4_I(inode)->jinode);
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
-index 51f67a4..d4c468e 100644
+index cd37a584ee88..6cfb841fea7c 100644
 --- a/include/trace/events/ext4.h
 +++ b/include/trace/events/ext4.h
-@@ -2480,15 +2480,14 @@ TRACE_EVENT(ext4_collapse_range,
+@@ -2450,15 +2450,14 @@ TRACE_EVENT(ext4_collapse_range,
  
  TRACE_EVENT(ext4_es_shrink,
  	TP_PROTO(struct super_block *sb, int nr_shrunk, u64 scan_time,
@@ -538,7 +613,7 @@ index 51f67a4..d4c468e 100644
  		__field(	int,		nr_skipped	)
  		__field(	int,		retried		)
  	),
-@@ -2497,16 +2496,14 @@ TRACE_EVENT(ext4_es_shrink,
+@@ -2467,16 +2466,14 @@ TRACE_EVENT(ext4_es_shrink,
  		__entry->dev		= sb->s_dev;
  		__entry->nr_shrunk	= nr_shrunk;
  		__entry->scan_time	= div_u64(scan_time, 1000);
@@ -557,3 +632,7 @@ index 51f67a4..d4c468e 100644
  );
  
  #endif /* _TRACE_EXT4_H */
+-- 
+1.8.1.4
+
+
