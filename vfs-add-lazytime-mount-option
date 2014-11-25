@@ -24,12 +24,12 @@ Google-Bug-Id: 18297052
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/fs-writeback.c       | 38 +++++++++++++++++++++++++++++++++++++-
- fs/inode.c              | 20 ++++++++++++++++++++
+ fs/inode.c              | 21 +++++++++++++++++++++
  fs/proc_namespace.c     |  1 +
  fs/sync.c               |  7 +++++++
  include/linux/fs.h      |  1 +
  include/uapi/linux/fs.h |  1 +
- 6 files changed, 67 insertions(+), 1 deletion(-)
+ 6 files changed, 68 insertions(+), 1 deletion(-)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
 index ef9bef1..ce7de22 100644
@@ -95,7 +95,7 @@ index ef9bef1..ce7de22 100644
  	wait_for_completion(&done);
  
 diff --git a/fs/inode.c b/fs/inode.c
-index 8f5c4b5..11fe81b 100644
+index 8f5c4b5..2093a84 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -534,6 +534,18 @@ static void evict(struct inode *inode)
@@ -117,11 +117,12 @@ index 8f5c4b5..11fe81b 100644
  	if (!list_empty(&inode->i_wb_list))
  		inode_wb_list_del(inode);
  
-@@ -1515,6 +1527,14 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+@@ -1515,6 +1527,15 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  		if (flags & S_MTIME)
  			inode->i_mtime = *time;
  	}
-+	if (inode->i_sb->s_flags & MS_LAZYTIME) {
++	if ((inode->i_sb->s_flags & MS_LAZYTIME) &&
++	    !(flags & S_VERSION)) {
 +		if (inode->i_state & I_DIRTY_TIME)
 +			return 0;
 +		spin_lock(&inode->i_lock);
@@ -145,7 +146,7 @@ index 73ca174..f98234a 100644
  	};
  	const struct proc_fs_info *fs_infop;
 diff --git a/fs/sync.c b/fs/sync.c
-index bdc729d..db7930e 100644
+index bdc729d..3a35506a 100644
 --- a/fs/sync.c
 +++ b/fs/sync.c
 @@ -177,8 +177,15 @@ SYSCALL_DEFINE1(syncfs, int, fd)
@@ -156,7 +157,7 @@ index bdc729d..db7930e 100644
 +
  	if (!file->f_op->fsync)
  		return -EINVAL;
-+	if (!datasync && inode->i_state & I_DIRTY_TIME) {
++	if (!datasync && (inode->i_state & I_DIRTY_TIME)) {
 +		spin_lock(&inode->i_lock);
 +		inode->i_state |= I_DIRTY_SYNC;
 +		spin_unlock(&inode->i_lock);

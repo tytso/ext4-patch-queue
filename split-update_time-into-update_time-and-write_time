@@ -12,12 +12,33 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 Cc: xfs@oss.sgi.com
 Cc: linux-btrfs@vger.kernel.org
 ---
- fs/btrfs/inode.c   | 10 ++++++++++
- fs/inode.c         | 29 ++++++++++++++++++-----------
- fs/xfs/xfs_iops.c  | 39 ++++++++++++++++-----------------------
- include/linux/fs.h |  1 +
- 4 files changed, 45 insertions(+), 34 deletions(-)
+ Documentation/filesystems/Locking |  2 ++
+ fs/btrfs/inode.c                  | 10 ++++++++++
+ fs/inode.c                        | 29 ++++++++++++++++++-----------
+ fs/xfs/xfs_iops.c                 | 39 ++++++++++++++++-----------------------
+ include/linux/fs.h                |  1 +
+ 5 files changed, 47 insertions(+), 34 deletions(-)
 
+diff --git a/Documentation/filesystems/Locking b/Documentation/filesystems/Locking
+index b30753c..e49861d 100644
+--- a/Documentation/filesystems/Locking
++++ b/Documentation/filesystems/Locking
+@@ -63,6 +63,7 @@ prototypes:
+ 	int (*removexattr) (struct dentry *, const char *);
+ 	int (*fiemap)(struct inode *, struct fiemap_extent_info *, u64 start, u64 len);
+ 	void (*update_time)(struct inode *, struct timespec *, int);
++	void (*write_time)(struct inode *);
+ 	int (*atomic_open)(struct inode *, struct dentry *,
+ 				struct file *, unsigned open_flag,
+ 				umode_t create_mode, int *opened);
+@@ -95,6 +96,7 @@ listxattr:	no
+ removexattr:	yes
+ fiemap:		no
+ update_time:	no
++write_time:	no
+ atomic_open:	yes
+ tmpfile:	no
+ dentry_open:	no
 diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
 index d23362f..a5e0d0d 100644
 --- a/fs/btrfs/inode.c
