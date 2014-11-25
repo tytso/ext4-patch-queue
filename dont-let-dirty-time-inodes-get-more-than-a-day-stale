@@ -23,7 +23,7 @@ index ce7de22..eb04277 100644
  			sb->s_op->dirty_inode(inode, flags);
  
 diff --git a/fs/inode.c b/fs/inode.c
-index 2093a84..34a443f 100644
+index 2093a84..321c7d7 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -1511,6 +1511,8 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
@@ -31,7 +31,7 @@ index 2093a84..34a443f 100644
  static int update_time(struct inode *inode, struct timespec *time, int flags)
  {
 +	struct timespec uptime;
-+	unsigned short daycode;
++	unsigned short days_since_boot;
  	int ret;
  
  	if (inode->i_op->update_time) {
@@ -60,13 +60,13 @@ index 2093a84..34a443f 100644
 -		spin_unlock(&inode->i_lock);
 -		return 0;
 +		get_monotonic_boottime(&uptime);
-+		daycode = div_u64(uptime.tv_sec, (HZ * 86400));
++		days_since_boot = div_u64(uptime.tv_sec, 86400);
 +		if (!inode->i_ts_dirty_day ||
-+		    inode->i_ts_dirty_day == daycode) {
++		    inode->i_ts_dirty_day == days_since_boot) {
 +			spin_lock(&inode->i_lock);
 +			inode->i_state |= I_DIRTY_TIME;
 +			spin_unlock(&inode->i_lock);
-+			inode->i_ts_dirty_day = daycode;
++			inode->i_ts_dirty_day = days_since_boot;
 +			return 0;
 +		}
  	}
