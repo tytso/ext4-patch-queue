@@ -2,12 +2,12 @@ vfs: add lazytime tracepoints for better debugging
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/fs-writeback.c | 5 ++++-
+ fs/fs-writeback.c | 1 +
  fs/inode.c        | 5 +++++
- 2 files changed, 9 insertions(+), 1 deletion(-)
+ 2 files changed, 6 insertions(+)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index eb04277..cab2d6d 100644
+index 529480a..3d87174 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
 @@ -27,6 +27,7 @@
@@ -18,20 +18,8 @@ index eb04277..cab2d6d 100644
  #include "internal.h"
  
  /*
-@@ -1304,8 +1305,10 @@ static void flush_sb_dirty_time(struct super_block *sb)
- 		iput(old_inode);
- 		old_inode = inode;
- 
--		if (dirty_time)
-+		if (dirty_time) {
-+			trace_fs_lazytime_flush(inode);
- 			mark_inode_dirty(inode);
-+		}
- 		cond_resched();
- 		spin_lock(&inode_sb_list_lock);
- 	}
 diff --git a/fs/inode.c b/fs/inode.c
-index 321c7d7..bd6e0e6 100644
+index 37c0429..b2fea60 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -20,6 +20,9 @@
@@ -44,19 +32,19 @@ index 321c7d7..bd6e0e6 100644
  /*
   * Inode locking rules:
   *
-@@ -544,6 +547,7 @@ static void evict(struct inode *inode)
- 			mark_inode_dirty(inode);
- 			inode->i_sb->s_op->write_inode(inode, &wbc);
+@@ -1443,6 +1446,7 @@ retry:
+ 				inode->i_op->write_time(inode);
+ 			else if (inode->i_sb->s_op->write_inode)
+ 				mark_inode_dirty_sync(inode);
++			trace_fs_lazytime_iput(inode);
+ 			goto retry;
  		}
-+		trace_fs_lazytime_evict(inode);
+ 		iput_final(inode);
+@@ -1561,6 +1565,7 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+ 		inode->i_ts_dirty_day = days_since_boot;
+ 		spin_unlock(&inode->i_lock);
+ 		inode_requeue_dirtytime(inode);
++		trace_fs_lazytime_defer(inode);
+ 		return 0;
  	}
- 
- 	if (!list_empty(&inode->i_wb_list))
-@@ -1550,6 +1554,7 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
- 			inode->i_state |= I_DIRTY_TIME;
- 			spin_unlock(&inode->i_lock);
- 			inode->i_ts_dirty_day = days_since_boot;
-+			trace_fs_lazytime_defer(inode);
- 			return 0;
- 		}
- 	}
+ force_dirty:

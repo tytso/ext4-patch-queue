@@ -5,17 +5,16 @@ stale.
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/fs-writeback.c         |  1 +
- fs/inode.c                | 28 +++++++++++++++++++++++-----
- include/linux/fs.h        |  1 +
- include/trace/events/fs.h | 56 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- 4 files changed, 81 insertions(+), 5 deletions(-)
+ fs/fs-writeback.c  |  1 +
+ fs/inode.c         | 18 ++++++++++++++++++
+ include/linux/fs.h |  1 +
+ 3 files changed, 20 insertions(+)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index ce7de22..eb04277 100644
+index 7b3ef17..8a5920c 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
-@@ -1141,6 +1141,7 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+@@ -1144,6 +1144,7 @@ void __mark_inode_dirty(struct inode *inode, int flags)
  	if (flags & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) {
  		trace_writeback_dirty_inode_start(inode, flags);
  
@@ -24,10 +23,10 @@ index ce7de22..eb04277 100644
  			sb->s_op->dirty_inode(inode, flags);
  
 diff --git a/fs/inode.c b/fs/inode.c
-index 2093a84..321c7d7 100644
+index 2062a14..a39e1bb 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
-@@ -1511,6 +1511,8 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
+@@ -1515,6 +1515,8 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
   */
  static int update_time(struct inode *inode, struct timespec *time, int flags)
  {
@@ -36,12 +35,9 @@ index 2093a84..321c7d7 100644
  	int ret;
  
  	if (inode->i_op->update_time) {
-@@ -1525,17 +1527,33 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
- 		if (flags & S_CTIME)
- 			inode->i_ctime = *time;
+@@ -1531,6 +1533,15 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  		if (flags & S_MTIME)
--			inode->i_mtime = *time;
-+		inode->i_mtime = *time;
+ 			inode->i_mtime = *time;
  	}
 +	/*
 +	 * If i_ts_dirty_day is zero, then either we have not deferred
@@ -53,28 +49,29 @@ index 2093a84..321c7d7 100644
 +	 * the on-disk inode and then we can clear i_ts_dirty_day.
 +	 */
  	if ((inode->i_sb->s_flags & MS_LAZYTIME) &&
- 	    !(flags & S_VERSION)) {
+ 	    !(flags & S_VERSION) &&
+ 	    !(inode->i_state & (I_DIRTY_SYNC | I_DIRTY_DATASYNC))) {
+@@ -1539,6 +1550,12 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+ 
  		if (inode->i_state & I_DIRTY_TIME)
  			return 0;
--		spin_lock(&inode->i_lock);
--		inode->i_state |= I_DIRTY_TIME;
--		spin_unlock(&inode->i_lock);
--		return 0;
 +		get_monotonic_boottime(&uptime);
 +		days_since_boot = div_u64(uptime.tv_sec, 86400);
-+		if (!inode->i_ts_dirty_day ||
-+		    inode->i_ts_dirty_day == days_since_boot) {
-+			spin_lock(&inode->i_lock);
-+			inode->i_state |= I_DIRTY_TIME;
-+			spin_unlock(&inode->i_lock);
-+			inode->i_ts_dirty_day = days_since_boot;
-+			return 0;
-+		}
- 	}
-+	inode->i_ts_dirty_day = 0;
- 	if (inode->i_op->write_time)
- 		return inode->i_op->write_time(inode);
- 	mark_inode_dirty_sync(inode);
++		if (inode->i_ts_dirty_day &&
++		    (inode->i_ts_dirty_day != days_since_boot))
++			goto force_dirty;
++
+ 		spin_lock(&inode->i_lock);
+ 		if (inode->i_state & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) {
+ 			spin_unlock(&inode->i_lock);
+@@ -1549,6 +1566,7 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+ 			return 0;
+ 		}
+ 		inode->i_state |= I_DIRTY_TIME;
++		inode->i_ts_dirty_day = days_since_boot;
+ 		spin_unlock(&inode->i_lock);
+ 		bdi = sb_is_blkdev_sb(sb) ? inode->i_mapping->backing_dev_info :
+ 			sb->s_bdi;
 diff --git a/include/linux/fs.h b/include/linux/fs.h
 index 489b2f2..e3574cd 100644
 --- a/include/linux/fs.h
@@ -87,65 +84,3 @@ index 489b2f2..e3574cd 100644
  	unsigned int		i_blkbits;
  	blkcnt_t		i_blocks;
  
-diff --git a/include/trace/events/fs.h b/include/trace/events/fs.h
-new file mode 100644
-index 0000000..ca06d5c
---- /dev/null
-+++ b/include/trace/events/fs.h
-@@ -0,0 +1,56 @@
-+#undef TRACE_SYSTEM
-+#define TRACE_SYSTEM fs
-+
-+#if !defined(_TRACE_FS_H) || defined(TRACE_HEADER_MULTI_READ)
-+#define _TRACE_FS_H
-+
-+#include <linux/tracepoint.h>
-+
-+DECLARE_EVENT_CLASS(fs__inode,
-+	TP_PROTO(struct inode *inode),
-+
-+	TP_ARGS(inode),
-+
-+	TP_STRUCT__entry(
-+		__field(	dev_t,	dev			)
-+		__field(	ino_t,	ino			)
-+		__field(	uid_t,	uid			)
-+		__field(	gid_t,	gid			)
-+		__field(	__u16, mode			)
-+	),
-+
-+	TP_fast_assign(
-+		__entry->dev	= inode->i_sb->s_dev;
-+		__entry->ino	= inode->i_ino;
-+		__entry->uid	= i_uid_read(inode);
-+		__entry->gid	= i_gid_read(inode);
-+		__entry->mode	= inode->i_mode;
-+	),
-+
-+	TP_printk("dev %d,%d ino %lu mode 0%o uid %u gid %u",
-+		  MAJOR(__entry->dev), MINOR(__entry->dev),
-+		  (unsigned long) __entry->ino, __entry->mode,
-+		  __entry->uid, __entry->gid)
-+);
-+
-+DEFINE_EVENT(fs__inode, fs_lazytime_defer,
-+	TP_PROTO(struct inode *inode),
-+
-+	TP_ARGS(inode)
-+);
-+
-+DEFINE_EVENT(fs__inode, fs_lazytime_evict,
-+	TP_PROTO(struct inode *inode),
-+
-+	TP_ARGS(inode)
-+);
-+
-+DEFINE_EVENT(fs__inode, fs_lazytime_flush,
-+	TP_PROTO(struct inode *inode),
-+
-+	TP_ARGS(inode)
-+);
-+#endif /* _TRACE_FS_H */
-+
-+/* This part must be outside protection */
-+#include <trace/define_trace.h>
