@@ -1,0 +1,29 @@
+ext4: Remove an unnecessary check for NULL before iput()
+
+From: Markus Elfring <elfring@users.sourceforge.net>
+
+The iput() function tests whether its argument is NULL and then
+returns immediately. Thus the test around the call is not needed.
+
+This issue was detected by using the Coccinelle software.
+
+Signed-off-by: Markus Elfring <elfring@users.sourceforge.net>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 8b0f9ef..e1a2521 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2712,8 +2712,7 @@ int ext4_mb_release(struct super_block *sb)
+ 	}
+ 	kfree(sbi->s_mb_offsets);
+ 	kfree(sbi->s_mb_maxs);
+-	if (sbi->s_buddy_cache)
+-		iput(sbi->s_buddy_cache);
++	iput(sbi->s_buddy_cache);
+ 	if (sbi->s_mb_stats) {
+ 		ext4_msg(sb, KERN_INFO,
+ 		       "mballoc: %u blocks %u reqs (%u success)",
