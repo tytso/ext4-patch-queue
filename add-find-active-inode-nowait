@@ -1,73 +1,90 @@
-vfs: add find_active_inode_nowait() function
+vfs: add find_inode_nowait() function
 
-Add a new function find_active_inode_nowait() which will never block.
-If there is an inode being freed or is still being initialized, this
-function will return NULL instead of blocking waiting for an inode to
-be freed or to finish initializing.  Hence, a negative return from
-this function does not mean that inode number is free for use.  It is
-useful for callers that want to opportunistically do some work on an
-inode only if it is present and available in the cache, and where
-blocking is not an option.
+Add a new function find_inode_nowait() which is an even more general
+version of ilookup5_nowait().  It is designed for callers which need
+very fine grained control over when the function is allowed to block
+or increment the inode's reference count.
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
+ fs/inode.c         | 50 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ include/linux/fs.h |  5 +++++
+ 2 files changed, 55 insertions(+)
+
 diff --git a/fs/inode.c b/fs/inode.c
-index 8ceaa09..f9ad3fa 100644
+index b2fea60..2c160b9 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
-@@ -1283,6 +1283,42 @@ struct inode *ilookup(struct super_block *sb, unsigned long ino)
+@@ -1283,6 +1283,56 @@ struct inode *ilookup(struct super_block *sb, unsigned long ino)
  }
  EXPORT_SYMBOL(ilookup);
  
 +/**
-+ * find_active_inode_nowait - find an active inode in the inode cache
++ * find_inode_nowait - find an inode in the inode cache
 + * @sb:		super block of file system to search
-+ * @ino:	inode number to search for
++ * @hashval:	hash value (usually inode number) to search for
++ * @match:	callback used for comparisons between inodes
++ * @data:	opaque data pointer to pass to @match
 + *
-+ * Search for an active inode @ino in the inode cache, and if the
-+ * inode is in the cache, the inode is returned with an incremented
-+ * reference count.  If the inode is being freed or is newly
-+ * initialized, return nothing instead of trying to wait for the inode
-+ * initialization or destruction to be complete.
++ * Search for the inode specified by @hashval and @data in the inode
++ * cache, where the helper function @match will return 0 if the inode
++ * does not match, 1 if the inode does match, and -1 if the search
++ * should be stopped.  The @match function must be responsible for
++ * taking the i_lock spin_lock and checking i_state for an inode being
++ * freed or being initialized, and incrementing the reference count
++ * before returning 1.  It must also not sleep, since it is held with
++ * the inode_hash_lock spinlock held.
++ *
++ * This is a even more generalized version of ilookup5() when the
++ * function must never block --- find_inode() can block in
++ * __wait_on_freeing_inode() --- or when the caller can not increment
++ * the reference count because the resulting iput() might cause an
++ * inode eviction().  The tradeoff is that the @match funtion must be
++ * very carefully implemented.
 + */
-+struct inode *find_active_inode_nowait(struct super_block *sb,
-+				       unsigned long ino)
++struct inode *find_inode_nowait(struct super_block *sb,
++				unsigned long hashval,
++				int (*match)(struct inode *, unsigned long,
++					     void *),
++				void *data)
 +{
-+	struct hlist_head *head = inode_hashtable + hash(sb, ino);
++	struct hlist_head *head = inode_hashtable + hash(sb, hashval);
 +	struct inode *inode, *ret_inode = NULL;
++	int mval;
 +
 +	spin_lock(&inode_hash_lock);
 +	hlist_for_each_entry(inode, head, i_hash) {
-+		if ((inode->i_ino != ino) ||
-+		    (inode->i_sb != sb))
++		if (inode->i_sb != sb)
 +			continue;
-+		spin_lock(&inode->i_lock);
-+		if ((inode->i_state & (I_FREEING | I_WILL_FREE | I_NEW)) == 0) {
-+			__iget(inode);
++		mval = match(inode, hashval, data);
++		if (mval == 0)
++			continue;
++		if (mval == 1)
 +			ret_inode = inode;
-+		}
-+		spin_unlock(&inode->i_lock);
 +		goto out;
 +	}
 +out:
 +	spin_unlock(&inode_hash_lock);
 +	return ret_inode;
 +}
-+EXPORT_SYMBOL(find_active_inode_nowait);
++EXPORT_SYMBOL(find_inode_nowait);
 +
  int insert_inode_locked(struct inode *inode)
  {
  	struct super_block *sb = inode->i_sb;
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index ff252cb..b24ad99 100644
+index d0a2181..831dbee 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -2414,6 +2414,8 @@ extern struct inode *ilookup(struct super_block *sb, unsigned long ino);
+@@ -2419,6 +2419,11 @@ extern struct inode *ilookup(struct super_block *sb, unsigned long ino);
  
  extern struct inode * iget5_locked(struct super_block *, unsigned long, int (*test)(struct inode *, void *), int (*set)(struct inode *, void *), void *);
  extern struct inode * iget_locked(struct super_block *, unsigned long);
-+extern struct inode *find_active_inode_nowait(struct super_block *,
-+					      unsigned long);
++extern struct inode *find_inode_nowait(struct super_block *,
++				       unsigned long,
++				       int (*match)(struct inode *,
++						    unsigned long, void *),
++				       void *data);
  extern int insert_inode_locked4(struct inode *, unsigned long, int (*test)(struct inode *, void *), void *);
  extern int insert_inode_locked(struct inode *);
  #ifdef CONFIG_DEBUG_LOCK_ALLOC

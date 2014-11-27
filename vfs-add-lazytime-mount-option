@@ -25,13 +25,18 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/fs-writeback.c           | 55 +++++++++++++++++++++++++++++++++++++++++++++++++------
  fs/inode.c                  | 43 +++++++++++++++++++++++++++++++++++++------
+ fs/libfs.c                  |  2 +-
+ fs/logfs/readwrite.c        |  2 +-
+ fs/nfsd/vfs.c               |  2 +-
+ fs/pipe.c                   |  2 +-
  fs/proc_namespace.c         |  1 +
  fs/sync.c                   |  8 ++++++++
+ fs/ufs/truncate.c           |  2 +-
  include/linux/backing-dev.h |  1 +
  include/linux/fs.h          | 11 +++++++++--
  include/uapi/linux/fs.h     |  1 +
  mm/backing-dev.c            |  9 +++++++--
- 8 files changed, 113 insertions(+), 16 deletions(-)
+ 13 files changed, 118 insertions(+), 21 deletions(-)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
 index ef9bef1..ef8c5d8 100644
@@ -217,6 +222,58 @@ index 8f5c4b5..9e464cc 100644
  	if (inode->i_op->write_time)
  		return inode->i_op->write_time(inode);
  	mark_inode_dirty_sync(inode);
+diff --git a/fs/libfs.c b/fs/libfs.c
+index 171d284..b9923b2 100644
+--- a/fs/libfs.c
++++ b/fs/libfs.c
+@@ -1066,7 +1066,7 @@ struct inode *alloc_anon_inode(struct super_block *s)
+ 	 * list because mark_inode_dirty() will think
+ 	 * that it already _is_ on the dirty list.
+ 	 */
+-	inode->i_state = I_DIRTY;
++	inode->i_state = I_DIRTY_WB;
+ 	inode->i_mode = S_IRUSR | S_IWUSR;
+ 	inode->i_uid = current_fsuid();
+ 	inode->i_gid = current_fsgid();
+diff --git a/fs/logfs/readwrite.c b/fs/logfs/readwrite.c
+index 380d86e..5521842 100644
+--- a/fs/logfs/readwrite.c
++++ b/fs/logfs/readwrite.c
+@@ -2187,7 +2187,7 @@ void logfs_evict_inode(struct inode *inode)
+ 	 * aliases, which are moved back.  No write to the medium happens.
+ 	 */
+ 	/* Only deleted files may be dirty at this point */
+-	BUG_ON(inode->i_state & I_DIRTY && inode->i_nlink);
++	BUG_ON(inode->i_state & I_DIRTY_WB && inode->i_nlink);
+ 	if (!block)
+ 		return;
+ 	if ((logfs_super(sb)->s_flags & LOGFS_SB_FLAG_SHUTDOWN)) {
+diff --git a/fs/nfsd/vfs.c b/fs/nfsd/vfs.c
+index 989129e..818c6fa 100644
+--- a/fs/nfsd/vfs.c
++++ b/fs/nfsd/vfs.c
+@@ -915,7 +915,7 @@ static int wait_for_concurrent_writes(struct file *file)
+ 		dprintk("nfsd: write resume %d\n", task_pid_nr(current));
+ 	}
+ 
+-	if (inode->i_state & I_DIRTY) {
++	if (inode->i_state & I_DIRTY_WB) {
+ 		dprintk("nfsd: write sync %d\n", task_pid_nr(current));
+ 		err = vfs_fsync(file, 0);
+ 	}
+diff --git a/fs/pipe.c b/fs/pipe.c
+index 21981e5..fc9b923 100644
+--- a/fs/pipe.c
++++ b/fs/pipe.c
+@@ -660,7 +660,7 @@ static struct inode * get_pipe_inode(void)
+ 	 * list because "mark_inode_dirty()" will think
+ 	 * that it already _is_ on the dirty list.
+ 	 */
+-	inode->i_state = I_DIRTY;
++	inode->i_state = I_DIRTY_WB;
+ 	inode->i_mode = S_IFIFO | S_IRUSR | S_IWUSR;
+ 	inode->i_uid = current_fsuid();
+ 	inode->i_gid = current_fsgid();
 diff --git a/fs/proc_namespace.c b/fs/proc_namespace.c
 index 73ca174..f98234a 100644
 --- a/fs/proc_namespace.c
@@ -250,6 +307,19 @@ index bdc729d..6ac7bf0 100644
  	return file->f_op->fsync(file, start, end, datasync);
  }
  EXPORT_SYMBOL(vfs_fsync_range);
+diff --git a/fs/ufs/truncate.c b/fs/ufs/truncate.c
+index f04f89f..1d00a09 100644
+--- a/fs/ufs/truncate.c
++++ b/fs/ufs/truncate.c
+@@ -477,7 +477,7 @@ int ufs_truncate(struct inode *inode, loff_t old_i_size)
+ 		retry |= ufs_trunc_tindirect (inode);
+ 		if (!retry)
+ 			break;
+-		if (IS_SYNC(inode) && (inode->i_state & I_DIRTY))
++		if (IS_SYNC(inode) && (inode->i_state & I_DIRTY_WB))
+ 			ufs_sync_inode (inode);
+ 		yield();
+ 	}
 diff --git a/include/linux/backing-dev.h b/include/linux/backing-dev.h
 index 5da6012..4cdf733 100644
 --- a/include/linux/backing-dev.h

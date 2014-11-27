@@ -1,4 +1,4 @@
-ext4: add support for a lazytime mount option
+ext4: add optimization for the lazytime mount option
 
 Add an optimization for the MS_LAZYTIME mount option so that we will
 opportunistically write out any inodes with the I_DIRTY_TIME flag set
@@ -14,70 +14,81 @@ Google-Bug-Id: 18297052
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/inode.c             | 49 ++++++++++++++++++++++++++++++++++++++++++++++---
- fs/ext4/super.c             |  9 +++++++++
- fs/inode.c                  | 36 ++++++++++++++++++++++++++++++++++++
- include/linux/fs.h          |  2 ++
- include/trace/events/ext4.h | 30 ++++++++++++++++++++++++++++++
- 5 files changed, 123 insertions(+), 3 deletions(-)
+ fs/ext4/inode.c             | 62 ++++++++++++++++++++++++++++++++++++++++++++++++++---
+ fs/ext4/super.c             |  9 ++++++++
+ include/trace/events/ext4.h | 30 ++++++++++++++++++++++++++
+ 3 files changed, 98 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 5653fa4..8308c82 100644
+index 5653fa4..1d11920 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -4140,6 +4140,51 @@ static int ext4_inode_blocks_set(handle_t *handle,
+@@ -4139,6 +4139,64 @@ static int ext4_inode_blocks_set(handle_t *handle,
+ 	return 0;
  }
  
- /*
++struct other_inode {
++	unsigned long		orig_ino;
++	struct ext4_inode	*raw_inode;
++};
++
++static int other_inode_match(struct inode * inode, unsigned long ino,
++			     void *data)
++{
++	struct other_inode *oi = (struct other_inode *) data;
++
++	if (inode->i_ino != ino)
++		return 0;
++	spin_lock(&inode->i_lock);
++	if (((inode->i_state & (I_FREEING | I_WILL_FREE | I_NEW)) == 0) &&
++	    (inode->i_state & I_DIRTY_TIME)) {
++		struct ext4_inode_info	*ei = EXT4_I(inode);
++
++		inode->i_state &= ~I_DIRTY_TIME;
++		inode->i_ts_dirty_day = 0;
++		spin_unlock(&inode->i_lock);
++		inode_requeue_dirtytime(inode);
++
++		spin_lock(&ei->i_raw_lock);
++		EXT4_INODE_SET_XTIME(i_ctime, inode, oi->raw_inode);
++		EXT4_INODE_SET_XTIME(i_mtime, inode, oi->raw_inode);
++		EXT4_INODE_SET_XTIME(i_atime, inode, oi->raw_inode);
++		ext4_inode_csum_set(inode, oi->raw_inode, ei);
++		spin_unlock(&ei->i_raw_lock);
++		trace_ext4_other_inode_update_time(inode, oi->orig_ino);
++		return -1;
++	}
++	spin_unlock(&inode->i_lock);
++	return -1;
++}
++
++/*
 + * Opportunistically update the other time fields for other inodes in
 + * the same inode table block.
 + */
 +static void ext4_update_other_inodes_time(struct super_block *sb,
 +					  unsigned long orig_ino, char *buf)
 +{
-+	struct ext4_inode_info	*ei;
-+	struct ext4_inode	*raw_inode;
-+	unsigned long		ino;
-+	struct inode		*inode;
-+	int		i, inodes_per_block = EXT4_SB(sb)->s_inodes_per_block;
-+	int		inode_size = EXT4_INODE_SIZE(sb);
++	struct other_inode oi;
++	unsigned long ino;
++	int i, inodes_per_block = EXT4_SB(sb)->s_inodes_per_block;
++	int inode_size = EXT4_INODE_SIZE(sb);
 +
++	oi.orig_ino = orig_ino;
 +	ino = orig_ino & ~(inodes_per_block - 1);
 +	for (i = 0; i < inodes_per_block; i++, ino++, buf += inode_size) {
 +		if (ino == orig_ino)
 +			continue;
-+		inode = find_active_inode_nowait(sb, ino);
-+		if (!inode ||
-+		    (inode->i_state & I_DIRTY_TIME) == 0 ||
-+		    !spin_trylock(&inode->i_lock)) {
-+			iput(inode);
-+			continue;
-+		}
-+		inode->i_state &= ~I_DIRTY_TIME;
-+		inode->i_ts_dirty_day = 0;
-+		spin_unlock(&inode->i_lock);
-+		inode_requeue_dirtytime(inode);
-+
-+		ei = EXT4_I(inode);
-+		raw_inode = (struct ext4_inode *) buf;
-+
-+		spin_lock(&ei->i_raw_lock);
-+		EXT4_INODE_SET_XTIME(i_ctime, inode, raw_inode);
-+		EXT4_INODE_SET_XTIME(i_mtime, inode, raw_inode);
-+		EXT4_INODE_SET_XTIME(i_atime, inode, raw_inode);
-+		ext4_inode_csum_set(inode, raw_inode, ei);
-+		spin_unlock(&ei->i_raw_lock);
-+		trace_ext4_other_inode_update_time(inode, orig_ino);
-+		iput(inode);
++		oi.raw_inode = (struct ext4_inode *) buf;
++		(void) find_inode_nowait(sb, ino, other_inode_match, &oi);
 +	}
 +}
 +
 +
-+/*
+ /*
   * Post the struct inode info into an on-disk inode location in the
   * buffer-cache.  This gobbles the caller's reference to the
-  * buffer_head in the inode location struct.
-@@ -4237,7 +4282,6 @@ static int ext4_do_update_inode(handle_t *handle,
+@@ -4237,7 +4295,6 @@ static int ext4_do_update_inode(handle_t *handle,
  		for (block = 0; block < EXT4_N_BLOCKS; block++)
  			raw_inode->i_block[block] = ei->i_data[block];
  	}
@@ -85,7 +96,7 @@ index 5653fa4..8308c82 100644
  	if (likely(!test_opt2(inode->i_sb, HURD_COMPAT))) {
  		raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
  		if (ei->i_extra_isize) {
-@@ -4248,10 +4292,9 @@ static int ext4_do_update_inode(handle_t *handle,
+@@ -4248,10 +4305,9 @@ static int ext4_do_update_inode(handle_t *handle,
  				cpu_to_le16(ei->i_extra_isize);
  		}
  	}
