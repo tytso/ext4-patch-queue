@@ -14,16 +14,16 @@ Google-Bug-Id: 18297052
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/inode.c             | 62 ++++++++++++++++++++++++++++++++++++++++++++++++++---
- fs/ext4/super.c             |  9 ++++++++
- include/trace/events/ext4.h | 30 ++++++++++++++++++++++++++
- 3 files changed, 98 insertions(+), 3 deletions(-)
+ fs/ext4/inode.c             | 65 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++---
+ fs/ext4/super.c             |  9 +++++++++
+ include/trace/events/ext4.h | 30 +++++++++++++++++++++++++++
+ 3 files changed, 101 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 5653fa4..1d11920 100644
+index 5653fa4..b9ef4aae 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -4139,6 +4139,64 @@ static int ext4_inode_blocks_set(handle_t *handle,
+@@ -4139,6 +4139,65 @@ static int ext4_inode_blocks_set(handle_t *handle,
  	return 0;
  }
  
@@ -37,7 +37,9 @@ index 5653fa4..1d11920 100644
 +{
 +	struct other_inode *oi = (struct other_inode *) data;
 +
-+	if (inode->i_ino != ino)
++	if ((inode->i_ino != ino) ||
++	    (inode->i_state & (I_FREEING | I_WILL_FREE | I_NEW)) ||
++	    ((inode->i_state & I_DIRTY_TIME) == 0))
 +		return 0;
 +	spin_lock(&inode->i_lock);
 +	if (((inode->i_state & (I_FREEING | I_WILL_FREE | I_NEW)) == 0) &&
@@ -84,11 +86,10 @@ index 5653fa4..1d11920 100644
 +	}
 +}
 +
-+
  /*
   * Post the struct inode info into an on-disk inode location in the
   * buffer-cache.  This gobbles the caller's reference to the
-@@ -4237,7 +4295,6 @@ static int ext4_do_update_inode(handle_t *handle,
+@@ -4237,7 +4296,6 @@ static int ext4_do_update_inode(handle_t *handle,
  		for (block = 0; block < EXT4_N_BLOCKS; block++)
  			raw_inode->i_block[block] = ei->i_data[block];
  	}
@@ -96,7 +97,7 @@ index 5653fa4..1d11920 100644
  	if (likely(!test_opt2(inode->i_sb, HURD_COMPAT))) {
  		raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
  		if (ei->i_extra_isize) {
-@@ -4248,10 +4305,9 @@ static int ext4_do_update_inode(handle_t *handle,
+@@ -4248,10 +4306,11 @@ static int ext4_do_update_inode(handle_t *handle,
  				cpu_to_le16(ei->i_extra_isize);
  		}
  	}
@@ -104,7 +105,9 @@ index 5653fa4..1d11920 100644
  	ext4_inode_csum_set(inode, raw_inode, ei);
 -
  	spin_unlock(&ei->i_raw_lock);
-+	ext4_update_other_inodes_time(inode->i_sb, inode->i_ino, bh->b_data);
++	if (inode->i_sb->s_flags & MS_LAZYTIME)
++		ext4_update_other_inodes_time(inode->i_sb, inode->i_ino,
++					      bh->b_data);
  
  	BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");
  	rc = ext4_handle_dirty_metadata(handle, NULL, bh);
