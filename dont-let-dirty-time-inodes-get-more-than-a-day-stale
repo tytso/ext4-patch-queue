@@ -6,9 +6,9 @@ stale.
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/fs-writeback.c  |  1 +
- fs/inode.c         | 19 +++++++++++++++++++
+ fs/inode.c         | 20 ++++++++++++++++++++
  include/linux/fs.h |  1 +
- 3 files changed, 21 insertions(+)
+ 3 files changed, 22 insertions(+)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
 index ef8c5d8..529480a 100644
@@ -23,19 +23,20 @@ index ef8c5d8..529480a 100644
  			sb->s_op->dirty_inode(inode, flags);
  
 diff --git a/fs/inode.c b/fs/inode.c
-index 009d9c5..c8ad78b 100644
+index bf10fbc..717c3e4 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
-@@ -1510,6 +1510,8 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
+@@ -1510,6 +1510,9 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
   */
  static int update_time(struct inode *inode, struct timespec *time, int flags)
  {
 +	struct timespec uptime;
 +	unsigned short days_since_boot;
-  	int ret;
++
+ 	if (inode->i_op->update_time)
+ 		return inode->i_op->update_time(inode, time, flags);
  
- 	if (inode->i_op->is_readonly) {
-@@ -1532,6 +1534,22 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+@@ -1527,6 +1530,22 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  	    !(inode->i_state & (I_DIRTY_SYNC | I_DIRTY_DATASYNC))) {
  		if (inode->i_state & I_DIRTY_TIME)
  			return 0;
@@ -58,7 +59,7 @@ index 009d9c5..c8ad78b 100644
  		spin_lock(&inode->i_lock);
  		if (inode->i_state & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) {
  			spin_unlock(&inode->i_lock);
-@@ -1542,6 +1560,7 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+@@ -1537,6 +1556,7 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  			return 0;
  		}
  		inode->i_state |= I_DIRTY_TIME;
@@ -67,7 +68,7 @@ index 009d9c5..c8ad78b 100644
  		inode_requeue_dirtytime(inode);
  		return 0;
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index 6a6f56b..070f6c6 100644
+index 7932482..2b86b5d 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
 @@ -575,6 +575,7 @@ struct inode {

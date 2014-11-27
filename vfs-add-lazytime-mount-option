@@ -24,7 +24,7 @@ Google-Bug-Id: 18297052
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/fs-writeback.c           | 55 +++++++++++++++++++++++++++++++++++++++++++++++++------
- fs/inode.c                  | 43 +++++++++++++++++++++++++++++++++++++------
+ fs/inode.c                  | 42 ++++++++++++++++++++++++++++++++++++------
  fs/libfs.c                  |  2 +-
  fs/logfs/readwrite.c        |  2 +-
  fs/nfsd/vfs.c               |  2 +-
@@ -36,7 +36,7 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  include/linux/fs.h          | 11 +++++++++--
  include/uapi/linux/fs.h     |  1 +
  mm/backing-dev.c            |  9 +++++++--
- 13 files changed, 118 insertions(+), 21 deletions(-)
+ 13 files changed, 117 insertions(+), 21 deletions(-)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
 index ef9bef1..ef8c5d8 100644
@@ -155,7 +155,7 @@ index ef9bef1..ef8c5d8 100644
  	wait_for_completion(&done);
  
 diff --git a/fs/inode.c b/fs/inode.c
-index 94bc908..009d9c5 100644
+index 26753ba..6de5923 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -30,7 +30,7 @@
@@ -167,7 +167,7 @@ index 94bc908..009d9c5 100644
   * inode_hash_lock protects:
   *   inode_hashtable, inode->i_hash
   *
-@@ -1430,11 +1430,22 @@ static void iput_final(struct inode *inode)
+@@ -1430,11 +1430,20 @@ static void iput_final(struct inode *inode)
   */
  void iput(struct inode *inode)
  {
@@ -185,9 +185,7 @@ index 94bc908..009d9c5 100644
 +			atomic_inc(&inode->i_count);
 +			inode->i_state &= ~I_DIRTY_TIME;
 +			spin_unlock(&inode->i_lock);
-+			if (inode->i_op->write_time)
-+				inode->i_op->write_time(inode);
-+			else if (inode->i_sb->s_op->write_inode)
++			if (inode->i_sb->s_op->write_inode)
 +				mark_inode_dirty_sync(inode);
 +			goto retry;
 +		}
@@ -195,10 +193,11 @@ index 94bc908..009d9c5 100644
  	}
  }
  EXPORT_SYMBOL(iput);
-@@ -1516,6 +1527,26 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+@@ -1510,6 +1519,27 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+ 		inode->i_ctime = *time;
+ 	if (flags & S_MTIME)
  		inode->i_mtime = *time;
- 	if (inode->i_op->update_time)
- 		inode->i_op->update_time(inode);
++
 +	if ((inode->i_sb->s_flags & MS_LAZYTIME) &&
 +	    !(flags & S_VERSION) &&
 +	    !(inode->i_state & (I_DIRTY_SYNC | I_DIRTY_DATASYNC))) {
@@ -219,9 +218,9 @@ index 94bc908..009d9c5 100644
 +		return 0;
 +	}
 +force_dirty:
- 	if (inode->i_op->write_time)
- 		return inode->i_op->write_time(inode);
  	mark_inode_dirty_sync(inode);
+ 	return 0;
+ }
 diff --git a/fs/libfs.c b/fs/libfs.c
 index 171d284..b9923b2 100644
 --- a/fs/libfs.c
@@ -333,10 +332,10 @@ index 5da6012..4cdf733 100644
  };
  
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index befd5d2..6a6f56b 100644
+index 9ab779e..7932482 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -1722,19 +1722,26 @@ struct super_operations {
+@@ -1720,19 +1720,26 @@ struct super_operations {
  #define __I_DIO_WAKEUP		9
  #define I_DIO_WAKEUP		(1 << I_DIO_WAKEUP)
  #define I_LINKABLE		(1 << 10)
