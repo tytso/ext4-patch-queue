@@ -4,11 +4,11 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/fs-writeback.c         |  1 +
  fs/inode.c                |  5 +++++
- include/trace/events/fs.h | 56 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ include/trace/events/fs.h | 56 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  3 files changed, 62 insertions(+)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index 529480a..3d87174 100644
+index 15dec84..9facc18 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
 @@ -27,6 +27,7 @@
@@ -20,7 +20,7 @@ index 529480a..3d87174 100644
  
  /*
 diff --git a/fs/inode.c b/fs/inode.c
-index 37c0429..b2fea60 100644
+index 84a5a3d..e062640 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -20,6 +20,9 @@
@@ -33,15 +33,15 @@ index 37c0429..b2fea60 100644
  /*
   * Inode locking rules:
   *
-@@ -1443,6 +1446,7 @@ retry:
- 				inode->i_op->write_time(inode);
- 			else if (inode->i_sb->s_op->write_inode)
- 				mark_inode_dirty_sync(inode);
+@@ -1440,6 +1443,7 @@ retry:
+ 			inode->i_state &= ~I_DIRTY_TIME;
+ 			spin_unlock(&inode->i_lock);
+ 			mark_inode_dirty_sync(inode);
 +			trace_fs_lazytime_iput(inode);
  			goto retry;
  		}
  		iput_final(inode);
-@@ -1561,6 +1565,7 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+@@ -1556,6 +1560,7 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  		inode->i_ts_dirty_day = days_since_boot;
  		spin_unlock(&inode->i_lock);
  		inode_requeue_dirtytime(inode);

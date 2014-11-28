@@ -23,8 +23,8 @@ Google-Bug-Id: 18297052
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/fs-writeback.c           | 55 +++++++++++++++++++++++++++++++++++++++++++++++++------
- fs/inode.c                  | 42 ++++++++++++++++++++++++++++++++++++------
+ fs/fs-writeback.c           | 64 +++++++++++++++++++++++++++++++++++++++++++++++++++++------
+ fs/inode.c                  | 41 ++++++++++++++++++++++++++++++++------
  fs/libfs.c                  |  2 +-
  fs/logfs/readwrite.c        |  2 +-
  fs/nfsd/vfs.c               |  2 +-
@@ -33,13 +33,13 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  fs/sync.c                   |  8 ++++++++
  fs/ufs/truncate.c           |  2 +-
  include/linux/backing-dev.h |  1 +
- include/linux/fs.h          | 11 +++++++++--
+ include/linux/fs.h          | 11 ++++++++--
  include/uapi/linux/fs.h     |  1 +
- mm/backing-dev.c            |  9 +++++++--
- 13 files changed, 117 insertions(+), 21 deletions(-)
+ mm/backing-dev.c            | 10 ++++++++--
+ 13 files changed, 126 insertions(+), 21 deletions(-)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index ef9bef1..ef8c5d8 100644
+index ef9bef1..518f3bb 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
 @@ -397,7 +397,7 @@ static void requeue_inode(struct inode *inode, struct bdi_writeback *wb,
@@ -68,31 +68,39 @@ index ef9bef1..ef8c5d8 100644
  	} else {
  		/* The inode is clean. Remove from writeback lists. */
  		list_del_init(&inode->i_wb_list);
-@@ -482,11 +484,11 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
+@@ -482,11 +484,15 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
  	/* Clear I_DIRTY_PAGES if we've written out all dirty pages */
  	if (!mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
  		inode->i_state &= ~I_DIRTY_PAGES;
 -	dirty = inode->i_state & I_DIRTY;
 -	inode->i_state &= ~(I_DIRTY_SYNC | I_DIRTY_DATASYNC);
-+	dirty = inode->i_state & I_DIRTY_INODE;
-+	inode->i_state &= ~I_DIRTY_INODE;
++	dirty = inode->i_state & (I_DIRTY_SYNC | I_DIRTY_DATASYNC);
++	if (dirty && (inode->i_state & I_DIRTY_TIME))
++		dirty |= I_DIRTY_TIME;
++	inode->i_state &= ~dirty;
  	spin_unlock(&inode->i_lock);
++	if (dirty & I_DIRTY_TIME)
++		mark_inode_dirty_sync(inode);
  	/* Don't write the inode if only I_DIRTY_PAGES was set */
 -	if (dirty & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) {
 +	if (dirty) {
  		int err = write_inode(inode, wbc);
  		if (ret == 0)
  			ret = err;
-@@ -1162,7 +1164,7 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+@@ -1162,7 +1168,11 @@ void __mark_inode_dirty(struct inode *inode, int flags)
  
  	spin_lock(&inode->i_lock);
  	if ((inode->i_state & flags) != flags) {
 -		const int was_dirty = inode->i_state & I_DIRTY;
 +		const int was_dirty = inode->i_state & I_DIRTY_WB;
++
++		if ((flags & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) &&
++		    (inode->i_state & I_DIRTY_TIME))
++			inode->i_state &= ~I_DIRTY_TIME;
  
  		inode->i_state |= flags;
  
-@@ -1224,6 +1226,24 @@ out_unlock_inode:
+@@ -1224,6 +1234,24 @@ out_unlock_inode:
  }
  EXPORT_SYMBOL(__mark_inode_dirty);
  
@@ -117,7 +125,7 @@ index ef9bef1..ef8c5d8 100644
  static void wait_sb_inodes(struct super_block *sb)
  {
  	struct inode *inode, *old_inode = NULL;
-@@ -1277,6 +1297,28 @@ static void wait_sb_inodes(struct super_block *sb)
+@@ -1277,6 +1305,29 @@ static void wait_sb_inodes(struct super_block *sb)
  	iput(old_inode);
  }
  
@@ -137,7 +145,8 @@ index ef9bef1..ef8c5d8 100644
 +
 +		list_del_init(&inode->i_wb_list);
 +		spin_unlock(&wb->list_lock);
-+		mark_inode_dirty_sync(inode);
++		if (inode->i_state & I_DIRTY_TIME)
++			mark_inode_dirty_sync(inode);
 +		spin_lock(&wb->list_lock);
 +	}
 +	spin_unlock(&wb->list_lock);
@@ -146,7 +155,7 @@ index ef9bef1..ef8c5d8 100644
  /**
   * writeback_inodes_sb_nr -	writeback dirty inodes from given super_block
   * @sb: the superblock
-@@ -1388,6 +1430,7 @@ void sync_inodes_sb(struct super_block *sb)
+@@ -1388,6 +1439,7 @@ void sync_inodes_sb(struct super_block *sb)
  		return;
  	WARN_ON(!rwsem_is_locked(&sb->s_umount));
  
@@ -155,7 +164,7 @@ index ef9bef1..ef8c5d8 100644
  	wait_for_completion(&done);
  
 diff --git a/fs/inode.c b/fs/inode.c
-index 26753ba..6de5923 100644
+index 26753ba..1ec0629 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -30,7 +30,7 @@
@@ -167,7 +176,7 @@ index 26753ba..6de5923 100644
   * inode_hash_lock protects:
   *   inode_hashtable, inode->i_hash
   *
-@@ -1430,11 +1430,20 @@ static void iput_final(struct inode *inode)
+@@ -1430,11 +1430,19 @@ static void iput_final(struct inode *inode)
   */
  void iput(struct inode *inode)
  {
@@ -185,26 +194,25 @@ index 26753ba..6de5923 100644
 +			atomic_inc(&inode->i_count);
 +			inode->i_state &= ~I_DIRTY_TIME;
 +			spin_unlock(&inode->i_lock);
-+			if (inode->i_sb->s_op->write_inode)
-+				mark_inode_dirty_sync(inode);
++			mark_inode_dirty_sync(inode);
 +			goto retry;
 +		}
 +		iput_final(inode);
  	}
  }
  EXPORT_SYMBOL(iput);
-@@ -1510,6 +1519,27 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+@@ -1510,6 +1518,27 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  		inode->i_ctime = *time;
  	if (flags & S_MTIME)
  		inode->i_mtime = *time;
 +
 +	if ((inode->i_sb->s_flags & MS_LAZYTIME) &&
 +	    !(flags & S_VERSION) &&
-+	    !(inode->i_state & (I_DIRTY_SYNC | I_DIRTY_DATASYNC))) {
++	    !(inode->i_state & I_DIRTY_WB)) {
 +		if (inode->i_state & I_DIRTY_TIME)
 +			return 0;
 +		spin_lock(&inode->i_lock);
-+		if (inode->i_state & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) {
++		if (inode->i_state & I_DIRTY_WB) {
 +			spin_unlock(&inode->i_lock);
 +			goto force_dirty;
 +		}
@@ -377,7 +385,7 @@ index 3735fa0..cc9713a 100644
  /* These sb flags are internal to the kernel */
  #define MS_NOSEC	(1<<28)
 diff --git a/mm/backing-dev.c b/mm/backing-dev.c
-index 0ae0df5..14851fe 100644
+index 0ae0df5..915feea 100644
 --- a/mm/backing-dev.c
 +++ b/mm/backing-dev.c
 @@ -69,10 +69,10 @@ static int bdi_debug_stats_show(struct seq_file *m, void *v)
@@ -393,16 +401,17 @@ index 0ae0df5..14851fe 100644
  	spin_lock(&wb->list_lock);
  	list_for_each_entry(inode, &wb->b_dirty, i_wb_list)
  		nr_dirty++;
-@@ -80,6 +80,8 @@ static int bdi_debug_stats_show(struct seq_file *m, void *v)
+@@ -80,6 +80,9 @@ static int bdi_debug_stats_show(struct seq_file *m, void *v)
  		nr_io++;
  	list_for_each_entry(inode, &wb->b_more_io, i_wb_list)
  		nr_more_io++;
 +	list_for_each_entry(inode, &wb->b_dirty_time, i_wb_list)
-+		nr_dirty_time++;
++		if (inode->i_state & I_DIRTY_TIME)
++			nr_dirty_time++;
  	spin_unlock(&wb->list_lock);
  
  	global_dirty_limits(&background_thresh, &dirty_thresh);
-@@ -98,6 +100,7 @@ static int bdi_debug_stats_show(struct seq_file *m, void *v)
+@@ -98,6 +101,7 @@ static int bdi_debug_stats_show(struct seq_file *m, void *v)
  		   "b_dirty:            %10lu\n"
  		   "b_io:               %10lu\n"
  		   "b_more_io:          %10lu\n"
@@ -410,7 +419,7 @@ index 0ae0df5..14851fe 100644
  		   "bdi_list:           %10u\n"
  		   "state:              %10lx\n",
  		   (unsigned long) K(bdi_stat(bdi, BDI_WRITEBACK)),
-@@ -111,6 +114,7 @@ static int bdi_debug_stats_show(struct seq_file *m, void *v)
+@@ -111,6 +115,7 @@ static int bdi_debug_stats_show(struct seq_file *m, void *v)
  		   nr_dirty,
  		   nr_io,
  		   nr_more_io,
@@ -418,7 +427,7 @@ index 0ae0df5..14851fe 100644
  		   !list_empty(&bdi->bdi_list), bdi->state);
  #undef K
  
-@@ -418,6 +422,7 @@ static void bdi_wb_init(struct bdi_writeback *wb, struct backing_dev_info *bdi)
+@@ -418,6 +423,7 @@ static void bdi_wb_init(struct bdi_writeback *wb, struct backing_dev_info *bdi)
  	INIT_LIST_HEAD(&wb->b_dirty);
  	INIT_LIST_HEAD(&wb->b_io);
  	INIT_LIST_HEAD(&wb->b_more_io);
