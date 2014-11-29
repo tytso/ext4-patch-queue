@@ -2,13 +2,13 @@ vfs: add lazytime tracepoints for better debugging
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/fs-writeback.c         |  1 +
+ fs/fs-writeback.c         |  9 +++++++--
  fs/inode.c                |  5 +++++
- include/trace/events/fs.h | 56 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 62 insertions(+)
+ include/trace/events/fs.h | 62 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 74 insertions(+), 2 deletions(-)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index 15dec84..9facc18 100644
+index fd03782..63774aa 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
 @@ -27,6 +27,7 @@
@@ -19,8 +19,32 @@ index 15dec84..9facc18 100644
  #include "internal.h"
  
  /*
+@@ -490,8 +491,10 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
+ 	if (!mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
+ 		inode->i_state &= ~I_DIRTY_PAGES;
+ 	dirty = inode->i_state & (I_DIRTY_SYNC | I_DIRTY_DATASYNC);
+-	if (dirty && (inode->i_state & I_DIRTY_TIME))
++	if (dirty && (inode->i_state & I_DIRTY_TIME)) {
+ 		dirty |= I_DIRTY_TIME;
++		trace_fs_lazytime_writeback(inode);
++	}
+ 	inode->i_state &= ~dirty;
+ 	spin_unlock(&inode->i_lock);
+ 	if (dirty & I_DIRTY_TIME)
+@@ -1338,8 +1341,10 @@ static void flush_sb_dirty_time(struct super_block *sb)
+ 
+ 		list_del_init(&inode->i_wb_list);
+ 		spin_unlock(&wb->list_lock);
+-		if (inode->i_state & I_DIRTY_TIME)
++		if (inode->i_state & I_DIRTY_TIME) {
+ 			mark_inode_dirty_sync(inode);
++			trace_fs_lazytime_flush(inode);
++		}
+ 		spin_lock(&wb->list_lock);
+ 	}
+ 	spin_unlock(&wb->list_lock);
 diff --git a/fs/inode.c b/fs/inode.c
-index 84a5a3d..e062640 100644
+index 1ec0629..e903c37 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -20,6 +20,9 @@
@@ -41,8 +65,8 @@ index 84a5a3d..e062640 100644
  			goto retry;
  		}
  		iput_final(inode);
-@@ -1556,6 +1560,7 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
- 		inode->i_ts_dirty_day = days_since_boot;
+@@ -1536,6 +1540,7 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+ 		inode->i_state |= I_DIRTY_TIME;
  		spin_unlock(&inode->i_lock);
  		inode_requeue_dirtytime(inode);
 +		trace_fs_lazytime_defer(inode);
@@ -51,10 +75,10 @@ index 84a5a3d..e062640 100644
  force_dirty:
 diff --git a/include/trace/events/fs.h b/include/trace/events/fs.h
 new file mode 100644
-index 0000000..fa32295
+index 0000000..af0b8cc
 --- /dev/null
 +++ b/include/trace/events/fs.h
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,62 @@
 +#undef TRACE_SYSTEM
 +#define TRACE_SYSTEM fs
 +
@@ -103,6 +127,12 @@ index 0000000..fa32295
 +);
 +
 +DEFINE_EVENT(fs__inode, fs_lazytime_flush,
++	TP_PROTO(struct inode *inode),
++
++	TP_ARGS(inode)
++);
++
++DEFINE_EVENT(fs__inode, fs_lazytime_writeback,
 +	TP_PROTO(struct inode *inode),
 +
 +	TP_ARGS(inode)
