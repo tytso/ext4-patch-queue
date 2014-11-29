@@ -5,11 +5,11 @@ were initially dirtied.
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/fs-writeback.c | 22 ++++++++++++----------
- 1 file changed, 12 insertions(+), 10 deletions(-)
+ fs/fs-writeback.c | 18 ++++++++++++------
+ 1 file changed, 12 insertions(+), 6 deletions(-)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index 518f3bb..024e9f9 100644
+index 518f3bb..bf8b928 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
 @@ -253,7 +253,7 @@ static bool inode_dirtied_after(struct inode *inode, unsigned long t)
@@ -48,18 +48,7 @@ index 518f3bb..024e9f9 100644
  	trace_writeback_queue_io(wb, work, moved);
  }
  
-@@ -683,10 +688,6 @@ static long writeback_sb_inodes(struct super_block *sb,
- 		inode->i_state |= I_SYNC;
- 		spin_unlock(&inode->i_lock);
- 
--		write_chunk = writeback_chunk_size(wb->bdi, work);
--		wbc.nr_to_write = write_chunk;
--		wbc.pages_skipped = 0;
--
- 		/*
- 		 * We use I_SYNC to pin the inode in memory. While it is set
- 		 * evict_inode() will wait so the inode cannot be freed.
-@@ -1241,9 +1242,10 @@ void inode_requeue_dirtytime(struct inode *inode)
+@@ -1241,9 +1246,10 @@ void inode_requeue_dirtytime(struct inode *inode)
  	spin_lock(&bdi->wb.list_lock);
  	spin_lock(&inode->i_lock);
  	if ((inode->i_state & I_DIRTY_WB) == 0) {
