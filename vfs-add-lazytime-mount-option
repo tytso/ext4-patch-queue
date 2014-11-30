@@ -23,43 +23,38 @@ Google-Bug-Id: 18297052
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/fs-writeback.c           | 64 +++++++++++++++++++++++++++++++++++++++++++++++++++++------
- fs/inode.c                  | 41 ++++++++++++++++++++++++++++++++------
+ fs/block_dev.c              |  2 +-
+ fs/fs-writeback.c           | 25 ++++++++++++++++++-------
+ fs/gfs2/file.c              |  4 ++--
+ fs/inode.c                  | 32 +++++++++++++++++++++++---------
+ fs/jfs/file.c               |  2 +-
  fs/libfs.c                  |  2 +-
- fs/logfs/readwrite.c        |  2 +-
- fs/nfsd/vfs.c               |  2 +-
- fs/pipe.c                   |  2 +-
  fs/proc_namespace.c         |  1 +
  fs/sync.c                   |  8 ++++++++
- fs/ufs/truncate.c           |  2 +-
  include/linux/backing-dev.h |  1 +
- include/linux/fs.h          | 11 ++++++++--
+ include/linux/fs.h          |  2 ++
  include/uapi/linux/fs.h     |  1 +
  mm/backing-dev.c            | 10 ++++++++--
- 13 files changed, 126 insertions(+), 21 deletions(-)
+ 12 files changed, 67 insertions(+), 23 deletions(-)
 
+diff --git a/fs/block_dev.c b/fs/block_dev.c
+index 1d9c9f3..df205ab 100644
+--- a/fs/block_dev.c
++++ b/fs/block_dev.c
+@@ -58,7 +58,7 @@ static void bdev_inode_switch_bdi(struct inode *inode,
+ {
+ 	while (true) {
+ 		spin_lock(&inode->i_lock);
+-		if (!(inode->i_state & I_DIRTY)) {
++		if (!(inode->i_state & I_DIRTY_ALL)) {
+ 			inode->i_data.backing_dev_info = dst;
+ 			spin_unlock(&inode->i_lock);
+ 			return;
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index ef9bef1..518f3bb 100644
+index ef9bef1..2ae7544 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
-@@ -397,7 +397,7 @@ static void requeue_inode(struct inode *inode, struct bdi_writeback *wb,
- 	 * shot. If still dirty, it will be redirty_tail()'ed below.  Update
- 	 * the dirty time to prevent enqueue and sync it again.
- 	 */
--	if ((inode->i_state & I_DIRTY) &&
-+	if ((inode->i_state & I_DIRTY_WB) &&
- 	    (wbc->sync_mode == WB_SYNC_ALL || wbc->tagged_writepages))
- 		inode->dirtied_when = jiffies;
- 
-@@ -428,13 +428,15 @@ static void requeue_inode(struct inode *inode, struct bdi_writeback *wb,
- 			 */
- 			redirty_tail(inode, wb);
- 		}
--	} else if (inode->i_state & I_DIRTY) {
-+	} else if (inode->i_state & I_DIRTY_WB) {
- 		/*
- 		 * Filesystems can dirty the inode during writeback operations,
- 		 * such as delayed allocation during submission or metadata
+@@ -435,6 +435,8 @@ static void requeue_inode(struct inode *inode, struct bdi_writeback *wb,
  		 * updates after data IO completion.
  		 */
  		redirty_tail(inode, wb);
@@ -87,84 +82,78 @@ index ef9bef1..518f3bb 100644
  		int err = write_inode(inode, wbc);
  		if (ret == 0)
  			ret = err;
-@@ -1162,7 +1168,11 @@ void __mark_inode_dirty(struct inode *inode, int flags)
- 
- 	spin_lock(&inode->i_lock);
+@@ -534,7 +540,7 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
+ 	 * make sure inode is on some writeback list and leave it there unless
+ 	 * we have completely cleaned the inode.
+ 	 */
+-	if (!(inode->i_state & I_DIRTY) &&
++	if (!(inode->i_state & I_DIRTY_ALL) &&
+ 	    (wbc->sync_mode != WB_SYNC_ALL ||
+ 	     !mapping_tagged(inode->i_mapping, PAGECACHE_TAG_WRITEBACK)))
+ 		goto out;
+@@ -549,7 +555,7 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
+ 	 * If inode is clean, remove it from writeback lists. Otherwise don't
+ 	 * touch it. See comment above for explanation.
+ 	 */
+-	if (!(inode->i_state & I_DIRTY))
++	if (!(inode->i_state & I_DIRTY_ALL))
+ 		list_del_init(&inode->i_wb_list);
+ 	spin_unlock(&wb->list_lock);
+ 	inode_sync_complete(inode);
+@@ -691,7 +697,7 @@ static long writeback_sb_inodes(struct super_block *sb,
+ 		wrote += write_chunk - wbc.nr_to_write;
+ 		spin_lock(&wb->list_lock);
+ 		spin_lock(&inode->i_lock);
+-		if (!(inode->i_state & I_DIRTY))
++		if (!(inode->i_state & I_DIRTY_ALL))
+ 			wrote++;
+ 		requeue_inode(inode, wb, &wbc);
+ 		inode_sync_complete(inode);
+@@ -1164,6 +1170,10 @@ void __mark_inode_dirty(struct inode *inode, int flags)
  	if ((inode->i_state & flags) != flags) {
--		const int was_dirty = inode->i_state & I_DIRTY;
-+		const int was_dirty = inode->i_state & I_DIRTY_WB;
-+
+ 		const int was_dirty = inode->i_state & I_DIRTY;
+ 
 +		if ((flags & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) &&
 +		    (inode->i_state & I_DIRTY_TIME))
 +			inode->i_state &= ~I_DIRTY_TIME;
- 
++
  		inode->i_state |= flags;
  
-@@ -1224,6 +1234,24 @@ out_unlock_inode:
- }
- EXPORT_SYMBOL(__mark_inode_dirty);
+ 		/*
+@@ -1210,7 +1220,8 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+ 			}
  
-+void inode_requeue_dirtytime(struct inode *inode)
-+{
-+	struct backing_dev_info *bdi = inode_to_bdi(inode);
-+
-+	spin_lock(&bdi->wb.list_lock);
-+	spin_lock(&inode->i_lock);
-+	if ((inode->i_state & I_DIRTY_WB) == 0) {
-+		if (inode->i_state & I_DIRTY_TIME)
-+			list_move(&inode->i_wb_list, &bdi->wb.b_dirty_time);
-+		else
-+			list_del_init(&inode->i_wb_list);
-+	}
-+	spin_unlock(&inode->i_lock);
-+	spin_unlock(&bdi->wb.list_lock);
-+
-+}
-+EXPORT_SYMBOL(inode_requeue_dirtytime);
-+
- static void wait_sb_inodes(struct super_block *sb)
+ 			inode->dirtied_when = jiffies;
+-			list_move(&inode->i_wb_list, &bdi->wb.b_dirty);
++			list_move(&inode->i_wb_list, (flags & I_DIRTY_TIME) ?
++				  &bdi->wb.b_dirty_time : &bdi->wb.b_dirty);
+ 			spin_unlock(&bdi->wb.list_lock);
+ 
+ 			if (wakeup_bdi)
+diff --git a/fs/gfs2/file.c b/fs/gfs2/file.c
+index 80dd44d..e584bf9 100644
+--- a/fs/gfs2/file.c
++++ b/fs/gfs2/file.c
+@@ -654,7 +654,7 @@ static int gfs2_fsync(struct file *file, loff_t start, loff_t end,
  {
- 	struct inode *inode, *old_inode = NULL;
-@@ -1277,6 +1305,29 @@ static void wait_sb_inodes(struct super_block *sb)
- 	iput(old_inode);
- }
+ 	struct address_space *mapping = file->f_mapping;
+ 	struct inode *inode = mapping->host;
+-	int sync_state = inode->i_state & I_DIRTY;
++	int sync_state = inode->i_state & I_DIRTY_ALL;
+ 	struct gfs2_inode *ip = GFS2_I(inode);
+ 	int ret = 0, ret1 = 0;
  
-+/*
-+ * Take all of the indoes on the dirty_time list, and mark them as
-+ * dirty, so they will be written out.
-+ */
-+static void flush_sb_dirty_time(struct super_block *sb)
-+{
-+	struct bdi_writeback *wb = &sb->s_bdi->wb;
-+	LIST_HEAD(tmp);
-+
-+	spin_lock(&wb->list_lock);
-+	list_cut_position(&tmp, &wb->b_dirty_time, wb->b_dirty_time.prev);
-+	while (!list_empty(&tmp)) {
-+		struct inode *inode = wb_inode(tmp.prev);
-+
-+		list_del_init(&inode->i_wb_list);
-+		spin_unlock(&wb->list_lock);
-+		if (inode->i_state & I_DIRTY_TIME)
-+			mark_inode_dirty_sync(inode);
-+		spin_lock(&wb->list_lock);
-+	}
-+	spin_unlock(&wb->list_lock);
-+}
-+
- /**
-  * writeback_inodes_sb_nr -	writeback dirty inodes from given super_block
-  * @sb: the superblock
-@@ -1388,6 +1439,7 @@ void sync_inodes_sb(struct super_block *sb)
- 		return;
- 	WARN_ON(!rwsem_is_locked(&sb->s_umount));
+@@ -667,7 +667,7 @@ static int gfs2_fsync(struct file *file, loff_t start, loff_t end,
+ 	if (!gfs2_is_jdata(ip))
+ 		sync_state &= ~I_DIRTY_PAGES;
+ 	if (datasync)
+-		sync_state &= ~I_DIRTY_SYNC;
++		sync_state &= ~(I_DIRTY_SYNC | I_DIRTY_TIME);
  
-+	flush_sb_dirty_time(sb);
- 	bdi_queue_work(sb->s_bdi, &work);
- 	wait_for_completion(&done);
- 
+ 	if (sync_state) {
+ 		ret = sync_inode_metadata(inode, 1);
 diff --git a/fs/inode.c b/fs/inode.c
-index 26753ba..1ec0629 100644
+index 26753ba..61e2635 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -30,7 +30,7 @@
@@ -176,7 +165,26 @@ index 26753ba..1ec0629 100644
   * inode_hash_lock protects:
   *   inode_hashtable, inode->i_hash
   *
-@@ -1430,11 +1430,19 @@ static void iput_final(struct inode *inode)
+@@ -414,7 +414,8 @@ static void inode_lru_list_add(struct inode *inode)
+  */
+ void inode_add_lru(struct inode *inode)
+ {
+-	if (!(inode->i_state & (I_DIRTY | I_SYNC | I_FREEING | I_WILL_FREE)) &&
++	if (!(inode->i_state & (I_DIRTY_ALL | I_SYNC |
++				I_FREEING | I_WILL_FREE)) &&
+ 	    !atomic_read(&inode->i_count) && inode->i_sb->s_flags & MS_ACTIVE)
+ 		inode_lru_list_add(inode);
+ }
+@@ -645,7 +646,7 @@ int invalidate_inodes(struct super_block *sb, bool kill_dirty)
+ 			spin_unlock(&inode->i_lock);
+ 			continue;
+ 		}
+-		if (inode->i_state & I_DIRTY && !kill_dirty) {
++		if (inode->i_state & I_DIRTY_ALL && !kill_dirty) {
+ 			spin_unlock(&inode->i_lock);
+ 			busy = 1;
+ 			continue;
+@@ -1430,11 +1431,19 @@ static void iput_final(struct inode *inode)
   */
  void iput(struct inode *inode)
  {
@@ -201,86 +209,46 @@ index 26753ba..1ec0629 100644
  	}
  }
  EXPORT_SYMBOL(iput);
-@@ -1510,6 +1518,27 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+@@ -1510,7 +1519,12 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  		inode->i_ctime = *time;
  	if (flags & S_MTIME)
  		inode->i_mtime = *time;
+-	mark_inode_dirty_sync(inode);
 +
-+	if ((inode->i_sb->s_flags & MS_LAZYTIME) &&
-+	    !(flags & S_VERSION) &&
-+	    !(inode->i_state & I_DIRTY_WB)) {
-+		if (inode->i_state & I_DIRTY_TIME)
-+			return 0;
-+		spin_lock(&inode->i_lock);
-+		if (inode->i_state & I_DIRTY_WB) {
-+			spin_unlock(&inode->i_lock);
-+			goto force_dirty;
-+		}
-+		if (inode->i_state & I_DIRTY_TIME) {
-+			spin_unlock(&inode->i_lock);
-+			return 0;
-+		}
-+		inode->i_state |= I_DIRTY_TIME;
-+		spin_unlock(&inode->i_lock);
-+		inode_requeue_dirtytime(inode);
-+		return 0;
-+	}
-+force_dirty:
- 	mark_inode_dirty_sync(inode);
++	if ((inode->i_sb->s_flags & MS_LAZYTIME) && !(flags & S_VERSION) &&
++	    !(inode->i_state & I_DIRTY))
++		__mark_inode_dirty(inode, I_DIRTY_TIME);
++	else
++		__mark_inode_dirty(inode, I_DIRTY_SYNC);
  	return 0;
  }
+ 
+diff --git a/fs/jfs/file.c b/fs/jfs/file.c
+index 33aa0cc..10815f8 100644
+--- a/fs/jfs/file.c
++++ b/fs/jfs/file.c
+@@ -39,7 +39,7 @@ int jfs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
+ 		return rc;
+ 
+ 	mutex_lock(&inode->i_mutex);
+-	if (!(inode->i_state & I_DIRTY) ||
++	if (!(inode->i_state & I_DIRTY_ALL) ||
+ 	    (datasync && !(inode->i_state & I_DIRTY_DATASYNC))) {
+ 		/* Make sure committed changes hit the disk */
+ 		jfs_flush_journal(JFS_SBI(inode->i_sb)->log, 1);
 diff --git a/fs/libfs.c b/fs/libfs.c
-index 171d284..b9923b2 100644
+index 171d284..7cb9cef 100644
 --- a/fs/libfs.c
 +++ b/fs/libfs.c
-@@ -1066,7 +1066,7 @@ struct inode *alloc_anon_inode(struct super_block *s)
- 	 * list because mark_inode_dirty() will think
- 	 * that it already _is_ on the dirty list.
- 	 */
--	inode->i_state = I_DIRTY;
-+	inode->i_state = I_DIRTY_WB;
- 	inode->i_mode = S_IRUSR | S_IWUSR;
- 	inode->i_uid = current_fsuid();
- 	inode->i_gid = current_fsgid();
-diff --git a/fs/logfs/readwrite.c b/fs/logfs/readwrite.c
-index 380d86e..5521842 100644
---- a/fs/logfs/readwrite.c
-+++ b/fs/logfs/readwrite.c
-@@ -2187,7 +2187,7 @@ void logfs_evict_inode(struct inode *inode)
- 	 * aliases, which are moved back.  No write to the medium happens.
- 	 */
- 	/* Only deleted files may be dirty at this point */
--	BUG_ON(inode->i_state & I_DIRTY && inode->i_nlink);
-+	BUG_ON(inode->i_state & I_DIRTY_WB && inode->i_nlink);
- 	if (!block)
- 		return;
- 	if ((logfs_super(sb)->s_flags & LOGFS_SB_FLAG_SHUTDOWN)) {
-diff --git a/fs/nfsd/vfs.c b/fs/nfsd/vfs.c
-index 989129e..818c6fa 100644
---- a/fs/nfsd/vfs.c
-+++ b/fs/nfsd/vfs.c
-@@ -915,7 +915,7 @@ static int wait_for_concurrent_writes(struct file *file)
- 		dprintk("nfsd: write resume %d\n", task_pid_nr(current));
- 	}
+@@ -948,7 +948,7 @@ int __generic_file_fsync(struct file *file, loff_t start, loff_t end,
  
--	if (inode->i_state & I_DIRTY) {
-+	if (inode->i_state & I_DIRTY_WB) {
- 		dprintk("nfsd: write sync %d\n", task_pid_nr(current));
- 		err = vfs_fsync(file, 0);
- 	}
-diff --git a/fs/pipe.c b/fs/pipe.c
-index 21981e5..fc9b923 100644
---- a/fs/pipe.c
-+++ b/fs/pipe.c
-@@ -660,7 +660,7 @@ static struct inode * get_pipe_inode(void)
- 	 * list because "mark_inode_dirty()" will think
- 	 * that it already _is_ on the dirty list.
- 	 */
--	inode->i_state = I_DIRTY;
-+	inode->i_state = I_DIRTY_WB;
- 	inode->i_mode = S_IFIFO | S_IRUSR | S_IWUSR;
- 	inode->i_uid = current_fsuid();
- 	inode->i_gid = current_fsgid();
+ 	mutex_lock(&inode->i_mutex);
+ 	ret = sync_mapping_buffers(inode->i_mapping);
+-	if (!(inode->i_state & I_DIRTY))
++	if (!(inode->i_state & I_DIRTY_ALL))
+ 		goto out;
+ 	if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
+ 		goto out;
 diff --git a/fs/proc_namespace.c b/fs/proc_namespace.c
 index 73ca174..f98234a 100644
 --- a/fs/proc_namespace.c
@@ -314,19 +282,6 @@ index bdc729d..6ac7bf0 100644
  	return file->f_op->fsync(file, start, end, datasync);
  }
  EXPORT_SYMBOL(vfs_fsync_range);
-diff --git a/fs/ufs/truncate.c b/fs/ufs/truncate.c
-index f04f89f..1d00a09 100644
---- a/fs/ufs/truncate.c
-+++ b/fs/ufs/truncate.c
-@@ -477,7 +477,7 @@ int ufs_truncate(struct inode *inode, loff_t old_i_size)
- 		retry |= ufs_trunc_tindirect (inode);
- 		if (!retry)
- 			break;
--		if (IS_SYNC(inode) && (inode->i_state & I_DIRTY))
-+		if (IS_SYNC(inode) && (inode->i_state & I_DIRTY_WB))
- 			ufs_sync_inode (inode);
- 		yield();
- 	}
 diff --git a/include/linux/backing-dev.h b/include/linux/backing-dev.h
 index 5da6012..4cdf733 100644
 --- a/include/linux/backing-dev.h
@@ -340,38 +295,20 @@ index 5da6012..4cdf733 100644
  };
  
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index 9ab779e..7932482 100644
+index 9ab779e..8b51ebc 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -1720,19 +1720,26 @@ struct super_operations {
+@@ -1720,8 +1720,10 @@ struct super_operations {
  #define __I_DIO_WAKEUP		9
  #define I_DIO_WAKEUP		(1 << I_DIO_WAKEUP)
  #define I_LINKABLE		(1 << 10)
 +#define I_DIRTY_TIME		(1 << 11)
  
--#define I_DIRTY (I_DIRTY_SYNC | I_DIRTY_DATASYNC | I_DIRTY_PAGES)
-+/* Inode should be on the b_dirty/b_io/b_more_io lists */
-+#define I_DIRTY_WB (I_DIRTY_SYNC | I_DIRTY_DATASYNC | I_DIRTY_PAGES)
-+/* Inode should be on the b_dirty/b_io/b_more_io/b_dirty_time lists */
-+#define I_DIRTY (I_DIRTY_SYNC | I_DIRTY_DATASYNC | I_DIRTY_PAGES | I_DIRTY_TIME)
-+/* The inode itself is dirty  */
-+#define I_DIRTY_INODE (I_DIRTY_SYNC | I_DIRTY_DATASYNC | I_DIRTY_TIME)
+ #define I_DIRTY (I_DIRTY_SYNC | I_DIRTY_DATASYNC | I_DIRTY_PAGES)
++#define I_DIRTY_ALL (I_DIRTY | I_DIRTY_TIME)
  
  extern void __mark_inode_dirty(struct inode *, int);
  static inline void mark_inode_dirty(struct inode *inode)
- {
--	__mark_inode_dirty(inode, I_DIRTY);
-+	__mark_inode_dirty(inode, I_DIRTY_WB);
- }
- 
- static inline void mark_inode_dirty_sync(struct inode *inode)
- {
- 	__mark_inode_dirty(inode, I_DIRTY_SYNC);
- }
-+extern void inode_requeue_dirtytime(struct inode *);
- 
- extern void inc_nlink(struct inode *inode);
- extern void drop_nlink(struct inode *inode);
 diff --git a/include/uapi/linux/fs.h b/include/uapi/linux/fs.h
 index 3735fa0..cc9713a 100644
 --- a/include/uapi/linux/fs.h
