@@ -14,10 +14,10 @@ Google-Bug-Id: 18297052
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/inode.c             | 65 ++++++++++++++++++++++++++++++++++++++++++++++++++++++---
- fs/ext4/super.c             |  9 ++++++++
- include/trace/events/ext4.h | 30 ++++++++++++++++++++++++++
- 3 files changed, 101 insertions(+), 3 deletions(-)
+ fs/ext4/inode.c             | 65 +++++++++++++++++++++++++++++++++++++++++++++---
+ fs/ext4/super.c             | 10 ++++++++
+ include/trace/events/ext4.h | 30 ++++++++++++++++++++++
+ 3 files changed, 102 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
 index 5653fa4..6327b28 100644
@@ -112,7 +112,7 @@ index 5653fa4..6327b28 100644
  	BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");
  	rc = ext4_handle_dirty_metadata(handle, NULL, bh);
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 58859bc..93a2b7a 100644
+index 58859bc..5310ec9 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1132,6 +1132,7 @@ enum {
@@ -145,6 +145,14 @@ index 58859bc..93a2b7a 100644
  	}
  
  	for (m = ext4_mount_opts; m->token != Opt_err; m++)
+@@ -5013,6 +5022,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 	}
+ #endif
+ 
++	*flags = (*flags & ~MS_LAZYTIME) | (sb->s_flags & MS_LAZYTIME);
+ 	ext4_msg(sb, KERN_INFO, "re-mounted. Opts: %s", orig_data);
+ 	kfree(orig_data);
+ 	return 0;
 diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
 index 6cfb841..6e5abd6 100644
 --- a/include/trace/events/ext4.h

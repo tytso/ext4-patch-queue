@@ -1,4 +1,4 @@
-Subject: [PATCH-v5 0/5] add support for a lazytime mount option
+Subject: [PATCH-v6 0/5] add support for a lazytime mount option
 
 This is an updated version of what had originally been an
 ext4-specific patch which significantly improves performance by lazily
@@ -18,12 +18,21 @@ for other file systems which store more than one inode in a block, but
 it will require file system specific code.  It is purely optional,
 however.
 
-Please note the changes to update_time() and the new write_time() inode
-operations functions, which impact btrfs and xfs.  The changes are
-fairly simple, but I would appreciate confirmation from the btrfs and
-xfs teams that I got things right.   Thanks!!
+For people interested seeing how timestamp updates are held back, the
+following example commands to enable the tracepoints debugging may be
+helpful:
 
-Any objections to my carrying these patches in the ext4 git tree?
+  mount -o remount,lazytime /
+  cd /sys/kernel/debug/tracing
+  echo 1 > events/writeback/writeback_lazytime/enable
+  echo 1 > events/writeback/writeback_lazytime_iput/enable
+  echo "flags == 2048" > events/writeback/writeback_mark_inode_dirty/filter
+  echo 1 > events/writeback/writeback_mark_inode_dirty/enable
+  echo 1 > events/ext4/ext4_other_inode_update_time/enable
+  cat trace_pipe
+
+You can also see how many lazytime inodes are in memory by looking in
+/sys/kernel/debug/bdi/<bdi>/stats
 
 Changes since -v5:
    - Tweak move_expired_inodes to handle sync() and syncfs(), and drop
@@ -34,6 +43,8 @@ Changes since -v5:
      for I_DIRTY plus I_DIRTY_TIME.
    - Fold some patches together to make the first patch easier to
      review (and modify/update).
+   - Use the pre-existing writeback tracepoints instead of creating a new
+     fs tracepoints.
 
 Changes since -v4:
    - Fix ext4 optimization so it does not need to increment (and more
@@ -80,32 +91,24 @@ Changes since -v1:
    - Added tracepoints to help test and characterize how often and under
          what circumstances inodes have their timestamps lazily updated
 
-Theodore Ts'o (5):
+Theodore Ts'o (3):
   vfs: add support for a lazytime mount option
-  vfs: don't let the dirty time inodes get more than a day stale
-  vfs: add lazytime tracepoints for better debugging
   vfs: add find_inode_nowait() function
   ext4: add optimization for the lazytime mount option
 
- fs/ext4/inode.c             |  66 +++++++++++++++++++++++--
- fs/ext4/super.c             |   9 ++++
- fs/fs-writeback.c           |  66 ++++++++++++++++++++++---
- fs/inode.c                  | 116 +++++++++++++++++++++++++++++++++++++++++---
- fs/libfs.c                  |   2 +-
- fs/logfs/readwrite.c        |   2 +-
- fs/nfsd/vfs.c               |   2 +-
- fs/pipe.c                   |   2 +-
- fs/proc_namespace.c         |   1 +
- fs/sync.c                   |   8 +++
- fs/ufs/truncate.c           |   2 +-
- include/linux/backing-dev.h |   1 +
- include/linux/fs.h          |  17 ++++++-
- include/trace/events/ext4.h |  30 ++++++++++++
- include/trace/events/fs.h   |  56 +++++++++++++++++++++
- include/uapi/linux/fs.h     |   1 +
- mm/backing-dev.c            |  10 +++-
- 17 files changed, 367 insertions(+), 24 deletions(-)
- create mode 100644 include/trace/events/fs.h
-
-----------
-
+ fs/ext4/inode.c                  | 65 +++++++++++++++++++++++++++++--
+ fs/ext4/super.c                  | 10 +++++
+ fs/fs-writeback.c                | 52 ++++++++++++++++++++-----
+ fs/gfs2/file.c                   |  4 +-
+ fs/inode.c                       | 84 +++++++++++++++++++++++++++++++++++-----
+ fs/jfs/file.c                    |  2 +-
+ fs/libfs.c                       |  2 +-
+ fs/proc_namespace.c              |  1 +
+ fs/sync.c                        |  8 ++++
+ include/linux/backing-dev.h      |  1 +
+ include/linux/fs.h               |  9 +++++
+ include/trace/events/ext4.h      | 30 ++++++++++++++
+ include/trace/events/writeback.h | 53 ++++++++++++++++++++++++-
+ include/uapi/linux/fs.h          |  4 +-
+ mm/backing-dev.c                 | 10 ++++-
+ 15 files changed, 305 insertions(+), 30 deletions(-)
