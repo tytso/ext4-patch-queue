@@ -1,0 +1,44 @@
+ext4: prevent fsreentrance deadlock for inline_data
+
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+
+ext4_da_convert_inline_data_to_extent() invokes
+grab_cache_page_write_begin().  grab_cache_page_write_begin performs
+memory allocation, so fs-reentrance should be prohibited because we
+are inside journal transaction.
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/inline.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
+index 3ea6269..efdcede 100644
+--- a/fs/ext4/inline.c
++++ b/fs/ext4/inline.c
+@@ -870,6 +870,12 @@ retry_journal:
+ 			goto out_journal;
+ 	}
+ 
++	/*
++	 * We cannot recurse into the filesystem as the transaction
++	 * is already started.
++	 */
++	flags |= AOP_FLAG_NOFS;
++
+ 	if (ret == -ENOSPC) {
+ 		ret = ext4_da_convert_inline_data_to_extent(mapping,
+ 							    inode,
+@@ -882,11 +888,6 @@ retry_journal:
+ 		goto out;
+ 	}
+ 
+-	/*
+-	 * We cannot recurse into the filesystem as the transaction
+-	 * is already started.
+-	 */
+-	flags |= AOP_FLAG_NOFS;
+ 
+ 	page = grab_cache_page_write_begin(mapping, 0, flags);
+ 	if (!page) {

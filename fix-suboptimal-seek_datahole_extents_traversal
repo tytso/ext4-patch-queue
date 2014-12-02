@@ -2,8 +2,8 @@ ext4: fix suboptimal seek_{data,hole} extents traversial
 
 From: Dmitry Monakhov <dmonakhov@openvz.org>
 
-It is ridiculus practice to scan inode block by block, this technique
-applicable only for old indirect files.  This takes signifficant amount
+It is ridiculous practice to scan inode block by block, this technique
+applicable only for old indirect files. This takes significant amount
 of time for really large files. Let's reuse ext4_fiemap which already
 traverse inode-tree in most optimal meaner.
 
@@ -23,13 +23,11 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  fs/ext4/file.c    |  220 +++++++++++++++++++++++++---------------------------
  2 files changed, 108 insertions(+), 116 deletions(-)
 
-### Do we need i_mutex here?
-
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 37043d0..11cee53 100644
+index bed4308..e5d3ead 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -5155,8 +5155,8 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+@@ -5166,8 +5166,8 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
  
  	/* fallback to generic here if not in extents fmt */
  	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
@@ -41,7 +39,7 @@ index 37043d0..11cee53 100644
  	if (fiemap_check_flags(fieinfo, EXT4_FIEMAP_FLAGS))
  		return -EBADR;
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index aca7b24..12cbffd 100644
+index 8131be8..513c12c 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
 @@ -273,24 +273,19 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
@@ -326,9 +324,4 @@ index aca7b24..12cbffd 100644
 -- 
 1.7.1
 
---
-To unsubscribe from this list: send the line "unsubscribe linux-kernel" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-Please read the FAQ at  http://www.tux.org/lkml/
 
