@@ -14,7 +14,7 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  2 files changed, 12 insertions(+), 6 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 83a6f49..2d0a0de 100644
+index 83a6f49..6e2fbbd 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -282,6 +282,7 @@ struct ext4_group_desc * ext4_get_group_desc(struct super_block *sb,
@@ -31,7 +31,7 @@ index 83a6f49..2d0a0de 100644
  	offset = block_group & (EXT4_DESC_PER_BLOCK(sb) - 1);
 -	if (!sbi->s_group_desc[group_desc]) {
 +	rcu_read_lock();
-+	gd_bh = *rcu_dereference(sbi->s_group_desc) + group_desc;
++	gd_bh = *(rcu_dereference(sbi->s_group_desc) + group_desc);
 +	rcu_read_unlock();
 +	if (!gd_bh) {
  		ext4_error(sb, "Group descriptor not loaded - "
