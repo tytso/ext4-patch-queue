@@ -1,4 +1,4 @@
-Subject: [PATCH-v6 0/5] add support for a lazytime mount option
+Subject: [PATCH-v7 0/3] add support for a lazytime mount option
 
 This is an updated version of what had originally been an
 ext4-specific patch which significantly improves performance by lazily
@@ -33,6 +33,16 @@ helpful:
 
 You can also see how many lazytime inodes are in memory by looking in
 /sys/kernel/debug/bdi/<bdi>/stats
+
+Changes since -v6:
+   - Add a new tracepoint writeback_dirty_inode_enqueue
+   - Move generic handling of update_time() to generic_update_time(),
+     so filesystems can more easily hook or modify update_time()
+   - The file system's dirty_inode() will now always get called with
+     I_DIRTY_TIME when the inode time is updated.   (I_DIRTY_SYNC will
+     also be set if the inode should be updated right away.)   This allows
+     file systems such as XFS to update its on-disk copy of the inode if
+     I_DIRTY_TIME is set.
 
 Changes since -v5:
    - Tweak move_expired_inodes to handle sync() and syncfs(), and drop
@@ -96,19 +106,19 @@ Theodore Ts'o (3):
   vfs: add find_inode_nowait() function
   ext4: add optimization for the lazytime mount option
 
- fs/ext4/inode.c                  | 65 +++++++++++++++++++++++++++++--
- fs/ext4/super.c                  | 10 +++++
- fs/fs-writeback.c                | 52 ++++++++++++++++++++-----
- fs/gfs2/file.c                   |  4 +-
- fs/inode.c                       | 84 +++++++++++++++++++++++++++++++++++-----
- fs/jfs/file.c                    |  2 +-
- fs/libfs.c                       |  2 +-
- fs/proc_namespace.c              |  1 +
- fs/sync.c                        |  8 ++++
- include/linux/backing-dev.h      |  1 +
- include/linux/fs.h               |  9 +++++
- include/trace/events/ext4.h      | 30 ++++++++++++++
- include/trace/events/writeback.h | 53 ++++++++++++++++++++++++-
- include/uapi/linux/fs.h          |  4 +-
- mm/backing-dev.c                 | 10 ++++-
- 15 files changed, 305 insertions(+), 30 deletions(-)
+ fs/ext4/inode.c                  |  71 ++++++++++++++++++++++++--
+ fs/ext4/super.c                  |  10 ++++
+ fs/fs-writeback.c                |  64 ++++++++++++++++++-----
+ fs/gfs2/file.c                   |   4 +-
+ fs/inode.c                       | 106 +++++++++++++++++++++++++++++++++------
+ fs/jfs/file.c                    |   2 +-
+ fs/libfs.c                       |   2 +-
+ fs/proc_namespace.c              |   1 +
+ fs/sync.c                        |   8 +++
+ include/linux/backing-dev.h      |   1 +
+ include/linux/fs.h               |  10 ++++
+ include/trace/events/ext4.h      |  30 +++++++++++
+ include/trace/events/writeback.h |  60 +++++++++++++++++++++-
+ include/uapi/linux/fs.h          |   4 +-
+ mm/backing-dev.c                 |  10 +++-
+ 15 files changed, 344 insertions(+), 39 deletions(-)

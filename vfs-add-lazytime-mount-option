@@ -26,17 +26,17 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  fs/ext4/inode.c                  |  6 ++++
  fs/fs-writeback.c                | 64 ++++++++++++++++++++++++++++++++++--------
  fs/gfs2/file.c                   |  4 +--
- fs/inode.c                       | 34 ++++++++++++++++------
+ fs/inode.c                       | 56 +++++++++++++++++++++++++-----------
  fs/jfs/file.c                    |  2 +-
  fs/libfs.c                       |  2 +-
  fs/proc_namespace.c              |  1 +
  fs/sync.c                        |  8 ++++++
  include/linux/backing-dev.h      |  1 +
- include/linux/fs.h               |  4 +++
+ include/linux/fs.h               |  5 ++++
  include/trace/events/writeback.h | 60 ++++++++++++++++++++++++++++++++++++++-
  include/uapi/linux/fs.h          |  4 ++-
  mm/backing-dev.c                 | 10 +++++--
- 13 files changed, 171 insertions(+), 29 deletions(-)
+ 13 files changed, 187 insertions(+), 36 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
 index 5653fa4..628df5b 100644
@@ -271,7 +271,7 @@ index 80dd44d..e584bf9 100644
  	if (sync_state) {
  		ret = sync_inode_metadata(inode, 1);
 diff --git a/fs/inode.c b/fs/inode.c
-index 26753ba..7b3f5c9 100644
+index 26753ba..dc48a23 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -18,6 +18,7 @@
@@ -336,16 +336,24 @@ index 26753ba..7b3f5c9 100644
  	}
  }
  EXPORT_SYMBOL(iput);
-@@ -1499,6 +1510,8 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
-  */
- static int update_time(struct inode *inode, struct timespec *time, int flags)
- {
-+	int iflags = I_DIRTY_TIME;
-+
- 	if (inode->i_op->update_time)
- 		return inode->i_op->update_time(inode, time, flags);
+@@ -1493,14 +1504,9 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
+ 	return 0;
+ }
  
-@@ -1510,7 +1523,10 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+-/*
+- * This does the actual work of updating an inodes time or version.  Must have
+- * had called mnt_want_write() before calling this.
+- */
+-static int update_time(struct inode *inode, struct timespec *time, int flags)
++int generic_update_time(struct inode *inode, struct timespec *time, int flags)
+ {
+-	if (inode->i_op->update_time)
+-		return inode->i_op->update_time(inode, time, flags);
++	int iflags = I_DIRTY_TIME;
+ 
+ 	if (flags & S_ATIME)
+ 		inode->i_atime = *time;
+@@ -1510,9 +1516,27 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  		inode->i_ctime = *time;
  	if (flags & S_MTIME)
  		inode->i_mtime = *time;
@@ -356,7 +364,24 @@ index 26753ba..7b3f5c9 100644
 +	__mark_inode_dirty(inode, iflags);
  	return 0;
  }
++EXPORT_SYMBOL(generic_update_time);
++
++/*
++ * This does the actual work of updating an inodes time or version.  Must have
++ * had called mnt_want_write() before calling this.
++ */
++static int update_time(struct inode *inode, struct timespec *time, int flags)
++{
++	int (*update_time)(struct inode *, struct timespec *, int);
++
++	update_time = inode->i_op->update_time ? inode->i_op->update_time :
++		generic_update_time;
++
++	return update_time(inode, time, flags);
++}
  
+ /**
+  *	touch_atime	-	update the access time
 diff --git a/fs/jfs/file.c b/fs/jfs/file.c
 index 33aa0cc..10815f8 100644
 --- a/fs/jfs/file.c
@@ -429,7 +454,7 @@ index 5da6012..4cdf733 100644
  };
  
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index 9ab779e..bb4e878 100644
+index 9ab779e..bf00e98 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
 @@ -1720,8 +1720,12 @@ struct super_operations {
@@ -445,6 +470,14 @@ index 9ab779e..bb4e878 100644
  
  extern void __mark_inode_dirty(struct inode *, int);
  static inline void mark_inode_dirty(struct inode *inode)
+@@ -1884,6 +1888,7 @@ extern int current_umask(void);
+ 
+ extern void ihold(struct inode * inode);
+ extern void iput(struct inode *);
++extern int generic_update_time(struct inode *, struct timespec *, int);
+ 
+ static inline struct inode *file_inode(const struct file *f)
+ {
 diff --git a/include/trace/events/writeback.h b/include/trace/events/writeback.h
 index cee02d6..5ecb4c2 100644
 --- a/include/trace/events/writeback.h
