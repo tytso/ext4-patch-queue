@@ -23,22 +23,45 @@ Google-Bug-Id: 18297052
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/fs-writeback.c                | 52 ++++++++++++++++++++++++++++++++++--------
- fs/gfs2/file.c                   |  4 ++--
- fs/inode.c                       | 34 +++++++++++++++++++--------
+ fs/ext4/inode.c                  |  6 ++++
+ fs/fs-writeback.c                | 64 ++++++++++++++++++++++++++++++++++--------
+ fs/gfs2/file.c                   |  4 +--
+ fs/inode.c                       | 34 ++++++++++++++++------
  fs/jfs/file.c                    |  2 +-
  fs/libfs.c                       |  2 +-
  fs/proc_namespace.c              |  1 +
- fs/sync.c                        |  8 +++++++
+ fs/sync.c                        |  8 ++++++
  include/linux/backing-dev.h      |  1 +
- include/linux/fs.h               |  4 ++++
- include/trace/events/writeback.h | 53 ++++++++++++++++++++++++++++++++++++++++++-
- include/uapi/linux/fs.h          |  4 +++-
- mm/backing-dev.c                 | 10 ++++++--
- 12 files changed, 148 insertions(+), 27 deletions(-)
+ include/linux/fs.h               |  4 +++
+ include/trace/events/writeback.h | 60 ++++++++++++++++++++++++++++++++++++++-
+ include/uapi/linux/fs.h          |  4 ++-
+ mm/backing-dev.c                 | 10 +++++--
+ 13 files changed, 171 insertions(+), 29 deletions(-)
 
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 5653fa4..628df5b 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4840,11 +4840,17 @@ int ext4_mark_inode_dirty(handle_t *handle, struct inode *inode)
+  * If the inode is marked synchronous, we don't honour that here - doing
+  * so would cause a commit on atime updates, which we don't bother doing.
+  * We handle synchronous inodes at the highest possible level.
++ *
++ * If only the I_DIRTY_TIME flag is set, we can skip everything.  If
++ * I_DIRTY_TIME and I_DIRTY_SYNC is set, the only inode fields we need
++ * to copy into the on-disk inode structure are the timestamp files.
+  */
+ void ext4_dirty_inode(struct inode *inode, int flags)
+ {
+ 	handle_t *handle;
+ 
++	if (flags == I_DIRTY_TIME)
++		return;
+ 	handle = ext4_journal_start(inode, EXT4_HT_INODE, 2);
+ 	if (IS_ERR(handle))
+ 		goto out;
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index ef9bef1..29a5dfe 100644
+index ef9bef1..d5e02b8 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
 @@ -247,14 +247,19 @@ static bool inode_dirtied_after(struct inode *inode, unsigned long t)
@@ -157,36 +180,74 @@ index ef9bef1..29a5dfe 100644
  			wrote++;
  		requeue_inode(inode, wb, &wbc);
  		inode_sync_complete(inode);
-@@ -1134,6 +1159,8 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+@@ -1129,16 +1154,20 @@ static noinline void block_dump___mark_inode_dirty(struct inode *inode)
+  * page->mapping->host, so the page-dirtying time is recorded in the internal
+  * blockdev inode.
+  */
++#define I_DIRTY_INODE (I_DIRTY_SYNC | I_DIRTY_DATASYNC)
+ void __mark_inode_dirty(struct inode *inode, int flags)
+ {
  	struct super_block *sb = inode->i_sb;
  	struct backing_dev_info *bdi = NULL;
- 
-+	trace_writeback_mark_inode_dirty(inode, flags);
++	int dirtytime;
 +
++	trace_writeback_mark_inode_dirty(inode, flags);
+ 
  	/*
  	 * Don't do this for I_DIRTY_PAGES - that doesn't actually
  	 * dirty the inode itself
-@@ -1164,6 +1191,10 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+ 	 */
+-	if (flags & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) {
++	if (flags & (I_DIRTY_SYNC | I_DIRTY_DATASYNC | I_DIRTY_TIME)) {
+ 		trace_writeback_dirty_inode_start(inode, flags);
+ 
+ 		if (sb->s_op->dirty_inode)
+@@ -1146,6 +1175,9 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+ 
+ 		trace_writeback_dirty_inode(inode, flags);
+ 	}
++	if (flags & I_DIRTY_INODE)
++		flags &= ~I_DIRTY_TIME;
++	dirtytime = flags & I_DIRTY_TIME;
+ 
+ 	/*
+ 	 * make sure that changes are seen by all cpus before we test i_state
+@@ -1154,16 +1186,22 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+ 	smp_mb();
+ 
+ 	/* avoid the locking if we can */
+-	if ((inode->i_state & flags) == flags)
++	if (((inode->i_state & flags) == flags) ||
++	    (dirtytime && (inode->i_state & I_DIRTY_INODE)))
+ 		return;
+ 
+ 	if (unlikely(block_dump))
+ 		block_dump___mark_inode_dirty(inode);
+ 
+ 	spin_lock(&inode->i_lock);
++	if (dirtytime && (inode->i_state & I_DIRTY_INODE))
++		return;
  	if ((inode->i_state & flags) != flags) {
  		const int was_dirty = inode->i_state & I_DIRTY;
  
-+		if ((flags & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) &&
-+		    (inode->i_state & I_DIRTY_TIME))
++		if (dirtytime && (inode->i_state & I_DIRTY_INODE))
 +			inode->i_state &= ~I_DIRTY_TIME;
 +
  		inode->i_state |= flags;
  
  		/*
-@@ -1210,7 +1241,8 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+@@ -1210,8 +1248,10 @@ void __mark_inode_dirty(struct inode *inode, int flags)
  			}
  
  			inode->dirtied_when = jiffies;
 -			list_move(&inode->i_wb_list, &bdi->wb.b_dirty);
-+			list_move(&inode->i_wb_list, (flags & I_DIRTY_TIME) ?
++			list_move(&inode->i_wb_list, dirtytime ?
 +				  &bdi->wb.b_dirty_time : &bdi->wb.b_dirty);
  			spin_unlock(&bdi->wb.list_lock);
++			trace_writeback_dirty_inode_enqueue(inode);
  
  			if (wakeup_bdi)
+ 				bdi_wakeup_thread_delayed(bdi);
 diff --git a/fs/gfs2/file.c b/fs/gfs2/file.c
 index 80dd44d..e584bf9 100644
 --- a/fs/gfs2/file.c
@@ -210,7 +271,7 @@ index 80dd44d..e584bf9 100644
  	if (sync_state) {
  		ret = sync_inode_metadata(inode, 1);
 diff --git a/fs/inode.c b/fs/inode.c
-index 26753ba..ceba9c5 100644
+index 26753ba..7b3f5c9 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -18,6 +18,7 @@
@@ -275,17 +336,24 @@ index 26753ba..ceba9c5 100644
  	}
  }
  EXPORT_SYMBOL(iput);
-@@ -1510,7 +1521,12 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+@@ -1499,6 +1510,8 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
+  */
+ static int update_time(struct inode *inode, struct timespec *time, int flags)
+ {
++	int iflags = I_DIRTY_TIME;
++
+ 	if (inode->i_op->update_time)
+ 		return inode->i_op->update_time(inode, time, flags);
+ 
+@@ -1510,7 +1523,10 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  		inode->i_ctime = *time;
  	if (flags & S_MTIME)
  		inode->i_mtime = *time;
 -	mark_inode_dirty_sync(inode);
 +
-+	if ((inode->i_sb->s_flags & MS_LAZYTIME) && !(flags & S_VERSION) &&
-+	    !(inode->i_state & I_DIRTY))
-+		__mark_inode_dirty(inode, I_DIRTY_TIME);
-+	else
-+		__mark_inode_dirty(inode, I_DIRTY_SYNC);
++	if (!(inode->i_sb->s_flags & MS_LAZYTIME) || (flags & S_VERSION))
++		iflags |= I_DIRTY_SYNC;
++	__mark_inode_dirty(inode, iflags);
  	return 0;
  }
  
@@ -378,7 +446,7 @@ index 9ab779e..bb4e878 100644
  extern void __mark_inode_dirty(struct inode *, int);
  static inline void mark_inode_dirty(struct inode *inode)
 diff --git a/include/trace/events/writeback.h b/include/trace/events/writeback.h
-index cee02d6..1a90d28 100644
+index cee02d6..5ecb4c2 100644
 --- a/include/trace/events/writeback.h
 +++ b/include/trace/events/writeback.h
 @@ -18,6 +18,8 @@
@@ -425,7 +493,7 @@ index cee02d6..1a90d28 100644
  DEFINE_EVENT(writeback_dirty_inode_template, writeback_dirty_inode_start,
  
  	TP_PROTO(struct inode *inode, int flags),
-@@ -598,6 +610,45 @@ DEFINE_EVENT(writeback_single_inode_template, writeback_single_inode,
+@@ -598,6 +610,52 @@ DEFINE_EVENT(writeback_single_inode_template, writeback_single_inode,
  	TP_ARGS(inode, wbc, nr_to_write)
  );
  
@@ -463,6 +531,13 @@ index cee02d6..1a90d28 100644
 +);
 +
 +DEFINE_EVENT(writeback_lazytime_template, writeback_lazytime_iput,
++	TP_PROTO(struct inode *inode),
++
++	TP_ARGS(inode)
++);
++
++DEFINE_EVENT(writeback_lazytime_template, writeback_dirty_inode_enqueue,
++
 +	TP_PROTO(struct inode *inode),
 +
 +	TP_ARGS(inode)
