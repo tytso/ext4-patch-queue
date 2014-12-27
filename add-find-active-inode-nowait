@@ -12,10 +12,10 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  2 files changed, 55 insertions(+)
 
 diff --git a/fs/inode.c b/fs/inode.c
-index ba53582..4e5a674 100644
+index dc48a23..09a57f2 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
-@@ -1283,6 +1283,56 @@ struct inode *ilookup(struct super_block *sb, unsigned long ino)
+@@ -1282,6 +1282,56 @@ struct inode *ilookup(struct super_block *sb, unsigned long ino)
  }
  EXPORT_SYMBOL(ilookup);
  
@@ -39,7 +39,7 @@ index ba53582..4e5a674 100644
 + * function must never block --- find_inode() can block in
 + * __wait_on_freeing_inode() --- or when the caller can not increment
 + * the reference count because the resulting iput() might cause an
-+ * inode eviction().  The tradeoff is that the @match funtion must be
++ * inode eviction.  The tradeoff is that the @match funtion must be
 + * very carefully implemented.
 + */
 +struct inode *find_inode_nowait(struct super_block *sb,
@@ -73,10 +73,10 @@ index ba53582..4e5a674 100644
  {
  	struct super_block *sb = inode->i_sb;
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index 070f6c6..bd4eff8 100644
+index bf00e98..dfbba90 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -2420,6 +2420,11 @@ extern struct inode *ilookup(struct super_block *sb, unsigned long ino);
+@@ -2415,6 +2415,11 @@ extern struct inode *ilookup(struct super_block *sb, unsigned long ino);
  
  extern struct inode * iget5_locked(struct super_block *, unsigned long, int (*test)(struct inode *, void *), int (*set)(struct inode *, void *), void *);
  extern struct inode * iget_locked(struct super_block *, unsigned long);
