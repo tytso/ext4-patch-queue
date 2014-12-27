@@ -12,12 +12,12 @@ Signed-off-by: Michael Halcrow <mhalcrow@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 Signed-off-by: Ildar Muslukhov <ildarm@google.com>
 ---
- fs/ext4/crypto.c | 136 +++++++++++++++++++++++++++++++++++-------
+ fs/ext4/crypto.c | 136 ++++++++++++++++++++++++++++++++++++-------
  fs/ext4/ext4.h   |   1 +
  fs/ext4/file.c   |  16 ++++-
- fs/ext4/inode.c  | 177 ++++++++++++++++++++++++++++++++++++++++++++++++++++---
- fs/ext4/super.c  |   8 ++-
- 5 files changed, 304 insertions(+), 34 deletions(-)
+ fs/ext4/inode.c  | 177 +++++++++++++++++++++++++++++++++++++++++++++++++++++---
+ fs/ext4/super.c  |   7 +++
+ 5 files changed, 304 insertions(+), 33 deletions(-)
 
 diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
 index 80e6fac..0a4d9fb 100644
@@ -355,10 +355,10 @@ index 80e6fac..0a4d9fb 100644
  		goto out;
  	res = ext4_unwrap_key(wrapped_key_packet,
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 11a9960..292a3a3 100644
+index bdedbe8..be7c30b 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1011,6 +1011,7 @@ struct ext4_inode_info {
+@@ -1002,6 +1002,7 @@ struct ext4_inode_info {
  						      blocks */
  #define EXT4_MOUNT2_HURD_COMPAT		0x00000004 /* Support HURD-castrated
  						      file systems */
@@ -367,7 +367,7 @@ index 11a9960..292a3a3 100644
  #define clear_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt &= \
  						~EXT4_MOUNT_##opt
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index aca7b24..6958f1a 100644
+index 513c12c..c09ab6c 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
 @@ -200,8 +200,13 @@ static const struct vm_operations_struct ext4_file_vm_ops = {
@@ -413,7 +413,7 @@ index aca7b24..6958f1a 100644
  
  /*
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 117b691..c60f15c 100644
+index dc87b8e..15e6a75 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -39,6 +39,7 @@
@@ -424,7 +424,7 @@ index 117b691..c60f15c 100644
  
  #include "ext4_jbd2.h"
  #include "xattr.h"
-@@ -781,6 +782,8 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
+@@ -775,6 +776,8 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
  			       ext4_lblk_t block, int create)
  {
  	struct buffer_head *bh;
@@ -433,7 +433,7 @@ index 117b691..c60f15c 100644
  
  	bh = ext4_getblk(handle, inode, block, create);
  	if (IS_ERR(bh))
-@@ -789,8 +792,14 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
+@@ -783,8 +786,14 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
  		return bh;
  	ll_rw_block(READ | REQ_META | REQ_PRIO, 1, &bh);
  	wait_on_buffer(bh);
@@ -449,7 +449,7 @@ index 117b691..c60f15c 100644
  	put_bh(bh);
  	return ERR_PTR(-EIO);
  }
-@@ -877,9 +886,8 @@ int do_journal_get_write_access(handle_t *handle,
+@@ -871,9 +880,8 @@ int do_journal_get_write_access(handle_t *handle,
  
  static int ext4_get_block_write_nolock(struct inode *inode, sector_t iblock,
  		   struct buffer_head *bh_result, int create);
@@ -460,7 +460,7 @@ index 117b691..c60f15c 100644
  {
  	unsigned from = pos & (PAGE_CACHE_SIZE - 1);
  	unsigned to = from + len;
-@@ -971,7 +979,6 @@ out:
+@@ -965,7 +973,6 @@ out:
  	return err;
  }
  
@@ -468,7 +468,7 @@ index 117b691..c60f15c 100644
  static int ext4_write_begin(struct file *file, struct address_space *mapping,
  			    loff_t pos, unsigned len, unsigned flags,
  			    struct page **pagep, void **fsdata)
-@@ -2376,7 +2383,6 @@ static int ext4_writepages(struct address_space *mapping,
+@@ -2353,7 +2360,6 @@ static int ext4_writepages(struct address_space *mapping,
  	handle_t *handle = NULL;
  	struct mpage_da_data mpd;
  	struct inode *inode = mapping->host;
@@ -476,7 +476,7 @@ index 117b691..c60f15c 100644
  	int needed_blocks, rsv_blocks = 0, ret = 0;
  	struct ext4_sb_info *sbi = EXT4_SB(mapping->host->i_sb);
  	bool done;
-@@ -2393,7 +2399,7 @@ static int ext4_writepages(struct address_space *mapping,
+@@ -2370,7 +2376,7 @@ static int ext4_writepages(struct address_space *mapping,
  	if (!mapping->nrpages || !mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
  		goto out_writepages;
  
@@ -485,7 +485,7 @@ index 117b691..c60f15c 100644
  		struct blk_plug plug;
  
  		blk_start_plug(&plug);
-@@ -2908,20 +2914,142 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
+@@ -2885,20 +2891,142 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
  	return generic_block_bmap(mapping, block, ext4_get_block);
  }
  
@@ -630,7 +630,7 @@ index 117b691..c60f15c 100644
  }
  
  static int
-@@ -2929,12 +3057,35 @@ ext4_readpages(struct file *file, struct address_space *mapping,
+@@ -2906,12 +3034,35 @@ ext4_readpages(struct file *file, struct address_space *mapping,
  		struct list_head *pages, unsigned nr_pages)
  {
  	struct inode *inode = mapping->host;
@@ -667,7 +667,7 @@ index 117b691..c60f15c 100644
  }
  
  static void ext4_invalidatepage(struct page *page, unsigned int offset,
-@@ -3322,8 +3473,10 @@ static int ext4_block_zero_page_range(handle_t *handle,
+@@ -3299,8 +3450,10 @@ static int ext4_block_zero_page_range(handle_t *handle,
  	unsigned blocksize, max, pos;
  	ext4_lblk_t iblock;
  	struct inode *inode = mapping->host;
@@ -678,7 +678,7 @@ index 117b691..c60f15c 100644
  	int err = 0;
  
  	page = find_or_create_page(mapping, from >> PAGE_CACHE_SHIFT,
-@@ -3379,6 +3532,12 @@ static int ext4_block_zero_page_range(handle_t *handle,
+@@ -3356,6 +3509,12 @@ static int ext4_block_zero_page_range(handle_t *handle,
  		/* Uhhuh. Read error. Complain and punt. */
  		if (!buffer_uptodate(bh))
  			goto unlock;
@@ -692,19 +692,18 @@ index 117b691..c60f15c 100644
  	if (ext4_should_journal_data(inode)) {
  		BUFFER_TRACE(bh, "get write access");
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index c3f4d4c..240bce4 100644
+index cbcece1..f539e4f 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1147,7 +1147,7 @@ enum {
- 	Opt_inode_readahead_blks, Opt_journal_ioprio,
+@@ -1139,6 +1139,7 @@ enum {
  	Opt_dioread_nolock, Opt_dioread_lock,
  	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
--	Opt_max_dir_size_kb, Opt_encrypt_key_sig,
-+	Opt_max_dir_size_kb, Opt_encrypt_key_sig, Opt_dummy_encryption
+ 	Opt_max_dir_size_kb, Opt_nojournal_checksum, Opt_encrypt_key_sig,
++	Opt_dummy_encryption
  };
  
  static const match_table_t tokens = {
-@@ -1224,6 +1224,7 @@ static const match_table_t tokens = {
+@@ -1218,6 +1219,7 @@ static const match_table_t tokens = {
  	{Opt_noinit_itable, "noinit_itable"},
  	{Opt_max_dir_size_kb, "max_dir_size_kb=%u"},
  	{Opt_encrypt_key_sig, "encrypt_key_sig=%s"},
@@ -712,7 +711,7 @@ index c3f4d4c..240bce4 100644
  	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
  	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
  	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
-@@ -1423,6 +1424,7 @@ static const struct mount_opts {
+@@ -1419,6 +1421,7 @@ static const struct mount_opts {
  	{Opt_jqfmt_vfsv1, QFMT_VFS_V1, MOPT_QFMT},
  	{Opt_max_dir_size_kb, 0, MOPT_GTE0},
  	{Opt_encrypt_key_sig, 0, MOPT_STRING},
@@ -720,7 +719,7 @@ index c3f4d4c..240bce4 100644
  	{Opt_err, 0, 0}
  };
  
-@@ -1546,6 +1548,10 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
+@@ -1548,6 +1551,10 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
  		       ECRYPTFS_SIG_SIZE_HEX);
  		sbi->s_default_encryption_wrapper_desc.wrapping_key_sig[
  			ECRYPTFS_SIG_SIZE_HEX] = '\0';
@@ -731,7 +730,3 @@ index c3f4d4c..240bce4 100644
  	} else if (token == Opt_stripe) {
  		sbi->s_stripe = arg;
  	} else if (token == Opt_resuid) {
--- 
-2.1.0.rc2.206.gedb03e5
-
-
