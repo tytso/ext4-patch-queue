@@ -23,20 +23,20 @@ Google-Bug-Id: 18297052
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/inode.c                  |  6 +++++
- fs/fs-writeback.c                | 64 +++++++++++++++++++++++++++++++++++---------
- fs/gfs2/file.c                   |  4 +--
- fs/inode.c                       | 56 +++++++++++++++++++++++++++-----------
+ fs/ext4/inode.c                  |  6 ++++++
+ fs/fs-writeback.c                | 62 ++++++++++++++++++++++++++++++++++++++++++++++----------
+ fs/gfs2/file.c                   |  4 ++--
+ fs/inode.c                       | 56 +++++++++++++++++++++++++++++++++++---------------
  fs/jfs/file.c                    |  2 +-
  fs/libfs.c                       |  2 +-
  fs/proc_namespace.c              |  1 +
- fs/sync.c                        |  8 ++++++
+ fs/sync.c                        |  8 ++++++++
  include/linux/backing-dev.h      |  1 +
- include/linux/fs.h               |  5 ++++
- include/trace/events/writeback.h | 60 ++++++++++++++++++++++++++++++++++++++++-
- include/uapi/linux/fs.h          |  4 ++-
- mm/backing-dev.c                 | 10 +++++--
- 13 files changed, 187 insertions(+), 36 deletions(-)
+ include/linux/fs.h               |  5 +++++
+ include/trace/events/writeback.h | 60 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ include/uapi/linux/fs.h          |  4 +++-
+ mm/backing-dev.c                 | 10 +++++++--
+ 13 files changed, 186 insertions(+), 35 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
 index 5653fa4..628df5b 100644
@@ -61,7 +61,7 @@ index 5653fa4..628df5b 100644
  	if (IS_ERR(handle))
  		goto out;
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index ef9bef1..d7ce58b 100644
+index 2d609a5..0046861 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
 @@ -247,14 +247,19 @@ static bool inode_dirtied_after(struct inode *inode, unsigned long t)
@@ -131,29 +131,34 @@ index ef9bef1..d7ce58b 100644
  	} else {
  		/* The inode is clean. Remove from writeback lists. */
  		list_del_init(&inode->i_wb_list);
-@@ -482,11 +500,18 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
- 	/* Clear I_DIRTY_PAGES if we've written out all dirty pages */
- 	if (!mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
- 		inode->i_state &= ~I_DIRTY_PAGES;
--	dirty = inode->i_state & I_DIRTY;
--	inode->i_state &= ~(I_DIRTY_SYNC | I_DIRTY_DATASYNC);
-+	dirty = inode->i_state & (I_DIRTY_SYNC | I_DIRTY_DATASYNC);
-+	if ((dirty && (inode->i_state & I_DIRTY_TIME)) ||
+@@ -481,7 +499,13 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
+ 	spin_lock(&inode->i_lock);
+ 
+ 	dirty = inode->i_state & I_DIRTY;
+-	inode->i_state &= ~I_DIRTY;
++	if (((dirty & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) &&
++	     (inode->i_state & I_DIRTY_TIME)) ||
 +	    (inode->i_state & I_DIRTY_TIME_EXPIRED)) {
 +		dirty |= I_DIRTY_TIME | I_DIRTY_TIME_EXPIRED;
 +		trace_writeback_lazytime(inode);
 +	}
 +	inode->i_state &= ~dirty;
+ 
+ 	/*
+ 	 * Paired with smp_mb() in __mark_inode_dirty().  This allows
+@@ -501,8 +525,10 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
+ 
  	spin_unlock(&inode->i_lock);
+ 
 +	if (dirty & I_DIRTY_TIME)
 +		mark_inode_dirty_sync(inode);
  	/* Don't write the inode if only I_DIRTY_PAGES was set */
 -	if (dirty & (I_DIRTY_SYNC | I_DIRTY_DATASYNC)) {
-+	if (dirty) {
++	if (dirty & ~I_DIRTY_PAGES) {
  		int err = write_inode(inode, wbc);
  		if (ret == 0)
  			ret = err;
-@@ -534,7 +559,7 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
+@@ -550,7 +576,7 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
  	 * make sure inode is on some writeback list and leave it there unless
  	 * we have completely cleaned the inode.
  	 */
@@ -162,7 +167,7 @@ index ef9bef1..d7ce58b 100644
  	    (wbc->sync_mode != WB_SYNC_ALL ||
  	     !mapping_tagged(inode->i_mapping, PAGECACHE_TAG_WRITEBACK)))
  		goto out;
-@@ -549,7 +574,7 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
+@@ -565,7 +591,7 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
  	 * If inode is clean, remove it from writeback lists. Otherwise don't
  	 * touch it. See comment above for explanation.
  	 */
@@ -171,7 +176,7 @@ index ef9bef1..d7ce58b 100644
  		list_del_init(&inode->i_wb_list);
  	spin_unlock(&wb->list_lock);
  	inode_sync_complete(inode);
-@@ -691,7 +716,7 @@ static long writeback_sb_inodes(struct super_block *sb,
+@@ -707,7 +733,7 @@ static long writeback_sb_inodes(struct super_block *sb,
  		wrote += write_chunk - wbc.nr_to_write;
  		spin_lock(&wb->list_lock);
  		spin_lock(&inode->i_lock);
@@ -180,7 +185,7 @@ index ef9bef1..d7ce58b 100644
  			wrote++;
  		requeue_inode(inode, wb, &wbc);
  		inode_sync_complete(inode);
-@@ -1129,16 +1154,20 @@ static noinline void block_dump___mark_inode_dirty(struct inode *inode)
+@@ -1145,16 +1171,20 @@ static noinline void block_dump___mark_inode_dirty(struct inode *inode)
   * page->mapping->host, so the page-dirtying time is recorded in the internal
   * blockdev inode.
   */
@@ -202,7 +207,7 @@ index ef9bef1..d7ce58b 100644
  		trace_writeback_dirty_inode_start(inode, flags);
  
  		if (sb->s_op->dirty_inode)
-@@ -1146,6 +1175,9 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+@@ -1162,6 +1192,9 @@ void __mark_inode_dirty(struct inode *inode, int flags)
  
  		trace_writeback_dirty_inode(inode, flags);
  	}
@@ -211,11 +216,11 @@ index ef9bef1..d7ce58b 100644
 +	dirtytime = flags & I_DIRTY_TIME;
  
  	/*
- 	 * make sure that changes are seen by all cpus before we test i_state
-@@ -1154,16 +1186,22 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+ 	 * Paired with smp_mb() in __writeback_single_inode() for the
+@@ -1169,16 +1202,21 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+ 	 */
  	smp_mb();
  
- 	/* avoid the locking if we can */
 -	if ((inode->i_state & flags) == flags)
 +	if (((inode->i_state & flags) == flags) ||
 +	    (dirtytime && (inode->i_state & I_DIRTY_INODE)))
@@ -226,17 +231,16 @@ index ef9bef1..d7ce58b 100644
  
  	spin_lock(&inode->i_lock);
 +	if (dirtytime && (inode->i_state & I_DIRTY_INODE))
-+		return;
++		goto out_unlock_inode;
  	if ((inode->i_state & flags) != flags) {
  		const int was_dirty = inode->i_state & I_DIRTY;
  
-+		if ((flags & I_DIRTY_INODE) && (inode->i_state & I_DIRTY_TIME))
++		if (flags & I_DIRTY_INODE)
 +			inode->i_state &= ~I_DIRTY_TIME;
-+
  		inode->i_state |= flags;
  
  		/*
-@@ -1210,8 +1248,10 @@ void __mark_inode_dirty(struct inode *inode, int flags)
+@@ -1225,8 +1263,10 @@ void __mark_inode_dirty(struct inode *inode, int flags)
  			}
  
  			inode->dirtied_when = jiffies;
@@ -249,10 +253,10 @@ index ef9bef1..d7ce58b 100644
  			if (wakeup_bdi)
  				bdi_wakeup_thread_delayed(bdi);
 diff --git a/fs/gfs2/file.c b/fs/gfs2/file.c
-index 80dd44d..e584bf9 100644
+index 6e600ab..15c44cf 100644
 --- a/fs/gfs2/file.c
 +++ b/fs/gfs2/file.c
-@@ -654,7 +654,7 @@ static int gfs2_fsync(struct file *file, loff_t start, loff_t end,
+@@ -655,7 +655,7 @@ static int gfs2_fsync(struct file *file, loff_t start, loff_t end,
  {
  	struct address_space *mapping = file->f_mapping;
  	struct inode *inode = mapping->host;
@@ -261,7 +265,7 @@ index 80dd44d..e584bf9 100644
  	struct gfs2_inode *ip = GFS2_I(inode);
  	int ret = 0, ret1 = 0;
  
-@@ -667,7 +667,7 @@ static int gfs2_fsync(struct file *file, loff_t start, loff_t end,
+@@ -668,7 +668,7 @@ static int gfs2_fsync(struct file *file, loff_t start, loff_t end,
  	if (!gfs2_is_jdata(ip))
  		sync_state &= ~I_DIRTY_PAGES;
  	if (datasync)
@@ -271,7 +275,7 @@ index 80dd44d..e584bf9 100644
  	if (sync_state) {
  		ret = sync_inode_metadata(inode, 1);
 diff --git a/fs/inode.c b/fs/inode.c
-index 26753ba..dc48a23 100644
+index aa149e7..4feb85c 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -18,6 +18,7 @@
@@ -291,7 +295,7 @@ index 26753ba..dc48a23 100644
   * inode_hash_lock protects:
   *   inode_hashtable, inode->i_hash
   *
-@@ -414,7 +415,8 @@ static void inode_lru_list_add(struct inode *inode)
+@@ -416,7 +417,8 @@ static void inode_lru_list_add(struct inode *inode)
   */
  void inode_add_lru(struct inode *inode)
  {
@@ -301,7 +305,7 @@ index 26753ba..dc48a23 100644
  	    !atomic_read(&inode->i_count) && inode->i_sb->s_flags & MS_ACTIVE)
  		inode_lru_list_add(inode);
  }
-@@ -645,7 +647,7 @@ int invalidate_inodes(struct super_block *sb, bool kill_dirty)
+@@ -647,7 +649,7 @@ int invalidate_inodes(struct super_block *sb, bool kill_dirty)
  			spin_unlock(&inode->i_lock);
  			continue;
  		}
@@ -310,7 +314,7 @@ index 26753ba..dc48a23 100644
  			spin_unlock(&inode->i_lock);
  			busy = 1;
  			continue;
-@@ -1430,11 +1432,20 @@ static void iput_final(struct inode *inode)
+@@ -1432,11 +1434,20 @@ static void iput_final(struct inode *inode)
   */
  void iput(struct inode *inode)
  {
@@ -336,7 +340,7 @@ index 26753ba..dc48a23 100644
  	}
  }
  EXPORT_SYMBOL(iput);
-@@ -1493,14 +1504,9 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
+@@ -1495,14 +1506,9 @@ static int relatime_need_update(struct vfsmount *mnt, struct inode *inode,
  	return 0;
  }
  
@@ -353,7 +357,7 @@ index 26753ba..dc48a23 100644
  
  	if (flags & S_ATIME)
  		inode->i_atime = *time;
-@@ -1510,9 +1516,27 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
+@@ -1512,9 +1518,27 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
  		inode->i_ctime = *time;
  	if (flags & S_MTIME)
  		inode->i_mtime = *time;
@@ -396,7 +400,7 @@ index 33aa0cc..10815f8 100644
  		/* Make sure committed changes hit the disk */
  		jfs_flush_journal(JFS_SBI(inode->i_sb)->log, 1);
 diff --git a/fs/libfs.c b/fs/libfs.c
-index 171d284..7cb9cef 100644
+index 005843c..b2ffdb0 100644
 --- a/fs/libfs.c
 +++ b/fs/libfs.c
 @@ -948,7 +948,7 @@ int __generic_file_fsync(struct file *file, loff_t start, loff_t end,
@@ -409,7 +413,7 @@ index 171d284..7cb9cef 100644
  	if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
  		goto out;
 diff --git a/fs/proc_namespace.c b/fs/proc_namespace.c
-index 73ca174..f98234a 100644
+index 0f96f71..8db932d 100644
 --- a/fs/proc_namespace.c
 +++ b/fs/proc_namespace.c
 @@ -44,6 +44,7 @@ static int show_sb_opts(struct seq_file *m, struct super_block *sb)
@@ -421,7 +425,7 @@ index 73ca174..f98234a 100644
  	};
  	const struct proc_fs_info *fs_infop;
 diff --git a/fs/sync.c b/fs/sync.c
-index bdc729d..6ac7bf0 100644
+index 01d9f18..fbc98ee 100644
 --- a/fs/sync.c
 +++ b/fs/sync.c
 @@ -177,8 +177,16 @@ SYSCALL_DEFINE1(syncfs, int, fd)
@@ -454,10 +458,10 @@ index 5da6012..4cdf733 100644
  };
  
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index 9ab779e..bf00e98 100644
+index f90c028..5ca285f 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -1720,8 +1720,12 @@ struct super_operations {
+@@ -1746,8 +1746,12 @@ struct super_operations {
  #define __I_DIO_WAKEUP		9
  #define I_DIO_WAKEUP		(1 << I_DIO_WAKEUP)
  #define I_LINKABLE		(1 << 10)
@@ -470,7 +474,7 @@ index 9ab779e..bf00e98 100644
  
  extern void __mark_inode_dirty(struct inode *, int);
  static inline void mark_inode_dirty(struct inode *inode)
-@@ -1884,6 +1888,7 @@ extern int current_umask(void);
+@@ -1910,6 +1914,7 @@ extern int current_umask(void);
  
  extern void ihold(struct inode * inode);
  extern void iput(struct inode *);
