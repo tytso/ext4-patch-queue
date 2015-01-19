@@ -1,0 +1,29 @@
+jbd2: complain about descriptor block checksum errors
+
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+
+We should complain in dmesg when journal recovery fails on account of
+the descriptor block being corrupt, so that the diagnostic data can
+be recovered.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/jbd2/recovery.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
+index bcbef08..b5128c6 100644
+--- a/fs/jbd2/recovery.c
++++ b/fs/jbd2/recovery.c
+@@ -524,6 +524,9 @@ static int do_one_pass(journal_t *journal,
+ 			if (descr_csum_size > 0 &&
+ 			    !jbd2_descr_block_csum_verify(journal,
+ 							  bh->b_data)) {
++				printk(KERN_ERR "JBD2: Invalid checksum "
++				       "recovering block %lu in log\n",
++				       next_log_block);
+ 				err = -EIO;
+ 				brelse(bh);
+ 				goto failed;
+
