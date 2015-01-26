@@ -1,4 +1,4 @@
-Subject: [PATCH-v7 0/3] add support for a lazytime mount option
+Subject: [PATCH-v9 0/3] add support for a lazytime mount option
 
 This is an updated version of what had originally been an
 ext4-specific patch which significantly improves performance by lazily
@@ -34,9 +34,15 @@ helpful:
 You can also see how many lazytime inodes are in memory by looking in
 /sys/kernel/debug/bdi/<bdi>/stats
 
-Changes since -v7: (not yet released)
+Changes since -v8: (not yet released)
+  - in ext4_update_other_inodes_time() clear I_DIRTY_TIME_EXPIRED as
+    well as I_DIRTY_TIME
+
+Changes since -v7:
    - Fix comment typos
-   - Clear the I_DIRTY_TIME flag if I_DIRTY_INODE gets added
+   - Clear the I_DIRTY_TIME flag if I_DIRTY_INODE gets added in
+     __mark_inode_dirty()
+   - Fix a bug accidentally introduced in -v7 which broke lazytime altogether 
 
 Changes since -v6:
    - Add a new tracepoint writeback_dirty_inode_enqueue
@@ -112,7 +118,7 @@ Theodore Ts'o (3):
 
  fs/ext4/inode.c                  |  71 ++++++++++++++++++++++++--
  fs/ext4/super.c                  |  10 ++++
- fs/fs-writeback.c                |  64 ++++++++++++++++++-----
+ fs/fs-writeback.c                |  62 +++++++++++++++++++----
  fs/gfs2/file.c                   |   4 +-
  fs/inode.c                       | 106 +++++++++++++++++++++++++++++++++------
  fs/jfs/file.c                    |   2 +-
@@ -125,4 +131,7 @@ Theodore Ts'o (3):
  include/trace/events/writeback.h |  60 +++++++++++++++++++++-
  include/uapi/linux/fs.h          |   4 +-
  mm/backing-dev.c                 |  10 +++-
- 15 files changed, 344 insertions(+), 39 deletions(-)
+ 15 files changed, 343 insertions(+), 38 deletions(-)
+
+-- 
+2.1.0

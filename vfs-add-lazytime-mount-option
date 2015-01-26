@@ -23,19 +23,19 @@ Google-Bug-Id: 18297052
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/inode.c                  |  6 ++++++
- fs/fs-writeback.c                | 62 ++++++++++++++++++++++++++++++++++++++++++++++----------
- fs/gfs2/file.c                   |  4 ++--
- fs/inode.c                       | 56 +++++++++++++++++++++++++++++++++++---------------
+ fs/ext4/inode.c                  |  6 +++++
+ fs/fs-writeback.c                | 62 ++++++++++++++++++++++++++++++++++++++--------
+ fs/gfs2/file.c                   |  4 +--
+ fs/inode.c                       | 56 +++++++++++++++++++++++++++++------------
  fs/jfs/file.c                    |  2 +-
  fs/libfs.c                       |  2 +-
  fs/proc_namespace.c              |  1 +
- fs/sync.c                        |  8 ++++++++
+ fs/sync.c                        |  8 ++++++
  include/linux/backing-dev.h      |  1 +
- include/linux/fs.h               |  5 +++++
- include/trace/events/writeback.h | 60 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
- include/uapi/linux/fs.h          |  4 +++-
- mm/backing-dev.c                 | 10 +++++++--
+ include/linux/fs.h               |  5 ++++
+ include/trace/events/writeback.h | 60 +++++++++++++++++++++++++++++++++++++++++++-
+ include/uapi/linux/fs.h          |  4 ++-
+ mm/backing-dev.c                 | 10 ++++++--
  13 files changed, 186 insertions(+), 35 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
@@ -61,7 +61,7 @@ index 5653fa4..628df5b 100644
  	if (IS_ERR(handle))
  		goto out;
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index 2d609a5..0046861 100644
+index 2d609a5..82c2984 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
 @@ -247,14 +247,19 @@ static bool inode_dirtied_after(struct inode *inode, unsigned long t)
@@ -211,9 +211,9 @@ index 2d609a5..0046861 100644
  
  		trace_writeback_dirty_inode(inode, flags);
  	}
++	dirtytime = flags & I_DIRTY_TIME;
 +	if (flags & I_DIRTY_INODE)
 +		flags &= ~I_DIRTY_TIME;
-+	dirtytime = flags & I_DIRTY_TIME;
  
  	/*
  	 * Paired with smp_mb() in __writeback_single_inode() for the
