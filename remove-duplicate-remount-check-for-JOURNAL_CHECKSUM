@@ -1,0 +1,49 @@
+ext4: remove duplicate remount check for JOURNAL_CHECKSUM change
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+commits c6d3d56d and 6b992ff2 each added the same test for, and
+rejection of, changing journal_checksum during remount.  One suffices.
+
+While we're at it, remove old comment about the "check" option
+which has been deprecated for some time now.
+
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 74c5f53..f300a56 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4845,9 +4845,6 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 	if (sbi->s_journal && sbi->s_journal->j_task->io_context)
+ 		journal_ioprio = sbi->s_journal->j_task->io_context->ioprio;
+ 
+-	/*
+-	 * Allow the "check" option to be passed as a remount option.
+-	 */
+ 	if (!parse_options(data, sb, NULL, &journal_ioprio, 1)) {
+ 		err = -EINVAL;
+ 		goto restore_opts;
+@@ -4861,14 +4858,6 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 		goto restore_opts;
+ 	}
+ 
+-	if ((old_opts.s_mount_opt & EXT4_MOUNT_JOURNAL_CHECKSUM) ^
+-	    test_opt(sb, JOURNAL_CHECKSUM)) {
+-		ext4_msg(sb, KERN_ERR, "changing journal_checksum "
+-			 "during remount not supported");
+-		err = -EINVAL;
+-		goto restore_opts;
+-	}
+-
+ 	if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA) {
+ 		if (test_opt2(sb, EXPLICIT_DELALLOC)) {
+ 			ext4_msg(sb, KERN_ERR, "can't mount with "
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
