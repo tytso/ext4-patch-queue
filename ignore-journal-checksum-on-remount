@@ -1,0 +1,43 @@
+ext4: ignore journal checksum on remount; don't fail
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+As of v3.18, ext4 started rejecting a remount which changes the
+journal_checksum option.
+
+Prior to that, it was simply ignored; the problem here is that
+if someone has this in their fstab for the root fs, now the box
+fails to boot properly, because remount of root with the new options
+will fail, and the box proceeds with a readonly root.
+
+I think it is a little nicer behavior to accept the option, but
+warn that it's being ignored, rather than failing the mount,
+but that might be a subjective matter...
+
+Reported-by: Cónräd <conradsand.arma@gmail.com>
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index f300a56..250ad25 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4853,9 +4853,8 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 	if ((old_opts.s_mount_opt & EXT4_MOUNT_JOURNAL_CHECKSUM) ^
+ 	    test_opt(sb, JOURNAL_CHECKSUM)) {
+ 		ext4_msg(sb, KERN_ERR, "changing journal_checksum "
+-			 "during remount not supported");
+-		err = -EINVAL;
+-		goto restore_opts;
++			 "during remount not supported; ignoring");
++		sbi->s_mount_opt ^= EXT4_MOUNT_JOURNAL_CHECKSUM;
+ 	}
+ 
+ 	if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA) {
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
