@@ -11,18 +11,18 @@ Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 Cc: akpm@linux-foundation.org
 ---
  fs/ext4/ext4.h        |  3 +++
- fs/ext4/super.c       | 13 ++++++++++++-
+ fs/ext4/super.c       | 11 +++++++++++
  fs/jbd2/transaction.c | 12 ++++++++++--
  include/linux/jbd2.h  |  1 +
- 4 files changed, 26 insertions(+), 3 deletions(-)
+ 4 files changed, 25 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index ef9bf04..5c64ba6 100644
+index b7dbaf1..c5b26f7 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1010,6 +1010,9 @@ struct ext4_inode_info {
+@@ -1006,6 +1006,9 @@ struct ext4_inode_info {
+ #define EXT4_MOUNT2_HURD_COMPAT		0x00000004 /* Support HURD-castrated
  						      file systems */
- #define EXT4_MOUNT2_DUMMY_ENCRYPTION	0x80000000 /* Use dummy encryption */
  
 +#define EXT4_MOUNT2_AKPM_LOCK_HACK	0x80000000 /* akpm lock hack */
 +
@@ -31,30 +31,28 @@ index ef9bf04..5c64ba6 100644
  						~EXT4_MOUNT_##opt
  #define set_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt |= \
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 54ac1e5..d179efc 100644
+index 7b3a41c..ccab545 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1149,7 +1149,8 @@ enum {
- 	Opt_inode_readahead_blks, Opt_journal_ioprio,
+@@ -1135,6 +1135,7 @@ enum {
  	Opt_dioread_nolock, Opt_dioread_lock,
  	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
--	Opt_max_dir_size_kb, Opt_encrypt_key_sig, Opt_dummy_encryption
-+	Opt_max_dir_size_kb, Opt_encrypt_key_sig, Opt_dummy_encryption,
+ 	Opt_max_dir_size_kb, Opt_nojournal_checksum,
 +	Opt_akpm_lock_hack,
  };
  
  static const match_table_t tokens = {
-@@ -1206,6 +1207,7 @@ static const match_table_t tokens = {
- 	{Opt_nobarrier, "nobarrier"},
+@@ -1193,6 +1194,7 @@ static const match_table_t tokens = {
  	{Opt_i_version, "i_version"},
+ 	{Opt_dax, "dax"},
  	{Opt_stripe, "stripe=%u"},
 +	{Opt_akpm_lock_hack, "akpm_lock_hack"},
  	{Opt_delalloc, "delalloc"},
- 	{Opt_nodelalloc, "nodelalloc"},
- 	{Opt_removed, "mblk_io_submit"},
-@@ -1466,6 +1468,9 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
- 	case Opt_i_version:
- 		sb->s_flags |= MS_I_VERSION;
+ 	{Opt_lazytime, "lazytime"},
+ 	{Opt_nolazytime, "nolazytime"},
+@@ -1460,6 +1462,9 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
+ 	case Opt_nolazytime:
+ 		sb->s_flags &= ~MS_LAZYTIME;
  		return 1;
 +	case Opt_akpm_lock_hack:
 +		set_opt2(sb, AKPM_LOCK_HACK);
@@ -62,7 +60,7 @@ index 54ac1e5..d179efc 100644
  	}
  
  	for (m = ext4_mount_opts; m->token != Opt_err; m++)
-@@ -1834,6 +1839,8 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
+@@ -1813,6 +1818,8 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
  		SEQ_OPTS_PRINT("min_batch_time=%u", sbi->s_min_batch_time);
  	if (nodefs || sbi->s_max_batch_time != EXT4_DEF_MAX_BATCH_TIME)
  		SEQ_OPTS_PRINT("max_batch_time=%u", sbi->s_max_batch_time);
@@ -71,7 +69,7 @@ index 54ac1e5..d179efc 100644
  	if (sb->s_flags & MS_I_VERSION)
  		SEQ_OPTS_PUTS("i_version");
  	if (nodefs || sbi->s_stripe)
-@@ -4431,6 +4438,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -4442,6 +4449,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
@@ -120,7 +118,7 @@ index 93ffee2..4ba2b76 100644
  	error = -EROFS;
  	if (is_handle_aborted(handle)) {
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 704b9a5..907a108 100644
+index 20e7f78..0f17d76 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
 @@ -1007,6 +1007,7 @@ struct journal_s
