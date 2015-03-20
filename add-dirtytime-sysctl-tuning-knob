@@ -4,37 +4,37 @@ Add a tuning knob so we can adjust the dirtytime expiration timeout,
 which is very useful for testing lazytime.
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
 ---
- fs/fs-writeback.c         | 5 ++++-
- include/linux/writeback.h | 1 +
- kernel/sysctl.c           | 8 ++++++++
- 3 files changed, 13 insertions(+), 1 deletion(-)
+ fs/fs-writeback.c         | 11 +++++++++++
+ include/linux/writeback.h |  3 +++
+ kernel/sysctl.c           |  8 ++++++++
+ 3 files changed, 22 insertions(+)
 
 diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
-index e907052..705f036 100644
+index 2cfcd74..32a8bbd 100644
 --- a/fs/fs-writeback.c
 +++ b/fs/fs-writeback.c
-@@ -53,6 +53,9 @@ struct wb_writeback_work {
- 	struct completion *done;	/* set if the caller waits */
- };
+@@ -1188,6 +1188,17 @@ static int __init start_dirtytime_writeback(void)
+ }
+ __initcall(start_dirtytime_writeback);
  
-+/* 24 hours in seconds */
-+unsigned int dirtytime_expire_interval = 24 * 60 * 60;
++int dirtytime_interval_handler(struct ctl_table *table, int write,
++			       void __user *buffer, size_t *lenp, loff_t *ppos)
++{
++	int ret;
 +
- /**
-  * writeback_in_progress - determine whether there is writeback in progress
-  * @bdi: the device's backing_dev_info structure.
-@@ -276,7 +279,7 @@ static int move_expired_inodes(struct list_head *delaying_queue,
- 	if ((flags & EXPIRE_DIRTY_ATIME) == 0)
- 		older_than_this = work->older_than_this;
- 	else if ((work->reason == WB_REASON_SYNC) == 0) {
--		expire_time = jiffies - (HZ * 86400);
-+		expire_time = jiffies - (dirtytime_expire_interval * HZ);
- 		older_than_this = &expire_time;
- 	}
- 	while (!list_empty(delaying_queue)) {
++	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
++	if (ret == 0 && write)
++		mod_delayed_work(system_wq, &dirtytime_work, 0);
++	return ret;
++}
++
+ static noinline void block_dump___mark_inode_dirty(struct inode *inode)
+ {
+ 	if (inode->i_ino || strcmp(inode->i_sb->s_id, "bdev")) {
 diff --git a/include/linux/writeback.h b/include/linux/writeback.h
-index 0004833..ba65fd0 100644
+index 0004833..b2dd371e 100644
 --- a/include/linux/writeback.h
 +++ b/include/linux/writeback.h
 @@ -130,6 +130,7 @@ extern int vm_dirty_ratio;
@@ -45,8 +45,17 @@ index 0004833..ba65fd0 100644
  extern int vm_highmem_is_dirtyable;
  extern int block_dump;
  extern int laptop_mode;
+@@ -146,6 +147,8 @@ extern int dirty_ratio_handler(struct ctl_table *table, int write,
+ extern int dirty_bytes_handler(struct ctl_table *table, int write,
+ 		void __user *buffer, size_t *lenp,
+ 		loff_t *ppos);
++int dirtytime_interval_handler(struct ctl_table *table, int write,
++			       void __user *buffer, size_t *lenp, loff_t *ppos);
+ 
+ struct ctl_table;
+ int dirty_writeback_centisecs_handler(struct ctl_table *, int,
 diff --git a/kernel/sysctl.c b/kernel/sysctl.c
-index 88ea2d6..44e6a25 100644
+index 88ea2d6..ce410bb 100644
 --- a/kernel/sysctl.c
 +++ b/kernel/sysctl.c
 @@ -1228,6 +1228,14 @@ static struct ctl_table vm_table[] = {
@@ -57,7 +66,7 @@ index 88ea2d6..44e6a25 100644
 +		.data		= &dirtytime_expire_interval,
 +		.maxlen		= sizeof(dirty_expire_interval),
 +		.mode		= 0644,
-+		.proc_handler	= proc_dointvec_minmax,
++		.proc_handler	= dirtytime_interval_handler,
 +		.extra1		= &zero,
 +	},
 +	{
