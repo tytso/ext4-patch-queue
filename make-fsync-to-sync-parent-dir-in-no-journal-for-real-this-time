@@ -32,14 +32,14 @@ Reviewed-by: Jan Kara <jack@suse.cz>
 Cc: Frank Mayhar <fmayhar@google.com>
 Cc: stable@vger.kernel.org
 ---
- fs/ext4/namei.c | 19 ++++++++++---------
- 1 file changed, 10 insertions(+), 9 deletions(-)
+ fs/ext4/namei.c | 20 +++++++++++---------
+ 1 file changed, 11 insertions(+), 9 deletions(-)
 
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 2291923..25e1e03 100644
+index efb64ae..23a0b9b 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
-@@ -1865,7 +1865,7 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -1864,7 +1864,7 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  			  struct inode *inode)
  {
  	struct inode *dir = dentry->d_parent->d_inode;
@@ -48,7 +48,7 @@ index 2291923..25e1e03 100644
  	struct ext4_dir_entry_2 *de;
  	struct ext4_dir_entry_tail *t;
  	struct super_block *sb;
-@@ -1889,14 +1889,14 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -1888,14 +1888,14 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  			return retval;
  		if (retval == 1) {
  			retval = 0;
@@ -65,7 +65,7 @@ index 2291923..25e1e03 100644
  		ext4_clear_inode_flag(dir, EXT4_INODE_INDEX);
  		dx_fallback++;
  		ext4_mark_inode_dirty(handle, dir);
-@@ -1908,14 +1908,14 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -1907,14 +1907,15 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  			return PTR_ERR(bh);
  
  		retval = add_dirent_to_buf(handle, dentry, inode, NULL, bh);
@@ -81,12 +81,13 @@ index 2291923..25e1e03 100644
 -			return make_indexed_dir(handle, dentry, inode, bh);
 +		    EXT4_HAS_COMPAT_FEATURE(sb, EXT4_FEATURE_COMPAT_DIR_INDEX)) {
 +			retval = make_indexed_dir(handle, dentry, inode, bh);
++			bh = NULL; /* make_indexed_dir releases bh */
 +			goto out;
 +		}
  		brelse(bh);
  	}
  	bh = ext4_append(handle, dir, &block);
-@@ -1931,6 +1931,7 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -1930,6 +1931,7 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  	}
  
  	retval = add_dirent_to_buf(handle, dentry, inode, de, bh);
@@ -94,11 +95,3 @@ index 2291923..25e1e03 100644
  	brelse(bh);
  	if (retval == 0)
  		ext4_set_inode_state(inode, EXT4_STATE_NEWENTRY);
--- 
-1.8.3.1
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
