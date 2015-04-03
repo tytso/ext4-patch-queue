@@ -1,0 +1,55 @@
+ext4: better error handling for kstrdup() failures
+
+From: Taesoo Kim <tsgatesv@gmail.com>
+
+Upon memory pressure, kstrdup() might fail and correctly
+handle memory error, although current implementation do not
+refer orig_data.
+
+NOTE: fortunately the correct impl works, other than a corner case
+where kstrdup() fails and kzalloc() succeeds; it might record 'NULL'
+in the log.
+
+Signed-off-by: Taesoo Kim <tsgatesv@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/super.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index e061e66..e2a609c 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3408,7 +3408,7 @@ static int ext4_reserve_clusters(struct ext4_sb_info *sbi, ext4_fsblk_t count)
+
+ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ {
+-	char *orig_data = kstrdup(data, GFP_KERNEL);
++	char *orig_data;
+ 	struct buffer_head *bh;
+ 	struct ext4_super_block *es = NULL;
+ 	struct ext4_sb_info *sbi;
+@@ -3431,6 +3431,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	unsigned int journal_ioprio = DEFAULT_JOURNAL_IOPRIO;
+ 	ext4_group_t first_not_zeroed;
+
++	orig_data = kstrdup(data, GFP_KERNEL);
++	if (!orig_data)
++		return -ENOMEM;
++
+ 	sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
+ 	if (!sbi)
+ 		goto out_free_orig;
+@@ -4843,6 +4847,8 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 	int i, j;
+ #endif
+ 	char *orig_data = kstrdup(data, GFP_KERNEL);
++	if (!orig_data)
++		return -ENOMEM;
+
+ 	/* Store the original options */
+ 	old_sb_flags = sb->s_flags;
+--
+2.3.3
+
+
