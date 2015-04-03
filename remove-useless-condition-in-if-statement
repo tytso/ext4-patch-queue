@@ -1,0 +1,36 @@
+ext4: remove useless condition in if statement.
+
+From: Wei Yuan <weiyuan.wei@huawei.com>
+
+In this if statement, the previous condition is useless, the later one
+has covered it.
+
+Signed-off-by: Weiyuan <weiyuan.wei@huawei.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Lukas Czerner <lczerner@redhat.com>
+---
+ fs/ext4/xattr.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index 1e09fc7..f2ccad7 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -639,8 +639,7 @@ ext4_xattr_set_entry(struct ext4_xattr_info *i, struct ext4_xattr_search *s)
+ 		free += EXT4_XATTR_LEN(name_len);
+ 	}
+ 	if (i->value) {
+-		if (free < EXT4_XATTR_SIZE(i->value_len) ||
+-		    free < EXT4_XATTR_LEN(name_len) +
++		if (free < EXT4_XATTR_LEN(name_len) +
+ 			   EXT4_XATTR_SIZE(i->value_len))
+ 			return -ENOSPC;
+ 	}
+--
+2.1.0
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
