@@ -1,0 +1,56 @@
+ext4: remove block_device_ejected
+
+From: Christoph Hellwig <hch@lst.de>
+
+bdi->dev now never goes away, so this function became useless.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/super.c | 18 +-----------------
+ 1 file changed, 1 insertion(+), 17 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index ad88e60..826cb66 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -323,22 +323,6 @@ static void save_error_info(struct super_block *sb, const char *func,
+ 	ext4_commit_super(sb, 1);
+ }
+ 
+-/*
+- * The del_gendisk() function uninitializes the disk-specific data
+- * structures, including the bdi structure, without telling anyone
+- * else.  Once this happens, any attempt to call mark_buffer_dirty()
+- * (for example, by ext4_commit_super), will cause a kernel OOPS.
+- * This is a kludge to prevent these oops until we can put in a proper
+- * hook in del_gendisk() to inform the VFS and file system layers.
+- */
+-static int block_device_ejected(struct super_block *sb)
+-{
+-	struct inode *bd_inode = sb->s_bdev->bd_inode;
+-	struct backing_dev_info *bdi = inode_to_bdi(bd_inode);
+-
+-	return bdi->dev == NULL;
+-}
+-
+ static void ext4_journal_commit_callback(journal_t *journal, transaction_t *txn)
+ {
+ 	struct super_block		*sb = journal->j_private;
+@@ -4544,7 +4528,7 @@ static int ext4_commit_super(struct super_block *sb, int sync)
+ 	struct buffer_head *sbh = EXT4_SB(sb)->s_sbh;
+ 	int error = 0;
+ 
+-	if (!sbh || block_device_ejected(sb))
++	if (!sbh)
+ 		return error;
+ 	if (buffer_write_io_error(sbh)) {
+ 		/*
+-- 
+1.9.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
