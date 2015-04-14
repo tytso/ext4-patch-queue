@@ -1,0 +1,191 @@
+ext4 crypto: implement the ext4 decryption read path
+
+From: Michael Halcrow <mhalcrow@google.com>
+
+Change-Id: Ie9c043a132a01da60d1617662cd30307639f5599
+Signed-off-by: Michael Halcrow <mhalcrow@google.com>
+Signed-off-by: Ildar Muslukhov <ildarm@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/file.c     | 19 +++++++++++++++++--
+ fs/ext4/inode.c    |  8 ++++++++
+ fs/ext4/readpage.c | 66 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 90 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 8131be8..756d10f 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -28,6 +28,7 @@
+ #include <linux/pagevec.h>
+ #include "ext4.h"
+ #include "ext4_jbd2.h"
++#include "ext4_crypto.h"
+ #include "xattr.h"
+ #include "acl.h"
+ 
+@@ -200,6 +201,13 @@ static const struct vm_operations_struct ext4_file_vm_ops = {
+ 
+ static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
+ {
++	struct inode *inode = file->f_mapping->host;
++
++	if (ext4_encrypted_inode(inode)) {
++		int err = ext4_generate_encryption_key(inode);
++		if (err)
++			return 0;
++	}
+ 	file_accessed(file);
+ 	vma->vm_ops = &ext4_file_vm_ops;
+ 	return 0;
+@@ -212,6 +220,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+ 	struct vfsmount *mnt = filp->f_path.mnt;
+ 	struct path path;
+ 	char buf[64], *cp;
++	int ret;
+ 
+ 	if (unlikely(!(sbi->s_mount_flags & EXT4_MF_MNTDIR_SAMPLED) &&
+ 		     !(sb->s_flags & MS_RDONLY))) {
+@@ -250,11 +259,17 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+ 	 * writing and the journal is present
+ 	 */
+ 	if (filp->f_mode & FMODE_WRITE) {
+-		int ret = ext4_inode_attach_jinode(inode);
++		ret = ext4_inode_attach_jinode(inode);
+ 		if (ret < 0)
+ 			return ret;
+ 	}
+-	return dquot_file_open(inode, filp);
++	ret = dquot_file_open(inode, filp);
++	if (!ret && ext4_encrypted_inode(inode)) {
++		ret = ext4_generate_encryption_key(inode);
++		if (ret)
++			ret = -EACCES;
++	}
++	return ret;
+ }
+ 
+ /*
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index dcc836c..5b6b7b6 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -39,6 +39,7 @@
+ #include <linux/ratelimit.h>
+ #include <linux/aio.h>
+ #include <linux/bitops.h>
++#include <linux/prefetch.h>
+ 
+ #include "ext4_jbd2.h"
+ #include "ext4_crypto.h"
+@@ -3363,6 +3364,13 @@ static int ext4_block_zero_page_range(handle_t *handle,
+ 		/* Uhhuh. Read error. Complain and punt. */
+ 		if (!buffer_uptodate(bh))
+ 			goto unlock;
++		if (S_ISREG(inode->i_mode) &&
++		    ext4_encrypted_inode(inode)) {
++			/* We expect the key to be set. */
++			BUG_ON(!ext4_has_encryption_key(inode));
++			BUG_ON(blocksize != PAGE_CACHE_SIZE);
++			WARN_ON_ONCE(ext4_decrypt_one(inode, page));
++		}
+ 	}
+ 	if (ext4_should_journal_data(inode)) {
+ 		BUFFER_TRACE(bh, "get write access");
+diff --git a/fs/ext4/readpage.c b/fs/ext4/readpage.c
+index fff9fe6..171b9ac 100644
+--- a/fs/ext4/readpage.c
++++ b/fs/ext4/readpage.c
+@@ -47,6 +47,46 @@
+ #include "ext4.h"
+ 
+ /*
++ * Call ext4_decrypt on every single page, reusing the encryption
++ * context.
++ */
++static void completion_pages(struct work_struct *work)
++{
++#ifdef CONFIG_EXT4_FS_ENCRYPTION
++	struct ext4_crypto_ctx *ctx =
++		container_of(work, struct ext4_crypto_ctx, work);
++	struct bio	*bio	= ctx->bio;
++	struct bio_vec	*bv;
++	int		i;
++
++	bio_for_each_segment_all(bv, bio, i) {
++		struct page *page = bv->bv_page;
++
++		int ret = ext4_decrypt(ctx, page);
++		if (ret) {
++			WARN_ON_ONCE(1);
++			SetPageError(page);
++		} else
++			SetPageUptodate(page);
++		unlock_page(page);
++	}
++	ext4_release_crypto_ctx(ctx);
++	bio_put(bio);
++#else
++	BUG();
++#endif
++}
++
++static inline bool ext4_bio_encrypted(struct bio *bio)
++{
++#ifdef CONFIG_EXT4_FS_ENCRYPTION
++	return unlikely(bio->bi_private != NULL);
++#else
++	return false;
++#endif
++}
++
++/*
+  * I/O completion handler for multipage BIOs.
+  *
+  * The mpage code never puts partial pages into a BIO (except for end-of-file).
+@@ -63,6 +103,18 @@ static void mpage_end_io(struct bio *bio, int err)
+ 	struct bio_vec *bv;
+ 	int i;
+ 
++	if (ext4_bio_encrypted(bio)) {
++		struct ext4_crypto_ctx *ctx = bio->bi_private;
++
++		if (err) {
++			ext4_release_crypto_ctx(ctx);
++		} else {
++			INIT_WORK(&ctx->work, completion_pages);
++			ctx->bio = bio;
++			queue_work(ext4_read_workqueue, &ctx->work);
++			return;
++		}
++	}
+ 	bio_for_each_segment_all(bv, bio, i) {
+ 		struct page *page = bv->bv_page;
+ 
+@@ -223,13 +275,25 @@ int ext4_mpage_readpages(struct address_space *mapping,
+ 			bio = NULL;
+ 		}
+ 		if (bio == NULL) {
++			struct ext4_crypto_ctx *ctx = NULL;
++
++			if (ext4_encrypted_inode(inode) &&
++			    S_ISREG(inode->i_mode)) {
++				ctx = ext4_get_crypto_ctx(inode);
++				if (IS_ERR(ctx))
++					goto set_error_page;
++			}
+ 			bio = bio_alloc(GFP_KERNEL,
+ 				min_t(int, nr_pages, bio_get_nr_vecs(bdev)));
+-			if (!bio)
++			if (!bio) {
++				if (ctx)
++					ext4_release_crypto_ctx(ctx);
+ 				goto set_error_page;
++			}
+ 			bio->bi_bdev = bdev;
+ 			bio->bi_iter.bi_sector = blocks[0] << (blkbits - 9);
+ 			bio->bi_end_io = mpage_end_io;
++			bio->bi_private = ctx;
+ 		}
+ 
+ 		length = first_hole << blkbits;
