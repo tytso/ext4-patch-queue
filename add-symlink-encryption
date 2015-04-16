@@ -5,11 +5,11 @@ Signed-off-by: Uday Savagaonkar <savagaon@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/ext4.h        |  1 +
- fs/ext4/ext4_crypto.h | 20 ++++++++++++++++++++
- fs/ext4/inode.c       |  5 +++--
- fs/ext4/namei.c       | 75 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++----------------
- fs/ext4/symlink.c     | 97 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
- 5 files changed, 179 insertions(+), 19 deletions(-)
+ fs/ext4/ext4_crypto.h | 20 +++++++++++
+ fs/ext4/inode.c       |  5 +--
+ fs/ext4/namei.c       | 85 +++++++++++++++++++++++++++++++++++-----------
+ fs/ext4/symlink.c     | 97 ++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 5 files changed, 185 insertions(+), 23 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 98a5617..c79db59 100644
@@ -76,7 +76,7 @@ index 5b6b7b6..c87bb7a 100644
  			nd_terminate_link(ei->i_data, inode->i_size,
  				sizeof(ei->i_data) - 1);
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index e8f82b2..ba4f4fd 100644
+index e8f82b2..0d9057a 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -3183,16 +3183,24 @@ static int ext4_symlink(struct inode *dir,
@@ -104,7 +104,7 @@ index e8f82b2..ba4f4fd 100644
  	dquot_initialize(dir);
  
 -	if (l > EXT4_N_BLOCKS * 4) {
-+	if ((disk_link.len > EXT4_N_BLOCKS * 4) || encryption_required) {
++	if ((disk_link.len > EXT4_N_BLOCKS * 4)) {
  		/*
  		 * For non-fast symlinks, we just allocate inode and put it on
  		 * orphan list in the first transaction => we need bitmap,
@@ -154,17 +154,20 @@ index e8f82b2..ba4f4fd 100644
 +		ext4_put_fname_crypto_ctx(&ctx);
 +		if (err < 0)
 +			goto err_drop_inode;
-+		sd->len = cpu_to_le32(ostr.len);
++		sd->len = cpu_to_le16(ostr.len);
 +		disk_link.name = (char *) sd;
 +	}
  
 -	if (l > EXT4_N_BLOCKS * 4) {
-+	if ((disk_link.len > EXT4_N_BLOCKS * 4) /* || encryption_required */) {
++	if ((disk_link.len > EXT4_N_BLOCKS * 4)) {
  		inode->i_op = &ext4_symlink_inode_operations;
  		ext4_set_aops(inode);
  		/*
-@@ -3238,7 +3279,7 @@ retry:
+@@ -3236,9 +3277,10 @@ retry:
+ 		drop_nlink(inode);
+ 		err = ext4_orphan_add(handle, inode);
  		ext4_journal_stop(handle);
++		handle = NULL;
  		if (err)
  			goto err_drop_inode;
 -		err = __page_symlink(inode, symname, l, 1);
@@ -172,7 +175,21 @@ index e8f82b2..ba4f4fd 100644
  		if (err)
  			goto err_drop_inode;
  		/*
-@@ -3262,22 +3303,24 @@ retry:
+@@ -3250,34 +3292,37 @@ retry:
+ 				EXT4_INDEX_EXTRA_TRANS_BLOCKS + 1);
+ 		if (IS_ERR(handle)) {
+ 			err = PTR_ERR(handle);
++			handle = NULL;
+ 			goto err_drop_inode;
+ 		}
+ 		set_nlink(inode, 1);
+ 		err = ext4_orphan_del(handle, inode);
+-		if (err) {
+-			ext4_journal_stop(handle);
+-			clear_nlink(inode);
++		if (err)
+ 			goto err_drop_inode;
+-		}
  	} else {
  		/* clear the extent format for fast symlink */
  		ext4_clear_inode_flag(inode, EXT4_INODE_EXTENTS);
@@ -199,7 +216,10 @@ index e8f82b2..ba4f4fd 100644
 +	kfree(sd);
  	return err;
  err_drop_inode:
++	if (handle)
++		ext4_journal_stop(handle);
 +	kfree(sd);
++	clear_nlink(inode);
  	unlock_new_inode(inode);
  	iput(inode);
  	return err;

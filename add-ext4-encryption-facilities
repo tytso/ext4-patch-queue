@@ -20,15 +20,6 @@ Change-Id: I5ed4c913d49971d7f7e9b10bb4e694df86f960d7
 Signed-off-by: Michael Halcrow <mhalcrow@google.com>
 Signed-off-by: Ildar Muslukhov <ildarm@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
----
- fs/ext4/Makefile        |   2 +-
- fs/ext4/crypto.c        | 561 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/crypto_policy.c |   8 ++
- fs/ext4/ext4.h          |  52 +++++++++++++
- fs/ext4/ext4_crypto.h   |  55 ++++++++++++++
- fs/ext4/super.c         |   8 ++
- 6 files changed, 685 insertions(+), 1 deletion(-)
-
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
 index 3886ee4..1b1c561 100644
 --- a/fs/ext4/Makefile
@@ -41,10 +32,10 @@ index 3886ee4..1b1c561 100644
 +ext4-$(CONFIG_EXT4_FS_ENCRYPTION)	+= crypto_policy.o crypto.o
 diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
 new file mode 100644
-index 0000000..c78c852
+index 0000000..49b1656
 --- /dev/null
 +++ b/fs/ext4/crypto.c
-@@ -0,0 +1,561 @@
+@@ -0,0 +1,558 @@
 +/*
 + * linux/fs/ext4/crypto.c
 + *
@@ -62,10 +53,7 @@ index 0000000..c78c852
 + * This has not yet undergone a rigorous security audit.
 + *
 + * The usage of AES-XTS should conform to recommendations in NIST
-+ * Special Publication 800-38E. The usage of AES-GCM should conform to
-+ * the recommendations in NIST Special Publication 800-38D. Further
-+ * guidance for block-oriented storage is in IEEE P1619/D16. The key
-+ * derivation code implements an HKDF (see RFC 5869).
++ * Special Publication 800-38E and IEEE P1619/D16.
 + */
 +
 +#include <crypto/hash.h>

@@ -37,14 +37,14 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  1 file changed, 23 insertions(+), 1 deletion(-)
 
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 2fb55fd..2c676aa 100644
+index 2fb55fd..9939db9 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -1417,6 +1417,18 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
  					 ino);
  			return ERR_PTR(-EIO);
  		}
-+		if (ext4_encrypted_inode(dir) &&
++		if (!IS_ERR(inode) && ext4_encrypted_inode(dir) &&
 +		    (S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
 +		     S_ISLNK(inode->i_mode)) &&
 +		    !ext4_is_child_context_consistent_with_parent(dir,
