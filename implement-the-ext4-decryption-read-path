@@ -7,24 +7,16 @@ Signed-off-by: Michael Halcrow <mhalcrow@google.com>
 Signed-off-by: Ildar Muslukhov <ildarm@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/file.c     | 19 +++++++++++++++++--
- fs/ext4/inode.c    |  8 ++++++++
- fs/ext4/readpage.c | 66 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
- 3 files changed, 90 insertions(+), 3 deletions(-)
+ fs/ext4/file.c     | 18 ++++++++++++++--
+ fs/ext4/inode.c    |  7 ++++++
+ fs/ext4/readpage.c | 66 +++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 88 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/file.c b/fs/ext4/file.c
-index 8131be8..756d10f 100644
+index fcc6c13..b132a3c 100644
 --- a/fs/ext4/file.c
 +++ b/fs/ext4/file.c
-@@ -28,6 +28,7 @@
- #include <linux/pagevec.h>
- #include "ext4.h"
- #include "ext4_jbd2.h"
-+#include "ext4_crypto.h"
- #include "xattr.h"
- #include "acl.h"
- 
-@@ -200,6 +201,13 @@ static const struct vm_operations_struct ext4_file_vm_ops = {
+@@ -218,6 +218,13 @@ static const struct vm_operations_struct ext4_file_vm_ops = {
  
  static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
  {
@@ -36,9 +28,9 @@ index 8131be8..756d10f 100644
 +			return 0;
 +	}
  	file_accessed(file);
- 	vma->vm_ops = &ext4_file_vm_ops;
- 	return 0;
-@@ -212,6 +220,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+ 	if (IS_DAX(file_inode(file))) {
+ 		vma->vm_ops = &ext4_dax_vm_ops;
+@@ -235,6 +242,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
  	struct vfsmount *mnt = filp->f_path.mnt;
  	struct path path;
  	char buf[64], *cp;
@@ -46,7 +38,7 @@ index 8131be8..756d10f 100644
  
  	if (unlikely(!(sbi->s_mount_flags & EXT4_MF_MNTDIR_SAMPLED) &&
  		     !(sb->s_flags & MS_RDONLY))) {
-@@ -250,11 +259,17 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+@@ -273,11 +281,17 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
  	 * writing and the journal is present
  	 */
  	if (filp->f_mode & FMODE_WRITE) {
@@ -67,18 +59,10 @@ index 8131be8..756d10f 100644
  
  /*
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index dcc836c..5b6b7b6 100644
+index 7c4527e..8b4fe62 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -39,6 +39,7 @@
- #include <linux/ratelimit.h>
- #include <linux/aio.h>
- #include <linux/bitops.h>
-+#include <linux/prefetch.h>
- 
- #include "ext4_jbd2.h"
- #include "ext4_crypto.h"
-@@ -3363,6 +3364,13 @@ static int ext4_block_zero_page_range(handle_t *handle,
+@@ -3370,6 +3370,13 @@ static int __ext4_block_zero_page_range(handle_t *handle,
  		/* Uhhuh. Read error. Complain and punt. */
  		if (!buffer_uptodate(bh))
  			goto unlock;

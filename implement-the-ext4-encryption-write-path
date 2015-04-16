@@ -11,11 +11,11 @@ Signed-off-by: Michael Halcrow <mhalcrow@google.com>
 Signed-off-by: Ildar Muslukhov <ildarm@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/extents.c |  17 +++++++++++++++++
- fs/ext4/ialloc.c  |   5 +++++
- fs/ext4/inode.c   | 113 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
- fs/ext4/page-io.c |  46 +++++++++++++++++++++++++++++++++++++++++-----
- 4 files changed, 175 insertions(+), 6 deletions(-)
+ fs/ext4/extents.c |  17 +++++++++
+ fs/ext4/ialloc.c  |   5 +++
+ fs/ext4/inode.c   | 112 +++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/page-io.c |  45 ++++++++++++++++++++---
+ 4 files changed, 173 insertions(+), 6 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
 index 74580ea..973816b 100644
@@ -69,18 +69,10 @@ index 6ab6f63..247737e 100644
  	if (IS_DIRSYNC(inode))
  		ext4_handle_sync(handle);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index cd30091..77b7ff2 100644
+index cd30091..7c4527e 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -39,6 +39,7 @@
- #include <linux/bitops.h>
- 
- #include "ext4_jbd2.h"
-+#include "ext4_crypto.h"
- #include "xattr.h"
- #include "acl.h"
- #include "truncate.h"
-@@ -886,6 +887,95 @@ int do_journal_get_write_access(handle_t *handle,
+@@ -886,6 +886,95 @@ int do_journal_get_write_access(handle_t *handle,
  
  static int ext4_get_block_write_nolock(struct inode *inode, sector_t iblock,
  		   struct buffer_head *bh_result, int create);
@@ -176,7 +168,7 @@ index cd30091..77b7ff2 100644
  static int ext4_write_begin(struct file *file, struct address_space *mapping,
  			    loff_t pos, unsigned len, unsigned flags,
  			    struct page **pagep, void **fsdata)
-@@ -948,11 +1038,19 @@ retry_journal:
+@@ -948,11 +1037,19 @@ retry_journal:
  	/* In case writeback began while the page was unlocked */
  	wait_for_stable_page(page);
  
@@ -197,7 +189,7 @@ index cd30091..77b7ff2 100644
  	if (!ret && ext4_should_journal_data(inode)) {
  		ret = ext4_walk_page_buffers(handle, page_buffers(page),
  					     from, to, NULL,
-@@ -2574,7 +2672,12 @@ retry_journal:
+@@ -2574,7 +2671,12 @@ retry_journal:
  	/* In case writeback began while the page was unlocked */
  	wait_for_stable_page(page);
  
@@ -210,7 +202,7 @@ index cd30091..77b7ff2 100644
  	if (ret < 0) {
  		unlock_page(page);
  		ext4_journal_stop(handle);
-@@ -3032,6 +3135,9 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
+@@ -3032,6 +3134,9 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
  		get_block_func = ext4_get_block_write;
  		dio_flags = DIO_LOCKING;
  	}
@@ -220,7 +212,7 @@ index cd30091..77b7ff2 100644
  	if (IS_DAX(inode))
  		ret = dax_do_io(rw, iocb, inode, iter, offset, get_block_func,
  				ext4_end_io_dio, dio_flags);
-@@ -3096,6 +3202,11 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
+@@ -3096,6 +3201,11 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
  	size_t count = iov_iter_count(iter);
  	ssize_t ret;
  
@@ -233,18 +225,10 @@ index cd30091..77b7ff2 100644
  	 * If we are doing data journalling we don't support O_DIRECT
  	 */
 diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
-index 5687e47..f264fc8 100644
+index 5687e47..51a5f12 100644
 --- a/fs/ext4/page-io.c
 +++ b/fs/ext4/page-io.c
-@@ -26,6 +26,7 @@
- #include <linux/mm.h>
- 
- #include "ext4_jbd2.h"
-+#include "ext4_crypto.h"
- #include "xattr.h"
- #include "acl.h"
- 
-@@ -67,6 +68,10 @@ static void ext4_finish_bio(struct bio *bio)
+@@ -67,6 +67,10 @@ static void ext4_finish_bio(struct bio *bio)
  
  	bio_for_each_segment_all(bvec, bio, i) {
  		struct page *page = bvec->bv_page;
@@ -255,7 +239,7 @@ index 5687e47..f264fc8 100644
  		struct buffer_head *bh, *head;
  		unsigned bio_start = bvec->bv_offset;
  		unsigned bio_end = bio_start + bvec->bv_len;
-@@ -76,6 +81,15 @@ static void ext4_finish_bio(struct bio *bio)
+@@ -76,6 +80,15 @@ static void ext4_finish_bio(struct bio *bio)
  		if (!page)
  			continue;
  
@@ -271,7 +255,7 @@ index 5687e47..f264fc8 100644
  		if (error) {
  			SetPageError(page);
  			set_bit(AS_EIO, &page->mapping->flags);
-@@ -100,8 +114,13 @@ static void ext4_finish_bio(struct bio *bio)
+@@ -100,8 +113,13 @@ static void ext4_finish_bio(struct bio *bio)
  		} while ((bh = bh->b_this_page) != head);
  		bit_spin_unlock(BH_Uptodate_Lock, &head->b_state);
  		local_irq_restore(flags);
@@ -286,7 +270,7 @@ index 5687e47..f264fc8 100644
  	}
  }
  
-@@ -376,6 +395,7 @@ static int io_submit_init_bio(struct ext4_io_submit *io,
+@@ -376,6 +394,7 @@ static int io_submit_init_bio(struct ext4_io_submit *io,
  
  static int io_submit_add_bh(struct ext4_io_submit *io,
  			    struct inode *inode,
@@ -294,7 +278,7 @@ index 5687e47..f264fc8 100644
  			    struct buffer_head *bh)
  {
  	int ret;
-@@ -389,7 +409,7 @@ submit_and_retry:
+@@ -389,7 +408,7 @@ submit_and_retry:
  		if (ret)
  			return ret;
  	}
@@ -303,7 +287,7 @@ index 5687e47..f264fc8 100644
  	if (ret != bh->b_size)
  		goto submit_and_retry;
  	io->io_next_block++;
-@@ -402,6 +422,7 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+@@ -402,6 +421,7 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
  			struct writeback_control *wbc,
  			bool keep_towrite)
  {
@@ -311,7 +295,7 @@ index 5687e47..f264fc8 100644
  	struct inode *inode = page->mapping->host;
  	unsigned block_start, blocksize;
  	struct buffer_head *bh, *head;
-@@ -461,19 +482,29 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+@@ -461,19 +481,29 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
  		set_buffer_async_write(bh);
  	} while ((bh = bh->b_this_page) != head);
  
@@ -344,7 +328,7 @@ index 5687e47..f264fc8 100644
  			break;
  		}
  		nr_submitted++;
-@@ -482,6 +513,11 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+@@ -482,6 +512,11 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
  
  	/* Error stopped previous loop? Clean up buffers... */
  	if (ret) {

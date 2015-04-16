@@ -7,9 +7,9 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  fs/ext4/ext4.h        |  1 +
  fs/ext4/ext4_crypto.h | 20 +++++++++++
  fs/ext4/inode.c       |  5 +--
- fs/ext4/namei.c       | 85 +++++++++++++++++++++++++++++++++++-----------
- fs/ext4/symlink.c     | 97 ++++++++++++++++++++++++++++++++++++++++++++++++++++-
- 5 files changed, 185 insertions(+), 23 deletions(-)
+ fs/ext4/namei.c       | 85 ++++++++++++++++++++++++++++++++++++-----------
+ fs/ext4/symlink.c     | 96 ++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 5 files changed, 184 insertions(+), 23 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 98a5617..c79db59 100644
@@ -53,10 +53,10 @@ index f7d46e8..c2ba35a 100644
 +
  #endif	/* _EXT4_CRYPTO_H */
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 5b6b7b6..c87bb7a 100644
+index 1a0d4ee..355c8b6 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -143,7 +143,7 @@ static int ext4_meta_trans_blocks(struct inode *inode, int lblocks,
+@@ -142,7 +142,7 @@ static int ext4_meta_trans_blocks(struct inode *inode, int lblocks,
  /*
   * Test whether an inode is a fast symlink.
   */
@@ -65,7 +65,7 @@ index 5b6b7b6..c87bb7a 100644
  {
          int ea_blocks = EXT4_I(inode)->i_file_acl ?
  		EXT4_CLUSTER_SIZE(inode->i_sb) >> 9 : 0;
-@@ -4177,7 +4177,8 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+@@ -4176,7 +4176,8 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
  		inode->i_op = &ext4_dir_inode_operations;
  		inode->i_fop = &ext4_dir_operations;
  	} else if (S_ISLNK(inode->i_mode)) {
@@ -76,7 +76,7 @@ index 5b6b7b6..c87bb7a 100644
  			nd_terminate_link(ei->i_data, inode->i_size,
  				sizeof(ei->i_data) - 1);
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index e8f82b2..0d9057a 100644
+index 7326f9f..8157dbb 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -3183,16 +3183,24 @@ static int ext4_symlink(struct inode *dir,
@@ -224,14 +224,12 @@ index e8f82b2..0d9057a 100644
  	iput(inode);
  	return err;
 diff --git a/fs/ext4/symlink.c b/fs/ext4/symlink.c
-index ff37119..6f71c2c 100644
+index ff37119..3f72274 100644
 --- a/fs/ext4/symlink.c
 +++ b/fs/ext4/symlink.c
-@@ -22,9 +22,99 @@
- #include <linux/namei.h>
+@@ -23,8 +23,97 @@
  #include "ext4.h"
  #include "xattr.h"
-+#include "ext4_crypto.h"
  
 +#ifdef CONFIG_EXT4_FS_ENCRYPTION
  static void *ext4_follow_link(struct dentry *dentry, struct nameidata *nd)
@@ -327,7 +325,7 @@ index ff37119..6f71c2c 100644
  	struct ext4_inode_info *ei = EXT4_I(dentry->d_inode);
  	nd_set_link(nd, (char *) ei->i_data);
  	return NULL;
-@@ -32,8 +122,13 @@ static void *ext4_follow_link(struct dentry *dentry, struct nameidata *nd)
+@@ -32,8 +121,13 @@ static void *ext4_follow_link(struct dentry *dentry, struct nameidata *nd)
  
  const struct inode_operations ext4_symlink_inode_operations = {
  	.readlink	= generic_readlink,
@@ -341,7 +339,7 @@ index ff37119..6f71c2c 100644
  	.setattr	= ext4_setattr,
  	.setxattr	= generic_setxattr,
  	.getxattr	= generic_getxattr,
-@@ -43,7 +138,7 @@ const struct inode_operations ext4_symlink_inode_operations = {
+@@ -43,7 +137,7 @@ const struct inode_operations ext4_symlink_inode_operations = {
  
  const struct inode_operations ext4_fast_symlink_inode_operations = {
  	.readlink	= generic_readlink,
