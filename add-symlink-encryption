@@ -5,10 +5,10 @@ Signed-off-by: Uday Savagaonkar <savagaon@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/ext4.h        |  1 +
- fs/ext4/ext4_crypto.h | 20 +++++++++++
+ fs/ext4/ext4_crypto.h | 20 ++++++++++++
  fs/ext4/inode.c       |  5 +--
- fs/ext4/namei.c       | 85 ++++++++++++++++++++++++++++++++++++-----------
- fs/ext4/symlink.c     | 96 ++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/namei.c       | 85 +++++++++++++++++++++++++++++++++++++------------
+ fs/ext4/symlink.c     | 96 +++++++++++++++++++++++++++++++++++++++++++++++++++++++-
  5 files changed, 184 insertions(+), 23 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
@@ -53,10 +53,10 @@ index f7d46e8..c2ba35a 100644
 +
  #endif	/* _EXT4_CRYPTO_H */
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 1a0d4ee..355c8b6 100644
+index 9cc660c..a8e1975 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -142,7 +142,7 @@ static int ext4_meta_trans_blocks(struct inode *inode, int lblocks,
+@@ -141,7 +141,7 @@ static int ext4_meta_trans_blocks(struct inode *inode, int lblocks,
  /*
   * Test whether an inode is a fast symlink.
   */
@@ -65,7 +65,7 @@ index 1a0d4ee..355c8b6 100644
  {
          int ea_blocks = EXT4_I(inode)->i_file_acl ?
  		EXT4_CLUSTER_SIZE(inode->i_sb) >> 9 : 0;
-@@ -4176,7 +4176,8 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+@@ -4175,7 +4175,8 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
  		inode->i_op = &ext4_dir_inode_operations;
  		inode->i_fop = &ext4_dir_operations;
  	} else if (S_ISLNK(inode->i_mode)) {
@@ -76,10 +76,10 @@ index 1a0d4ee..355c8b6 100644
  			nd_terminate_link(ei->i_data, inode->i_size,
  				sizeof(ei->i_data) - 1);
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 7326f9f..8157dbb 100644
+index ffd97aa..0e57e70 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
-@@ -3183,16 +3183,24 @@ static int ext4_symlink(struct inode *dir,
+@@ -3185,16 +3185,24 @@ static int ext4_symlink(struct inode *dir,
  {
  	handle_t *handle;
  	struct inode *inode;
@@ -108,7 +108,7 @@ index 7326f9f..8157dbb 100644
  		/*
  		 * For non-fast symlinks, we just allocate inode and put it on
  		 * orphan list in the first transaction => we need bitmap,
-@@ -3211,16 +3219,49 @@ static int ext4_symlink(struct inode *dir,
+@@ -3213,16 +3221,49 @@ static int ext4_symlink(struct inode *dir,
  		credits = EXT4_DATA_TRANS_BLOCKS(dir->i_sb) +
  			  EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3;
  	}
@@ -122,7 +122,8 @@ index 7326f9f..8157dbb 100644
 -	if (IS_ERR(inode))
 -		goto out_stop;
 +	if (IS_ERR(inode)) {
-+		ext4_journal_stop(handle);
++		if (handle)
++			ext4_journal_stop(handle);
 +		return PTR_ERR(inode);
 +	}
 +
@@ -131,12 +132,11 @@ index 7326f9f..8157dbb 100644
 +		struct qstr istr;
 +		struct ext4_str ostr;
 +
-+		sd = kmalloc(disk_link.len, GFP_NOFS);
++		sd = kzalloc(disk_link.len, GFP_NOFS);
 +		if (!sd) {
 +			err = -ENOMEM;
 +			goto err_drop_inode;
 +		}
-+		sd->encrypted_path[disk_link.len - 1] = '\0';
 +		err = ext4_inherit_context(dir, inode);
 +		if (err)
 +			goto err_drop_inode;
@@ -163,7 +163,7 @@ index 7326f9f..8157dbb 100644
  		inode->i_op = &ext4_symlink_inode_operations;
  		ext4_set_aops(inode);
  		/*
-@@ -3236,9 +3277,10 @@ retry:
+@@ -3238,9 +3279,10 @@ retry:
  		drop_nlink(inode);
  		err = ext4_orphan_add(handle, inode);
  		ext4_journal_stop(handle);
@@ -175,7 +175,7 @@ index 7326f9f..8157dbb 100644
  		if (err)
  			goto err_drop_inode;
  		/*
-@@ -3250,34 +3292,37 @@ retry:
+@@ -3252,34 +3294,37 @@ retry:
  				EXT4_INDEX_EXTRA_TRANS_BLOCKS + 1);
  		if (IS_ERR(handle)) {
  			err = PTR_ERR(handle);

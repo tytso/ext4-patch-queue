@@ -6,47 +6,46 @@ Change-Id: Ibeeafc70352b39d1d5b3b17158a41d8fb54ed136
 Signed-off-by: Michael Halcrow <mhalcrow@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/namei.c | 16 ++++++++++++++++
- 1 file changed, 16 insertions(+)
+ fs/ext4/namei.c | 20 +++++++++++++++++++-
+ 1 file changed, 19 insertions(+), 1 deletion(-)
 
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 12d2592..262aa1c 100644
+index 9939db9..ea945dc 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
-@@ -48,6 +48,8 @@
- #define NAMEI_RA_BLOCKS  4
- #define NAMEI_RA_SIZE	     (NAMEI_RA_CHUNKS * NAMEI_RA_BLOCKS)
- 
-+static int ext4_unlink(struct inode *dir, struct dentry *dentry);
-+
- static struct buffer_head *ext4_append(handle_t *handle,
- 					struct inode *inode,
- 					ext4_lblk_t *block)
-@@ -2247,6 +2249,13 @@ retry:
- 		err = ext4_add_nondir(handle, dentry, inode);
+@@ -2249,9 +2249,20 @@ retry:
+ 		inode->i_op = &ext4_file_inode_operations;
+ 		inode->i_fop = &ext4_file_operations;
+ 		ext4_set_aops(inode);
+-		err = ext4_add_nondir(handle, dentry, inode);
++		err = 0;
++#ifdef CONFIG_EXT4_FS_ENCRYPTION
++		if (!err && ext4_encrypted_inode(dir))
++			err = ext4_inherit_context(dir, inode);
++#endif
++		if (!err)
++			err = ext4_add_nondir(handle, dentry, inode);
  		if (!err && IS_DIRSYNC(dir))
  			ext4_handle_sync(handle);
-+#ifdef CONFIG_EXT4_FS_ENCRYPTION
-+		if (!err && ext4_encrypted_inode(dir)) {
-+			err = ext4_inherit_context(dir, inode);
-+			if (err)
-+				ext4_unlink(dir, dentry);
++		if (err) {
++			clear_nlink(inode);
++			unlock_new_inode(inode);
++			iput(inode);
 +		}
-+#endif
  	}
  	if (handle)
  		ext4_journal_stop(handle);
-@@ -2445,6 +2454,13 @@ out_clear_inode:
- 	d_instantiate(dentry, inode);
- 	if (IS_DIRSYNC(dir))
- 		ext4_handle_sync(handle);
+@@ -2430,6 +2441,13 @@ retry:
+ 	err = ext4_init_new_dir(handle, dir, inode);
+ 	if (err)
+ 		goto out_clear_inode;
 +#ifdef CONFIG_EXT4_FS_ENCRYPTION
 +	if (ext4_encrypted_inode(dir)) {
 +		err = ext4_inherit_context(dir, inode);
 +		if (err)
-+			ext4_unlink(dir, dentry);
++			goto out_clear_inode;
 +	}
 +#endif
- 
- out_stop:
- 	if (handle)
+ 	err = ext4_mark_inode_dirty(handle, inode);
+ 	if (!err)
+ 		err = ext4_add_entry(handle, dentry, inode);

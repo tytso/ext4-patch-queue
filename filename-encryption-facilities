@@ -9,10 +9,10 @@ Signed-off-by: Michael Halcrow <mhalcrow@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/Makefile        |   3 +-
- fs/ext4/crypto_fname.c  | 709 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/crypto_fname.c  | 709 +++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/crypto_policy.c |   7 +
- fs/ext4/ext4.h          |  41 +++++
- fs/ext4/ext4_crypto.h   |  20 +++
+ fs/ext4/ext4.h          |  41 ++++
+ fs/ext4/ext4_crypto.h   |  20 ++
  5 files changed, 779 insertions(+), 1 deletion(-)
 
 diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
@@ -28,7 +28,7 @@ index 4e5af21..75285ea 100644
 +		crypto_key.o crypto_fname.o
 diff --git a/fs/ext4/crypto_fname.c b/fs/ext4/crypto_fname.c
 new file mode 100644
-index 0000000..2283e39
+index 0000000..5042985
 --- /dev/null
 +++ b/fs/ext4/crypto_fname.c
 @@ -0,0 +1,709 @@
@@ -582,7 +582,7 @@ index 0000000..2283e39
 +		olen = EXT4_FNAME_CRYPTO_DIGEST_SIZE*2;
 +	/* Allocated buffer can hold one more character to null-terminate the
 +	 * string */
-+	crypto_str->name = kmalloc(olen, GFP_NOFS);
++	crypto_str->name = kmalloc(olen+1, GFP_NOFS);
 +	if (!(crypto_str->name))
 +		return -ENOMEM;
 +	return 0;
@@ -742,7 +742,7 @@ index 0000000..2283e39
 +	return ret;
 +}
 diff --git a/fs/ext4/crypto_policy.c b/fs/ext4/crypto_policy.c
-index e08b28b..5b4fbb3 100644
+index a4bf762..749ed6e 100644
 --- a/fs/ext4/crypto_policy.c
 +++ b/fs/ext4/crypto_policy.c
 @@ -59,6 +59,13 @@ static int ext4_create_encryption_context_from_policy(
@@ -760,10 +760,10 @@ index e08b28b..5b4fbb3 100644
  	ctx.filenames_encryption_mode = policy->filenames_encryption_mode;
  	BUILD_BUG_ON(sizeof(ctx.nonce) != EXT4_KEY_DERIVATION_NONCE_SIZE);
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index b5255eb..cd66c18 100644
+index 52df914..0ccef71 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2064,6 +2064,47 @@ static inline int ext4_sb_has_crypto(struct super_block *sb)
+@@ -2066,6 +2066,47 @@ static inline int ext4_sb_has_crypto(struct super_block *sb)
  }
  #endif
  

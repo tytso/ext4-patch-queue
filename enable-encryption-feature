@@ -71,10 +71,10 @@ index 572bd97..c8392af 100644
  out:
  	if (keyring_key)
 diff --git a/fs/ext4/crypto_policy.c b/fs/ext4/crypto_policy.c
-index 5b4fbb3..89024ec 100644
+index 749ed6e..30eaf9e 100644
 --- a/fs/ext4/crypto_policy.c
 +++ b/fs/ext4/crypto_policy.c
-@@ -158,13 +158,25 @@ int ext4_inherit_context(struct inode *parent, struct inode *child)
+@@ -169,13 +169,25 @@ int ext4_inherit_context(struct inode *parent, struct inode *child)
  				 EXT4_XATTR_NAME_ENCRYPTION_CONTEXT,
  				 &ctx, sizeof(ctx));
  
@@ -104,7 +104,7 @@ index 5b4fbb3..89024ec 100644
  		ext4_set_inode_flag(child, EXT4_INODE_ENCRYPT);
  	return res;
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 7ae0454..c4e2a2e 100644
+index c79db59..68eaa2d 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1189,8 +1189,16 @@ struct ext4_super_block {
@@ -153,30 +153,30 @@ index 8f37c9e..12571b4 100644
  
  	ext4_set_inode_flags(inode);
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 09b2f89..07e2ad1 100644
+index 4a6d86b..212b9db 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
-@@ -2577,7 +2577,8 @@ retry:
- 		if (!err && IS_DIRSYNC(dir))
- 			ext4_handle_sync(handle);
+@@ -2580,7 +2580,8 @@ retry:
+ 		ext4_set_aops(inode);
+ 		err = 0;
  #ifdef CONFIG_EXT4_FS_ENCRYPTION
--		if (!err && ext4_encrypted_inode(dir)) {
+-		if (!err && ext4_encrypted_inode(dir))
 +		if (!err && (ext4_encrypted_inode(dir) ||
-+			     DUMMY_ENCRYPTION_ENABLED(EXT4_SB(dir->i_sb)))) {
++			     DUMMY_ENCRYPTION_ENABLED(EXT4_SB(dir->i_sb))))
  			err = ext4_inherit_context(dir, inode);
- 			if (err)
- 				ext4_unlink(dir, dentry);
-@@ -2782,7 +2783,8 @@ out_clear_inode:
- 	if (IS_DIRSYNC(dir))
- 		ext4_handle_sync(handle);
+ #endif
+ 		if (!err)
+@@ -2771,7 +2772,8 @@ retry:
+ 	if (err)
+ 		goto out_clear_inode;
  #ifdef CONFIG_EXT4_FS_ENCRYPTION
 -	if (ext4_encrypted_inode(dir)) {
 +	if (ext4_encrypted_inode(dir) ||
 +	    DUMMY_ENCRYPTION_ENABLED(EXT4_SB(dir->i_sb))) {
  		err = ext4_inherit_context(dir, inode);
  		if (err)
- 			ext4_unlink(dir, dentry);
-@@ -3187,7 +3189,8 @@ static int ext4_symlink(struct inode *dir,
+ 			goto out_clear_inode;
+@@ -3196,7 +3198,8 @@ static int ext4_symlink(struct inode *dir,
  	disk_link.len = len + 1;
  	disk_link.name = (char *) symname;
  
