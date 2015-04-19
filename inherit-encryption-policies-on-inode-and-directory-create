@@ -2,40 +2,38 @@ ext4 crypto: inherit encryption policies on inode and directory create
 
 From: Michael Halcrow <mhalcrow@google.com>
 
-Change-Id: Ibeeafc70352b39d1d5b3b17158a41d8fb54ed136
 Signed-off-by: Michael Halcrow <mhalcrow@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/namei.c | 20 +++++++++++++++++++-
- 1 file changed, 19 insertions(+), 1 deletion(-)
+ fs/ext4/namei.c | 21 ++++++++++++++++++++-
+ 1 file changed, 20 insertions(+), 1 deletion(-)
 
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 9939db9..ea945dc 100644
+index 9939db9..4712590 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
-@@ -2249,9 +2249,20 @@ retry:
+@@ -2249,7 +2249,19 @@ retry:
  		inode->i_op = &ext4_file_inode_operations;
  		inode->i_fop = &ext4_file_operations;
  		ext4_set_aops(inode);
 -		err = ext4_add_nondir(handle, dentry, inode);
 +		err = 0;
 +#ifdef CONFIG_EXT4_FS_ENCRYPTION
-+		if (!err && ext4_encrypted_inode(dir))
++		if (!err && ext4_encrypted_inode(dir)) {
 +			err = ext4_inherit_context(dir, inode);
++			if (err) {
++				clear_nlink(inode);
++				unlock_new_inode(inode);
++				iput(inode);
++			}
++		}
 +#endif
 +		if (!err)
 +			err = ext4_add_nondir(handle, dentry, inode);
  		if (!err && IS_DIRSYNC(dir))
  			ext4_handle_sync(handle);
-+		if (err) {
-+			clear_nlink(inode);
-+			unlock_new_inode(inode);
-+			iput(inode);
-+		}
  	}
- 	if (handle)
- 		ext4_journal_stop(handle);
-@@ -2430,6 +2441,13 @@ retry:
+@@ -2430,6 +2442,13 @@ retry:
  	err = ext4_init_new_dir(handle, dir, inode);
  	if (err)
  		goto out_clear_inode;

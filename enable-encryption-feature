@@ -3,7 +3,6 @@ ext4 crypto: enable encryption feature flag
 Also add the test dummy encryption mode flag so we can more easily
 test the encryption patches using xfstests.
 
-Change-Id: I63a7f5b969738eed81b2f12715cfff161a988d84
 Signed-off-by: Michael Halcrow <mhalcrow@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
@@ -153,20 +152,20 @@ index 8f37c9e..12571b4 100644
  
  	ext4_set_inode_flags(inode);
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 4a6d86b..212b9db 100644
+index 10496eb..e6bb4e2 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
-@@ -2580,7 +2580,8 @@ retry:
+@@ -2578,7 +2578,8 @@ retry:
  		ext4_set_aops(inode);
  		err = 0;
  #ifdef CONFIG_EXT4_FS_ENCRYPTION
--		if (!err && ext4_encrypted_inode(dir))
+-		if (!err && ext4_encrypted_inode(dir)) {
 +		if (!err && (ext4_encrypted_inode(dir) ||
-+			     DUMMY_ENCRYPTION_ENABLED(EXT4_SB(dir->i_sb))))
++			     DUMMY_ENCRYPTION_ENABLED(EXT4_SB(dir->i_sb)))) {
  			err = ext4_inherit_context(dir, inode);
- #endif
- 		if (!err)
-@@ -2771,7 +2772,8 @@ retry:
+ 			if (err) {
+ 				clear_nlink(inode);
+@@ -2770,7 +2771,8 @@ retry:
  	if (err)
  		goto out_clear_inode;
  #ifdef CONFIG_EXT4_FS_ENCRYPTION
@@ -176,7 +175,7 @@ index 4a6d86b..212b9db 100644
  		err = ext4_inherit_context(dir, inode);
  		if (err)
  			goto out_clear_inode;
-@@ -3196,7 +3198,8 @@ static int ext4_symlink(struct inode *dir,
+@@ -3195,7 +3197,8 @@ static int ext4_symlink(struct inode *dir,
  	disk_link.len = len + 1;
  	disk_link.name = (char *) symname;
  
