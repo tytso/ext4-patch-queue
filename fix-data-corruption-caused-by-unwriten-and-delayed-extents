@@ -48,7 +48,7 @@ Cc: stable@vger.kernel.org
  2 files changed, 10 insertions(+)
 
 diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
-index d33d5a6..153b877 100644
+index d33d5a6..26724ae 100644
 --- a/fs/ext4/extents_status.c
 +++ b/fs/ext4/extents_status.c
 @@ -703,6 +703,14 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
@@ -59,7 +59,7 @@ index d33d5a6..153b877 100644
 +	    (status & EXTENT_STATUS_WRITTEN)) {
 +		ext4_warning(inode->i_sb, "Inserting extent [%u/%u] as "
 +				" delayed and written which can potentially "
-+				" cause data loss.\n");
++				" cause data loss.\n", lblk, len);
 +		WARN_ON(1);
 +	}
 +
@@ -67,10 +67,10 @@ index d33d5a6..153b877 100644
  	newes.es_len = len;
  	ext4_es_store_pblock_status(&newes, pblk, status);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 366476e..07591e4 100644
+index f6b35d8..4415cea 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -531,6 +531,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
+@@ -532,6 +532,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
  		status = map->m_flags & EXT4_MAP_UNWRITTEN ?
  				EXTENT_STATUS_UNWRITTEN : EXTENT_STATUS_WRITTEN;
  		if (!(flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE) &&
@@ -78,7 +78,7 @@ index 366476e..07591e4 100644
  		    ext4_find_delalloc_range(inode, map->m_lblk,
  					     map->m_lblk + map->m_len - 1))
  			status |= EXTENT_STATUS_DELAYED;
-@@ -635,6 +636,7 @@ found:
+@@ -636,6 +637,7 @@ found:
  		status = map->m_flags & EXT4_MAP_UNWRITTEN ?
  				EXTENT_STATUS_UNWRITTEN : EXTENT_STATUS_WRITTEN;
  		if (!(flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE) &&
@@ -86,11 +86,3 @@ index 366476e..07591e4 100644
  		    ext4_find_delalloc_range(inode, map->m_lblk,
  					     map->m_lblk + map->m_len - 1))
  			status |= EXTENT_STATUS_DELAYED;
--- 
-1.8.3.1
-
---
-To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
-the body of a message to majordomo@vger.kernel.org
-More majordomo info at  http://vger.kernel.org/majordomo-info.html
-
