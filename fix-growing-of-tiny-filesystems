@@ -1,0 +1,44 @@
+ext4: fix growing of tiny filesystems
+
+From: Jan Kara <jack@suse.cz>
+
+The estimate of necessary transaction credits in ext4_flex_group_add()
+is too pessimistic. It reserves credit for sb, resize inode, and resize
+inode dindirect block for each group added in a flex group although they
+are always the same block and thus it is enough to account them only
+once. Also the number of modified GDT block is overestimated since we
+fit EXT4_DESC_PER_BLOCK(sb) descriptors in one block.
+
+Make the estimation more precise. That reduces number of requested
+credits enough that we can grow 20 MB filesystem (which has 1 MB
+journal, 79 reserved GDT blocks, and flex group size 16 by default).
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Eric Sandeen <sandeen@redhat.com>
+---
+ fs/ext4/resize.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 8a8ec62..cf0c472 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -1432,12 +1432,15 @@ static int ext4_flex_group_add(struct super_block *sb,
+ 		goto exit;
+ 	/*
+ 	 * We will always be modifying at least the superblock and  GDT
+-	 * block.  If we are adding a group past the last current GDT block,
++	 * blocks.  If we are adding a group past the last current GDT block,
+ 	 * we will also modify the inode and the dindirect block.  If we
+ 	 * are adding a group with superblock/GDT backups  we will also
+ 	 * modify each of the reserved GDT dindirect blocks.
+ 	 */
+-	credit = flex_gd->count * 4 + reserved_gdb;
++	credit = 3;	/* sb, resize inode, resize inode dindirect */
++	/* GDT blocks */
++	credit += 1 + DIV_ROUND_UP(flex_gd->count, EXT4_DESC_PER_BLOCK(sb));
++	credit += reserved_gdb;	/* Reserved GDT dindirect blocks */
+ 	handle = ext4_journal_start_sb(sb, EXT4_HT_RESIZE, credit);
+ 	if (IS_ERR(handle)) {
+ 		err = PTR_ERR(handle);
