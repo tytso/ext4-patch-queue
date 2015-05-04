@@ -1,14 +1,13 @@
 ext4 crypto: don't allocate a page when encrypting/decrypting file names
 
-Change-Id: I415e4e4c56ab6c7779576fc287b5c4c8d7cdb12b
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/crypto_fname.c | 72 ++++++++++++++++++++----------------------------------------------------
  fs/ext4/dir.c          |  3 +++
- fs/ext4/ext4_crypto.h  |  1 -
+ fs/ext4/ext4_crypto.h  |  2 --
  fs/ext4/namei.c        |  4 ++++
  fs/ext4/symlink.c      |  1 +
- 5 files changed, 28 insertions(+), 53 deletions(-)
+ 5 files changed, 28 insertions(+), 54 deletions(-)
 
 diff --git a/fs/ext4/crypto_fname.c b/fs/ext4/crypto_fname.c
 index ad5e328..23d7f1d 100644
@@ -191,11 +190,14 @@ index 5665d82..d799d5d 100644
  						goto errout;
  					if (!dir_emit(ctx,
 diff --git a/fs/ext4/ext4_crypto.h b/fs/ext4/ext4_crypto.h
-index d75159c..e9e4365 100644
+index d75159c..552424a 100644
 --- a/fs/ext4/ext4_crypto.h
 +++ b/fs/ext4/ext4_crypto.h
-@@ -126,7 +126,6 @@ struct ext4_fname_crypto_ctx {
- 	char tmp_buf[EXT4_CRYPTO_BLOCK_SIZE];
+@@ -123,10 +123,8 @@ struct ext4_str {
+ 
+ struct ext4_fname_crypto_ctx {
+ 	u32 lim;
+-	char tmp_buf[EXT4_CRYPTO_BLOCK_SIZE];
  	struct crypto_ablkcipher *ctfm;
  	struct crypto_hash *htfm;
 -	struct page *workpage;

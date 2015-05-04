@@ -10,13 +10,12 @@ file syystem so that the hash value and the last 16 bytes of the
 encrypted filename is available in the new struct ext4_filename data
 structure.
 
-Change-Id: I39e9f44302443f6c6dba95516a3fb9274863e7ee
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/crypto_fname.c | 155 +++++++++++++++++------------------------
- fs/ext4/ext4.h         |  63 +++++++++++------
- fs/ext4/inline.c       |  31 ++++-----
- fs/ext4/namei.c        | 294 +++++++++++++++++++++++++++++-------------------------------------------------
+ fs/ext4/crypto_fname.c | 155 ++++++++++++++++----------------------
+ fs/ext4/ext4.h         |  63 ++++++++++------
+ fs/ext4/inline.c       |  31 ++++----
+ fs/ext4/namei.c        | 294 +++++++++++++++++++++++++++---------------------------------------------
  4 files changed, 230 insertions(+), 313 deletions(-)
 
 diff --git a/fs/ext4/crypto_fname.c b/fs/ext4/crypto_fname.c
@@ -198,10 +197,10 @@ index fded02f..ad5e328 100644
 +	fname->disk_name.name = NULL;
  }
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index bca1bdc..7bd482d 100644
+index 009a059..6bdd69e 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1844,6 +1844,17 @@ struct dx_hash_info
+@@ -1838,6 +1838,17 @@ struct dx_hash_info
   */
  #define HASH_NB_ALWAYS		1
  
@@ -219,7 +218,7 @@ index bca1bdc..7bd482d 100644
  
  /*
   * Describe an inode's exact location on disk and in memory
-@@ -2104,21 +2115,16 @@ int ext4_fname_disk_to_usr(struct ext4_fname_crypto_ctx *ctx,
+@@ -2098,21 +2109,16 @@ int ext4_fname_disk_to_usr(struct ext4_fname_crypto_ctx *ctx,
  int ext4_fname_usr_to_disk(struct ext4_fname_crypto_ctx *ctx,
  			   const struct qstr *iname,
  			   struct ext4_str *oname);
@@ -244,7 +243,7 @@ index bca1bdc..7bd482d 100644
  #else
  static inline
  void ext4_put_fname_crypto_ctx(struct ext4_fname_crypto_ctx **ctx) { }
-@@ -2129,6 +2135,16 @@ struct ext4_fname_crypto_ctx *ext4_get_fname_crypto_ctx(struct inode *inode,
+@@ -2123,6 +2129,16 @@ struct ext4_fname_crypto_ctx *ext4_get_fname_crypto_ctx(struct inode *inode,
  	return NULL;
  }
  static inline void ext4_fname_crypto_free_buffer(struct ext4_str *p) { }
@@ -261,7 +260,7 @@ index bca1bdc..7bd482d 100644
  #endif
  
  
-@@ -2162,14 +2178,13 @@ extern void ext4_htree_free_dir_info(struct dir_private_info *p);
+@@ -2156,14 +2172,13 @@ extern void ext4_htree_free_dir_info(struct dir_private_info *p);
  extern int ext4_find_dest_de(struct inode *dir, struct inode *inode,
  			     struct buffer_head *bh,
  			     void *buf, int buf_size,
@@ -281,7 +280,7 @@ index bca1bdc..7bd482d 100644
  static inline void ext4_update_dx_flag(struct inode *inode)
  {
  	if (!EXT4_HAS_COMPAT_FEATURE(inode->i_sb,
-@@ -2323,13 +2338,14 @@ extern int ext4_orphan_add(handle_t *, struct inode *);
+@@ -2317,13 +2332,14 @@ extern int ext4_orphan_add(handle_t *, struct inode *);
  extern int ext4_orphan_del(handle_t *, struct inode *);
  extern int ext4_htree_fill_tree(struct file *dir_file, __u32 start_hash,
  				__u32 start_minor_hash, __u32 *next_hash);
@@ -303,7 +302,7 @@ index bca1bdc..7bd482d 100644
  extern int ext4_generic_delete_entry(handle_t *handle,
  				     struct inode *dir,
  				     struct ext4_dir_entry_2 *de_del,
-@@ -2775,7 +2791,9 @@ extern int ext4_da_write_inline_data_begin(struct address_space *mapping,
+@@ -2768,7 +2784,9 @@ extern int ext4_da_write_inline_data_begin(struct address_space *mapping,
  extern int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
  					 unsigned len, unsigned copied,
  					 struct page *page);
@@ -314,7 +313,7 @@ index bca1bdc..7bd482d 100644
  				     struct inode *inode);
  extern int ext4_try_create_inline_dir(handle_t *handle,
  				      struct inode *parent,
-@@ -2789,6 +2807,7 @@ extern int htree_inlinedir_to_tree(struct file *dir_file,
+@@ -2782,6 +2800,7 @@ extern int htree_inlinedir_to_tree(struct file *dir_file,
  				   __u32 start_hash, __u32 start_minor_hash,
  				   int *has_inline_data);
  extern struct buffer_head *ext4_find_inline_entry(struct inode *dir,
@@ -323,7 +322,7 @@ index bca1bdc..7bd482d 100644
  					struct ext4_dir_entry_2 **res_dir,
  					int *has_inline_data);
 diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
-index feb2caf..4ce3b2e 100644
+index 095c7a2..cd944a7 100644
 --- a/fs/ext4/inline.c
 +++ b/fs/ext4/inline.c
 @@ -995,20 +995,18 @@ void ext4_show_inline_dir(struct inode *dir, struct buffer_head *bh,
@@ -336,7 +335,7 @@ index feb2caf..4ce3b2e 100644
  				     struct ext4_iloc *iloc,
  				     void *inline_start, int inline_size)
  {
- 	struct inode	*dir = dentry->d_parent->d_inode;
+ 	struct inode	*dir = d_inode(dentry->d_parent);
 -	const char	*name = dentry->d_name.name;
 -	int		namelen = dentry->d_name.len;
  	int		err;
@@ -423,7 +422,7 @@ index feb2caf..4ce3b2e 100644
  		goto out_find;
  
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 5ea7371..752d4af 100644
+index 814f3be..56c60cb 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -248,7 +248,7 @@ static void dx_set_count(struct dx_entry *entries, unsigned value);
@@ -834,7 +833,7 @@ index 5ea7371..752d4af 100644
  			     struct inode *inode, struct ext4_dir_entry_2 *de,
  			     struct buffer_head *bh)
  {
--	struct inode	*dir = dentry->d_parent->d_inode;
+-	struct inode	*dir = d_inode(dentry->d_parent);
 -	const char	*name = dentry->d_name.name;
 -	int		namelen = dentry->d_name.len;
  	unsigned int	blocksize = dir->i_sb->s_blocksize;
@@ -871,7 +870,7 @@ index 5ea7371..752d4af 100644
 +			    struct dentry *dentry,
  			    struct inode *inode, struct buffer_head *bh)
  {
- 	struct inode	*dir = dentry->d_parent->d_inode;
+ 	struct inode	*dir = d_inode(dentry->d_parent);
 -#ifdef CONFIG_EXT4_FS_ENCRYPTION
 -	struct ext4_fname_crypto_ctx *ctx = NULL;
 -	int res;
@@ -1044,7 +1043,7 @@ index 5ea7371..752d4af 100644
  	struct dx_entry *entries, *at;
 -	struct dx_hash_info hinfo;
  	struct buffer_head *bh;
- 	struct inode *dir = dentry->d_parent->d_inode;
+ 	struct inode *dir = d_inode(dentry->d_parent);
  	struct super_block *sb = dir->i_sb;
  	struct ext4_dir_entry_2 *de;
  	int err;
