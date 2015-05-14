@@ -1,0 +1,171 @@
+ext4 crypto: shrink size of the ext4_crypto_ctx structure
+
+Some fields are only used when the crypto_ctx is being used on the
+read path, some are only used on the write path, and some are only
+used when the structure is on free list.  Optimize memory use by using
+a union.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/crypto.c      | 28 +++++++++++++---------------
+ fs/ext4/ext4_crypto.h | 21 ++++++++++++++-------
+ fs/ext4/page-io.c     |  2 +-
+ fs/ext4/readpage.c    | 10 +++++-----
+ 4 files changed, 33 insertions(+), 28 deletions(-)
+
+diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
+index 9969d05..1484b58 100644
+--- a/fs/ext4/crypto.c
++++ b/fs/ext4/crypto.c
+@@ -71,14 +71,14 @@ void ext4_release_crypto_ctx(struct ext4_crypto_ctx *ctx)
+ {
+ 	unsigned long flags;
+ 
+-	if (ctx->bounce_page) {
++	if (ctx->flags & EXT4_WRITE_PATH_FL && ctx->w.bounce_page) {
+ 		if (ctx->flags & EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL)
+-			__free_page(ctx->bounce_page);
++			__free_page(ctx->w.bounce_page);
+ 		else
+-			mempool_free(ctx->bounce_page, ext4_bounce_page_pool);
+-		ctx->bounce_page = NULL;
++			mempool_free(ctx->w.bounce_page, ext4_bounce_page_pool);
++		ctx->w.bounce_page = NULL;
+ 	}
+-	ctx->control_page = NULL;
++	ctx->w.control_page = NULL;
+ 	if (ctx->flags & EXT4_CTX_REQUIRES_FREE_ENCRYPT_FL) {
+ 		if (ctx->tfm)
+ 			crypto_free_tfm(ctx->tfm);
+@@ -134,6 +134,7 @@ struct ext4_crypto_ctx *ext4_get_crypto_ctx(struct inode *inode)
+ 	} else {
+ 		ctx->flags &= ~EXT4_CTX_REQUIRES_FREE_ENCRYPT_FL;
+ 	}
++	ctx->flags &= ~EXT4_WRITE_PATH_FL;
+ 
+ 	/* Allocate a new Crypto API context if we don't already have
+ 	 * one or if it isn't the right mode. */
+@@ -165,10 +166,6 @@ struct ext4_crypto_ctx *ext4_get_crypto_ctx(struct inode *inode)
+ 	}
+ 	BUG_ON(ci->ci_size != ext4_encryption_key_size(ci->ci_data_mode));
+ 
+-	/* There shouldn't be a bounce page attached to the crypto
+-	 * context at this point. */
+-	BUG_ON(ctx->bounce_page);
+-
+ out:
+ 	if (res) {
+ 		if (!IS_ERR_OR_NULL(ctx))
+@@ -189,12 +186,12 @@ void ext4_exit_crypto(void)
+ 	struct ext4_crypto_ctx *pos, *n;
+ 
+ 	list_for_each_entry_safe(pos, n, &ext4_free_crypto_ctxs, free_list) {
+-		if (pos->bounce_page) {
++		if (pos->w.bounce_page) {
+ 			if (pos->flags &
+ 			    EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL) {
+-				__free_page(pos->bounce_page);
++				__free_page(pos->w.bounce_page);
+ 			} else {
+-				mempool_free(pos->bounce_page,
++				mempool_free(pos->w.bounce_page,
+ 					     ext4_bounce_page_pool);
+ 			}
+ 		}
+@@ -425,8 +422,9 @@ struct page *ext4_encrypt(struct inode *inode,
+ 	} else {
+ 		ctx->flags |= EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL;
+ 	}
+-	ctx->bounce_page = ciphertext_page;
+-	ctx->control_page = plaintext_page;
++	ctx->flags |= EXT4_WRITE_PATH_FL;
++	ctx->w.bounce_page = ciphertext_page;
++	ctx->w.control_page = plaintext_page;
+ 	err = ext4_page_crypto(ctx, inode, EXT4_ENCRYPT, plaintext_page->index,
+ 			       plaintext_page, ciphertext_page);
+ 	if (err) {
+@@ -505,7 +503,7 @@ int ext4_encrypted_zeroout(struct inode *inode, struct ext4_extent *ex)
+ 	} else {
+ 		ctx->flags |= EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL;
+ 	}
+-	ctx->bounce_page = ciphertext_page;
++	ctx->w.bounce_page = ciphertext_page;
+ 
+ 	while (len--) {
+ 		err = ext4_page_crypto(ctx, inode, EXT4_ENCRYPT, lblk,
+diff --git a/fs/ext4/ext4_crypto.h b/fs/ext4/ext4_crypto.h
+index 69faf0e..c5258f2 100644
+--- a/fs/ext4/ext4_crypto.h
++++ b/fs/ext4/ext4_crypto.h
+@@ -86,16 +86,23 @@ struct ext4_crypt_info {
+ 
+ #define EXT4_CTX_REQUIRES_FREE_ENCRYPT_FL             0x00000001
+ #define EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL     0x00000002
++#define EXT4_WRITE_PATH_FL			      0x00000004
+ 
+ struct ext4_crypto_ctx {
+ 	struct crypto_tfm *tfm;         /* Crypto API context */
+-	struct page *bounce_page;       /* Ciphertext page on write path */
+-	struct page *control_page;      /* Original page on write path */
+-	struct bio *bio;                /* The bio for this context */
+-	struct work_struct work;        /* Work queue for read complete path */
+-	struct list_head free_list;     /* Free list */
+-	int flags;                      /* Flags */
+-	int mode;                       /* Encryption mode for tfm */
++	union {
++		struct {
++			struct page *bounce_page;       /* Ciphertext page */
++			struct page *control_page;      /* Original page  */
++		} w;
++		struct {
++			struct bio *bio;
++			struct work_struct work;
++		} r;
++		struct list_head free_list;     /* Free list */
++	};
++	char flags;                      /* Flags */
++	char mode;                       /* Encryption mode for tfm */
+ };
+ 
+ struct ext4_completion_result {
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index 51a5f12..4457a3c 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -85,7 +85,7 @@ static void ext4_finish_bio(struct bio *bio)
+ 			/* The bounce data pages are unmapped. */
+ 			data_page = page;
+ 			ctx = (struct ext4_crypto_ctx *)page_private(data_page);
+-			page = ctx->control_page;
++			page = ctx->w.control_page;
+ 		}
+ #endif
+ 
+diff --git a/fs/ext4/readpage.c b/fs/ext4/readpage.c
+index 171b9ac..ec3ef93 100644
+--- a/fs/ext4/readpage.c
++++ b/fs/ext4/readpage.c
+@@ -54,8 +54,8 @@ static void completion_pages(struct work_struct *work)
+ {
+ #ifdef CONFIG_EXT4_FS_ENCRYPTION
+ 	struct ext4_crypto_ctx *ctx =
+-		container_of(work, struct ext4_crypto_ctx, work);
+-	struct bio	*bio	= ctx->bio;
++		container_of(work, struct ext4_crypto_ctx, r.work);
++	struct bio	*bio	= ctx->r.bio;
+ 	struct bio_vec	*bv;
+ 	int		i;
+ 
+@@ -109,9 +109,9 @@ static void mpage_end_io(struct bio *bio, int err)
+ 		if (err) {
+ 			ext4_release_crypto_ctx(ctx);
+ 		} else {
+-			INIT_WORK(&ctx->work, completion_pages);
+-			ctx->bio = bio;
+-			queue_work(ext4_read_workqueue, &ctx->work);
++			INIT_WORK(&ctx->r.work, completion_pages);
++			ctx->r.bio = bio;
++			queue_work(ext4_read_workqueue, &ctx->r.work);
+ 			return;
+ 		}
+ 	}

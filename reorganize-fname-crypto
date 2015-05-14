@@ -36,18 +36,18 @@ This is a pretty massive patch which does a number of different things:
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/crypto.c        |   9 ++-
- fs/ext4/crypto_fname.c  | 284 +++++++++++++++++++----------------------------------------------------
- fs/ext4/crypto_key.c    |  74 ++++++++++++++-----
- fs/ext4/crypto_policy.c |  76 ++++++++++---------
- fs/ext4/dir.c           |  21 ++----
- fs/ext4/ext4.h          |  40 ++++++----
- fs/ext4/ext4_crypto.h   |  16 ++--
+ fs/ext4/crypto.c        |   9 +--
+ fs/ext4/crypto_fname.c  | 284 ++++++++++++++++++++------------------------------------------------------
+ fs/ext4/crypto_key.c    |  74 +++++++++++++++-----
+ fs/ext4/crypto_policy.c |  76 +++++++++++---------
+ fs/ext4/dir.c           |  21 +++---
+ fs/ext4/ext4.h          |  44 +++++++-----
+ fs/ext4/ext4_crypto.h   |  16 ++---
  fs/ext4/file.c          |   4 +-
  fs/ext4/namei.c         |  42 ++++-------
- fs/ext4/super.c         |   5 +-
+ fs/ext4/super.c         |   7 +-
  fs/ext4/symlink.c       |  15 ++--
- 11 files changed, 240 insertions(+), 346 deletions(-)
+ 11 files changed, 246 insertions(+), 346 deletions(-)
 
 diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
 index 918200e..3a25aa4 100644
@@ -824,7 +824,7 @@ index d799d5d..28cb94f 100644
  #endif
  	brelse(bh);
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index e3671c2..4ffaa02 100644
+index e3671c2..1db3bfa 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -955,7 +955,7 @@ struct ext4_inode_info {
@@ -881,7 +881,7 @@ index e3671c2..4ffaa02 100644
  }
  static inline void ext4_fname_crypto_free_buffer(struct ext4_str *p) { }
  static inline int ext4_fname_setup_filename(struct inode *dir,
-@@ -2143,10 +2136,25 @@ static inline void ext4_fname_free_filename(struct ext4_filename *fname) { }
+@@ -2143,15 +2136,34 @@ static inline void ext4_fname_free_filename(struct ext4_filename *fname) { }
  
  
  /* crypto_key.c */
@@ -908,6 +908,15 @@ index e3671c2..4ffaa02 100644
  #else
  static inline int ext4_has_encryption_key(struct inode *inode)
  {
+ 	return 0;
+ }
++static inline int ext4_get_encryption_info(struct inode *inode)
++{
++	return 0;
++}
+ #endif
+ 
+ 
 diff --git a/fs/ext4/ext4_crypto.h b/fs/ext4/ext4_crypto.h
 index deecbe8..d29687c 100644
 --- a/fs/ext4/ext4_crypto.h
@@ -1096,7 +1105,7 @@ index b340643..9bed99f 100644
  			goto err_drop_inode;
  		sd->len = cpu_to_le16(ostr.len);
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index a9ebe3d..1850553 100644
+index a9ebe3d..ef19bda 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -877,9 +877,8 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
@@ -1110,12 +1119,14 @@ index a9ebe3d..1850553 100644
  	return &ei->vfs_inode;
  }
  
-@@ -956,6 +955,8 @@ void ext4_clear_inode(struct inode *inode)
+@@ -956,6 +955,10 @@ void ext4_clear_inode(struct inode *inode)
  		jbd2_free_inode(EXT4_I(inode)->jinode);
  		EXT4_I(inode)->jinode = NULL;
  	}
++#ifdef CONFIG_EXT4_FS_ENCRYPTION
 +	if (EXT4_I(inode)->i_crypt_info)
 +		ext4_free_encryption_info(inode);
++#endif
  }
  
  static struct inode *ext4_nfs_get_inode(struct super_block *sb,
