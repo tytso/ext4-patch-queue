@@ -1,0 +1,46 @@
+ext4: check for zero length extent explicitly
+
+From: Eryu Guan <guaneryu@gmail.com>
+
+The following commit introduced a bug when checking for zero length extent
+
+5946d08 ext4: check for overlapping extents in ext4_valid_extent_entries()
+
+Zero length extent could pass the check if lblock is zero.
+
+Adding the explicit check for zero length back.
+
+Signed-off-by: Eryu Guan <guaneryu@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+
+This is uncovered by recent updates for encryption, catting a file with zero
+length extent results in infinite loop ext4_mpage_readpages(), and process
+cannot be killed either.
+
+Tested with corrupted ext4 image in e2fsprogs sources, cat returned EIO
+correctly
+
+tests/f_ext_zero_len/image.gz
+
+ fs/ext4/extents.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index d74e0802..451b92a 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -377,7 +377,7 @@ static int ext4_valid_extent(struct inode *inode, struct ext4_extent *ext)
+ 	ext4_lblk_t lblock = le32_to_cpu(ext->ee_block);
+ 	ext4_lblk_t last = lblock + len - 1;
+ 
+-	if (lblock > last)
++	if (len == 0 || lblock > last)
+ 		return 0;
+ 	return ext4_data_block_valid(EXT4_SB(inode->i_sb), block, len);
+ }
+-- 
+1.8.3.1
+
+
