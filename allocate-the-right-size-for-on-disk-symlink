@@ -1,0 +1,135 @@
+ext4 crypto: allocate the right amount of memory for the on-disk symlink
+
+Previously we were taking the required padding when allocating space
+for the on-disk symlink.  This caused a buffer overrun which could
+trigger a krenel crash when running fsstress.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/crypto_fname.c | 25 +++++++++++++++----------
+ fs/ext4/ext4.h         |  1 +
+ fs/ext4/namei.c        | 32 +++++++++++++++++++++-----------
+ 3 files changed, 37 insertions(+), 21 deletions(-)
+
+diff --git a/fs/ext4/crypto_fname.c b/fs/ext4/crypto_fname.c
+index 23af41f..7dc4eb5 100644
+--- a/fs/ext4/crypto_fname.c
++++ b/fs/ext4/crypto_fname.c
+@@ -262,8 +262,20 @@ u32 ext4_fname_crypto_round_up(u32 size, u32 blksize)
+ 	return ((size+blksize-1)/blksize)*blksize;
+ }
+ 
+-/**
+- * ext4_fname_crypto_alloc_obuff() -
++unsigned ext4_fname_encrypted_size(struct inode *inode, u32 ilen)
++{
++	struct ext4_crypt_info *ci = EXT4_I(inode)->i_crypt_info;
++	int padding = 32;
++
++	if (ci)
++		padding = 4 << (ci->ci_flags & EXT4_POLICY_FLAGS_PAD_MASK);
++	if (ilen < EXT4_CRYPTO_BLOCK_SIZE)
++		ilen = EXT4_CRYPTO_BLOCK_SIZE;
++	return ext4_fname_crypto_round_up(ilen, padding);
++}
++
++/*
++ * ext4_fname_crypto_alloc_buffer() -
+  *
+  * Allocates an output buffer that is sufficient for the crypto operation
+  * specified by the context and the direction.
+@@ -271,15 +283,8 @@ u32 ext4_fname_crypto_round_up(u32 size, u32 blksize)
+ int ext4_fname_crypto_alloc_buffer(struct inode *inode,
+ 				   u32 ilen, struct ext4_str *crypto_str)
+ {
+-	unsigned int olen;
+-	int padding = 16;
+-	struct ext4_crypt_info *ci = EXT4_I(inode)->i_crypt_info;
++	unsigned int olen = ext4_fname_encrypted_size(inode, ilen);
+ 
+-	if (ci)
+-		padding = 4 << (ci->ci_flags & EXT4_POLICY_FLAGS_PAD_MASK);
+-	if (padding < EXT4_CRYPTO_BLOCK_SIZE)
+-		padding = EXT4_CRYPTO_BLOCK_SIZE;
+-	olen = ext4_fname_crypto_round_up(ilen, padding);
+ 	crypto_str->len = olen;
+ 	if (olen < EXT4_FNAME_CRYPTO_DIGEST_SIZE*2)
+ 		olen = EXT4_FNAME_CRYPTO_DIGEST_SIZE*2;
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 4a019aa..f4111d2 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2090,6 +2090,7 @@ static inline int ext4_sb_has_crypto(struct super_block *sb)
+ /* crypto_fname.c */
+ bool ext4_valid_filenames_enc_mode(uint32_t mode);
+ u32 ext4_fname_crypto_round_up(u32 size, u32 blksize);
++unsigned ext4_fname_encrypted_size(struct inode *inode, u32 ilen);
+ int ext4_fname_crypto_alloc_buffer(struct inode *inode,
+ 				   u32 ilen, struct ext4_str *crypto_str);
+ int _ext4_fname_disk_to_usr(struct inode *inode,
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 24fc7a5..b1f45e0 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -3045,10 +3045,23 @@ static int ext4_symlink(struct inode *dir,
+ 
+ 	encryption_required = (ext4_encrypted_inode(dir) ||
+ 			       DUMMY_ENCRYPTION_ENABLED(EXT4_SB(dir->i_sb)));
+-	if (encryption_required)
+-		disk_link.len = encrypted_symlink_data_len(len) + 1;
+-	if (disk_link.len > dir->i_sb->s_blocksize)
+-		return -ENAMETOOLONG;
++	if (encryption_required) {
++		err = ext4_get_encryption_info(dir);
++		if (err)
++			return err;
++		if (ext4_encryption_info(dir) == NULL)
++			return -EPERM;
++		disk_link.len = (ext4_fname_encrypted_size(dir, len) +
++				 sizeof(struct ext4_encrypted_symlink_data));
++		sd = kzalloc(disk_link.len, GFP_KERNEL);
++		if (!sd)
++			return -ENOMEM;
++	}
++
++	if (disk_link.len > dir->i_sb->s_blocksize) {
++		err = -ENAMETOOLONG;
++		goto err_free_sd;
++	}
+ 
+ 	dquot_initialize(dir);
+ 
+@@ -3079,18 +3092,14 @@ static int ext4_symlink(struct inode *dir,
+ 	if (IS_ERR(inode)) {
+ 		if (handle)
+ 			ext4_journal_stop(handle);
+-		return PTR_ERR(inode);
++		err = PTR_ERR(inode);
++		goto err_free_sd;
+ 	}
+ 
+ 	if (encryption_required) {
+ 		struct qstr istr;
+ 		struct ext4_str ostr;
+ 
+-		sd = kzalloc(disk_link.len, GFP_NOFS);
+-		if (!sd) {
+-			err = -ENOMEM;
+-			goto err_drop_inode;
+-		}
+ 		istr.name = (const unsigned char *) symname;
+ 		istr.len = len;
+ 		ostr.name = sd->encrypted_path;
+@@ -3162,10 +3171,11 @@ static int ext4_symlink(struct inode *dir,
+ err_drop_inode:
+ 	if (handle)
+ 		ext4_journal_stop(handle);
+-	kfree(sd);
+ 	clear_nlink(inode);
+ 	unlock_new_inode(inode);
+ 	iput(inode);
++err_free_sd:
++	kfree(sd);
+ 	return err;
+ }
+ 

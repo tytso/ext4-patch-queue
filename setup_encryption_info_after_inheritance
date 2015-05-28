@@ -1,0 +1,23 @@
+ext4 crypto: set up encryption info for new inodes in ext4_inherit_context()
+
+Set up the encryption information for newly created inodes immediately
+after they inherit their encryption context from their parent
+directories.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/crypto_policy.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/ext4/crypto_policy.c b/fs/ext4/crypto_policy.c
+index 683391f..81980a15 100644
+--- a/fs/ext4/crypto_policy.c
++++ b/fs/ext4/crypto_policy.c
+@@ -206,6 +206,7 @@ int ext4_inherit_context(struct inode *parent, struct inode *child)
+ 	if (!res) {
+ 		ext4_set_inode_flag(child, EXT4_INODE_ENCRYPT);
+ 		ext4_clear_inode_state(child, EXT4_STATE_MAY_INLINE_DATA);
++		res = ext4_get_encryption_info(child);
+ 	}
+ 	return res;
+ }

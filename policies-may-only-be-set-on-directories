@@ -1,0 +1,23 @@
+ext4 crypto: policies may only be set on directories
+
+Thanks to Chao Yu <chao2.yu@samsung.com> for pointing out we were
+missing this check.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/crypto_policy.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ext4/crypto_policy.c b/fs/ext4/crypto_policy.c
+index 81980a15..a1d434d 100644
+--- a/fs/ext4/crypto_policy.c
++++ b/fs/ext4/crypto_policy.c
+@@ -93,6 +93,8 @@ int ext4_process_policy(const struct ext4_encryption_policy *policy,
+ 		return -EINVAL;
+ 
+ 	if (!ext4_inode_has_encryption_context(inode)) {
++		if (!S_ISDIR(inode->i_mode))
++			return -EINVAL;
+ 		if (!ext4_empty_dir(inode))
+ 			return -ENOTEMPTY;
+ 		return ext4_create_encryption_context_from_policy(inode,

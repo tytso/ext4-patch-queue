@@ -1,0 +1,30 @@
+ext4 crypto: enforce crypto policy restrictions on cross-renames
+
+Thanks to Chao Yu <chao2.yu@samsung.com> for pointing out the need for
+this check.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/namei.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 8888977..24fc7a5 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -3653,6 +3653,15 @@ static int ext4_cross_rename(struct inode *old_dir, struct dentry *old_dentry,
+ 	u8 new_file_type;
+ 	int retval;
+ 
++	if ((ext4_encrypted_inode(old_dir) ||
++	     ext4_encrypted_inode(new_dir)) &&
++	    (old_dir != new_dir) &&
++	    (!ext4_is_child_context_consistent_with_parent(new_dir,
++							   old.inode) ||
++	     !ext4_is_child_context_consistent_with_parent(old_dir,
++							   new.inode)))
++		return -EPERM;
++
+ 	dquot_initialize(old.dir);
+ 	dquot_initialize(new.dir);
+ 
