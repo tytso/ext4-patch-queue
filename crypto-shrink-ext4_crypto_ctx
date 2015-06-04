@@ -7,14 +7,14 @@ a union.
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/crypto.c      | 28 +++++++++++++---------------
+ fs/ext4/crypto.c      | 31 ++++++++++---------------------
  fs/ext4/ext4_crypto.h | 21 ++++++++++++++-------
  fs/ext4/page-io.c     |  2 +-
  fs/ext4/readpage.c    | 10 +++++-----
- 4 files changed, 33 insertions(+), 28 deletions(-)
+ 4 files changed, 30 insertions(+), 34 deletions(-)
 
 diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
-index 9969d05..1484b58 100644
+index 9969d05..28a0e4bd 100644
 --- a/fs/ext4/crypto.c
 +++ b/fs/ext4/crypto.c
 @@ -71,14 +71,14 @@ void ext4_release_crypto_ctx(struct ext4_crypto_ctx *ctx)
@@ -30,9 +30,9 @@ index 9969d05..1484b58 100644
 -			mempool_free(ctx->bounce_page, ext4_bounce_page_pool);
 -		ctx->bounce_page = NULL;
 +			mempool_free(ctx->w.bounce_page, ext4_bounce_page_pool);
-+		ctx->w.bounce_page = NULL;
  	}
 -	ctx->control_page = NULL;
++	ctx->w.bounce_page = NULL;
 +	ctx->w.control_page = NULL;
  	if (ctx->flags & EXT4_CTX_REQUIRES_FREE_ENCRYPT_FL) {
  		if (ctx->tfm)
@@ -56,23 +56,23 @@ index 9969d05..1484b58 100644
  out:
  	if (res) {
  		if (!IS_ERR_OR_NULL(ctx))
-@@ -189,12 +186,12 @@ void ext4_exit_crypto(void)
+@@ -189,15 +186,6 @@ void ext4_exit_crypto(void)
  	struct ext4_crypto_ctx *pos, *n;
  
  	list_for_each_entry_safe(pos, n, &ext4_free_crypto_ctxs, free_list) {
 -		if (pos->bounce_page) {
-+		if (pos->w.bounce_page) {
- 			if (pos->flags &
- 			    EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL) {
+-			if (pos->flags &
+-			    EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL) {
 -				__free_page(pos->bounce_page);
-+				__free_page(pos->w.bounce_page);
- 			} else {
+-			} else {
 -				mempool_free(pos->bounce_page,
-+				mempool_free(pos->w.bounce_page,
- 					     ext4_bounce_page_pool);
- 			}
- 		}
-@@ -425,8 +422,9 @@ struct page *ext4_encrypt(struct inode *inode,
+-					     ext4_bounce_page_pool);
+-			}
+-		}
+ 		if (pos->tfm)
+ 			crypto_free_tfm(pos->tfm);
+ 		kmem_cache_free(ext4_crypto_ctx_cachep, pos);
+@@ -425,8 +413,9 @@ struct page *ext4_encrypt(struct inode *inode,
  	} else {
  		ctx->flags |= EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL;
  	}
@@ -84,7 +84,7 @@ index 9969d05..1484b58 100644
  	err = ext4_page_crypto(ctx, inode, EXT4_ENCRYPT, plaintext_page->index,
  			       plaintext_page, ciphertext_page);
  	if (err) {
-@@ -505,7 +503,7 @@ int ext4_encrypted_zeroout(struct inode *inode, struct ext4_extent *ex)
+@@ -505,7 +494,7 @@ int ext4_encrypted_zeroout(struct inode *inode, struct ext4_extent *ex)
  	} else {
  		ctx->flags |= EXT4_BOUNCE_PAGE_REQUIRES_FREE_ENCRYPT_FL;
  	}
@@ -129,10 +129,10 @@ index 69faf0e..c5258f2 100644
  
  struct ext4_completion_result {
 diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
-index 51a5f12..4457a3c 100644
+index 5765f88..79636e2 100644
 --- a/fs/ext4/page-io.c
 +++ b/fs/ext4/page-io.c
-@@ -85,7 +85,7 @@ static void ext4_finish_bio(struct bio *bio)
+@@ -84,7 +84,7 @@ static void ext4_finish_bio(struct bio *bio)
  			/* The bounce data pages are unmapped. */
  			data_page = page;
  			ctx = (struct ext4_crypto_ctx *)page_private(data_page);

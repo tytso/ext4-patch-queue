@@ -10,24 +10,12 @@ Also use cmpxchg() to avoid races that could result in crypt_info
 structure getting doubly allocated or doubly freed.
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
----
- fs/ext4/crypto.c       |  61 ++--------------------------
- fs/ext4/crypto_fname.c |  48 +---------------------
- fs/ext4/crypto_key.c   | 108 +++++++++++++++++++++++++++++++++++--------------
- fs/ext4/dir.c          |   3 --
- fs/ext4/ext4.h         |   5 +--
- fs/ext4/ext4_crypto.h  |   3 --
- fs/ext4/namei.c        |  17 ++++----
- fs/ext4/super.c        |   2 +-
- fs/ext4/symlink.c      |   2 +-
- 9 files changed, 95 insertions(+), 154 deletions(-)
-
 diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
-index 1484b58..68c7ab8 100644
+index 28a0e4bd..c3a9b08 100644
 --- a/fs/ext4/crypto.c
 +++ b/fs/ext4/crypto.c
 @@ -80,8 +80,6 @@ void ext4_release_crypto_ctx(struct ext4_crypto_ctx *ctx)
- 	}
+ 	ctx->w.bounce_page = NULL;
  	ctx->w.control_page = NULL;
  	if (ctx->flags & EXT4_CTX_REQUIRES_FREE_ENCRYPT_FL) {
 -		if (ctx->tfm)
@@ -72,16 +60,20 @@ index 1484b58..68c7ab8 100644
  out:
  	if (res) {
  		if (!IS_ERR_OR_NULL(ctx))
-@@ -195,8 +163,6 @@ void ext4_exit_crypto(void)
- 					     ext4_bounce_page_pool);
- 			}
- 		}
+@@ -185,11 +153,8 @@ void ext4_exit_crypto(void)
+ {
+ 	struct ext4_crypto_ctx *pos, *n;
+ 
+-	list_for_each_entry_safe(pos, n, &ext4_free_crypto_ctxs, free_list) {
 -		if (pos->tfm)
 -			crypto_free_tfm(pos->tfm);
++	list_for_each_entry_safe(pos, n, &ext4_free_crypto_ctxs, free_list)
  		kmem_cache_free(ext4_crypto_ctx_cachep, pos);
- 	}
+-	}
  	INIT_LIST_HEAD(&ext4_free_crypto_ctxs);
-@@ -312,32 +278,11 @@ static int ext4_page_crypto(struct ext4_crypto_ctx *ctx,
+ 	if (ext4_bounce_page_pool)
+ 		mempool_destroy(ext4_bounce_page_pool);
+@@ -303,32 +268,11 @@ static int ext4_page_crypto(struct ext4_crypto_ctx *ctx,
  	struct ablkcipher_request *req = NULL;
  	DECLARE_EXT4_COMPLETION_RESULT(ecr);
  	struct scatterlist dst, src;

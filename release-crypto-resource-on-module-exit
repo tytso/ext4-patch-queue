@@ -1,0 +1,30 @@
+ext4 crypto: release crypto resource on module exit
+
+From: Chao Yu <chao2.yu@samsung.com>
+
+Crypto resource should be released when ext4 module exits, otherwise
+it will cause memory leak.
+
+Signed-off-by: Chao Yu <chao2.yu@samsung.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/super.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index aa7621f..e0952b9 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -5640,6 +5640,7 @@ out7:
+ 
+ static void __exit ext4_exit_fs(void)
+ {
++	ext4_exit_crypto();
+ 	ext4_destroy_lazyinit_thread();
+ 	unregister_as_ext2();
+ 	unregister_as_ext3();
+-- 
+2.3.3
+
+
+

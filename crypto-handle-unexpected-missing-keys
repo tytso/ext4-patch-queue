@@ -1,0 +1,82 @@
+ext4 crypto: handle unexpected lack of encryption keys
+
+Fix up attempts by users to try to write to a file when they don't
+have access to the encryption key.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/crypto.c        |  3 ++-
+ fs/ext4/crypto_policy.c |  3 ++-
+ fs/ext4/file.c          | 17 ++++++++++-------
+ 3 files changed, 14 insertions(+), 9 deletions(-)
+
+diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
+index ac2419c..6634478 100644
+--- a/fs/ext4/crypto.c
++++ b/fs/ext4/crypto.c
+@@ -104,7 +104,8 @@ struct ext4_crypto_ctx *ext4_get_crypto_ctx(struct inode *inode)
+ 	unsigned long flags;
+ 	struct ext4_crypt_info *ci = EXT4_I(inode)->i_crypt_info;
+ 
+-	BUG_ON(ci == NULL);
++	if (ci == NULL)
++		return ERR_PTR(-ENOKEY);
+ 
+ 	/*
+ 	 * We first try getting the ctx from a free list because in
+diff --git a/fs/ext4/crypto_policy.c b/fs/ext4/crypto_policy.c
+index a1d434d..02c4e5d 100644
+--- a/fs/ext4/crypto_policy.c
++++ b/fs/ext4/crypto_policy.c
+@@ -183,7 +183,8 @@ int ext4_inherit_context(struct inode *parent, struct inode *child)
+ 	if (res < 0)
+ 		return res;
+ 	ci = EXT4_I(parent)->i_crypt_info;
+-	BUG_ON(ci == NULL);
++	if (ci == NULL)
++		return -ENOKEY;
+ 
+ 	ctx.format = EXT4_ENCRYPTION_CONTEXT_FORMAT_V1;
+ 	if (DUMMY_ENCRYPTION_ENABLED(EXT4_SB(parent->i_sb))) {
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 875ca6b..ac517f1 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -226,6 +226,8 @@ static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
+ 		int err = ext4_get_encryption_info(inode);
+ 		if (err)
+ 			return 0;
++		if (ext4_encryption_info(inode) == NULL)
++			return -ENOKEY;
+ 	}
+ 	file_accessed(file);
+ 	if (IS_DAX(file_inode(file))) {
+@@ -278,6 +280,13 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+ 			ext4_journal_stop(handle);
+ 		}
+ 	}
++	if (ext4_encrypted_inode(inode)) {
++		ret = ext4_get_encryption_info(inode);
++		if (ret)
++			return -EACCES;
++		if (ext4_encryption_info(inode) == NULL)
++			return -ENOKEY;
++	}
+ 	/*
+ 	 * Set up the jbd2_inode if we are opening the inode for
+ 	 * writing and the journal is present
+@@ -287,13 +296,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+ 		if (ret < 0)
+ 			return ret;
+ 	}
+-	ret = dquot_file_open(inode, filp);
+-	if (!ret && ext4_encrypted_inode(inode)) {
+-		ret = ext4_get_encryption_info(inode);
+-		if (ret)
+-			ret = -EACCES;
+-	}
+-	return ret;
++	return dquot_file_open(inode, filp);
+ }
+ 
+ /*
