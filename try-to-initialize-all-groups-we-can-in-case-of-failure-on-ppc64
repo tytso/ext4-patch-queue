@@ -1,0 +1,61 @@
+ext4: try to initialize all groups we can in case of failure on ppc64
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Currently on the machines with page size > block size when initializing
+block group buddy cache we initialize it for all the block group bitmaps
+in the page. However in the case of read error, checksum error, or if
+a single bitmap is in any way corrupted we would fail to initialize all
+of the bitmaps. This is problematic because we will not have access to
+the other allocation groups even though those might be perfectly fine
+and usable.
+
+Fix this by reading all the bitmaps instead of error out on the first
+problem and simply skip the bitmaps which were either not read properly,
+or are not valid.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+v2: remove unnecessary else in condition
+v3: nothing changed
+
+ fs/ext4/mballoc.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 8d1e602..df02951 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -882,10 +882,8 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
+ 
+ 	/* wait for I/O completion */
+ 	for (i = 0, group = first_group; i < groups_per_page; i++, group++) {
+-		if (bh[i] && ext4_wait_block_bitmap(sb, group, bh[i])) {
++		if (bh[i] && ext4_wait_block_bitmap(sb, group, bh[i]))
+ 			err = -EIO;
+-			goto out;
+-		}
+ 	}
+ 
+ 	first_block = page->index * blocks_per_page;
+@@ -898,6 +896,11 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
+ 			/* skip initialized uptodate buddy */
+ 			continue;
+ 
++		if (!buffer_verified(bh[group - first_group]))
++			/* Skip faulty bitmaps */
++			continue;
++		err = 0;
++
+ 		/*
+ 		 * data carry information regarding this
+ 		 * particular group in the format specified
+-- 
+1.8.3.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
