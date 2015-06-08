@@ -1,0 +1,22 @@
+ext4 crypto: fix ext4_get_crypto_ctx()'s calling convention in ext4_decrypt_one
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/crypto.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
+index f5c82e8..4573155 100644
+--- a/fs/ext4/crypto.c
++++ b/fs/ext4/crypto.c
+@@ -396,8 +396,8 @@ int ext4_decrypt_one(struct inode *inode, struct page *page)
+ 
+ 	struct ext4_crypto_ctx *ctx = ext4_get_crypto_ctx(inode);
+ 
+-	if (!ctx)
+-		return -ENOMEM;
++	if (IS_ERR(ctx))
++		return PTR_ERR(ctx);
+ 	ret = ext4_decrypt(ctx, page);
+ 	ext4_release_crypto_ctx(ctx);
+ 	return ret;
