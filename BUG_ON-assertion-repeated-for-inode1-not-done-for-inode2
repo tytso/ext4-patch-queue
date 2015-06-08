@@ -1,0 +1,31 @@
+ext4: BUG_ON assertion repeated for inode1, not done for inode2
+
+From: David Moore <dmoorefo@gmail.com>
+
+During a source code review of fs/ext4/extents.c I noted identical
+consecutive lines. An assertion is repeated for inode1 and never done
+for inode2. This is not in keeping with the rest of the code in the
+ext4_swap_extents function and appears to be a bug.
+
+Assert that the inode2 mutex is not locked.
+
+Signed-off-by: David Moore <dmoorefo@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Eric Sandeen <sandeen@redhat.com>
+---
+ fs/ext4/extents.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index e003a1e..f38a6d6 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -5542,7 +5542,7 @@ ext4_swap_extents(handle_t *handle, struct inode *inode1,
+ 	BUG_ON(!rwsem_is_locked(&EXT4_I(inode1)->i_data_sem));
+ 	BUG_ON(!rwsem_is_locked(&EXT4_I(inode2)->i_data_sem));
+ 	BUG_ON(!mutex_is_locked(&inode1->i_mutex));
+-	BUG_ON(!mutex_is_locked(&inode1->i_mutex));
++	BUG_ON(!mutex_is_locked(&inode2->i_mutex));
+ 
+ 	*erp = ext4_es_remove_extent(inode1, lblk1, count);
+ 	if (unlikely(*erp))
