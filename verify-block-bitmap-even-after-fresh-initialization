@@ -1,0 +1,58 @@
+ext4: verify block bitmap even after fresh initialization
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+If we want to rely on the buffer_verified() flag of the block bitmap
+buffer, we have to set it consistently. However currently if we're
+initializing uninitialized block bitmap in
+ext4_read_block_bitmap_nowait() we're not going to set buffer verified
+at all.
+
+We can do this by simply setting the flag on the buffer, but I think
+it's actually better to run ext4_validate_block_bitmap() to make sure
+that what we did in the ext4_init_block_bitmap() is right.
+
+So run ext4_validate_block_bitmap() even after the block bitmap
+initialization. Also bail out early from ext4_validate_block_bitmap() if
+we see corrupt bitmap, since we already know it's corrupt and we do not
+need to verify that.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+v2: nothing changed
+v3: nothing changed
+
+ fs/ext4/balloc.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index 955bf49..cd6ea29 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -369,7 +369,7 @@ static void ext4_validate_block_bitmap(struct super_block *sb,
+ 	struct ext4_group_info *grp = ext4_get_group_info(sb, block_group);
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 
+-	if (buffer_verified(bh))
++	if (buffer_verified(bh) || EXT4_MB_GRP_BBITMAP_CORRUPT(grp))
+ 		return;
+ 
+ 	ext4_lock_group(sb, block_group);
+@@ -446,7 +446,7 @@ ext4_read_block_bitmap_nowait(struct super_block *sb, ext4_group_t block_group)
+ 		unlock_buffer(bh);
+ 		if (err)
+ 			ext4_error(sb, "Checksum bad for grp %u", block_group);
+-		return bh;
++		goto verify;
+ 	}
+ 	ext4_unlock_group(sb, block_group);
+ 	if (buffer_uptodate(bh)) {
+-- 
+1.8.3.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
