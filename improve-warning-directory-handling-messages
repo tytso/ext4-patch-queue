@@ -1,0 +1,429 @@
+ext4: improve warning directory handling messages
+
+From: Andreas Dilger <adilger@dilger.ca>
+
+Several ext4_warning() messages in the directory handling code do not
+report the inode number of the (potentially corrupt) directory where a
+problem is seen, and others report this in an ad-hoc manner.  Add an
+ext4_warning_inode() helper to print the inode number and command name
+consistent with ext4_error_inode().
+
+Consolidate the place in ext4.h that these macros are defined.
+
+Clean up some other directory error and warning messages to print the
+calling function name.
+
+Minor code style fixes in nearby lines.
+
+Signed-off-by: Andreas Dilger <adilger@dilger.ca>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4.h  |   28 ++++++++----
+ fs/ext4/namei.c |  125 +++++++++++++++++++++++++++++-------------------------
+ fs/ext4/super.c |   25 ++++++++++-
+ 3 files changed, 109 insertions(+), 69 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 009a059..7a49dd1 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -69,15 +69,6 @@
+ #define ext_debug(fmt, ...)	no_printk(fmt, ##__VA_ARGS__)
+ #endif
+ 
+-#define EXT4_ERROR_INODE(inode, fmt, a...) \
+-	ext4_error_inode((inode), __func__, __LINE__, 0, (fmt), ## a)
+-
+-#define EXT4_ERROR_INODE_BLOCK(inode, block, fmt, a...)			\
+-	ext4_error_inode((inode), __func__, __LINE__, (block), (fmt), ## a)
+-
+-#define EXT4_ERROR_FILE(file, block, fmt, a...)				\
+-	ext4_error_file((file), __func__, __LINE__, (block), (fmt), ## a)
+-
+ /* data type for block offset of block group */
+ typedef int ext4_grpblk_t;
+ 
+@@ -2368,6 +2359,9 @@ void __ext4_abort(struct super_block *, const char *, unsigned int,
+ extern __printf(4, 5)
+ void __ext4_warning(struct super_block *, const char *, unsigned int,
+ 		    const char *, ...);
++extern __printf(4, 5)
++void __ext4_warning_inode(const struct inode *inode, const char *function,
++			  unsigned int line, const char *fmt, ...);
+ extern __printf(3, 4)
+ void __ext4_msg(struct super_block *, const char *, const char *, ...);
+ extern void __dump_mmp_msg(struct super_block *, struct mmp_struct *mmp,
+@@ -2378,6 +2372,15 @@ void __ext4_grp_locked_error(const char *, unsigned int,
+ 			     unsigned long, ext4_fsblk_t,
+ 			     const char *, ...);
+ 
++#define EXT4_ERROR_INODE(inode, fmt, a...) \
++	ext4_error_inode((inode), __func__, __LINE__, 0, (fmt), ## a)
++
++#define EXT4_ERROR_INODE_BLOCK(inode, block, fmt, a...)			\
++	ext4_error_inode((inode), __func__, __LINE__, (block), (fmt), ## a)
++
++#define EXT4_ERROR_FILE(file, block, fmt, a...)				\
++	ext4_error_file((file), __func__, __LINE__, (block), (fmt), ## a)
++
+ #ifdef CONFIG_PRINTK
+ 
+ #define ext4_error_inode(inode, func, line, block, fmt, ...)		\
+@@ -2390,6 +2393,8 @@ void __ext4_grp_locked_error(const char *, unsigned int,
+ 	__ext4_abort(sb, __func__, __LINE__, fmt, ##__VA_ARGS__)
+ #define ext4_warning(sb, fmt, ...)					\
+ 	__ext4_warning(sb, __func__, __LINE__, fmt, ##__VA_ARGS__)
++#define ext4_warning_inode(inode, fmt, ...)				\
++	__ext4_warning_inode(inode, __func__, __LINE__, fmt, ##__VA_ARGS__)
+ #define ext4_msg(sb, level, fmt, ...)				\
+ 	__ext4_msg(sb, level, fmt, ##__VA_ARGS__)
+ #define dump_mmp_msg(sb, mmp, msg)					\
+@@ -2425,6 +2430,11 @@ do {									\
+ 	no_printk(fmt, ##__VA_ARGS__);					\
+ 	__ext4_warning(sb, "", 0, " ");					\
+ } while (0)
++#define ext4_warning_inode(inode, fmt, ...)				\
++do {									\
++	no_printk(fmt, ##__VA_ARGS__);					\
++	__ext4_warning_inode(inode, "", 0, " ");			\
++} while (0)
+ #define ext4_msg(sb, level, fmt, ...)					\
+ do {									\
+ 	no_printk(fmt, ##__VA_ARGS__);					\
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 814f3be..45539b6 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -84,12 +84,13 @@ typedef enum {
+ } dirblock_type_t;
+ 
+ #define ext4_read_dirblock(inode, block, type) \
+-	__ext4_read_dirblock((inode), (block), (type), __LINE__)
++	__ext4_read_dirblock((inode), (block), (type), __func__, __LINE__)
+ 
+ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
+-					      ext4_lblk_t block,
+-					      dirblock_type_t type,
+-					      unsigned int line)
++						ext4_lblk_t block,
++						dirblock_type_t type,
++						const char *func,
++						unsigned int line)
+ {
+ 	struct buffer_head *bh;
+ 	struct ext4_dir_entry *dirent;
+@@ -97,15 +98,17 @@ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
+ 
+ 	bh = ext4_bread(NULL, inode, block, 0);
+ 	if (IS_ERR(bh)) {
+-		__ext4_warning(inode->i_sb, __func__, line,
+-			       "error %ld reading directory block "
+-			       "(ino %lu, block %lu)", PTR_ERR(bh), inode->i_ino,
+-			       (unsigned long) block);
++		__ext4_warning(inode->i_sb, func, line,
++			       "inode #%lu: lblock %lu: comm %s: "
++			       "error %ld reading directory block",
++			       inode->i_ino, (unsigned long)block,
++			       current->comm, PTR_ERR(bh));
+ 
+ 		return bh;
+ 	}
+ 	if (!bh) {
+-		ext4_error_inode(inode, __func__, line, block, "Directory hole found");
++		ext4_error_inode(inode, func, line, block,
++				 "Directory hole found");
+ 		return ERR_PTR(-EIO);
+ 	}
+ 	dirent = (struct ext4_dir_entry *) bh->b_data;
+@@ -119,7 +122,7 @@ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
+ 			is_dx_block = 1;
+ 	}
+ 	if (!is_dx_block && type == INDEX) {
+-		ext4_error_inode(inode, __func__, line, block,
++		ext4_error_inode(inode, func, line, block,
+ 		       "directory leaf block found instead of index block");
+ 		return ERR_PTR(-EIO);
+ 	}
+@@ -136,8 +139,8 @@ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
+ 		if (ext4_dx_csum_verify(inode, dirent))
+ 			set_buffer_verified(bh);
+ 		else {
+-			ext4_error_inode(inode, __func__, line, block,
+-				"Directory index failed checksum");
++			ext4_error_inode(inode, func, line, block,
++					 "Directory index failed checksum");
+ 			brelse(bh);
+ 			return ERR_PTR(-EIO);
+ 		}
+@@ -146,8 +149,8 @@ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
+ 		if (ext4_dirent_csum_verify(inode, dirent))
+ 			set_buffer_verified(bh);
+ 		else {
+-			ext4_error_inode(inode, __func__, line, block,
+-				"Directory block failed checksum");
++			ext4_error_inode(inode, func, line, block,
++					 "Directory block failed checksum");
+ 			brelse(bh);
+ 			return ERR_PTR(-EIO);
+ 		}
+@@ -327,10 +330,14 @@ static __le32 ext4_dirent_csum(struct inode *inode,
+ 	return cpu_to_le32(csum);
+ }
+ 
+-static void warn_no_space_for_csum(struct inode *inode)
++#define warn_no_space_for_csum(inode)					\
++	__warn_no_space_for_csum((inode), __func__, __LINE__)
++
++static void __warn_no_space_for_csum(struct inode *inode, const char *func,
++				     unsigned int line)
+ {
+-	ext4_warning(inode->i_sb, "no space in directory inode %lu leaf for "
+-		     "checksum.  Please run e2fsck -D.", inode->i_ino);
++	__ext4_warning_inode(inode, func, line,
++		"No space for directory leaf checksum. Please run e2fsck -D.");
+ }
+ 
+ int ext4_dirent_csum_verify(struct inode *inode, struct ext4_dir_entry *dirent)
+@@ -742,8 +749,8 @@ dx_probe(const struct qstr *d_name, struct inode *dir,
+ 	if (root->info.hash_version != DX_HASH_TEA &&
+ 	    root->info.hash_version != DX_HASH_HALF_MD4 &&
+ 	    root->info.hash_version != DX_HASH_LEGACY) {
+-		ext4_warning(dir->i_sb, "Unrecognised inode hash code %d",
+-			     root->info.hash_version);
++		ext4_warning_inode(dir, "Unrecognised inode hash code %u",
++				   root->info.hash_version);
+ 		goto fail;
+ 	}
+ 	hinfo->hash_version = root->info.hash_version;
+@@ -775,23 +782,26 @@ dx_probe(const struct qstr *d_name, struct inode *dir,
+ 	hash = hinfo->hash;
+ 
+ 	if (root->info.unused_flags & 1) {
+-		ext4_warning(dir->i_sb, "Unimplemented inode hash flags: %#06x",
+-			     root->info.unused_flags);
++		ext4_warning_inode(dir, "Unimplemented hash flags: %#06x",
++				   root->info.unused_flags);
+ 		goto fail;
+ 	}
+ 
+-	if ((indirect = root->info.indirect_levels) > 1) {
+-		ext4_warning(dir->i_sb, "Unimplemented inode hash depth: %#06x",
+-			     root->info.indirect_levels);
++	indirect = root->info.indirect_levels;
++	if (indirect > 1) {
++		ext4_warning_inode(dir, "Unimplemented hash depth: %#06x",
++				   root->info.indirect_levels);
+ 		goto fail;
+ 	}
+ 
+-	entries = (struct dx_entry *) (((char *)&root->info) +
+-				       root->info.info_length);
++	entries = (struct dx_entry *)(((char *)&root->info) +
++				      root->info.info_length);
+ 
+ 	if (dx_get_limit(entries) != dx_root_limit(dir,
+ 						   root->info.info_length)) {
+-		ext4_warning(dir->i_sb, "dx entry: limit != root limit");
++		ext4_warning_inode(dir, "dx entry: limit %u != root limit %u",
++				   dx_get_limit(entries),
++				   dx_root_limit(dir, root->info.info_length));
+ 		goto fail;
+ 	}
+ 
+@@ -799,15 +809,16 @@ dx_probe(const struct qstr *d_name, struct inode *dir,
+ 	while (1) {
+ 		count = dx_get_count(entries);
+ 		if (!count || count > dx_get_limit(entries)) {
+-			ext4_warning(dir->i_sb,
+-				     "dx entry: no count or count > limit");
++			ext4_warning_inode(dir,
++					   "dx entry: count %u beyond limit %u",
++					   count, dx_get_limit(entries));
+ 			goto fail;
+ 		}
+ 
+ 		p = entries + 1;
+ 		q = entries + count - 1;
+ 		while (p <= q) {
+-			m = p + (q - p)/2;
++			m = p + (q - p) / 2;
+ 			dxtrace(printk("."));
+ 			if (dx_get_hash(m) > hash)
+ 				q = m - 1;
+@@ -831,7 +842,8 @@ dx_probe(const struct qstr *d_name, struct inode *dir,
+ 		}
+ 
+ 		at = p - 1;
+-		dxtrace(printk(" %x->%u\n", at == entries? 0: dx_get_hash(at), dx_get_block(at)));
++		dxtrace(printk(" %x->%u\n", at == entries ? 0 : dx_get_hash(at),
++			       dx_get_block(at)));
+ 		frame->entries = entries;
+ 		frame->at = at;
+ 		if (!indirect--)
+@@ -845,9 +857,10 @@ dx_probe(const struct qstr *d_name, struct inode *dir,
+ 		}
+ 		entries = ((struct dx_node *) frame->bh->b_data)->entries;
+ 
+-		if (dx_get_limit(entries) != dx_node_limit (dir)) {
+-			ext4_warning(dir->i_sb,
+-				     "dx entry: limit != node limit");
++		if (dx_get_limit(entries) != dx_node_limit(dir)) {
++			ext4_warning_inode(dir,
++				"dx entry: limit %u != node limit %u",
++				dx_get_limit(entries), dx_node_limit(dir));
+ 			goto fail;
+ 		}
+ 	}
+@@ -858,18 +871,17 @@ fail:
+ 	}
+ 
+ 	if (ret_err == ERR_PTR(ERR_BAD_DX_DIR))
+-		ext4_warning(dir->i_sb,
+-			     "Corrupt dir inode %lu, running e2fsck is "
+-			     "recommended.", dir->i_ino);
++		ext4_warning_inode(dir,
++			"Corrupt directory, running e2fsck is recommended");
+ 	return ret_err;
+ }
+ 
+-static void dx_release (struct dx_frame *frames)
++static void dx_release(struct dx_frame *frames)
+ {
+ 	if (frames[0].bh == NULL)
+ 		return;
+ 
+-	if (((struct dx_root *) frames[0].bh->b_data)->info.indirect_levels)
++	if (((struct dx_root *)frames[0].bh->b_data)->info.indirect_levels)
+ 		brelse(frames[1].bh);
+ 	brelse(frames[0].bh);
+ }
+@@ -1540,9 +1552,9 @@ static struct buffer_head * ext4_dx_find_entry(struct inode *dir, const struct q
+ 		retval = ext4_htree_next_block(dir, hinfo.hash, frame,
+ 					       frames, NULL);
+ 		if (retval < 0) {
+-			ext4_warning(sb,
+-			     "error %d reading index page in directory #%lu",
+-			     retval, dir->i_ino);
++			ext4_warning_inode(dir,
++				"error %d reading directory index block",
++				retval);
+ 			bh = ERR_PTR(retval);
+ 			goto errout;
+ 		}
+@@ -2267,7 +2279,7 @@ static int ext4_dx_add_entry(handle_t *handle, struct dentry *dentry,
+ 
+ 		if (levels && (dx_get_count(frames->entries) ==
+ 			       dx_get_limit(frames->entries))) {
+-			ext4_warning(sb, "Directory index full!");
++			ext4_warning_inode(dir, "Directory index full!");
+ 			err = -ENOSPC;
+ 			goto cleanup;
+ 		}
+@@ -2779,12 +2791,9 @@ int ext4_empty_dir(struct inode *inode)
+ 	de = (struct ext4_dir_entry_2 *) bh->b_data;
+ 	de1 = ext4_next_entry(de, sb->s_blocksize);
+ 	if (le32_to_cpu(de->inode) != inode->i_ino ||
+-			!le32_to_cpu(de1->inode) ||
+-			strcmp(".", de->name) ||
+-			strcmp("..", de1->name)) {
+-		ext4_warning(inode->i_sb,
+-			     "bad directory (dir #%lu) - no `.' or `..'",
+-			     inode->i_ino);
++			le32_to_cpu(de1->inode) == 0 ||
++			strcmp(".", de->name) || strcmp("..", de1->name)) {
++		ext4_warning_inode(inode, "directory missing '.' and/or '..'");
+ 		brelse(bh);
+ 		return 1;
+ 	}
+@@ -3037,8 +3046,9 @@ static int ext4_rmdir(struct inode *dir, struct dentry *dentry)
+ 	if (retval)
+ 		goto end_rmdir;
+ 	if (!EXT4_DIR_LINK_EMPTY(inode))
+-		ext4_warning(inode->i_sb,
+-			     "empty directory has too many links (%d)",
++		ext4_warning_inode(inode,
++			     "empty directory '%.*s' has too many links (%u)",
++			     dentry->d_name.len, dentry->d_name.name,
+ 			     inode->i_nlink);
+ 	inode->i_version++;
+ 	clear_nlink(inode);
+@@ -3098,10 +3108,9 @@ static int ext4_unlink(struct inode *dir, struct dentry *dentry)
+ 	if (IS_DIRSYNC(dir))
+ 		ext4_handle_sync(handle);
+ 
+-	if (!inode->i_nlink) {
+-		ext4_warning(inode->i_sb,
+-			     "Deleting nonexistent file (%lu), %d",
+-			     inode->i_ino, inode->i_nlink);
++	if (inode->i_nlink == 0) {
++		ext4_warning_inode(inode, "Deleting file '%.*s' with no links",
++				   dentry->d_name.len, dentry->d_name.name);
+ 		set_nlink(inode, 1);
+ 	}
+ 	retval = ext4_delete_entry(handle, dir, de, bh);
+@@ -3487,9 +3496,9 @@ static void ext4_rename_delete(handle_t *handle, struct ext4_renament *ent,
+ 	}
+ 
+ 	if (retval) {
+-		ext4_warning(ent->dir->i_sb,
+-				"Deleting old file (%lu), %d, error=%d",
+-				ent->dir->i_ino, ent->dir->i_nlink, retval);
++		ext4_warning_inode(ent->dir,
++				   "Deleting old file: nlink %d, error=%d",
++				   ent->dir->i_nlink, retval);
+ 	}
+ }
+ 
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index f06d058..efef80a 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -589,14 +589,17 @@ void __ext4_msg(struct super_block *sb,
+ 	va_end(args);
+ }
+ 
++#define ext4_warning_ratelimit(sb)					\
++		___ratelimit(&(EXT4_SB(sb)->s_warning_ratelimit_state),	\
++			     "EXT4-fs warning")
++
+ void __ext4_warning(struct super_block *sb, const char *function,
+ 		    unsigned int line, const char *fmt, ...)
+ {
+ 	struct va_format vaf;
+ 	va_list args;
+ 
+-	if (!___ratelimit(&(EXT4_SB(sb)->s_warning_ratelimit_state),
+-			  "EXT4-fs warning"))
++	if (!ext4_warning_ratelimit(sb))
+ 		return;
+ 
+ 	va_start(args, fmt);
+@@ -607,6 +610,24 @@ void __ext4_warning(struct super_block *sb, const char *function,
+ 	va_end(args);
+ }
+ 
++void __ext4_warning_inode(const struct inode *inode, const char *function,
++			  unsigned int line, const char *fmt, ...)
++{
++	struct va_format vaf;
++	va_list args;
++
++	if (!ext4_warning_ratelimit(inode->i_sb))
++		return;
++
++	va_start(args, fmt);
++	vaf.fmt = fmt;
++	vaf.va = &args;
++	printk(KERN_WARNING "EXT4-fs warning (device %s): %s:%d: "
++	       "inode #%lu: comm %s: %pV\n", inode->i_sb->s_id,
++	       function, line, inode->i_ino, current->comm, &vaf);
++	va_end(args);
++}
++
+ void __ext4_grp_locked_error(const char *function, unsigned int line,
+ 			     struct super_block *sb, ext4_group_t grp,
+ 			     unsigned long ino, ext4_fsblk_t block,
+-- 
+1.7.3.4
+
+
