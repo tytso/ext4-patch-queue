@@ -12,11 +12,11 @@ references.
 Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/jbd2/transaction.c | 22 ++++++++++++++++------
- 1 file changed, 16 insertions(+), 6 deletions(-)
+ fs/jbd2/transaction.c | 33 +++++++++++++++++++++++++++------
+ 1 file changed, 27 insertions(+), 6 deletions(-)
 
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index a91f639af6c3..ad10ca8fb9ef 100644
+index a91f639af6c3..5887c880422b 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
 @@ -1290,8 +1290,6 @@ void jbd2_buffer_abort_trigger(struct journal_head *jh,
@@ -28,7 +28,7 @@ index a91f639af6c3..ad10ca8fb9ef 100644
  /**
   * int jbd2_journal_dirty_metadata() -  mark a buffer as containing dirty metadata
   * @handle: transaction to add buffer to.
-@@ -1325,12 +1323,25 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
+@@ -1325,12 +1323,36 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
  	WARN_ON(!transaction);
  	if (is_handle_aborted(handle))
  		return -EROFS;
@@ -47,9 +47,20 @@ index a91f639af6c3..ad10ca8fb9ef 100644
 +	J_ASSERT_JH(jh, jh->b_transaction == transaction ||
 +			jh->b_next_transaction == transaction);
 +	if (jh->b_modified == 1) {
-+		/* If it's in our transaction it must be in BJ_Metadata list */
-+		J_ASSERT_JH(jh, jh->b_transaction != transaction ||
-+				jh->b_jlist == BJ_Metadata);
++		/*
++		 * If it's in our transaction it must be in BJ_Metadata list.
++		 * The assertion is unreliable since we may see jh in
++		 * inconsistent state unless we grab bh_state lock. But this
++		 * is crutial to catch bugs so let's do a reliable check until
++		 * the lockless handling is fully proven.
++		 */
++		if (jh->b_transaction == transaction &&
++		    jh->b_jlist != BJ_Metadata) {
++			jbd_lock_bh_state(bh);
++			J_ASSERT_JH(jh, jh->b_transaction != transaction ||
++					jh->b_jlist == BJ_Metadata);
++			jbd_unlock_bh_state(bh);
++		}
 +		goto out;
 +	}
 +
@@ -57,7 +68,7 @@ index a91f639af6c3..ad10ca8fb9ef 100644
  	jbd_debug(5, "journal_head %p\n", jh);
  	JBUFFER_TRACE(jh, "entry");
  
-@@ -1421,7 +1432,6 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
+@@ -1421,7 +1443,6 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
  	spin_unlock(&journal->j_list_lock);
  out_unlock_bh:
  	jbd_unlock_bh_state(bh);
@@ -67,5 +78,4 @@ index a91f639af6c3..ad10ca8fb9ef 100644
  	return ret;
 -- 
 2.1.4
-
 
