@@ -1,0 +1,29 @@
+ext4: call sync_blockdev() before invalidate_bdev() in put_super()
+
+Normally all of the buffers will have been forced out to disk before
+we call invalidate_bdev(), but there will be some cases, where a file
+system operation was aborted due to an ext4_error(), where there may
+still be some dirty buffers in the buffer cache for the device.  So
+try to force them out to memory before calling invalidate_bdev().
+
+This fixes a warning triggered by generic/081:
+
+WARNING: CPU: 1 PID: 3473 at /usr/projects/linux/ext4/fs/block_dev.c:56 __blkdev_put+0xb5/0x16f()
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/super.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index fdac076..2858ac0 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -828,6 +828,7 @@ static void ext4_put_super(struct super_block *sb)
+ 		dump_orphan_list(sb, sbi);
+ 	J_ASSERT(list_empty(&sbi->s_orphan));
+ 
++	sync_blockdev(sb->s_bdev);
+ 	invalidate_bdev(sb->s_bdev);
+ 	if (sbi->journal_bdev && sbi->journal_bdev != sb->s_bdev) {
+ 		/*
