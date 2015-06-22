@@ -17,9 +17,9 @@ Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
 Signed-off-by: Ashish Sangwan <a.sangwan@samsung.com>
 ---
  fs/ext4/ext4.h              |   6 ++
- fs/ext4/extents.c           | 305 ++++++++++++++++++++++++++++++++++++++++++++++++----------
- include/trace/events/ext4.h |  25 +++++
- 3 files changed, 284 insertions(+), 52 deletions(-)
+ fs/ext4/extents.c           | 313 +++++++++++++++++++++++++++++++++++++++++++++++++++++++-----------
+ include/trace/events/ext4.h |  25 ++++++
+ 3 files changed, 292 insertions(+), 52 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 730c88d..3ab7cd8 100644
@@ -46,7 +46,7 @@ index 730c88d..3ab7cd8 100644
  				struct inode *inode2, ext4_lblk_t lblk1,
  			     ext4_lblk_t lblk2,  ext4_lblk_t count,
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index f38a6d6..da91d49 100644
+index f38a6d6..08f5afc 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -4912,12 +4912,14 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
@@ -291,7 +291,7 @@ index f38a6d6..da91d49 100644
  	if (ret) {
  		up_write(&EXT4_I(inode)->i_data_sem);
  		goto out_stop;
-@@ -5510,6 +5551,166 @@ out_mutex:
+@@ -5510,6 +5551,174 @@ out_mutex:
  	return ret;
  }
  
@@ -313,6 +313,14 @@ index f38a6d6..da91d49 100644
 +	unsigned int credits, ee_len;
 +	int ret = 0, depth, split_flag = 0;
 +	loff_t ioffset;
++
++	/*
++	 * We need to test this early because xfstests assumes that an
++	 * insert range of (0, 1) will return EOPNOTSUPP if the file
++	 * system does not support insert range.
++	 */
++	if (!ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
++		return -EOPNOTSUPP;
 +
 +	/* Insert range works only on fs block size aligned offsets. */
 +	if (offset & (EXT4_CLUSTER_SIZE(sb) - 1) ||
