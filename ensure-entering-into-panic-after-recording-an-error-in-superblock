@@ -1,0 +1,57 @@
+jbd2: ensure entering into panic after recording an error in superblock
+
+From: Daeho Jeong <daeho.jeong@samsung.com>
+
+If a EXT4 filesystem utilizes JBD2 journaling and an error occurs, the
+journaling will be aborted first and the error number will be recorded
+into JBD2 superblock and, finally, the system will enter into the
+panic state in "errors=panic" option.  But, in the rare case, this
+sequence is little twisted like the below figure and it will happen
+that the system enters into panic state, which means the system reset
+in mobile environment, before completion of recording an error in the
+journal superblock. In this case, e2fsck cannot recognize that the
+filesystem failure occured in the previous run and the corruption
+wouldn't be fixed.
+
+Task A                            Task B
+ext4_handle_error()
+-> jbd2_journal_abort()
+  -> __journal_abort_soft()
+    -> __jbd2_journal_abort_hard()
+    | -> journal->j_flags |= JBD2_ABORT;
+    |
+    |                           __ext4_abort()
+    |                           -> jbd2_journal_abort()
+    |                           | -> __journal_abort_soft()
+    |                           |   -> if (journal->j_flags & JBD2_ABORT)
+    |                           |           return;
+    |                           -> panic()
+    |
+    -> jbd2_journal_update_sb_errno()    
+
+Tested-by: Hobin Woo <hobin.woo@samsung.com>
+Signed-off-by: Daeho Jeong <daeho.jeong@samsung.com>
+Signed-off-by: Youngjin Gil <youngjin.gil@samsung.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+---
+ fs/jbd2/journal.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 8270fe9..84bdb67 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -2069,10 +2069,10 @@ static void __journal_abort_soft (journal_t *journal, int errno)
+ 	if (!journal->j_errno)
+ 		journal->j_errno = errno;
+ 
+-	__jbd2_journal_abort_hard(journal);
+-
+ 	if (errno)
+ 		jbd2_journal_update_sb_errno(journal);
++
++	__jbd2_journal_abort_hard(journal);
+ }
+ 
+ /**
