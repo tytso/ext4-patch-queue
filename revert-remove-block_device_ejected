@@ -1,0 +1,100 @@
+Revert "ext4: remove block_device_ejected"
+
+From: Theodore Ts'o <tytso@mit.edu>
+
+This reverts commit 08439fec266c3cc5702953b4f54bdf5649357de0.
+
+Unfortunately we still need to test for bdi->dev to avoid a crash when a
+USB stick is yanked out while a file system is mounted:
+
+   usb 2-2: USB disconnect, device number 2
+   Buffer I/O error on dev sdb1, logical block 15237120, lost sync page write
+   JBD2: Error -5 detected when updating journal superblock for sdb1-8.
+   BUG: unable to handle kernel paging request at 34beb000
+   IP: [<c136ce88>] __percpu_counter_add+0x18/0xc0
+   *pdpt = 0000000023db9001 *pde = 0000000000000000 
+   Oops: 0000 [#1] SMP 
+   CPU: 0 PID: 4083 Comm: umount Tainted: G     U     OE   4.1.1-040101-generic #201507011435
+   Hardware name: LENOVO 7675CTO/7675CTO, BIOS 7NETC2WW (2.22 ) 03/22/2011
+   task: ebf06b50 ti: ebebc000 task.ti: ebebc000
+   EIP: 0060:[<c136ce88>] EFLAGS: 00010082 CPU: 0
+   EIP is at __percpu_counter_add+0x18/0xc0
+   EAX: f21c8e88 EBX: f21c8e88 ECX: 00000000 EDX: 00000001
+   ESI: 00000001 EDI: 00000000 EBP: ebebde60 ESP: ebebde40
+    DS: 007b ES: 007b FS: 00d8 GS: 00e0 SS: 0068
+   CR0: 8005003b CR2: 34beb000 CR3: 33354200 CR4: 000007f0
+   Stack:
+    c1abe100 edcb0098 edcb00ec ffffffff f21c8e68 ffffffff f21c8e68 f286d160
+    ebebde84 c1160454 00000010 00000282 f72a77f8 00000984 f72a77f8 f286d160
+    f286d170 ebebdea0 c11e613f 00000000 00000282 f72a77f8 edd7f4d0 00000000
+   Call Trace:
+    [<c1160454>] account_page_dirtied+0x74/0x110
+    [<c11e613f>] __set_page_dirty+0x3f/0xb0
+    [<c11e6203>] mark_buffer_dirty+0x53/0xc0
+    [<c124a0cb>] ext4_commit_super+0x17b/0x250
+    [<c124ac71>] ext4_put_super+0xc1/0x320
+    [<c11f04ba>] ? fsnotify_unmount_inodes+0x1aa/0x1c0
+    [<c11cfeda>] ? evict_inodes+0xca/0xe0
+    [<c11b925a>] generic_shutdown_super+0x6a/0xe0
+    [<c10a1df0>] ? prepare_to_wait_event+0xd0/0xd0
+    [<c1165a50>] ? unregister_shrinker+0x40/0x50
+    [<c11b92f6>] kill_block_super+0x26/0x70
+    [<c11b94f5>] deactivate_locked_super+0x45/0x80
+    [<c11ba007>] deactivate_super+0x47/0x60
+    [<c11d2b39>] cleanup_mnt+0x39/0x80
+    [<c11d2bc0>] __cleanup_mnt+0x10/0x20
+    [<c1080b51>] task_work_run+0x91/0xd0
+    [<c1011e3c>] do_notify_resume+0x7c/0x90
+    [<c1720da5>] work_notify
+   Code: 8b 55 e8 e9 f4 fe ff ff 90 90 90 90 90 90 90 90 90 90 90 55 89 e5 83 ec 20 89 5d f4 89 c3 89 75 f8 89 d6 89 7d fc 89 cf 8b 48 14 <64> 8b 01 89 45 ec 89 c2 8b 45 08 c1 fa 1f 01 75 ec 89 55 f0 89
+   EIP: [<c136ce88>] __percpu_counter_add+0x18/0xc0 SS:ESP 0068:ebebde40
+   CR2: 0000000034beb000
+   ---[ end trace dd564a7bea834ecd ]---
+
+Bugzilla: https://bugzilla.kernel.org/show_bug.cgi?id=101011
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+---
+ fs/ext4/super.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 45658c1..bd3ff92 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -326,6 +326,22 @@ static void save_error_info(struct super_block *sb, const char *func,
+ 	ext4_commit_super(sb, 1);
+ }
+ 
++/*
++ * The del_gendisk() function uninitializes the disk-specific data
++ * structures, including the bdi structure, without telling anyone
++ * else.  Once this happens, any attempt to call mark_buffer_dirty()
++ * (for example, by ext4_commit_super), will cause a kernel OOPS.
++ * This is a kludge to prevent these oops until we can put in a proper
++ * hook in del_gendisk() to inform the VFS and file system layers.
++ */
++static int block_device_ejected(struct super_block *sb)
++{
++	struct inode *bd_inode = sb->s_bdev->bd_inode;
++	struct backing_dev_info *bdi = inode_to_bdi(bd_inode);
++
++	return bdi->dev == NULL;
++}
++
+ static void ext4_journal_commit_callback(journal_t *journal, transaction_t *txn)
+ {
+ 	struct super_block		*sb = journal->j_private;
+@@ -4621,7 +4637,7 @@ static int ext4_commit_super(struct super_block *sb, int sync)
+ 	struct buffer_head *sbh = EXT4_SB(sb)->s_sbh;
+ 	int error = 0;
+ 
+-	if (!sbh)
++	if (!sbh || block_device_ejected(sb))
+ 		return error;
+ 	if (buffer_write_io_error(sbh)) {
+ 		/*
+-- 
+2.5.0
+
