@@ -1,0 +1,284 @@
+ext4: add debugging counters for crypto allocations
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/crypto.c      | 32 ++++++++++++++++++++++++++++++++
+ fs/ext4/ext4_crypto.h | 17 +++++++++++++++++
+ fs/ext4/extents.c     |  5 +++++
+ fs/ext4/page-io.c     |  6 +++++-
+ fs/ext4/readpage.c    |  6 +++++-
+ fs/ext4/sysfs.c       | 39 +++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 103 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
+index 4573155..c32baf5 100644
+--- a/fs/ext4/crypto.c
++++ b/fs/ext4/crypto.c
+@@ -40,6 +40,22 @@
+ 
+ /* Encryption added and removed here! (L: */
+ 
++atomic_t ext4_crypto_get_pool;
++atomic_t ext4_crypto_get_alloc;
++atomic_t ext4_crypto_put_pool;
++atomic_t ext4_crypto_put_alloc;
++atomic_t ext4_crypto_pool_inuse;
++atomic_t ext4_crypto_encrypt_get;
++atomic_t ext4_crypto_encrypt_get_err;
++atomic_t ext4_crypto_decrypt_get;
++atomic_t ext4_crypto_zeroout_get;
++atomic_t ext4_crypto_readpage_put;
++atomic_t ext4_crypto_encrypt_put;
++atomic_t ext4_crypto_under_io_skip;
++atomic_t ext4_crypto_finish_bio_release_io_end;
++atomic_t ext4_crypto_finish_bio_end_bio;
++atomic_t ext4_crypto_bio_submit;
++
+ static unsigned int num_prealloc_crypto_pages = 32;
+ static unsigned int num_prealloc_crypto_ctxs = 128;
+ 
+@@ -76,8 +92,11 @@ void ext4_release_crypto_ctx(struct ext4_crypto_ctx *ctx)
+ 	ctx->w.bounce_page = NULL;
+ 	ctx->w.control_page = NULL;
+ 	if (ctx->flags & EXT4_CTX_REQUIRES_FREE_ENCRYPT_FL) {
++		atomic_inc(&ext4_crypto_put_alloc);
+ 		kmem_cache_free(ext4_crypto_ctx_cachep, ctx);
+ 	} else {
++		atomic_inc(&ext4_crypto_put_pool);
++		atomic_dec(&ext4_crypto_pool_inuse);
+ 		spin_lock_irqsave(&ext4_crypto_ctx_lock, flags);
+ 		list_add(&ctx->free_list, &ext4_free_crypto_ctxs);
+ 		spin_unlock_irqrestore(&ext4_crypto_ctx_lock, flags);
+@@ -126,8 +145,11 @@ struct ext4_crypto_ctx *ext4_get_crypto_ctx(struct inode *inode)
+ 			goto out;
+ 		}
+ 		ctx->flags |= EXT4_CTX_REQUIRES_FREE_ENCRYPT_FL;
++		atomic_inc(&ext4_crypto_get_alloc);
+ 	} else {
+ 		ctx->flags &= ~EXT4_CTX_REQUIRES_FREE_ENCRYPT_FL;
++		atomic_inc(&ext4_crypto_get_pool);
++		atomic_inc(&ext4_crypto_pool_inuse);
+ 	}
+ 	ctx->flags &= ~EXT4_WRITE_PATH_FL;
+ 
+@@ -230,6 +252,7 @@ void ext4_restore_control_page(struct page *data_page)
+ 	set_page_private(data_page, (unsigned long)NULL);
+ 	ClearPagePrivate(data_page);
+ 	unlock_page(data_page);
++	atomic_inc(&ext4_crypto_encrypt_put);
+ 	ext4_release_crypto_ctx(ctx);
+ }
+ 
+@@ -347,6 +370,7 @@ struct page *ext4_encrypt(struct inode *inode,
+ 	ctx = ext4_get_crypto_ctx(inode);
+ 	if (IS_ERR(ctx))
+ 		return (struct page *) ctx;
++	atomic_inc(&ext4_crypto_encrypt_get);
+ 
+ 	/* The encryption operation will require a bounce page. */
+ 	ciphertext_page = alloc_bounce_page(ctx);
+@@ -358,6 +382,7 @@ struct page *ext4_encrypt(struct inode *inode,
+ 	if (err) {
+ 		ciphertext_page = ERR_PTR(err);
+ 	errout:
++		atomic_inc(&ext4_crypto_encrypt_get_err);
+ 		ext4_release_crypto_ctx(ctx);
+ 		return ciphertext_page;
+ 	}
+@@ -396,6 +421,7 @@ int ext4_decrypt_one(struct inode *inode, struct page *page)
+ 
+ 	struct ext4_crypto_ctx *ctx = ext4_get_crypto_ctx(inode);
+ 
++	atomic_inc(&ext4_crypto_decrypt_get);
+ 	if (IS_ERR(ctx))
+ 		return PTR_ERR(ctx);
+ 	ret = ext4_decrypt(ctx, page);
+@@ -418,6 +444,7 @@ int ext4_encrypted_zeroout(struct inode *inode, struct ext4_extent *ex)
+ 	ctx = ext4_get_crypto_ctx(inode);
+ 	if (IS_ERR(ctx))
+ 		return PTR_ERR(ctx);
++	atomic_inc(&ext4_crypto_zeroout_get);
+ 
+ 	ciphertext_page = alloc_bounce_page(ctx);
+ 	if (IS_ERR(ciphertext_page)) {
+@@ -444,6 +471,11 @@ int ext4_encrypted_zeroout(struct inode *inode, struct ext4_extent *ex)
+ 			bio_put(bio);
+ 			goto errout;
+ 		}
++#if 0
++		ext4_msg(inode->i_sb, KERN_CRIT,
++			 "ext4_encrypted zeroout %llu ino %lu", pblk,
++			 (unsigned long) inode->i_ino);
++#endif
+ 		err = submit_bio_wait(WRITE, bio);
+ 		bio_put(bio);
+ 		if (err)
+diff --git a/fs/ext4/ext4_crypto.h b/fs/ext4/ext4_crypto.h
+index ac7d4e8..5879a44 100644
+--- a/fs/ext4/ext4_crypto.h
++++ b/fs/ext4/ext4_crypto.h
+@@ -156,4 +156,21 @@ static inline u32 encrypted_symlink_data_len(u32 l)
+ 	return (l + sizeof(struct ext4_encrypted_symlink_data) - 1);
+ }
+ 
++
++extern atomic_t ext4_crypto_get_pool;
++extern atomic_t ext4_crypto_get_alloc;
++extern atomic_t ext4_crypto_put_pool;
++extern atomic_t ext4_crypto_put_alloc;
++extern atomic_t ext4_crypto_pool_inuse;
++extern atomic_t ext4_crypto_encrypt_get;
++extern atomic_t ext4_crypto_encrypt_get_err;
++extern atomic_t ext4_crypto_decrypt_get;
++extern atomic_t ext4_crypto_zeroout_get;
++extern atomic_t ext4_crypto_readpage_put;
++extern atomic_t ext4_crypto_encrypt_put;
++extern atomic_t ext4_crypto_under_io_skip;
++extern atomic_t ext4_crypto_finish_bio_release_io_end;
++extern atomic_t ext4_crypto_finish_bio_end_bio;
++extern atomic_t ext4_crypto_bio_submit;
++
+ #endif	/* _EXT4_CRYPTO_H */
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 2553aa8..8664f58 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -3126,6 +3126,11 @@ static int ext4_ext_zeroout(struct inode *inode, struct ext4_extent *ex)
+ 	if (ext4_encrypted_inode(inode))
+ 		return ext4_encrypted_zeroout(inode, ex);
+ 
++
++	ext4_msg(inode->i_sb, KERN_CRIT,
++		 "ext4_ext_zeroout %llu len %u ino %lu", ee_pblock,
++		 ee_len, (unsigned long) inode->i_ino);
++
+ 	ret = sb_issue_zeroout(inode->i_sb, ee_pblock, ee_len, GFP_NOFS);
+ 	if (ret > 0)
+ 		ret = 0;
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index 84ba4d2..afdfd0c 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -117,7 +117,8 @@ static void ext4_finish_bio(struct bio *bio)
+ 				ext4_restore_control_page(data_page);
+ #endif
+ 			end_page_writeback(page);
+-		}
++		} else
++			atomic_inc(&ext4_crypto_under_io_skip);
+ 	}
+ }
+ 
+@@ -135,6 +136,7 @@ static void ext4_release_io_end(ext4_io_end_t *io_end)
+ 	for (bio = io_end->bio; bio; bio = next_bio) {
+ 		next_bio = bio->bi_private;
+ 		ext4_finish_bio(bio);
++		atomic_inc(&ext4_crypto_finish_bio_release_io_end);
+ 		bio_put(bio);
+ 	}
+ 	kmem_cache_free(io_end_cachep, io_end);
+@@ -345,6 +347,7 @@ static void ext4_end_bio(struct bio *bio)
+ 		 */
+ 		ext4_put_io_end_defer(io_end);
+ 		ext4_finish_bio(bio);
++		atomic_inc(&ext4_crypto_finish_bio_end_bio);
+ 		bio_put(bio);
+ 	}
+ }
+@@ -358,6 +361,7 @@ void ext4_io_submit(struct ext4_io_submit *io)
+ 			    WRITE_SYNC : WRITE;
+ 		bio_get(io->io_bio);
+ 		submit_bio(io_op, io->io_bio);
++		atomic_inc(&ext4_crypto_bio_submit);
+ 		bio_put(io->io_bio);
+ 	}
+ 	io->io_bio = NULL;
+diff --git a/fs/ext4/readpage.c b/fs/ext4/readpage.c
+index e26803f..02dcba6 100644
+--- a/fs/ext4/readpage.c
++++ b/fs/ext4/readpage.c
+@@ -70,6 +70,7 @@ static void completion_pages(struct work_struct *work)
+ 			SetPageUptodate(page);
+ 		unlock_page(page);
+ 	}
++	atomic_inc(&ext4_crypto_readpage_put);
+ 	ext4_release_crypto_ctx(ctx);
+ 	bio_put(bio);
+ #else
+@@ -107,6 +108,7 @@ static void mpage_end_io(struct bio *bio)
+ 		struct ext4_crypto_ctx *ctx = bio->bi_private;
+ 
+ 		if (bio->bi_error) {
++			atomic_inc(&ext4_crypto_readpage_put);
+ 			ext4_release_crypto_ctx(ctx);
+ 		} else {
+ 			INIT_WORK(&ctx->r.work, completion_pages);
+@@ -286,8 +288,10 @@ int ext4_mpage_readpages(struct address_space *mapping,
+ 			bio = bio_alloc(GFP_KERNEL,
+ 				min_t(int, nr_pages, BIO_MAX_PAGES));
+ 			if (!bio) {
+-				if (ctx)
++				if (ctx) {
++					atomic_inc(&ext4_crypto_readpage_put);
+ 					ext4_release_crypto_ctx(ctx);
++				}
+ 				goto set_error_page;
+ 			}
+ 			bio->bi_bdev = bdev;
+diff --git a/fs/ext4/sysfs.c b/fs/ext4/sysfs.c
+index 62bef0f..5c95550 100644
+--- a/fs/ext4/sysfs.c
++++ b/fs/ext4/sysfs.c
+@@ -233,6 +233,44 @@ static struct attribute *ext4_feat_attrs[] = {
+ 	NULL,
+ };
+ 
++#define EXT4_ATTR_CRYPTO_ATOMIC(_name) \
++	EXT4_ATTR_PTR(_name, 0444, pointer_atomic ,&ext4_##_name)
++
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_get_pool);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_get_alloc);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_put_pool);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_put_alloc);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_pool_inuse);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_encrypt_get);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_encrypt_get_err);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_decrypt_get);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_zeroout_get);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_readpage_put);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_encrypt_put);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_under_io_skip);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_finish_bio_release_io_end);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_finish_bio_end_bio);
++EXT4_ATTR_CRYPTO_ATOMIC(crypto_bio_submit);
++
++static struct attribute *ext4_global_attrs[] = {
++	ATTR_LIST(crypto_get_pool),
++	ATTR_LIST(crypto_get_alloc),
++	ATTR_LIST(crypto_put_pool),
++	ATTR_LIST(crypto_put_alloc),
++	ATTR_LIST(crypto_pool_inuse),
++	ATTR_LIST(crypto_encrypt_get),
++	ATTR_LIST(crypto_encrypt_get_err),
++	ATTR_LIST(crypto_decrypt_get),
++	ATTR_LIST(crypto_zeroout_get),
++	ATTR_LIST(crypto_readpage_put),
++	ATTR_LIST(crypto_encrypt_put),
++	ATTR_LIST(crypto_under_io_skip),
++	ATTR_LIST(crypto_finish_bio_release_io_end),
++	ATTR_LIST(crypto_finish_bio_end_bio),
++	ATTR_LIST(crypto_bio_submit),
++	NULL,
++};
++
+ static void *calc_ptr(struct ext4_attr *a, struct ext4_sb_info *sbi)
+ {
+ 	switch (a->attr_ptr) {
+@@ -334,6 +372,7 @@ static struct kobj_type ext4_sb_ktype = {
+ };
+ 
+ static struct kobj_type ext4_ktype = {
++	.default_attrs	= ext4_global_attrs,
+ 	.sysfs_ops	= &ext4_attr_ops,
+ };
+ 
