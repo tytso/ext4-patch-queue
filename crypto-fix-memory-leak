@@ -1,0 +1,45 @@
+ext4 crypto: fix memory leak in ext4_bio_write_page()
+
+There are times when ext4_bio_write_page() is called even though we
+don't actually need to do any I/O.  This happens when ext4_writepage()
+gets called by the jbd2 commit path when an inode needs to force its
+pages written out in order to provide data=ordered guarantees --- and
+a page is backed by an unwritten (e.g., uninitialized) block on disk,
+or if delayed allocation means the page's backing store hasn't been
+allocated yet.  In that case, we need to skip the call to
+ext4_encrypt_page(), since in addition to wasting CPU, it leads to a
+bounce page and an ext4 crypto context getting leaked.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/page-io.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/page-io.c b/fs/ext4/page-io.c
+index 84ba4d2..17fbe38 100644
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -425,6 +425,7 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+ 	struct buffer_head *bh, *head;
+ 	int ret = 0;
+ 	int nr_submitted = 0;
++	int nr_to_submit = 0;
+ 
+ 	blocksize = 1 << inode->i_blkbits;
+ 
+@@ -477,11 +478,13 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
+ 			unmap_underlying_metadata(bh->b_bdev, bh->b_blocknr);
+ 		}
+ 		set_buffer_async_write(bh);
++		nr_to_submit++;
+ 	} while ((bh = bh->b_this_page) != head);
+ 
+ 	bh = head = page_buffers(page);
+ 
+-	if (ext4_encrypted_inode(inode) && S_ISREG(inode->i_mode)) {
++	if (ext4_encrypted_inode(inode) && S_ISREG(inode->i_mode) &&
++	    nr_to_submit) {
+ 		data_page = ext4_encrypt(inode, page);
+ 		if (IS_ERR(data_page)) {
+ 			ret = PTR_ERR(data_page);
