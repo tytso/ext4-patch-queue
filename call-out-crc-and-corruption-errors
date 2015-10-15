@@ -1,0 +1,931 @@
+ext4: call out CRC and corruption errors with specific error codes
+
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+
+Instead of overloading EIO for CRC errors and corrupt structures,
+return the same error codes that XFS returns for the same issues.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/balloc.c         |    2 +
+ fs/ext4/block_validity.c |    2 +
+ fs/ext4/dir.c            |    4 +-
+ fs/ext4/ext4.h           |    3 ++
+ fs/ext4/extents.c        |   75 +++++++++++++++++++++++-----------------------
+ fs/ext4/ialloc.c         |    1 +
+ fs/ext4/indirect.c       |    2 +
+ fs/ext4/inode.c          |   16 +++++-----
+ fs/ext4/mmp.c            |    8 +++--
+ fs/ext4/namei.c          |   28 +++++++++--------
+ fs/ext4/super.c          |   10 ++++++
+ fs/ext4/symlink.c        |    2 +
+ fs/ext4/xattr.c          |   28 +++++++++--------
+ fs/jbd2/journal.c        |    3 +-
+ fs/jbd2/recovery.c       |    8 ++---
+ include/linux/jbd2.h     |    3 ++
+ 16 files changed, 107 insertions(+), 88 deletions(-)
+
+
+diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
+index cd6ea29..f831e10 100644
+--- a/fs/ext4/balloc.c
++++ b/fs/ext4/balloc.c
+@@ -203,7 +203,7 @@ static int ext4_init_block_bitmap(struct super_block *sb,
+ 					   count);
+ 		}
+ 		set_bit(EXT4_GROUP_INFO_IBITMAP_CORRUPT_BIT, &grp->bb_state);
+-		return -EIO;
++		return -EFSBADCRC;
+ 	}
+ 	memset(bh->b_data, 0, sb->s_blocksize);
+ 
+diff --git a/fs/ext4/block_validity.c b/fs/ext4/block_validity.c
+index 3522340..02ddec6 100644
+--- a/fs/ext4/block_validity.c
++++ b/fs/ext4/block_validity.c
+@@ -234,7 +234,7 @@ int ext4_check_blockref(const char *function, unsigned int line,
+ 			es->s_last_error_block = cpu_to_le64(blk);
+ 			ext4_error_inode(inode, function, line, blk,
+ 					 "invalid block");
+-			return -EIO;
++			return -EFSCORRUPTED;
+ 		}
+ 	}
+ 	return 0;
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index f9e1491..b29cb70 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -621,14 +621,14 @@ int ext4_check_all_de(struct inode *dir, struct buffer_head *bh, void *buf,
+ 	while ((char *) de < top) {
+ 		if (ext4_check_dir_entry(dir, NULL, de, bh,
+ 					 buf, buf_size, offset))
+-			return -EIO;
++			return -EFSCORRUPTED;
+ 		nlen = EXT4_DIR_REC_LEN(de->name_len);
+ 		rlen = ext4_rec_len_from_disk(de->rec_len, buf_size);
+ 		de = (struct ext4_dir_entry_2 *)((char *)de + rlen);
+ 		offset += rlen;
+ 	}
+ 	if ((char *) de > top)
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 
+ 	return 0;
+ }
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 81ce8ae..285b39f 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -3051,4 +3051,7 @@ extern void ext4_resize_end(struct super_block *sb);
+ 
+ #endif	/* __KERNEL__ */
+ 
++#define EFSBADCRC	EBADMSG		/* Bad CRC detected */
++#define EFSCORRUPTED	EUCLEAN		/* Filesystem is corrupted */
++
+ #endif	/* _EXT4_H */
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 2553aa8..4b6acacc 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -442,7 +442,7 @@ static int __ext4_ext_check(const char *function, unsigned int line,
+ 			    int depth, ext4_fsblk_t pblk)
+ {
+ 	const char *error_msg;
+-	int max = 0;
++	int max = 0, err = -EFSCORRUPTED;
+ 
+ 	if (unlikely(eh->eh_magic != EXT4_EXT_MAGIC)) {
+ 		error_msg = "invalid magic";
+@@ -473,6 +473,7 @@ static int __ext4_ext_check(const char *function, unsigned int line,
+ 	if (ext_depth(inode) != depth &&
+ 	    !ext4_extent_block_csum_verify(inode, eh)) {
+ 		error_msg = "extent tree corrupted";
++		err = -EFSBADCRC;
+ 		goto corrupted;
+ 	}
+ 	return 0;
+@@ -485,7 +486,7 @@ corrupted:
+ 			 le16_to_cpu(eh->eh_magic),
+ 			 le16_to_cpu(eh->eh_entries), le16_to_cpu(eh->eh_max),
+ 			 max, le16_to_cpu(eh->eh_depth), depth);
+-	return -EIO;
++	return err;
+ }
+ 
+ #define ext4_ext_check(inode, eh, depth, pblk)			\
+@@ -910,7 +911,7 @@ ext4_find_extent(struct inode *inode, ext4_lblk_t block,
+ 			put_bh(bh);
+ 			EXT4_ERROR_INODE(inode,
+ 					 "ppos %d > depth %d", ppos, depth);
+-			ret = -EIO;
++			ret = -EFSCORRUPTED;
+ 			goto err;
+ 		}
+ 		path[ppos].p_bh = bh;
+@@ -959,7 +960,7 @@ static int ext4_ext_insert_index(handle_t *handle, struct inode *inode,
+ 		EXT4_ERROR_INODE(inode,
+ 				 "logical %d == ei_block %d!",
+ 				 logical, le32_to_cpu(curp->p_idx->ei_block));
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	if (unlikely(le16_to_cpu(curp->p_hdr->eh_entries)
+@@ -968,7 +969,7 @@ static int ext4_ext_insert_index(handle_t *handle, struct inode *inode,
+ 				 "eh_entries %d >= eh_max %d!",
+ 				 le16_to_cpu(curp->p_hdr->eh_entries),
+ 				 le16_to_cpu(curp->p_hdr->eh_max));
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	if (logical > le32_to_cpu(curp->p_idx->ei_block)) {
+@@ -992,7 +993,7 @@ static int ext4_ext_insert_index(handle_t *handle, struct inode *inode,
+ 
+ 	if (unlikely(ix > EXT_MAX_INDEX(curp->p_hdr))) {
+ 		EXT4_ERROR_INODE(inode, "ix > EXT_MAX_INDEX!");
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	ix->ei_block = cpu_to_le32(logical);
+@@ -1001,7 +1002,7 @@ static int ext4_ext_insert_index(handle_t *handle, struct inode *inode,
+ 
+ 	if (unlikely(ix > EXT_LAST_INDEX(curp->p_hdr))) {
+ 		EXT4_ERROR_INODE(inode, "ix > EXT_LAST_INDEX!");
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	err = ext4_ext_dirty(handle, inode, curp);
+@@ -1042,7 +1043,7 @@ static int ext4_ext_split(handle_t *handle, struct inode *inode,
+ 	 * border from split point */
+ 	if (unlikely(path[depth].p_ext > EXT_MAX_EXTENT(path[depth].p_hdr))) {
+ 		EXT4_ERROR_INODE(inode, "p_ext > EXT_MAX_EXTENT!");
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 	if (path[depth].p_ext != EXT_MAX_EXTENT(path[depth].p_hdr)) {
+ 		border = path[depth].p_ext[1].ee_block;
+@@ -1086,7 +1087,7 @@ static int ext4_ext_split(handle_t *handle, struct inode *inode,
+ 	newblock = ablocks[--a];
+ 	if (unlikely(newblock == 0)) {
+ 		EXT4_ERROR_INODE(inode, "newblock == 0!");
+-		err = -EIO;
++		err = -EFSCORRUPTED;
+ 		goto cleanup;
+ 	}
+ 	bh = sb_getblk_gfp(inode->i_sb, newblock, __GFP_MOVABLE | GFP_NOFS);
+@@ -1112,7 +1113,7 @@ static int ext4_ext_split(handle_t *handle, struct inode *inode,
+ 		EXT4_ERROR_INODE(inode, "eh_entries %d != eh_max %d!",
+ 				 path[depth].p_hdr->eh_entries,
+ 				 path[depth].p_hdr->eh_max);
+-		err = -EIO;
++		err = -EFSCORRUPTED;
+ 		goto cleanup;
+ 	}
+ 	/* start copy from next extent */
+@@ -1151,7 +1152,7 @@ static int ext4_ext_split(handle_t *handle, struct inode *inode,
+ 	k = depth - at - 1;
+ 	if (unlikely(k < 0)) {
+ 		EXT4_ERROR_INODE(inode, "k %d < 0!", k);
+-		err = -EIO;
++		err = -EFSCORRUPTED;
+ 		goto cleanup;
+ 	}
+ 	if (k)
+@@ -1191,7 +1192,7 @@ static int ext4_ext_split(handle_t *handle, struct inode *inode,
+ 			EXT4_ERROR_INODE(inode,
+ 					 "EXT_MAX_INDEX != EXT_LAST_INDEX ee_block %d!",
+ 					 le32_to_cpu(path[i].p_ext->ee_block));
+-			err = -EIO;
++			err = -EFSCORRUPTED;
+ 			goto cleanup;
+ 		}
+ 		/* start copy indexes */
+@@ -1425,7 +1426,7 @@ static int ext4_ext_search_left(struct inode *inode,
+ 
+ 	if (unlikely(path == NULL)) {
+ 		EXT4_ERROR_INODE(inode, "path == NULL *logical %d!", *logical);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 	depth = path->p_depth;
+ 	*phys = 0;
+@@ -1444,7 +1445,7 @@ static int ext4_ext_search_left(struct inode *inode,
+ 			EXT4_ERROR_INODE(inode,
+ 					 "EXT_FIRST_EXTENT != ex *logical %d ee_block %d!",
+ 					 *logical, le32_to_cpu(ex->ee_block));
+-			return -EIO;
++			return -EFSCORRUPTED;
+ 		}
+ 		while (--depth >= 0) {
+ 			ix = path[depth].p_idx;
+@@ -1455,7 +1456,7 @@ static int ext4_ext_search_left(struct inode *inode,
+ 				  EXT_FIRST_INDEX(path[depth].p_hdr) != NULL ?
+ 		le32_to_cpu(EXT_FIRST_INDEX(path[depth].p_hdr)->ei_block) : 0,
+ 				  depth);
+-				return -EIO;
++				return -EFSCORRUPTED;
+ 			}
+ 		}
+ 		return 0;
+@@ -1465,7 +1466,7 @@ static int ext4_ext_search_left(struct inode *inode,
+ 		EXT4_ERROR_INODE(inode,
+ 				 "logical %d < ee_block %d + ee_len %d!",
+ 				 *logical, le32_to_cpu(ex->ee_block), ee_len);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	*logical = le32_to_cpu(ex->ee_block) + ee_len - 1;
+@@ -1495,7 +1496,7 @@ static int ext4_ext_search_right(struct inode *inode,
+ 
+ 	if (unlikely(path == NULL)) {
+ 		EXT4_ERROR_INODE(inode, "path == NULL *logical %d!", *logical);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 	depth = path->p_depth;
+ 	*phys = 0;
+@@ -1514,7 +1515,7 @@ static int ext4_ext_search_right(struct inode *inode,
+ 			EXT4_ERROR_INODE(inode,
+ 					 "first_extent(path[%d].p_hdr) != ex",
+ 					 depth);
+-			return -EIO;
++			return -EFSCORRUPTED;
+ 		}
+ 		while (--depth >= 0) {
+ 			ix = path[depth].p_idx;
+@@ -1522,7 +1523,7 @@ static int ext4_ext_search_right(struct inode *inode,
+ 				EXT4_ERROR_INODE(inode,
+ 						 "ix != EXT_FIRST_INDEX *logical %d!",
+ 						 *logical);
+-				return -EIO;
++				return -EFSCORRUPTED;
+ 			}
+ 		}
+ 		goto found_extent;
+@@ -1532,7 +1533,7 @@ static int ext4_ext_search_right(struct inode *inode,
+ 		EXT4_ERROR_INODE(inode,
+ 				 "logical %d < ee_block %d + ee_len %d!",
+ 				 *logical, le32_to_cpu(ex->ee_block), ee_len);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	if (ex != EXT_LAST_EXTENT(path[depth].p_hdr)) {
+@@ -1670,7 +1671,7 @@ static int ext4_ext_correct_indexes(handle_t *handle, struct inode *inode,
+ 	if (unlikely(ex == NULL || eh == NULL)) {
+ 		EXT4_ERROR_INODE(inode,
+ 				 "ex %p == NULL or eh %p == NULL", ex, eh);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	if (depth == 0) {
+@@ -1938,14 +1939,14 @@ int ext4_ext_insert_extent(handle_t *handle, struct inode *inode,
+ 		mb_flags |= EXT4_MB_DELALLOC_RESERVED;
+ 	if (unlikely(ext4_ext_get_actual_len(newext) == 0)) {
+ 		EXT4_ERROR_INODE(inode, "ext4_ext_get_actual_len(newext) == 0");
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 	depth = ext_depth(inode);
+ 	ex = path[depth].p_ext;
+ 	eh = path[depth].p_hdr;
+ 	if (unlikely(path[depth].p_hdr == NULL)) {
+ 		EXT4_ERROR_INODE(inode, "path[%d].p_hdr == NULL", depth);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	/* try to insert block into found extent and return */
+@@ -2172,7 +2173,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+ 		if (unlikely(path[depth].p_hdr == NULL)) {
+ 			up_read(&EXT4_I(inode)->i_data_sem);
+ 			EXT4_ERROR_INODE(inode, "path[%d].p_hdr == NULL", depth);
+-			err = -EIO;
++			err = -EFSCORRUPTED;
+ 			break;
+ 		}
+ 		ex = path[depth].p_ext;
+@@ -2241,7 +2242,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+ 
+ 		if (unlikely(es.es_len == 0)) {
+ 			EXT4_ERROR_INODE(inode, "es.es_len == 0");
+-			err = -EIO;
++			err = -EFSCORRUPTED;
+ 			break;
+ 		}
+ 
+@@ -2264,7 +2265,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+ 						 "next extent == %u, next "
+ 						 "delalloc extent = %u",
+ 						 next, next_del);
+-				err = -EIO;
++				err = -EFSCORRUPTED;
+ 				break;
+ 			}
+ 		}
+@@ -2363,7 +2364,7 @@ static int ext4_ext_rm_idx(handle_t *handle, struct inode *inode,
+ 	leaf = ext4_idx_pblock(path->p_idx);
+ 	if (unlikely(path->p_hdr->eh_entries == 0)) {
+ 		EXT4_ERROR_INODE(inode, "path->p_hdr->eh_entries == 0");
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 	err = ext4_ext_get_access(handle, inode, path);
+ 	if (err)
+@@ -2612,7 +2613,7 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+ 	eh = path[depth].p_hdr;
+ 	if (unlikely(path[depth].p_hdr == NULL)) {
+ 		EXT4_ERROR_INODE(inode, "path[%d].p_hdr == NULL", depth);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 	/* find where to start removing */
+ 	ex = path[depth].p_ext;
+@@ -2666,7 +2667,7 @@ ext4_ext_rm_leaf(handle_t *handle, struct inode *inode,
+ 					 "on extent %u:%u",
+ 					 start, end, ex_ee_block,
+ 					 ex_ee_block + ex_ee_len - 1);
+-			err = -EIO;
++			err = -EFSCORRUPTED;
+ 			goto out;
+ 		} else if (a != ex_ee_block) {
+ 			/* remove tail of the extent */
+@@ -2841,7 +2842,7 @@ again:
+ 				EXT4_ERROR_INODE(inode,
+ 						 "path[%d].p_hdr == NULL",
+ 						 depth);
+-				err = -EIO;
++				err = -EFSCORRUPTED;
+ 			}
+ 			goto out;
+ 		}
+@@ -2920,7 +2921,7 @@ again:
+ 		i = 0;
+ 
+ 		if (ext4_ext_check(inode, path[0].p_hdr, depth, 0)) {
+-			err = -EIO;
++			err = -EFSCORRUPTED;
+ 			goto out;
+ 		}
+ 	}
+@@ -2978,7 +2979,7 @@ again:
+ 			 * Should be a no-op if we did IO above. */
+ 			cond_resched();
+ 			if (WARN_ON(i + 1 > depth)) {
+-				err = -EIO;
++				err = -EFSCORRUPTED;
+ 				break;
+ 			}
+ 			path[i + 1].p_bh = bh;
+@@ -3345,7 +3346,7 @@ static int ext4_split_extent(handle_t *handle,
+ 	if (!ex) {
+ 		EXT4_ERROR_INODE(inode, "unexpected hole at %lu",
+ 				 (unsigned long) map->m_lblk);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 	unwritten = ext4_ext_is_unwritten(ex);
+ 	split_flag1 = 0;
+@@ -3970,7 +3971,7 @@ convert_initialized_extent(handle_t *handle, struct inode *inode,
+ 		if (!ex) {
+ 			EXT4_ERROR_INODE(inode, "unexpected hole at %lu",
+ 					 (unsigned long) map->m_lblk);
+-			return -EIO;
++			return -EFSCORRUPTED;
+ 		}
+ 	}
+ 
+@@ -4308,7 +4309,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 				 "lblock: %lu, depth: %d pblock %lld",
+ 				 (unsigned long) map->m_lblk, depth,
+ 				 path[depth].p_block);
+-		err = -EIO;
++		err = -EFSCORRUPTED;
+ 		goto out2;
+ 	}
+ 
+@@ -5271,7 +5272,7 @@ ext4_ext_shift_path_extents(struct ext4_ext_path *path, ext4_lblk_t shift,
+ 		if (depth == path->p_depth) {
+ 			ex_start = path[depth].p_ext;
+ 			if (!ex_start)
+-				return -EIO;
++				return -EFSCORRUPTED;
+ 
+ 			ex_last = EXT_LAST_EXTENT(path[depth].p_hdr);
+ 
+@@ -5411,7 +5412,7 @@ ext4_ext_shift_extents(struct inode *inode, handle_t *handle,
+ 		if (!extent) {
+ 			EXT4_ERROR_INODE(inode, "unexpected hole at %lu",
+ 					 (unsigned long) *iterator);
+-			return -EIO;
++			return -EFSCORRUPTED;
+ 		}
+ 		if (SHIFT == SHIFT_LEFT && *iterator >
+ 		    le32_to_cpu(extent->ee_block)) {
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 619bfc1..f34b1aa 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -1116,6 +1116,7 @@ struct inode *ext4_orphan_get(struct super_block *sb, unsigned long ino)
+ 	/* Error cases - e2fsck has already cleaned up for us */
+ 	if (ino > max_ino) {
+ 		ext4_warning(sb, "bad orphan ino %lu!  e2fsck was run?", ino);
++		err = -EFSCORRUPTED;
+ 		goto error;
+ 	}
+ 
+diff --git a/fs/ext4/indirect.c b/fs/ext4/indirect.c
+index 2468261..d96ea53 100644
+--- a/fs/ext4/indirect.c
++++ b/fs/ext4/indirect.c
+@@ -566,7 +566,7 @@ int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
+ 				       EXT4_FEATURE_RO_COMPAT_BIGALLOC)) {
+ 		EXT4_ERROR_INODE(inode, "Can't allocate blocks for "
+ 				 "non-extent mapped inodes with bigalloc");
+-		return -EUCLEAN;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	/* Set up for the direct block allocation */
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 612fbcf..6facf71 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -378,7 +378,7 @@ static int __check_block_validity(struct inode *inode, const char *func,
+ 				 "lblock %lu mapped to illegal pblock "
+ 				 "(length %d)", (unsigned long) map->m_lblk,
+ 				 map->m_len);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 	return 0;
+ }
+@@ -480,7 +480,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
+ 
+ 	/* We can handle the block number less than EXT_MAX_BLOCKS */
+ 	if (unlikely(map->m_lblk >= EXT_MAX_BLOCKS))
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 
+ 	/* Lookup extent status tree firstly */
+ 	if (ext4_es_lookup_extent(inode, map->m_lblk, &es)) {
+@@ -3820,7 +3820,7 @@ static int __ext4_get_inode_loc(struct inode *inode,
+ 
+ 	iloc->bh = NULL;
+ 	if (!ext4_valid_inum(sb, inode->i_ino))
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 
+ 	iloc->block_group = (inode->i_ino - 1) / EXT4_INODES_PER_GROUP(sb);
+ 	gdp = ext4_get_group_desc(sb, iloc->block_group, NULL);
+@@ -4068,7 +4068,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+ 			EXT4_ERROR_INODE(inode, "bad extra_isize (%u != %u)",
+ 				EXT4_GOOD_OLD_INODE_SIZE + ei->i_extra_isize,
+ 				EXT4_INODE_SIZE(inode->i_sb));
+-			ret = -EIO;
++			ret = -EFSCORRUPTED;
+ 			goto bad_inode;
+ 		}
+ 	} else
+@@ -4088,7 +4088,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+ 
+ 	if (!ext4_inode_csum_verify(inode, raw_inode, ei)) {
+ 		EXT4_ERROR_INODE(inode, "checksum invalid");
+-		ret = -EIO;
++		ret = -EFSBADCRC;
+ 		goto bad_inode;
+ 	}
+ 
+@@ -4203,7 +4203,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+ 	    !ext4_data_block_valid(EXT4_SB(sb), ei->i_file_acl, 1)) {
+ 		EXT4_ERROR_INODE(inode, "bad extended attribute block %llu",
+ 				 ei->i_file_acl);
+-		ret = -EIO;
++		ret = -EFSCORRUPTED;
+ 		goto bad_inode;
+ 	} else if (!ext4_has_inline_data(inode)) {
+ 		if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)) {
+@@ -4254,7 +4254,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+ 	} else if (ino == EXT4_BOOT_LOADER_INO) {
+ 		make_bad_inode(inode);
+ 	} else {
+-		ret = -EIO;
++		ret = -EFSCORRUPTED;
+ 		EXT4_ERROR_INODE(inode, "bogus i_mode (%o)", inode->i_mode);
+ 		goto bad_inode;
+ 	}
+@@ -4272,7 +4272,7 @@ bad_inode:
+ struct inode *ext4_iget_normal(struct super_block *sb, unsigned long ino)
+ {
+ 	if (ino < EXT4_FIRST_INO(sb) && ino != EXT4_ROOT_INO)
+-		return ERR_PTR(-EIO);
++		return ERR_PTR(-EFSCORRUPTED);
+ 	return ext4_iget(sb, ino);
+ }
+ 
+diff --git a/fs/ext4/mmp.c b/fs/ext4/mmp.c
+index 6eb1a61..0a512aa 100644
+--- a/fs/ext4/mmp.c
++++ b/fs/ext4/mmp.c
+@@ -98,10 +98,12 @@ static int read_mmp_block(struct super_block *sb, struct buffer_head **bh,
+ 	}
+ 
+ 	mmp = (struct mmp_struct *)((*bh)->b_data);
+-	if (le32_to_cpu(mmp->mmp_magic) == EXT4_MMP_MAGIC &&
+-	    ext4_mmp_csum_verify(sb, mmp))
++	if (le32_to_cpu(mmp->mmp_magic) != EXT4_MMP_MAGIC)
++		ret = -EFSCORRUPTED;
++	else if (!ext4_mmp_csum_verify(sb, mmp))
++		ret = -EFSBADCRC;
++	else
+ 		return 0;
+-	ret = -EINVAL;
+ 
+ warn_exit:
+ 	ext4_warning(sb, "Error %d while reading MMP block %llu",
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 9f61e76..8fd8e0d 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -109,7 +109,7 @@ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
+ 	if (!bh) {
+ 		ext4_error_inode(inode, func, line, block,
+ 				 "Directory hole found");
+-		return ERR_PTR(-EIO);
++		return ERR_PTR(-EFSCORRUPTED);
+ 	}
+ 	dirent = (struct ext4_dir_entry *) bh->b_data;
+ 	/* Determine whether or not we have an index block */
+@@ -124,7 +124,7 @@ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
+ 	if (!is_dx_block && type == INDEX) {
+ 		ext4_error_inode(inode, func, line, block,
+ 		       "directory leaf block found instead of index block");
+-		return ERR_PTR(-EIO);
++		return ERR_PTR(-EFSCORRUPTED);
+ 	}
+ 	if (!ext4_has_metadata_csum(inode->i_sb) ||
+ 	    buffer_verified(bh))
+@@ -142,7 +142,7 @@ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
+ 			ext4_error_inode(inode, func, line, block,
+ 					 "Directory index failed checksum");
+ 			brelse(bh);
+-			return ERR_PTR(-EIO);
++			return ERR_PTR(-EFSBADCRC);
+ 		}
+ 	}
+ 	if (!is_dx_block) {
+@@ -152,7 +152,7 @@ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
+ 			ext4_error_inode(inode, func, line, block,
+ 					 "Directory block failed checksum");
+ 			brelse(bh);
+-			return ERR_PTR(-EIO);
++			return ERR_PTR(-EFSBADCRC);
+ 		}
+ 	}
+ 	return bh;
+@@ -1570,19 +1570,19 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
+ 		brelse(bh);
+ 		if (!ext4_valid_inum(dir->i_sb, ino)) {
+ 			EXT4_ERROR_INODE(dir, "bad inode number: %u", ino);
+-			return ERR_PTR(-EIO);
++			return ERR_PTR(-EFSCORRUPTED);
+ 		}
+ 		if (unlikely(ino == dir->i_ino)) {
+ 			EXT4_ERROR_INODE(dir, "'%pd' linked to parent dir",
+ 					 dentry);
+-			return ERR_PTR(-EIO);
++			return ERR_PTR(-EFSCORRUPTED);
+ 		}
+ 		inode = ext4_iget_normal(dir->i_sb, ino);
+ 		if (inode == ERR_PTR(-ESTALE)) {
+ 			EXT4_ERROR_INODE(dir,
+ 					 "deleted inode referenced: %u",
+ 					 ino);
+-			return ERR_PTR(-EIO);
++			return ERR_PTR(-EFSCORRUPTED);
+ 		}
+ 		if (!IS_ERR(inode) && ext4_encrypted_inode(dir) &&
+ 		    (S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
+@@ -1619,7 +1619,7 @@ struct dentry *ext4_get_parent(struct dentry *child)
+ 	if (!ext4_valid_inum(d_inode(child)->i_sb, ino)) {
+ 		EXT4_ERROR_INODE(d_inode(child),
+ 				 "bad parent inode number: %u", ino);
+-		return ERR_PTR(-EIO);
++		return ERR_PTR(-EFSCORRUPTED);
+ 	}
+ 
+ 	return d_obtain_alias(ext4_iget_normal(d_inode(child)->i_sb, ino));
+@@ -1807,7 +1807,7 @@ int ext4_find_dest_de(struct inode *dir, struct inode *inode,
+ 	while ((char *) de <= top) {
+ 		if (ext4_check_dir_entry(dir, NULL, de, bh,
+ 					 buf, buf_size, offset)) {
+-			res = -EIO;
++			res = -EFSCORRUPTED;
+ 			goto return_result;
+ 		}
+ 		/* Provide crypto context and crypto buffer to ext4 match */
+@@ -1967,7 +1967,7 @@ static int make_indexed_dir(handle_t *handle, struct ext4_filename *fname,
+ 	if ((char *) de >= (((char *) root) + blocksize)) {
+ 		EXT4_ERROR_INODE(dir, "invalid rec_len for '..'");
+ 		brelse(bh);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 	len = ((char *) root) + (blocksize - csum_size) - (char *) de;
+ 
+@@ -2315,7 +2315,7 @@ int ext4_generic_delete_entry(handle_t *handle,
+ 	while (i < buf_size - csum_size) {
+ 		if (ext4_check_dir_entry(dir, NULL, de, bh,
+ 					 bh->b_data, bh->b_size, i))
+-			return -EIO;
++			return -EFSCORRUPTED;
+ 		if (de == de_del)  {
+ 			if (pde)
+ 				pde->rec_len = ext4_rec_len_to_disk(
+@@ -2934,7 +2934,7 @@ static int ext4_rmdir(struct inode *dir, struct dentry *dentry)
+ 
+ 	inode = d_inode(dentry);
+ 
+-	retval = -EIO;
++	retval = -EFSCORRUPTED;
+ 	if (le32_to_cpu(de->inode) != inode->i_ino)
+ 		goto end_rmdir;
+ 
+@@ -3008,7 +3008,7 @@ static int ext4_unlink(struct inode *dir, struct dentry *dentry)
+ 
+ 	inode = d_inode(dentry);
+ 
+-	retval = -EIO;
++	retval = -EFSCORRUPTED;
+ 	if (le32_to_cpu(de->inode) != inode->i_ino)
+ 		goto end_unlink;
+ 
+@@ -3310,7 +3310,7 @@ static int ext4_rename_dir_prepare(handle_t *handle, struct ext4_renament *ent)
+ 	if (!ent->dir_bh)
+ 		return retval;
+ 	if (le32_to_cpu(ent->parent_de->inode) != ent->dir->i_ino)
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	BUFFER_TRACE(ent->dir_bh, "get_write_access");
+ 	return ext4_journal_get_write_access(handle, ent->dir_bh);
+ }
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index ec9ccb2..99d5efb 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -495,6 +495,12 @@ const char *ext4_decode_error(struct super_block *sb, int errno,
+ 	char *errstr = NULL;
+ 
+ 	switch (errno) {
++	case -EFSCORRUPTED:
++		errstr = "Corrupt filesystem";
++		break;
++	case -EFSBADCRC:
++		errstr = "Filesystem failed CRC";
++		break;
+ 	case -EIO:
+ 		errstr = "IO failure";
+ 		break;
+@@ -3559,6 +3565,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		ext4_msg(sb, KERN_ERR, "VFS: Found ext4 filesystem with "
+ 			 "invalid superblock checksum.  Run e2fsck?");
+ 		silent = 1;
++		ret = -EFSBADCRC;
+ 		goto cantfind_ext4;
+ 	}
+ 
+@@ -3986,6 +3993,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	}
+ 	if (!ext4_check_descriptors(sb, &first_not_zeroed)) {
+ 		ext4_msg(sb, KERN_ERR, "group descriptors corrupted!");
++		ret = -EFSCORRUPTED;
+ 		goto failed_mount2;
+ 	}
+ 
+@@ -5050,7 +5058,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 	       "ext4_remount: Checksum for group %u failed (%u!=%u)",
+ 		g, le16_to_cpu(ext4_group_desc_csum(sbi, g, gdp)),
+ 					       le16_to_cpu(gdp->bg_checksum));
+-					err = -EINVAL;
++					err = -EFSBADCRC;
+ 					goto restore_opts;
+ 				}
+ 			}
+diff --git a/fs/ext4/symlink.c b/fs/ext4/symlink.c
+index c677f2c..abe2401 100644
+--- a/fs/ext4/symlink.c
++++ b/fs/ext4/symlink.c
+@@ -57,7 +57,7 @@ static const char *ext4_encrypted_follow_link(struct dentry *dentry, void **cook
+ 	     sizeof(struct ext4_encrypted_symlink_data) - 1) >
+ 	    max_size) {
+ 		/* Symlink data on the disk is corrupted */
+-		res = -EIO;
++		res = -EFSCORRUPTED;
+ 		goto errout;
+ 	}
+ 	plen = (cstr.len < EXT4_FNAME_CRYPTO_DIGEST_SIZE*2) ?
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index 16e28c0..7649422 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -195,7 +195,7 @@ ext4_xattr_check_names(struct ext4_xattr_entry *entry, void *end,
+ 	while (!IS_LAST_ENTRY(e)) {
+ 		struct ext4_xattr_entry *next = EXT4_XATTR_NEXT(e);
+ 		if ((void *)next >= end)
+-			return -EIO;
++			return -EFSCORRUPTED;
+ 		e = next;
+ 	}
+ 
+@@ -205,7 +205,7 @@ ext4_xattr_check_names(struct ext4_xattr_entry *entry, void *end,
+ 		     (void *)e + sizeof(__u32) ||
+ 		     value_start + le16_to_cpu(entry->e_value_offs) +
+ 		    le32_to_cpu(entry->e_value_size) > end))
+-			return -EIO;
++			return -EFSCORRUPTED;
+ 		entry = EXT4_XATTR_NEXT(entry);
+ 	}
+ 
+@@ -222,9 +222,9 @@ ext4_xattr_check_block(struct inode *inode, struct buffer_head *bh)
+ 
+ 	if (BHDR(bh)->h_magic != cpu_to_le32(EXT4_XATTR_MAGIC) ||
+ 	    BHDR(bh)->h_blocks != cpu_to_le32(1))
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	if (!ext4_xattr_block_csum_verify(inode, bh->b_blocknr, BHDR(bh)))
+-		return -EIO;
++		return -EFSBADCRC;
+ 	error = ext4_xattr_check_names(BFIRST(bh), bh->b_data + bh->b_size,
+ 				       bh->b_data);
+ 	if (!error)
+@@ -239,7 +239,7 @@ ext4_xattr_check_entry(struct ext4_xattr_entry *entry, size_t size)
+ 
+ 	if (entry->e_value_block != 0 || value_size > size ||
+ 	    le16_to_cpu(entry->e_value_offs) + value_size > size)
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	return 0;
+ }
+ 
+@@ -266,7 +266,7 @@ ext4_xattr_find_entry(struct ext4_xattr_entry **pentry, int name_index,
+ 	}
+ 	*pentry = entry;
+ 	if (!cmp && ext4_xattr_check_entry(entry, size))
+-			return -EIO;
++		return -EFSCORRUPTED;
+ 	return cmp ? -ENODATA : 0;
+ }
+ 
+@@ -297,13 +297,13 @@ ext4_xattr_block_get(struct inode *inode, int name_index, const char *name,
+ bad_block:
+ 		EXT4_ERROR_INODE(inode, "bad block %llu",
+ 				 EXT4_I(inode)->i_file_acl);
+-		error = -EIO;
++		error = -EFSCORRUPTED;
+ 		goto cleanup;
+ 	}
+ 	ext4_xattr_cache_insert(ext4_mb_cache, bh);
+ 	entry = BFIRST(bh);
+ 	error = ext4_xattr_find_entry(&entry, name_index, name, bh->b_size, 1);
+-	if (error == -EIO)
++	if (error == -EFSCORRUPTED)
+ 		goto bad_block;
+ 	if (error)
+ 		goto cleanup;
+@@ -445,7 +445,7 @@ ext4_xattr_block_list(struct dentry *dentry, char *buffer, size_t buffer_size)
+ 	if (ext4_xattr_check_block(inode, bh)) {
+ 		EXT4_ERROR_INODE(inode, "bad block %llu",
+ 				 EXT4_I(inode)->i_file_acl);
+-		error = -EIO;
++		error = -EFSCORRUPTED;
+ 		goto cleanup;
+ 	}
+ 	ext4_xattr_cache_insert(ext4_mb_cache, bh);
+@@ -751,7 +751,7 @@ ext4_xattr_block_find(struct inode *inode, struct ext4_xattr_info *i,
+ 		if (ext4_xattr_check_block(inode, bs->bh)) {
+ 			EXT4_ERROR_INODE(inode, "bad block %llu",
+ 					 EXT4_I(inode)->i_file_acl);
+-			error = -EIO;
++			error = -EFSCORRUPTED;
+ 			goto cleanup;
+ 		}
+ 		/* Find the named attribute. */
+@@ -811,7 +811,7 @@ ext4_xattr_block_set(handle_t *handle, struct inode *inode,
+ 					bs->bh);
+ 			}
+ 			unlock_buffer(bs->bh);
+-			if (error == -EIO)
++			if (error == -EFSCORRUPTED)
+ 				goto bad_block;
+ 			if (!error)
+ 				error = ext4_handle_dirty_xattr_block(handle,
+@@ -855,7 +855,7 @@ ext4_xattr_block_set(handle_t *handle, struct inode *inode,
+ 	}
+ 
+ 	error = ext4_xattr_set_entry(i, s);
+-	if (error == -EIO)
++	if (error == -EFSCORRUPTED)
+ 		goto bad_block;
+ 	if (error)
+ 		goto cleanup;
+@@ -1314,7 +1314,7 @@ retry:
+ 		if (ext4_xattr_check_block(inode, bh)) {
+ 			EXT4_ERROR_INODE(inode, "bad block %llu",
+ 					 EXT4_I(inode)->i_file_acl);
+-			error = -EIO;
++			error = -EFSCORRUPTED;
+ 			goto cleanup;
+ 		}
+ 		base = BHDR(bh);
+@@ -1579,7 +1579,7 @@ ext4_xattr_cmp(struct ext4_xattr_header *header1,
+ 		    memcmp(entry1->e_name, entry2->e_name, entry1->e_name_len))
+ 			return 1;
+ 		if (entry1->e_value_block != 0 || entry2->e_value_block != 0)
+-			return -EIO;
++			return -EFSCORRUPTED;
+ 		if (memcmp((char *)header1 + le16_to_cpu(entry1->e_value_offs),
+ 			   (char *)header2 + le16_to_cpu(entry2->e_value_offs),
+ 			   le32_to_cpu(entry1->e_value_size)))
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 00f7dbd..474c178 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -1558,6 +1558,7 @@ static int journal_get_superblock(journal_t *journal)
+ 	/* Check superblock checksum */
+ 	if (!jbd2_superblock_csum_verify(journal, sb)) {
+ 		printk(KERN_ERR "JBD2: journal checksum error\n");
++		err = -EFSBADCRC;
+ 		goto out;
+ 	}
+ 
+@@ -1649,7 +1650,7 @@ int jbd2_journal_load(journal_t *journal)
+ 		printk(KERN_ERR "JBD2: journal transaction %u on %s "
+ 		       "is corrupt.\n", journal->j_failed_commit,
+ 		       journal->j_devname);
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	/* OK, we've finished with the dynamic journal bits:
+diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
+index a9079d0..5c836d7 100644
+--- a/fs/jbd2/recovery.c
++++ b/fs/jbd2/recovery.c
+@@ -140,7 +140,7 @@ static int jread(struct buffer_head **bhp, journal_t *journal,
+ 
+ 	if (offset >= journal->j_maxlen) {
+ 		printk(KERN_ERR "JBD2: corrupted journal superblock\n");
+-		return -EIO;
++		return -EFSCORRUPTED;
+ 	}
+ 
+ 	err = jbd2_journal_bmap(journal, offset, &blocknr);
+@@ -527,7 +527,7 @@ static int do_one_pass(journal_t *journal,
+ 				printk(KERN_ERR "JBD2: Invalid checksum "
+ 				       "recovering block %lu in log\n",
+ 				       next_log_block);
+-				err = -EIO;
++				err = -EFSBADCRC;
+ 				brelse(bh);
+ 				goto failed;
+ 			}
+@@ -602,7 +602,7 @@ static int do_one_pass(journal_t *journal,
+ 						journal, tag, obh->b_data,
+ 						be32_to_cpu(tmp->h_sequence))) {
+ 						brelse(obh);
+-						success = -EIO;
++						success = -EFSBADCRC;
+ 						printk(KERN_ERR "JBD2: Invalid "
+ 						       "checksum recovering "
+ 						       "block %llu in log\n",
+@@ -851,7 +851,7 @@ static int scan_revoke_records(journal_t *journal, struct buffer_head *bh,
+ 	rcount = be32_to_cpu(header->r_count);
+ 
+ 	if (!jbd2_revoke_block_csum_verify(journal, header))
+-		return -EINVAL;
++		return -EFSBADCRC;
+ 
+ 	if (jbd2_journal_has_csum_v2or3(journal))
+ 		csum_size = sizeof(struct jbd2_journal_revoke_tail);
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 6da6f89..f2a4b07 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -1449,4 +1449,7 @@ static inline tid_t  jbd2_get_latest_transaction(journal_t *journal)
+ 
+ #endif	/* __KERNEL__ */
+ 
++#define EFSBADCRC	EBADMSG		/* Bad CRC detected */
++#define EFSCORRUPTED	EUCLEAN		/* Filesystem is corrupted */
++
+ #endif	/* _LINUX_JBD2_H */
+
+
