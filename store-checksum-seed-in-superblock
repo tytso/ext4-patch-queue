@@ -1,0 +1,84 @@
+ext4: store checksum seed in superblock
+
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+
+Allow the filesystem to store the metadata checksum seed in the
+superblock and add an incompat feature to say that we're using it.
+This enables tune2fs to change the UUID on a mounted metadata_csum
+FS without having to (racy!) rewrite all disk metadata.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4.h  | 8 +++++---
+ fs/ext4/super.c | 4 +++-
+ fs/ext4/sysfs.c | 2 ++
+ 3 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 3f248c9..0d313a7 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1179,7 +1179,8 @@ struct ext4_super_block {
+ 	__u8	s_encrypt_algos[4];	/* Encryption algorithms in use  */
+ 	__u8	s_encrypt_pw_salt[16];	/* Salt used for string2key algorithm */
+ 	__le32	s_lpf_ino;		/* Location of the lost+found inode */
+-	__le32	s_reserved[100];	/* Padding to the end of the block */
++	__le32	s_checksum_seed;	/* crc32c(uuid) if csum_seed set */
++	__le32	s_reserved[99];		/* Padding to the end of the block */
+ 	__le32	s_checksum;		/* crc32c(superblock) */
+ };
+ 
+@@ -1578,7 +1579,7 @@ static inline int ext4_encrypted_inode(struct inode *inode)
+ #define EXT4_FEATURE_INCOMPAT_FLEX_BG		0x0200
+ #define EXT4_FEATURE_INCOMPAT_EA_INODE		0x0400 /* EA in inode */
+ #define EXT4_FEATURE_INCOMPAT_DIRDATA		0x1000 /* data in dirent */
+-#define EXT4_FEATURE_INCOMPAT_BG_USE_META_CSUM	0x2000 /* use crc32c for bg */
++#define EXT4_FEATURE_INCOMPAT_CSUM_SEED		0x2000
+ #define EXT4_FEATURE_INCOMPAT_LARGEDIR		0x4000 /* >2GB or 3-lvl htree */
+ #define EXT4_FEATURE_INCOMPAT_INLINE_DATA	0x8000 /* data in inode */
+ #define EXT4_FEATURE_INCOMPAT_ENCRYPT		0x10000
+@@ -1607,7 +1608,8 @@ static inline int ext4_encrypted_inode(struct inode *inode)
+ 					 EXT4_FEATURE_INCOMPAT_FLEX_BG| \
+ 					 EXT4_FEATURE_INCOMPAT_MMP | \
+ 					 EXT4_FEATURE_INCOMPAT_INLINE_DATA | \
+-					 EXT4_FEATURE_INCOMPAT_ENCRYPT)
++					 EXT4_FEATURE_INCOMPAT_ENCRYPT | \
++					 EXT4_FEATURE_INCOMPAT_CSUM_SEED)
+ #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
+ 					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
+ 					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 7ef3fa5..43c0cc8 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3196,7 +3196,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	}
+ 
+ 	/* Precompute checksum seed for all metadata */
+-	if (ext4_has_metadata_csum(sb))
++	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_CSUM_SEED))
++		sbi->s_csum_seed = le32_to_cpu(es->s_checksum_seed);
++	else if (ext4_has_metadata_csum(sb))
+ 		sbi->s_csum_seed = ext4_chksum(sbi, ~0, es->s_uuid,
+ 					       sizeof(es->s_uuid));
+ 
+diff --git a/fs/ext4/sysfs.c b/fs/ext4/sysfs.c
+index 62bef0f..1b57c72 100644
+--- a/fs/ext4/sysfs.c
++++ b/fs/ext4/sysfs.c
+@@ -224,12 +224,14 @@ EXT4_ATTR_FEATURE(lazy_itable_init);
+ EXT4_ATTR_FEATURE(batched_discard);
+ EXT4_ATTR_FEATURE(meta_bg_resize);
+ EXT4_ATTR_FEATURE(encryption);
++EXT4_ATTR_FEATURE(metadata_csum_seed);
+ 
+ static struct attribute *ext4_feat_attrs[] = {
+ 	ATTR_LIST(lazy_itable_init),
+ 	ATTR_LIST(batched_discard),
+ 	ATTR_LIST(meta_bg_resize),
+ 	ATTR_LIST(encryption),
++	ATTR_LIST(metadata_csum_seed),
+ 	NULL,
+ };
+ 
