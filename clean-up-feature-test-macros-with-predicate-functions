@@ -8,22 +8,22 @@ places where we open-coded feature tests.
 
 Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
 ---
- fs/ext4/balloc.c    |  16 +++----
+ fs/ext4/balloc.c    |  16 ++++----
  fs/ext4/dir.c       |   3 +-
- fs/ext4/ext4.h      | 145 +++++++++++++++++++++++++++++++++++++++++++++++++++++++------
+ fs/ext4/ext4.h      | 146 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-------
  fs/ext4/ext4_jbd2.h |  10 ++---
  fs/ext4/extents.c   |   4 +-
  fs/ext4/ialloc.c    |   4 +-
  fs/ext4/indirect.c  |   3 +-
  fs/ext4/inline.c    |   3 +-
- fs/ext4/inode.c     |  16 +++----
+ fs/ext4/inode.c     |  16 +++-----
  fs/ext4/ioctl.c     |  15 +++----
- fs/ext4/migrate.c   |   9 ++--
+ fs/ext4/migrate.c   |   9 ++---
  fs/ext4/namei.c     |   8 ++--
- fs/ext4/resize.c    |  30 ++++++-------
- fs/ext4/super.c     | 165 ++++++++++++++++++++++++++++++----------------------------------------
+ fs/ext4/resize.c    |  30 ++++++--------
+ fs/ext4/super.c     | 165 ++++++++++++++++++++++++++++++++-------------------------------------------
  fs/ext4/xattr.c     |   4 +-
- 15 files changed, 251 insertions(+), 184 deletions(-)
+ 15 files changed, 252 insertions(+), 184 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
 index f831e10..32184c1 100644
@@ -107,10 +107,10 @@ index b29cb70..1d1bca7 100644
  	     ((inode->i_size >> sb->s_blocksize_bits) == 1) ||
  	     ext4_has_inline_data(inode)))
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index c5bbe4d..9d9fff8 100644
+index 6c07973..b1d04aa7 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1523,6 +1523,7 @@ static inline int ext4_encrypted_inode(struct inode *inode)
+@@ -1528,6 +1528,7 @@ static inline int ext4_encrypted_inode(struct inode *inode)
   * Feature set definitions
   */
  
@@ -118,7 +118,7 @@ index c5bbe4d..9d9fff8 100644
  #define EXT4_HAS_COMPAT_FEATURE(sb,mask)			\
  	((EXT4_SB(sb)->s_es->s_feature_compat & cpu_to_le32(mask)) != 0)
  #define EXT4_HAS_RO_COMPAT_FEATURE(sb,mask)			\
-@@ -1584,6 +1585,93 @@ static inline int ext4_encrypted_inode(struct inode *inode)
+@@ -1590,6 +1591,94 @@ static inline int ext4_encrypted_inode(struct inode *inode)
  #define EXT4_FEATURE_INCOMPAT_INLINE_DATA	0x8000 /* data in inode */
  #define EXT4_FEATURE_INCOMPAT_ENCRYPT		0x10000
  
@@ -192,6 +192,7 @@ index c5bbe4d..9d9fff8 100644
 +EXT4_FEATURE_RO_COMPAT_FUNCS(bigalloc,		BIGALLOC)
 +EXT4_FEATURE_RO_COMPAT_FUNCS(metadata_csum,	METADATA_CSUM)
 +EXT4_FEATURE_RO_COMPAT_FUNCS(readonly,		READONLY)
++EXT4_FEATURE_RO_COMPAT_FUNCS(project,		PROJECT)
 +
 +EXT4_FEATURE_INCOMPAT_FUNCS(compression,	COMPRESSION)
 +EXT4_FEATURE_INCOMPAT_FUNCS(filetype,		FILETYPE)
@@ -212,7 +213,7 @@ index c5bbe4d..9d9fff8 100644
  #define EXT2_FEATURE_COMPAT_SUPP	EXT4_FEATURE_COMPAT_EXT_ATTR
  #define EXT2_FEATURE_INCOMPAT_SUPP	(EXT4_FEATURE_INCOMPAT_FILETYPE| \
  					 EXT4_FEATURE_INCOMPAT_META_BG)
-@@ -1599,7 +1687,7 @@ static inline int ext4_encrypted_inode(struct inode *inode)
+@@ -1605,7 +1694,7 @@ static inline int ext4_encrypted_inode(struct inode *inode)
  					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
  					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR)
  
@@ -221,7 +222,7 @@ index c5bbe4d..9d9fff8 100644
  #define EXT4_FEATURE_INCOMPAT_SUPP	(EXT4_FEATURE_INCOMPAT_FILETYPE| \
  					 EXT4_FEATURE_INCOMPAT_RECOVER| \
  					 EXT4_FEATURE_INCOMPAT_META_BG| \
-@@ -1621,6 +1709,40 @@ static inline int ext4_encrypted_inode(struct inode *inode)
+@@ -1627,6 +1716,40 @@ static inline int ext4_encrypted_inode(struct inode *inode)
  					 EXT4_FEATURE_RO_COMPAT_METADATA_CSUM|\
  					 EXT4_FEATURE_RO_COMPAT_QUOTA)
  
@@ -262,7 +263,7 @@ index c5bbe4d..9d9fff8 100644
  /*
   * Default values for user and/or group using reserved blocks
   */
-@@ -1771,8 +1893,7 @@ static inline __le16 ext4_rec_len_to_disk(unsigned len, unsigned blocksize)
+@@ -1777,8 +1900,7 @@ static inline __le16 ext4_rec_len_to_disk(unsigned len, unsigned blocksize)
   * (c) Daniel Phillips, 2001
   */
  
@@ -272,7 +273,7 @@ index c5bbe4d..9d9fff8 100644
  		    ext4_test_inode_flag((dir), EXT4_INODE_INDEX))
  #define EXT4_DIR_LINK_MAX(dir) (!is_dx(dir) && (dir)->i_nlink >= EXT4_LINK_MAX)
  #define EXT4_DIR_LINK_EMPTY(dir) ((dir)->i_nlink == 2 || (dir)->i_nlink == 1)
-@@ -2073,7 +2194,7 @@ int ext4_init_crypto(void);
+@@ -2079,7 +2201,7 @@ int ext4_init_crypto(void);
  void ext4_exit_crypto(void);
  static inline int ext4_sb_has_crypto(struct super_block *sb)
  {
@@ -281,7 +282,7 @@ index c5bbe4d..9d9fff8 100644
  }
  #else
  static inline int ext4_init_crypto(void) { return 0; }
-@@ -2194,8 +2315,7 @@ int ext4_insert_dentry(struct inode *dir,
+@@ -2200,8 +2322,7 @@ int ext4_insert_dentry(struct inode *dir,
  		       struct ext4_filename *fname);
  static inline void ext4_update_dx_flag(struct inode *inode)
  {
@@ -291,7 +292,7 @@ index c5bbe4d..9d9fff8 100644
  		ext4_clear_inode_flag(inode, EXT4_INODE_INDEX);
  }
  static unsigned char ext4_filetype_table[] = {
-@@ -2204,8 +2324,7 @@ static unsigned char ext4_filetype_table[] = {
+@@ -2210,8 +2331,7 @@ static unsigned char ext4_filetype_table[] = {
  
  static inline  unsigned char get_dtype(struct super_block *sb, int filetype)
  {
@@ -301,7 +302,7 @@ index c5bbe4d..9d9fff8 100644
  		return DT_UNKNOWN;
  
  	return ext4_filetype_table[filetype];
-@@ -2537,15 +2656,13 @@ extern int ext4_register_li_request(struct super_block *sb,
+@@ -2543,15 +2663,13 @@ extern int ext4_register_li_request(struct super_block *sb,
  
  static inline int ext4_has_group_desc_csum(struct super_block *sb)
  {
@@ -320,7 +321,7 @@ index c5bbe4d..9d9fff8 100644
  		     !EXT4_SB(sb)->s_chksum_driver);
  
  	return (EXT4_SB(sb)->s_chksum_driver != NULL);
-@@ -2892,7 +3009,7 @@ static unsigned char ext4_type_by_mode[S_IFMT >> S_SHIFT] = {
+@@ -2898,7 +3016,7 @@ static unsigned char ext4_type_by_mode[S_IFMT >> S_SHIFT] = {
  static inline void ext4_set_de_type(struct super_block *sb,
  				struct ext4_dir_entry_2 *de,
  				umode_t mode) {
