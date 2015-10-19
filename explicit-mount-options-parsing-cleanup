@@ -1,0 +1,36 @@
+ext4: explicit mount options parsing cleanup
+
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+
+Currently MOPT_EXPLICIT treated as EXPLICIT_DELALLOC which may be changed
+in future. Let's fix it now.
+
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/super.c |    8 ++++++--
+ 1 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 7ef3fa5..e91f6d4 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1503,8 +1503,12 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
+ 		return -1;
+ 	if (args->from && (m->flags & MOPT_GTE0) && (arg < 0))
+ 		return -1;
+-	if (m->flags & MOPT_EXPLICIT)
+-		set_opt2(sb, EXPLICIT_DELALLOC);
++	if (m->flags & MOPT_EXPLICIT) {
++		if (m->mount_opt & EXT4_MOUNT_DELALLOC) {
++			set_opt2(sb, EXPLICIT_DELALLOC);
++		} else
++			return -1;
++	}
+ 	if (m->flags & MOPT_CLEAR_ERR)
+ 		clear_opt(sb, ERRORS_MASK);
+ 	if (token == Opt_noquota && sb_any_quota_loaded(sb)) {
+-- 
+1.7.1
+
+
