@@ -12,13 +12,13 @@ of memory if the block bitmaps become corrupt.
 Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/balloc.c  |   74 ++++++++++++++++++++----------------
- fs/ext4/ialloc.c  |  108 +++++++++++++++++++++++++++++++++++------------------
- fs/ext4/mballoc.c |   43 +++++++++++++--------
- 3 files changed, 140 insertions(+), 85 deletions(-)
+ fs/ext4/balloc.c  |  74 +++++++++++++++++++++++-------------------
+ fs/ext4/ialloc.c  | 108 ++++++++++++++++++++++++++++++++++++++++---------------------
+ fs/ext4/mballoc.c |  46 +++++++++++++++++---------
+ 3 files changed, 143 insertions(+), 85 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index f831e10..3199c8b 100644
+index 32184c1..ec0668a 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
 @@ -191,6 +191,7 @@ static int ext4_init_block_bitmap(struct super_block *sb,
@@ -201,7 +201,7 @@ index f831e10..3199c8b 100644
  		x = ext4_count_free(bitmap_bh->b_data,
  				    EXT4_CLUSTERS_PER_GROUP(sb) / 8);
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index f34b1aa..20ea02c 100644
+index 0d7f06e..1b8024d 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -64,7 +64,7 @@ void ext4_mark_bitmap_end(int start_bit, int end_bit, char *bitmap)
@@ -418,7 +418,7 @@ index f34b1aa..20ea02c 100644
  		x = ext4_count_free(bitmap_bh->b_data,
  				    EXT4_INODES_PER_GROUP(sb) / 8);
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 34b610e..19b8104 100644
+index b0f7ee5..6794ff4 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -874,8 +874,10 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
@@ -459,7 +459,7 @@ index 34b610e..19b8104 100644
  		memcpy(meta_group_info[i]->bb_bitmap, bh->b_data,
  			sb->s_blocksize);
  		put_bh(bh);
-@@ -2896,10 +2903,11 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
+@@ -2889,10 +2896,12 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
  	sb = ac->ac_sb;
  	sbi = EXT4_SB(sb);
  
@@ -468,12 +468,13 @@ index 34b610e..19b8104 100644
 -	if (!bitmap_bh)
 +	if (IS_ERR(bitmap_bh)) {
 +		err = PTR_ERR(bitmap_bh);
++		bitmap_bh = NULL;
  		goto out_err;
 +	}
  
  	BUFFER_TRACE(bitmap_bh, "getting write access");
  	err = ext4_journal_get_write_access(handle, bitmap_bh);
-@@ -3843,8 +3851,10 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
+@@ -3836,8 +3845,10 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
  		return 0;
  
  	bitmap_bh = ext4_read_block_bitmap(sb, group);
@@ -486,7 +487,7 @@ index 34b610e..19b8104 100644
  		return 0;
  	}
  
-@@ -4015,9 +4025,10 @@ repeat:
+@@ -4008,9 +4019,10 @@ repeat:
  		}
  
  		bitmap_bh = ext4_read_block_bitmap(sb, group);
@@ -500,7 +501,7 @@ index 34b610e..19b8104 100644
  			ext4_mb_unload_buddy(&e4b);
  			continue;
  		}
-@@ -4761,8 +4772,8 @@ do_more:
+@@ -4754,8 +4766,9 @@ do_more:
  	}
  	count_clusters = EXT4_NUM_B2C(sbi, count);
  	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
@@ -508,10 +509,11 @@ index 34b610e..19b8104 100644
 -		err = -EIO;
 +	if (IS_ERR(bitmap_bh)) {
 +		err = PTR_ERR(bitmap_bh);
++		bitmap_bh = NULL;
  		goto error_return;
  	}
  	gdp = ext4_get_group_desc(sb, block_group, &gd_bh);
-@@ -4931,8 +4942,8 @@ int ext4_group_add_blocks(handle_t *handle, struct super_block *sb,
+@@ -4924,8 +4937,9 @@ int ext4_group_add_blocks(handle_t *handle, struct super_block *sb,
  	}
  
  	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
@@ -519,7 +521,7 @@ index 34b610e..19b8104 100644
 -		err = -EIO;
 +	if (IS_ERR(bitmap_bh)) {
 +		err = PTR_ERR(bitmap_bh);
++		bitmap_bh = NULL;
  		goto error_return;
  	}
  
-
