@@ -1,0 +1,818 @@
+ext4 crypto: add ioctls to allow backup of encryption metadata
+
+Add new ioctls which allow for the metadata of encrypted files (both
+the filename and the crypto policy) to be backed up and restored.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/crypto_key.c    | 125 +++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/crypto_policy.c |  10 ++++
+ fs/ext4/ext4.h          |  25 +++++++--
+ fs/ext4/ext4_crypto.h   |  14 +++++
+ fs/ext4/ialloc.c        |   5 +-
+ fs/ext4/ioctl.c         | 113 ++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/namei.c         | 308 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++---------
+ 7 files changed, 570 insertions(+), 30 deletions(-)
+
+diff --git a/fs/ext4/crypto_key.c b/fs/ext4/crypto_key.c
+index 9a16d1e..6e6fbcb 100644
+--- a/fs/ext4/crypto_key.c
++++ b/fs/ext4/crypto_key.c
+@@ -10,11 +10,12 @@
+ 
+ #include <keys/encrypted-type.h>
+ #include <keys/user-type.h>
++#include <linux/crc16.h>
+ #include <linux/random.h>
+ #include <linux/scatterlist.h>
+ #include <uapi/linux/keyctl.h>
+ 
+-#include "ext4.h"
++#include "ext4_jbd2.h"
+ #include "xattr.h"
+ 
+ static void derive_crypt_complete(struct crypto_async_request *req, int rc)
+@@ -274,3 +275,125 @@ int ext4_has_encryption_key(struct inode *inode)
+ 
+ 	return (ei->i_crypt_info != NULL);
+ }
++
++int ext4_get_encryption_metadata(struct inode *inode,
++				 struct ext4_rw_enc_mdata *mdata)
++{
++	unsigned char *cp = mdata->buf;
++	size_t size = mdata->u.len;
++	loff_t isize;
++	int res;
++
++	if (size < sizeof(struct ext4_encryption_context) + 12)
++		return -EINVAL;
++
++	if (!inode_owner_or_capable(inode) && !capable(CAP_SYS_ADMIN))
++		return -EACCES;
++
++	*cp++ = 'e';
++	*cp++ = '5';
++	*cp++ = 0;
++	*cp++ = 0;
++	isize = i_size_read(inode);
++	*((u32 *)cp) = cpu_to_le32(isize & 0xFFFFFFFF);
++	cp += 4;
++	*((u32 *)cp) = cpu_to_le32(isize >> 32);
++	cp += 4;
++	size -= 12;
++
++	res = ext4_xattr_get(inode, EXT4_XATTR_INDEX_ENCRYPTION,
++			     EXT4_XATTR_NAME_ENCRYPTION_CONTEXT,
++			     cp, size);
++
++	if (res < 0)
++		return res;
++	if (res > size)
++		return -ENOSPC;
++
++	mdata->u.len = res + 12;
++
++	*((u16 *) &mdata->buf[2]) = cpu_to_le16(crc16(~0, mdata->buf, mdata->u.len));
++	return 0;
++}
++
++int ext4_set_encryption_metadata(struct inode *inode,
++				 struct ext4_rw_enc_mdata *mdata)
++{
++	struct ext4_encryption_context *ctx;
++	unsigned char *cp = mdata->buf;
++	handle_t *handle = NULL;
++	loff_t size;
++	unsigned bs = inode->i_sb->s_blocksize;
++	int res;
++	u16 crc;
++
++	if (!inode_owner_or_capable(inode) && !capable(CAP_SYS_ADMIN))
++		return -EACCES;
++
++	if (!S_ISREG(inode->i_mode) && !S_ISDIR(inode->i_mode))
++		return -EINVAL;
++
++	if (mdata->u.len != sizeof(struct ext4_encryption_context) + 12)
++		return -EINVAL;
++
++	if (cp[0] != 'e' || cp[1] != '5')
++		return -EINVAL;
++	crc = le16_to_cpu(*(u16 *)(cp+2));
++	cp[2] = cp[3] = 0;
++	cp += 4;
++
++	if (crc != crc16(~0, mdata->buf, mdata->u.len))
++		return -EINVAL;
++
++	size = le32_to_cpu(*(u32 *) cp);
++	cp += 4;
++	size += ((u64) le32_to_cpu(*(u32 *) cp)) << 32;
++	cp += 4;
++
++	ctx = (struct ext4_encryption_context *) cp;
++	res = ext4_validate_encryption_context(ctx);
++	if (res)
++		return res;
++
++	res = ext4_convert_inline_data(inode);
++	if (res)
++		return res;
++
++	res = filemap_write_and_wait(&inode->i_data);
++	if (res)
++		return res;
++
++	mutex_lock(&inode->i_mutex);
++	if (S_ISREG(inode->i_mode) &&
++	    round_up(size, bs) != round_up(i_size_read(inode), bs)) {
++		res = -EINVAL;
++		goto errout;
++	}
++
++	handle = ext4_journal_start(inode, EXT4_HT_MISC,
++				    ext4_jbd2_credits_xattr(inode));
++	if (IS_ERR(handle))
++		return PTR_ERR(handle);
++	res = ext4_xattr_set(inode, EXT4_XATTR_INDEX_ENCRYPTION,
++			     EXT4_XATTR_NAME_ENCRYPTION_CONTEXT, ctx,
++			     sizeof(struct ext4_encryption_context), 0);
++	if (res < 0)
++		goto errout;
++	ext4_set_inode_flag(inode, EXT4_INODE_ENCRYPT);
++	ext4_clear_inode_state(inode, EXT4_STATE_MAY_INLINE_DATA);
++
++	if (S_ISREG(inode->i_mode)) {
++		i_size_write(inode, size);
++		EXT4_I(inode)->i_disksize = size;
++	}
++	res = ext4_mark_inode_dirty(handle, inode);
++	if (res)
++		EXT4_ERROR_INODE(inode, "Failed to mark inode dirty");
++	else
++		res = ext4_get_encryption_info(inode);
++errout:
++	mutex_unlock(&inode->i_mutex);
++	if (handle)
++		ext4_journal_stop(handle);
++	return res;
++}
+diff --git a/fs/ext4/crypto_policy.c b/fs/ext4/crypto_policy.c
+index ad05069..08565f5 100644
+--- a/fs/ext4/crypto_policy.c
++++ b/fs/ext4/crypto_policy.c
+@@ -180,6 +180,16 @@ int ext4_is_child_context_consistent_with_parent(struct inode *parent,
+ 		(parent_ci->ci_flags == child_ci->ci_flags));
+ }
+ 
++int ext4_validate_encryption_context(struct ext4_encryption_context *ctx)
++{
++	if ((ctx->format != EXT4_ENCRYPTION_CONTEXT_FORMAT_V1) ||
++	    !ext4_valid_contents_enc_mode(ctx->contents_encryption_mode) ||
++	    !ext4_valid_filenames_enc_mode(ctx->filenames_encryption_mode) ||
++	    (ctx->flags & ~EXT4_POLICY_FLAGS_VALID))
++		return -EINVAL;
++	return 0;
++}
++
+ /**
+  * ext4_inherit_context() - Sets a child context from its parent
+  * @parent: Parent inode from which the context is inherited.
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 9fbe63d..11365b6 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -617,6 +617,10 @@ enum {
+ #define EXT4_IOC_SET_ENCRYPTION_POLICY	_IOR('f', 19, struct ext4_encryption_policy)
+ #define EXT4_IOC_GET_ENCRYPTION_PWSALT	_IOW('f', 20, __u8[16])
+ #define EXT4_IOC_GET_ENCRYPTION_POLICY	_IOW('f', 21, struct ext4_encryption_policy)
++#define EXT4_IOC_GET_ENCRYPTION_METADATA _IOWR('f', 22, struct ext4_encrypted_metadata)
++#define EXT4_IOC_SET_ENCRYPTION_METADATA _IOR('f', 23, struct ext4_encrypted_metadata)
++#define EXT4_IOC_GET_ENCRYPTED_FILENAME	_IOWR('f', 24, struct ext4_encrypted_metadata)
++#define EXT4_IOC_SET_ENCRYPTED_FILENAME	_IOR('f', 25, struct ext4_encrypted_metadata)
+ 
+ #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
+ /*
+@@ -2228,6 +2232,7 @@ ext4_fsblk_t ext4_inode_to_goal_block(struct inode *);
+ /* crypto_policy.c */
+ int ext4_is_child_context_consistent_with_parent(struct inode *parent,
+ 						 struct inode *child);
++int ext4_validate_encryption_context(struct ext4_encryption_context *ctx);
+ int ext4_inherit_context(struct inode *parent, struct inode *child);
+ void ext4_to_hex(char *dst, char *src, size_t src_size);
+ int ext4_process_policy(const struct ext4_encryption_policy *policy,
+@@ -2311,6 +2316,10 @@ static inline void ext4_fname_free_filename(struct ext4_filename *fname) { }
+ void ext4_free_crypt_info(struct ext4_crypt_info *ci);
+ void ext4_free_encryption_info(struct inode *inode, struct ext4_crypt_info *ci);
+ int _ext4_get_encryption_info(struct inode *inode);
++int ext4_set_encryption_metadata(struct inode *inode,
++				 struct ext4_rw_enc_mdata *mdata);
++int ext4_get_encryption_metadata(struct inode *inode,
++				 struct ext4_rw_enc_mdata *mdata);
+ 
+ #ifdef CONFIG_EXT4_FS_ENCRYPTION
+ int ext4_has_encryption_key(struct inode *inode);
+@@ -2400,18 +2409,24 @@ extern int ext4fs_dirhash(const char *name, int len, struct
+ 			  dx_hash_info *hinfo);
+ 
+ /* ialloc.c */
++#define EXT4_NEW_INODE_NOENCRYPT	0x0001
+ extern struct inode *__ext4_new_inode(handle_t *, struct inode *, umode_t,
+ 				      const struct qstr *qstr, __u32 goal,
+ 				      uid_t *owner, int handle_type,
+-				      unsigned int line_no, int nblocks);
++				      unsigned int line_no, int nblocks,
++				      int flags);
+ 
+ #define ext4_new_inode(handle, dir, mode, qstr, goal, owner) \
+ 	__ext4_new_inode((handle), (dir), (mode), (qstr), (goal), (owner), \
+-			 0, 0, 0)
++			 0, 0, 0, 0)
+ #define ext4_new_inode_start_handle(dir, mode, qstr, goal, owner, \
+ 				    type, nblocks)		    \
+ 	__ext4_new_inode(NULL, (dir), (mode), (qstr), (goal), (owner), \
+-			 (type), __LINE__, (nblocks))
++			 (type), __LINE__, (nblocks), 0)
++#define ext4_new_inode_start_handle_flags(dir, mode, qstr, goal, owner, \
++					  type, nblocks, flags)		\
++	__ext4_new_inode(NULL, (dir), (mode), (qstr), (goal), (owner), \
++			 (type), __LINE__, (nblocks), (flags))
+ 
+ 
+ extern void ext4_free_inode(handle_t *, struct inode *);
+@@ -2546,6 +2561,10 @@ extern int ext4_generic_delete_entry(handle_t *handle,
+ 				     int buf_size,
+ 				     int csum_size);
+ extern int ext4_empty_dir(struct inode *inode);
++extern int ext4_get_encrypted_filename(struct file *filp,
++				       struct ext4_rw_enc_mdata *mdata);
++extern int ext4_set_encrypted_filename(struct inode *dir,
++				       struct ext4_rw_enc_mdata *efn);
+ 
+ /* resize.c */
+ extern int ext4_group_add(struct super_block *sb,
+diff --git a/fs/ext4/ext4_crypto.h b/fs/ext4/ext4_crypto.h
+index ac7d4e8..c65e97f 100644
+--- a/fs/ext4/ext4_crypto.h
++++ b/fs/ext4/ext4_crypto.h
+@@ -156,4 +156,18 @@ static inline u32 encrypted_symlink_data_len(u32 l)
+ 	return (l + sizeof(struct ext4_encrypted_symlink_data) - 1);
+ }
+ 
++/**
++ * Structure used for communicating encrypted metadata with userspace
++ */
++struct ext4_encrypted_metadata {
++	s32 fd;			/* Only used by EXT4_IOC_SET_ENCRYPTED_FILENAME */
++	u32 len;
++	unsigned char __user *data;
++};
++
++/* In-kernel structure */
++struct ext4_rw_enc_mdata {
++	struct ext4_encrypted_metadata u;
++	unsigned char *buf;
++};
+ #endif	/* _EXT4_CRYPTO_H */
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 1b8024d..0fb1ea0 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -740,7 +740,7 @@ out:
+ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
+ 			       umode_t mode, const struct qstr *qstr,
+ 			       __u32 goal, uid_t *owner, int handle_type,
+-			       unsigned int line_no, int nblocks)
++			       unsigned int line_no, int nblocks, int flags)
+ {
+ 	struct super_block *sb;
+ 	struct buffer_head *inode_bitmap_bh = NULL;
+@@ -762,7 +762,8 @@ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
+ 	if (!dir || !dir->i_nlink)
+ 		return ERR_PTR(-EPERM);
+ 
+-	if ((ext4_encrypted_inode(dir) ||
++	if (!(flags & EXT4_NEW_INODE_NOENCRYPT) &&
++	    (ext4_encrypted_inode(dir) ||
+ 	     DUMMY_ENCRYPTION_ENABLED(EXT4_SB(dir->i_sb))) &&
+ 	    (S_ISREG(mode) || S_ISDIR(mode) || S_ISLNK(mode))) {
+ 		err = ext4_get_encryption_info(dir);
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 5e872fd..ef55ce8 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -202,6 +202,39 @@ static int uuid_is_zero(__u8 u[16])
+ 	return 1;
+ }
+ 
++#ifdef CONFIG_EXT4_FS_ENCRYPTION
++static int read_user_mdata(unsigned long arg,
++			   struct ext4_rw_enc_mdata *mdata)
++{
++	if (copy_from_user(&mdata->u,
++			   (struct ext4_encrypted_metadata __user *)arg,
++			   sizeof(struct ext4_encrypted_metadata)))
++		return -EFAULT;
++	/* Sanity check, as nothing should need to be this big */
++	if (mdata->u.len > PAGE_CACHE_SIZE)
++		return -EINVAL;
++	mdata->buf = kmalloc(mdata->u.len, GFP_KERNEL);
++	if (!mdata->buf)
++		return -ENOMEM;
++	if (copy_from_user(mdata->buf, mdata->u.data, mdata->u.len))
++		return -EFAULT;
++	return 0;
++
++}
++
++static int write_user_mdata(unsigned long arg,
++			  struct ext4_rw_enc_mdata *mdata)
++{
++	if (copy_to_user(mdata->u.data, mdata->buf, mdata->u.len))
++		return -EFAULT;
++	if (copy_to_user((struct ext4_encrypted_metadata __user *)arg,
++			   &mdata->u,
++			   sizeof(struct ext4_encrypted_metadata)))
++		return -EFAULT;
++	return 0;
++}
++#endif
++
+ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
+ 	struct inode *inode = file_inode(filp);
+@@ -689,6 +722,83 @@ encryption_policy_out:
+ 		return -EOPNOTSUPP;
+ #endif
+ 	}
++	case EXT4_IOC_GET_ENCRYPTION_METADATA: {
++#ifdef CONFIG_EXT4_FS_ENCRYPTION
++		struct ext4_rw_enc_mdata mdata;
++		int err = 0;
++
++		if (!ext4_encrypted_inode(inode))
++			return -ENOENT;
++
++		err = read_user_mdata(arg, &mdata);
++		if (err)
++			return err;
++		err = ext4_get_encryption_metadata(inode, &mdata);
++		if (!err)
++			err = write_user_mdata(arg, &mdata);
++		kfree(mdata.buf);
++		return err;
++#else
++		return -EOPNOTSUPP;
++#endif
++	}
++	case EXT4_IOC_SET_ENCRYPTION_METADATA: {
++#ifdef CONFIG_EXT4_FS_ENCRYPTION
++		struct ext4_rw_enc_mdata mdata;
++		int err = 0;
++
++		if (ext4_encrypted_inode(inode))
++			return -EINVAL;
++		err = read_user_mdata(arg, &mdata);
++		if (err)
++			return err;
++		err = mnt_want_write_file(filp);
++		if (!err)
++			err = ext4_set_encryption_metadata(inode, &mdata);
++		mnt_drop_write_file(filp);
++		kfree(mdata.buf);
++		return err;
++#else
++		return -EOPNOTSUPP;
++#endif
++	}
++	case EXT4_IOC_GET_ENCRYPTED_FILENAME: {
++#ifdef CONFIG_EXT4_FS_ENCRYPTION
++		struct ext4_rw_enc_mdata mdata;
++		int err = 0;
++
++		if (!ext4_encrypted_inode(inode))
++			return -ENOENT;
++		err = read_user_mdata(arg, &mdata);
++		if (err)
++			return err;
++		err = ext4_get_encrypted_filename(filp, &mdata);
++		if (!err)
++			err = write_user_mdata(arg, &mdata);
++		kfree(mdata.buf);
++		return err;
++#else
++		return -EOPNOTSUPP;
++#endif
++	}
++	case EXT4_IOC_SET_ENCRYPTED_FILENAME: {
++#ifdef CONFIG_EXT4_FS_ENCRYPTION
++		struct ext4_rw_enc_mdata mdata;
++		int err = 0;
++
++		err = read_user_mdata(arg, &mdata);
++		if (err)
++			return err;
++		err = mnt_want_write_file(filp);
++		if (!err)
++			err = ext4_set_encrypted_filename(inode, &mdata);
++		mnt_drop_write_file(filp);
++		kfree(mdata.buf);
++		return err;
++#else
++		return -EOPNOTSUPP;
++#endif
++	}
+ 	default:
+ 		return -ENOTTY;
+ 	}
+@@ -755,6 +865,9 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ 	case EXT4_IOC_SET_ENCRYPTION_POLICY:
+ 	case EXT4_IOC_GET_ENCRYPTION_PWSALT:
+ 	case EXT4_IOC_GET_ENCRYPTION_POLICY:
++	case EXT4_IOC_GET_ENCRYPTION_METADATA:
++	case EXT4_IOC_SET_ENCRYPTION_METADATA:
++	case EXT4_IOC_GET_ENCRYPTED_FILENAME:
+ 		break;
+ 	default:
+ 		return -ENOIOCTLCMD;
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 06c3afc..2ca9230 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -33,6 +33,8 @@
+ #include <linux/quotaops.h>
+ #include <linux/buffer_head.h>
+ #include <linux/bio.h>
++#include <linux/crc16.h>
++#include <linux/file.h>
+ #include "ext4.h"
+ #include "ext4_jbd2.h"
+ 
+@@ -2048,24 +2050,16 @@ out_frames:
+ }
+ 
+ /*
+- *	ext4_add_entry()
+- *
+- * adds a file entry to the specified directory, using the same
+- * semantics as ext4_find_entry(). It returns NULL if it failed.
+- *
+- * NOTE!! The inode part of 'de' is left at 0 - which means you
+- * may not sleep between calling this and putting something into
+- * the entry, as someone else might have used it while you slept.
++ * Add a directory entry to a directory, given the filename and the
++ * inode it will point to.
+  */
+-static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+-			  struct inode *inode)
++static int ext4_add_fname(handle_t *handle, struct inode *dir,
++			  struct ext4_filename *fname, struct inode *inode)
+ {
+-	struct inode *dir = d_inode(dentry->d_parent);
+ 	struct buffer_head *bh = NULL;
+ 	struct ext4_dir_entry_2 *de;
+ 	struct ext4_dir_entry_tail *t;
+ 	struct super_block *sb;
+-	struct ext4_filename fname;
+ 	int	retval;
+ 	int	dx_fallback=0;
+ 	unsigned blocksize;
+@@ -2077,15 +2071,9 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+ 
+ 	sb = dir->i_sb;
+ 	blocksize = sb->s_blocksize;
+-	if (!dentry->d_name.len)
+-		return -EINVAL;
+-
+-	retval = ext4_fname_setup_filename(dir, &dentry->d_name, 0, &fname);
+-	if (retval)
+-		return retval;
+ 
+ 	if (ext4_has_inline_data(dir)) {
+-		retval = ext4_try_add_inline_entry(handle, &fname, dir, inode);
++		retval = ext4_try_add_inline_entry(handle, fname, dir, inode);
+ 		if (retval < 0)
+ 			goto out;
+ 		if (retval == 1) {
+@@ -2095,7 +2083,7 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+ 	}
+ 
+ 	if (is_dx(dir)) {
+-		retval = ext4_dx_add_entry(handle, &fname, dir, inode);
++		retval = ext4_dx_add_entry(handle, fname, dir, inode);
+ 		if (!retval || (retval != ERR_BAD_DX_DIR))
+ 			goto out;
+ 		ext4_clear_inode_flag(dir, EXT4_INODE_INDEX);
+@@ -2110,14 +2098,14 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+ 			bh = NULL;
+ 			goto out;
+ 		}
+-		retval = add_dirent_to_buf(handle, &fname, dir, inode,
++		retval = add_dirent_to_buf(handle, fname, dir, inode,
+ 					   NULL, bh);
+ 		if (retval != -ENOSPC)
+ 			goto out;
+ 
+ 		if (blocks == 1 && !dx_fallback &&
+ 		    ext4_has_feature_dir_index(sb)) {
+-			retval = make_indexed_dir(handle, &fname, dir,
++			retval = make_indexed_dir(handle, fname, dir,
+ 						  inode, bh);
+ 			bh = NULL; /* make_indexed_dir releases bh */
+ 			goto out;
+@@ -2139,9 +2127,8 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+ 		initialize_dirent_tail(t, blocksize);
+ 	}
+ 
+-	retval = add_dirent_to_buf(handle, &fname, dir, inode, de, bh);
++	retval = add_dirent_to_buf(handle, fname, dir, inode, de, bh);
+ out:
+-	ext4_fname_free_filename(&fname);
+ 	brelse(bh);
+ 	if (retval == 0)
+ 		ext4_set_inode_state(inode, EXT4_STATE_NEWENTRY);
+@@ -2149,6 +2136,29 @@ out:
+ }
+ 
+ /*
++ * Create a directory entry associated with the specified dentry and
++ * inode.
++ */
++static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
++			  struct inode *inode)
++{
++	struct inode *dir = d_inode(dentry->d_parent);
++	struct ext4_filename fname;
++	int	retval;
++
++	if (!dentry->d_name.len)
++		return -EINVAL;
++
++	retval = ext4_fname_setup_filename(dir, &dentry->d_name, 0, &fname);
++	if (retval)
++		return retval;
++
++	retval = ext4_add_fname(handle, dir, &fname, inode);
++	ext4_fname_free_filename(&fname);
++	return retval;
++}
++
++/*
+  * Returns 0 for success, or a negative error value
+  */
+ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
+@@ -3858,3 +3868,253 @@ const struct inode_operations ext4_special_inode_operations = {
+ 	.get_acl	= ext4_get_acl,
+ 	.set_acl	= ext4_set_acl,
+ };
++
++int ext4_get_encrypted_filename(struct file *filp,
++				struct ext4_rw_enc_mdata *mdata)
++{
++	unsigned char *cp = mdata->buf;
++	struct dentry *dentry = filp->f_path.dentry;
++	struct inode *inode = file_inode(filp);
++	struct inode *dir = dentry->d_parent->d_inode;
++	struct buffer_head *bh;
++	struct ext4_dir_entry_2 *de;
++	int isdir = S_ISDIR(inode->i_mode);
++	int len = isdir ? 10 : 4;
++	int ret;
++
++	if (!dir || !ext4_encrypted_inode(dir))
++		return -EINVAL;
++
++	if (!inode_owner_or_capable(dir) && !capable(CAP_SYS_ADMIN))
++		return -EACCES;
++
++	if (mdata->u.len < len)
++		return -ENOSPC;
++
++	*cp++ = 'e';
++	*cp++ = isdir ? 'd' : 'f';
++	*cp++ = 0;
++	*cp++ = 0;
++
++	if (isdir) {
++		*((u32 *)cp) = cpu_to_le32(inode->i_mode);
++		cp += 4;
++		ret = ext4_xattr_get(inode, EXT4_XATTR_INDEX_ENCRYPTION,
++				     EXT4_XATTR_NAME_ENCRYPTION_CONTEXT,
++				     NULL, 0);
++		if (ret < 0)
++			return ret;
++		*((u16 *)cp) = cpu_to_le16((u16) ret);
++		cp += 2;
++
++		len += ret;
++		if (mdata->u.len < len)
++			return -ENOSPC;
++		ret = ext4_xattr_get(inode, EXT4_XATTR_INDEX_ENCRYPTION,
++				     EXT4_XATTR_NAME_ENCRYPTION_CONTEXT,
++				     cp, ret);
++		if (ret < 0)
++			return ret;
++		cp += ret;
++	}
++
++	bh = ext4_find_entry(dir, &dentry->d_name, &de, NULL);
++	if (IS_ERR(bh))
++		return PTR_ERR(bh);
++	if (de == NULL)
++		return -ENOENT;
++
++	len += de->name_len;
++	if (mdata->u.len < len)
++		return -ENOSPC;
++
++	mdata->u.len = len;
++	memcpy(cp, de->name, de->name_len);
++	*((u16 *) &mdata->buf[2]) = cpu_to_le16(crc16(~0, mdata->buf,
++						      mdata->u.len));
++	return 0;
++}
++
++int ext4_set_encrypted_filename(struct inode *dir,
++				struct ext4_rw_enc_mdata *mdata)
++{
++	unsigned char *cp = mdata->buf;
++	handle_t *handle = NULL;
++	struct ext4_filename fname;
++	struct fd fd;
++	struct inode *inode = NULL;
++	umode_t mode;
++	u16 crc, xlen;
++	int credits, retval = 0, retries = 0, do_retry = 0;
++	int len = mdata->u.len;
++
++	if (!dir || !ext4_encrypted_inode(dir))
++		return -EINVAL;
++
++	retval = inode_permission(dir, MAY_WRITE | MAY_EXEC);
++	if (retval)
++		return retval;
++
++	if (len < 4)
++		return -EINVAL;
++
++	if (cp[0] != 'e' ||
++	    cp[1] != ((mdata->u.fd == -1) ? 'd' : 'f'))
++		return -EINVAL;
++	crc = le16_to_cpu(*(u16 *)(cp+2));
++	cp[2] = cp[3] = 0;
++	cp += 4; len -= 4;
++
++	if (crc != crc16(~0, mdata->buf, mdata->u.len))
++		return -EINVAL;
++
++	if ((len < EXT4_CRYPTO_BLOCK_SIZE) || (len > EXT4_NAME_LEN + 1))
++		return -EINVAL;
++
++	retval = dquot_initialize(dir);
++	if (retval)
++		return retval;
++
++	credits = (EXT4_DATA_TRANS_BLOCKS(dir->i_sb) +
++		   EXT4_INDEX_EXTRA_TRANS_BLOCKS + 2);
++
++	if (mdata->u.fd >= 0) {
++		fd = fdget(mdata->u.fd);
++		if (!fd.file)
++			return -EBADF;
++		inode = file_inode(fd.file);
++		mode = inode->i_mode;
++		retval = -EISDIR;
++		if (S_ISDIR(mode))
++			goto out;
++	} else if (mdata->u.fd == -1) {
++		struct ext4_encryption_context *ctx;
++
++		/* do an encrypted mkdir */
++		fd.file = NULL;
++		if (EXT4_DIR_LINK_MAX(dir))
++			return -EMLINK;
++		if (len < 6)
++			return -EINVAL;
++		mode = le32_to_cpu(*(u32 *)cp);
++		cp += 4;
++		xlen = le16_to_cpu(*(u16 *)cp);
++		cp += 2; len -= 6;
++
++		if (len < xlen ||
++		    xlen != sizeof(struct ext4_encryption_context))
++			return -EINVAL;
++
++		ctx = (struct ext4_encryption_context *) cp;
++		retval = ext4_validate_encryption_context(ctx);
++		if (retval)
++			return retval;
++		cp += xlen; len -= xlen;
++
++		/* credits for the mkdir and xattr set */
++		credits += (EXT4_DATA_TRANS_BLOCKS(dir->i_sb) +
++			    EXT4_INDEX_EXTRA_TRANS_BLOCKS + 3 +
++			    ext4_jbd2_credits_xattr(dir));
++	retry:
++		inode = ext4_new_inode_start_handle_flags(dir, mode, NULL, 0,
++					NULL, EXT4_HT_DIR, credits,
++					EXT4_NEW_INODE_NOENCRYPT);
++		handle = ext4_journal_current_handle();
++		if (IS_ERR(inode)) {
++			retval = PTR_ERR(inode);
++			inode = NULL;
++			goto out;
++		}
++		inode->i_op = &ext4_dir_inode_operations;
++		inode->i_fop = &ext4_dir_operations;
++		retval = ext4_init_new_dir(handle, dir, inode);
++		if (retval)
++			goto out;
++
++		retval = ext4_xattr_set_handle(handle, inode,
++				EXT4_XATTR_INDEX_ENCRYPTION,
++				EXT4_XATTR_NAME_ENCRYPTION_CONTEXT, ctx,
++				sizeof(struct ext4_encryption_context),
++				fd.file ? XATTR_REPLACE : XATTR_CREATE);
++		if (retval)
++			goto out;
++		ext4_set_inode_flag(inode, EXT4_INODE_ENCRYPT);
++		ext4_clear_inode_state(inode, EXT4_STATE_MAY_INLINE_DATA);
++
++		goto insert_fname;
++	} else
++		return -EINVAL;
++
++
++	if ((mode & S_ISUID) ||
++	    ((mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP))) {
++		/*
++		 * root or the inode owner can link even in the case
++		 * of "unsafe" hard link sources.  See
++		 * safe_hardlink_sources() in fs/namei.c
++		 */
++		if (!inode_owner_or_capable(inode) && !capable(CAP_SYS_ADMIN)) {
++			retval = -EACCES;
++			goto out;
++		}
++	}
++
++	retval = inode_permission(inode, MAY_READ | MAY_WRITE);
++	if (!retval && !inode_owner_or_capable(inode) &&
++	    !capable(CAP_SYS_ADMIN))
++		goto out;
++
++	handle = ext4_journal_start(dir, EXT4_HT_DIR,
++		(EXT4_DATA_TRANS_BLOCKS(dir->i_sb) +
++		 EXT4_INDEX_EXTRA_TRANS_BLOCKS) + 2);
++	if (IS_ERR(handle)) {
++		retval = PTR_ERR(handle);
++		goto out;
++	}
++
++insert_fname:
++	if (!ext4_is_child_context_consistent_with_parent(dir, inode)) {
++		retval = -EPERM;
++		goto out;
++	}
++
++	memset(&fname, 0, sizeof(fname));
++	fname.disk_name.name = cp;
++	fname.disk_name.len = len;
++	retval = ext4_add_fname(handle, dir, &fname, inode);
++	if (retval)
++		goto out;
++
++	if (fd.file)
++		ext4_inc_count(handle, inode);
++	ext4_mark_inode_dirty(handle, inode);
++	if (!fd.file)
++		ext4_inc_count(handle, dir);
++	ext4_update_dx_flag(dir);
++	ext4_mark_inode_dirty(handle, dir);
++	if (fd.file == NULL) {
++		unlock_new_inode(inode);
++		iput(inode);
++	}
++
++out:
++	if (fd.file)
++		fdput(fd);
++	else if (retval && inode) {
++		/* need to undo a failed attempted mkdir */
++		clear_nlink(inode);
++		unlock_new_inode(inode);
++		ext4_mark_inode_dirty(handle, inode);
++		iput(inode);
++		if (retval == -ENOSPC &&
++		    ext4_should_retry_alloc(dir->i_sb, &retries))
++			do_retry++;
++	}
++	if (handle)
++		ext4_journal_stop(handle);
++	if (do_retry) {
++		do_retry = 0;
++		goto retry;
++	}
++	return retval;
++}

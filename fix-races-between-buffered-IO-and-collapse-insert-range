@@ -5,8 +5,8 @@ From: Jan Kara <jack@suse.com>
 Current code implementing FALLOC_FL_COLLAPSE_RANGE and
 FALLOC_FL_INSERT_RANGE is prone to races with buffered writes and page
 faults. If buffered write or write via mmap manages to squeeze between
-filemap_write_and_wait_range() and truncate_pagecache() in the
-fallocate implementations, the written data is simply discarded by
+filemap_write_and_wait_range() and truncate_pagecache() in the fallocate
+implementations, the written data is simply discarded by
 truncate_pagecache() although it should have been shifted.
 
 Fix the problem by moving filemap_write_and_wait_range() call inside
@@ -16,14 +16,14 @@ both buffered writes and page faults.
 Signed-off-by: Jan Kara <jack@suse.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/extents.c | 62 +++++++++++++++++++++++++++++--------------------------
- 1 file changed, 33 insertions(+), 29 deletions(-)
+ fs/ext4/extents.c | 59 +++++++++++++++++++++++++++++--------------------------
+ 1 file changed, 31 insertions(+), 28 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 66ab89b58c1f..892245a55c53 100644
+index 65b5ada2833f..4b105c96df08 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -5483,21 +5483,7 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
+@@ -5487,21 +5487,7 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
  			return ret;
  	}
  
@@ -45,12 +45,7 @@ index 66ab89b58c1f..892245a55c53 100644
  	/*
  	 * There is no need to overlap collapse range with EOF, in which case
  	 * it is effectively a truncate operation
-@@ -5518,10 +5504,32 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
- 	inode_dio_wait(inode);
- 
- 	/*
--	 * Prevent page faults from reinstantiating pages we have released from
-+	 * Prevent page faults from reinstantiating we have released from
+@@ -5526,6 +5512,27 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
  	 * page cache.
  	 */
  	down_write(&EXT4_I(inode)->i_mmap_sem);
@@ -60,11 +55,10 @@ index 66ab89b58c1f..892245a55c53 100644
 +	 */
 +	ioffset = round_down(offset, PAGE_SIZE);
 +	/*
-+	 * Write tail of last page before removed range since it will get
-+	 * removed from page cache below.
++	 * Write tail of the last page before removed range since it will get
++	 * removed from the page cache below.
 +	 */
-+	ret = filemap_write_and_wait_range(inode->i_mapping, ioffset,
-+					   offset - ioffset);
++	ret = filemap_write_and_wait_range(inode->i_mapping, ioffset, offset);
 +	if (ret)
 +		goto out_mmap;
 +	/*
@@ -79,7 +73,7 @@ index 66ab89b58c1f..892245a55c53 100644
  	truncate_pagecache(inode, ioffset);
  
  	credits = ext4_writepage_trans_blocks(inode);
-@@ -5622,21 +5630,7 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
+@@ -5626,21 +5633,7 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
  			return ret;
  	}
  
@@ -101,7 +95,7 @@ index 66ab89b58c1f..892245a55c53 100644
  	/* Currently just for extent based files */
  	if (!ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)) {
  		ret = -EOPNOTSUPP;
-@@ -5664,6 +5658,16 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
+@@ -5668,6 +5661,16 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
  	 * page cache.
  	 */
  	down_write(&EXT4_I(inode)->i_mmap_sem);
@@ -120,5 +114,4 @@ index 66ab89b58c1f..892245a55c53 100644
  	credits = ext4_writepage_trans_blocks(inode);
 -- 
 2.1.4
-
 

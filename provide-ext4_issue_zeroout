@@ -17,7 +17,7 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  4 files changed, 23 insertions(+), 15 deletions(-)
 
 diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
-index af06830..c802120 100644
+index 1a08350..c802120 100644
 --- a/fs/ext4/crypto.c
 +++ b/fs/ext4/crypto.c
 @@ -384,14 +384,12 @@ int ext4_decrypt(struct page *page)
@@ -31,17 +31,17 @@ index af06830..c802120 100644
  	struct ext4_crypto_ctx	*ctx;
  	struct page		*ciphertext_page = NULL;
  	struct bio		*bio;
--	ext4_lblk_t		lblk = ex->ee_block;
+-	ext4_lblk_t		lblk = le32_to_cpu(ex->ee_block);
 -	ext4_fsblk_t		pblk = ext4_ext_pblock(ex);
 -	unsigned int		len = ext4_ext_get_actual_len(ex);
  	int			ret, err = 0;
  
  #if 0
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 1d09345..353089c 100644
+index 1008caf..ffc6ab0 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2204,7 +2204,8 @@ void ext4_restore_control_page(struct page *data_page);
+@@ -2241,7 +2241,8 @@ void ext4_restore_control_page(struct page *data_page);
  struct page *ext4_encrypt(struct inode *inode,
  			  struct page *plaintext_page);
  int ext4_decrypt(struct page *page);
@@ -51,7 +51,7 @@ index 1d09345..353089c 100644
  
  #ifdef CONFIG_EXT4_FS_ENCRYPTION
  int ext4_init_crypto(void);
-@@ -2458,6 +2459,8 @@ extern int ext4_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
+@@ -2495,6 +2496,8 @@ extern int ext4_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
  extern qsize_t *ext4_get_reserved_space(struct inode *inode);
  extern void ext4_da_update_reserve_space(struct inode *inode,
  					int used, int quota_claim);
@@ -61,7 +61,7 @@ index 1d09345..353089c 100644
  /* indirect.c */
  extern int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 393a676..34db78d 100644
+index f6f0be3..94affdb 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -3119,19 +3119,11 @@ static int ext4_ext_zeroout(struct inode *inode, struct ext4_extent *ex)
@@ -87,7 +87,7 @@ index 393a676..34db78d 100644
  
  /*
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index f160903..0f91105 100644
+index fe8bfe7..455e372 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -383,6 +383,21 @@ static int __check_block_validity(struct inode *inode, const char *func,

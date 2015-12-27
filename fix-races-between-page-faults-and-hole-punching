@@ -2,14 +2,13 @@ ext4: fix races between page faults and hole punching
 
 From: Jan Kara <jack@suse.com>
 
-Currently, page faults and hole punching are completely
-unsynchronized.  This can result in page fault faulting in a page into
-a range that we are punching after truncate_pagecache_range() has been
-called and thus we can end up with a page mapped to disk blocks that
-will be shortly freed. Filesystem corruption will shortly follow. Note
-that the same race is avoided for truncate by checking page fault
-offset against i_size but there isn't similar mechanism available for
-punching holes.
+Currently, page faults and hole punching are completely unsynchronized.
+This can result in page fault faulting in a page into a range that we
+are punching after truncate_pagecache_range() has been called and thus
+we can end up with a page mapped to disk blocks that will be shortly
+freed. Filesystem corruption will shortly follow. Note that the same
+race is avoided for truncate by checking page fault offset against
+i_size but there isn't similar mechanism available for punching holes.
 
 Fix the problem by creating new rw semaphore i_mmap_sem in inode and
 grab it for writing over truncate, hole punching, and other functions
@@ -32,10 +31,10 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  6 files changed, 127 insertions(+), 42 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index fd1f28be5296..c19ff61ccbdf 100644
+index 750063f7a50c..0e42b9d69f18 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -869,6 +869,15 @@ struct ext4_inode_info {
+@@ -873,6 +873,15 @@ struct ext4_inode_info {
  	 * by other means, so we have i_data_sem.
  	 */
  	struct rw_semaphore i_data_sem;
@@ -51,7 +50,7 @@ index fd1f28be5296..c19ff61ccbdf 100644
  	struct inode vfs_inode;
  	struct jbd2_inode *jinode;
  
-@@ -2316,6 +2325,7 @@ extern int ext4_chunk_trans_blocks(struct inode *, int nrblocks);
+@@ -2447,6 +2456,7 @@ extern int ext4_chunk_trans_blocks(struct inode *, int nrblocks);
  extern int ext4_zero_partial_blocks(handle_t *handle, struct inode *inode,
  			     loff_t lstart, loff_t lend);
  extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf);
@@ -60,10 +59,10 @@ index fd1f28be5296..c19ff61ccbdf 100644
  extern void ext4_da_update_reserve_space(struct inode *inode,
  					int used, int quota_claim);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 2553aa8b608d..6e0c5d37a232 100644
+index 551353b1b17a..5be9ca5a8a7a 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -4766,7 +4766,6 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+@@ -4770,7 +4770,6 @@ static long ext4_zero_range(struct file *file, loff_t offset,
  	int partial_begin, partial_end;
  	loff_t start, end;
  	ext4_lblk_t lblk;
@@ -71,7 +70,7 @@ index 2553aa8b608d..6e0c5d37a232 100644
  	unsigned int blkbits = inode->i_blkbits;
  
  	trace_ext4_zero_range(inode, offset, len, mode);
-@@ -4782,17 +4781,6 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+@@ -4786,17 +4785,6 @@ static long ext4_zero_range(struct file *file, loff_t offset,
  	}
  
  	/*
@@ -89,7 +88,7 @@ index 2553aa8b608d..6e0c5d37a232 100644
  	 * Round up offset. This is not fallocate, we neet to zero out
  	 * blocks, so convert interior block aligned part of the range to
  	 * unwritten and possibly manually zero out unaligned parts of the
-@@ -4852,16 +4840,22 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+@@ -4856,16 +4844,22 @@ static long ext4_zero_range(struct file *file, loff_t offset,
  		flags |= (EXT4_GET_BLOCKS_CONVERT_UNWRITTEN |
  			  EXT4_EX_NOCACHE);
  
@@ -116,7 +115,7 @@ index 2553aa8b608d..6e0c5d37a232 100644
  		if (ret)
  			goto out_dio;
  	}
-@@ -5520,17 +5514,22 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
+@@ -5524,17 +5518,22 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
  		goto out_mutex;
  	}
  
@@ -142,7 +141,7 @@ index 2553aa8b608d..6e0c5d37a232 100644
  	}
  
  	down_write(&EXT4_I(inode)->i_data_sem);
-@@ -5569,7 +5568,8 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
+@@ -5573,7 +5572,8 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
  
  out_stop:
  	ext4_journal_stop(handle);
@@ -152,7 +151,7 @@ index 2553aa8b608d..6e0c5d37a232 100644
  	ext4_inode_resume_unlocked_dio(inode);
  out_mutex:
  	mutex_unlock(&inode->i_mutex);
-@@ -5656,17 +5656,22 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
+@@ -5660,17 +5660,22 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
  		goto out_mutex;
  	}
  
@@ -178,7 +177,7 @@ index 2553aa8b608d..6e0c5d37a232 100644
  	}
  
  	/* Expand file to avoid data loss if there is error while shifting */
-@@ -5737,7 +5742,8 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
+@@ -5741,7 +5746,8 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
  
  out_stop:
  	ext4_journal_stop(handle);
@@ -317,10 +316,10 @@ index 113837e7ba98..0d24ebcd7c9e 100644
  	.page_mkwrite   = ext4_page_mkwrite,
  };
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 612fbcf76b5c..36ad45906d26 100644
+index 7d1aad1d9313..7292d3b0af9c 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -3581,6 +3581,15 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
+@@ -3623,6 +3623,15 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
  
  	}
  
@@ -336,7 +335,7 @@ index 612fbcf76b5c..36ad45906d26 100644
  	first_block_offset = round_up(offset, sb->s_blocksize);
  	last_block_offset = round_down((offset + length), sb->s_blocksize) - 1;
  
-@@ -3589,10 +3598,6 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
+@@ -3631,10 +3640,6 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
  		truncate_pagecache_range(inode, first_block_offset,
  					 last_block_offset);
  
@@ -347,7 +346,7 @@ index 612fbcf76b5c..36ad45906d26 100644
  	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
  		credits = ext4_writepage_trans_blocks(inode);
  	else
-@@ -3638,16 +3643,12 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
+@@ -3680,16 +3685,12 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
  	if (IS_SYNC(inode))
  		ext4_handle_sync(handle);
  
@@ -365,7 +364,7 @@ index 612fbcf76b5c..36ad45906d26 100644
  	ext4_inode_resume_unlocked_dio(inode);
  out_mutex:
  	mutex_unlock(&inode->i_mutex);
-@@ -4784,6 +4785,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
+@@ -4823,6 +4824,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
  			} else
  				ext4_wait_for_tail_page_commit(inode);
  		}
@@ -373,7 +372,7 @@ index 612fbcf76b5c..36ad45906d26 100644
  		/*
  		 * Truncate pagecache after we've waited for commit
  		 * in data=journal mode to make pages freeable.
-@@ -4791,6 +4793,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
+@@ -4830,6 +4832,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
  		truncate_pagecache(inode, inode->i_size);
  		if (shrink)
  			ext4_truncate(inode);
@@ -381,7 +380,7 @@ index 612fbcf76b5c..36ad45906d26 100644
  	}
  
  	if (!rc) {
-@@ -5239,6 +5242,8 @@ int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
+@@ -5278,6 +5281,8 @@ int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
  
  	sb_start_pagefault(inode->i_sb);
  	file_update_time(vma->vm_file);
@@ -390,7 +389,7 @@ index 612fbcf76b5c..36ad45906d26 100644
  	/* Delalloc case is easy... */
  	if (test_opt(inode->i_sb, DELALLOC) &&
  	    !ext4_should_journal_data(inode) &&
-@@ -5308,6 +5313,19 @@ retry_alloc:
+@@ -5347,6 +5352,19 @@ retry_alloc:
  out_ret:
  	ret = block_page_mkwrite_return(ret);
  out:
@@ -411,10 +410,10 @@ index 612fbcf76b5c..36ad45906d26 100644
 +	return err;
 +}
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index a63c7b0a10cf..61fad9e33bb9 100644
+index 753f4e68b820..6d307dac9622 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -955,6 +955,7 @@ static void init_once(void *foo)
+@@ -958,6 +958,7 @@ static void init_once(void *foo)
  	INIT_LIST_HEAD(&ei->i_orphan);
  	init_rwsem(&ei->xattr_sem);
  	init_rwsem(&ei->i_data_sem);

@@ -24,10 +24,10 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  3 files changed, 22 insertions(+), 28 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index c86546efec30..142e935d1f3d 100644
+index d049fc76efcd..1d09345c9793 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -551,10 +551,8 @@ enum {
+@@ -554,10 +554,8 @@ enum {
  #define EXT4_GET_BLOCKS_NO_NORMALIZE		0x0040
  	/* Request will not result in inode size update (user for fallocate) */
  #define EXT4_GET_BLOCKS_KEEP_SIZE		0x0080
@@ -40,7 +40,7 @@ index c86546efec30..142e935d1f3d 100644
  /*
   * The bit position of these flags must not overlap with any of the
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index f72212ef1fee..39da009cbc89 100644
+index fcd4ab065e4a..528d1a0aebff 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -403,8 +403,7 @@ static void ext4_map_blocks_es_recheck(handle_t *handle,
@@ -102,7 +102,7 @@ index f72212ef1fee..39da009cbc89 100644
  #ifdef CONFIG_EXT4_FS_ENCRYPTION
  static int ext4_block_write_begin(struct page *page, loff_t pos, unsigned len,
  				  get_block_t *get_block)
-@@ -3012,13 +3005,21 @@ int ext4_get_block_write(struct inode *inode, sector_t iblock,
+@@ -3054,13 +3047,21 @@ int ext4_get_block_write(struct inode *inode, sector_t iblock,
  			       EXT4_GET_BLOCKS_IO_CREATE_EXT);
  }
  
@@ -122,13 +122,13 @@ index f72212ef1fee..39da009cbc89 100644
 +	 * Blocks should have been preallocated! ext4_file_write_iter() checks
 +	 * that.
 +	 */
-+	WARN_ON_ONCE(ret == 0);
++	WARN_ON_ONCE(!buffer_mapped(bh_result));
 +
 +	return ret;
  }
  
  int ext4_get_block_dax(struct inode *inode, sector_t iblock,
-@@ -3101,10 +3102,8 @@ static ssize_t ext4_ext_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
+@@ -3143,10 +3144,8 @@ static ssize_t ext4_ext_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
  	/* If we do a overwrite dio, i_mutex locking can be released */
  	overwrite = *((int *)iocb->private);
  
@@ -140,7 +140,7 @@ index f72212ef1fee..39da009cbc89 100644
  
  	/*
  	 * We could direct write to holes and fallocate.
-@@ -3147,7 +3146,7 @@ static ssize_t ext4_ext_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
+@@ -3189,7 +3188,7 @@ static ssize_t ext4_ext_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
  	}
  
  	if (overwrite) {
@@ -149,7 +149,7 @@ index f72212ef1fee..39da009cbc89 100644
  	} else {
  		get_block_func = ext4_get_block_write;
  		dio_flags = DIO_LOCKING;
-@@ -3203,10 +3202,8 @@ retake_lock:
+@@ -3245,10 +3244,8 @@ retake_lock:
  	if (iov_iter_rw(iter) == WRITE)
  		inode_dio_end(inode);
  	/* take i_mutex locking again if we do a ovewrite dio */

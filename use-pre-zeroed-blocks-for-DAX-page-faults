@@ -9,15 +9,15 @@ Signed-off-by: Jan Kara <jack@suse.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/ext4.h  |  4 +--
- fs/ext4/file.c  | 20 +++-----------
- fs/ext4/inode.c | 81 +++++++++++++++++++++++++++++++++++++++++++++------------
- 3 files changed, 69 insertions(+), 36 deletions(-)
+ fs/ext4/file.c  | 20 ++------------
+ fs/ext4/inode.c | 86 +++++++++++++++++++++++++++++++++++++++++++++------------
+ 3 files changed, 74 insertions(+), 36 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 0a11a34d54c9..9b6e5813968b 100644
+index e667a7947b48..1a6592e764f9 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2284,8 +2284,8 @@ struct buffer_head *ext4_getblk(handle_t *, struct inode *, ext4_lblk_t, int);
+@@ -2415,8 +2415,8 @@ struct buffer_head *ext4_getblk(handle_t *, struct inode *, ext4_lblk_t, int);
  struct buffer_head *ext4_bread(handle_t *, struct inode *, ext4_lblk_t, int);
  int ext4_get_block_write(struct inode *inode, sector_t iblock,
  			 struct buffer_head *bh_result, int create);
@@ -81,10 +81,10 @@ index 0d24ebcd7c9e..749b222e6498 100644
  	sb_end_pagefault(inode->i_sb);
  
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 73c6214084d4..c2a476a35464 100644
+index 32e643a82890..7bf08b1b2c0a 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -718,16 +718,6 @@ static int _ext4_get_block(struct inode *inode, sector_t iblock,
+@@ -723,16 +723,6 @@ static int _ext4_get_block(struct inode *inode, sector_t iblock,
  
  		map_bh(bh, inode->i_sb, map.m_pblk);
  		bh->b_state = (bh->b_state & ~EXT4_MAP_FLAGS) | map.m_flags;
@@ -101,7 +101,7 @@ index 73c6214084d4..c2a476a35464 100644
  		if (io_end && io_end->flag & EXT4_IO_END_UNWRITTEN)
  			set_buffer_defer_completion(bh);
  		bh->b_size = inode->i_sb->s_blocksize * map.m_len;
-@@ -3050,17 +3040,74 @@ static int ext4_get_block_overwrite(struct inode *inode, sector_t iblock,
+@@ -3097,17 +3087,79 @@ static int ext4_get_block_overwrite(struct inode *inode, sector_t iblock,
  	return ret;
  }
  
@@ -174,6 +174,11 @@ index 73c6214084d4..c2a476a35464 100644
 +		map_bh(bh_result, inode->i_sb, map.m_pblk);
 +		bh_result->b_state = (bh_result->b_state & ~EXT4_MAP_FLAGS) |
 +					map.m_flags;
++		/*
++		 * At least for now we have to clear BH_New so that DAX code
++		 * doesn't attempt to zero blocks again in a racy way.
++		 */
++		bh_result->b_state &= ~(1 << BH_New);
 +		bh_result->b_size = map.m_len << inode->i_blkbits;
 +		ret = 0;
 +	}
@@ -186,4 +191,8 @@ index 73c6214084d4..c2a476a35464 100644
 -- 
 2.1.4
 
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
 

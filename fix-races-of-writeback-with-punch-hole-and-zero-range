@@ -19,10 +19,10 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  3 files changed, 42 insertions(+), 1 deletion(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index c19ff61ccbdf..c86546efec30 100644
+index 0e42b9d69f18..d049fc76efcd 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2691,6 +2691,9 @@ static inline int ext4_update_inode_size(struct inode *inode, loff_t newsize)
+@@ -2821,6 +2821,9 @@ static inline int ext4_update_inode_size(struct inode *inode, loff_t newsize)
  	return changed;
  }
  
@@ -33,10 +33,10 @@ index c19ff61ccbdf..c86546efec30 100644
  	unsigned long   bb_state;
  	struct rb_root  bb_free_root;
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 892245a55c53..9977b557d50d 100644
+index 3fafdb0a17ed..f76db53eddc4 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -4843,6 +4843,11 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+@@ -4847,6 +4847,11 @@ static long ext4_zero_range(struct file *file, loff_t offset,
  		 * released from page cache.
  		 */
  		down_write(&EXT4_I(inode)->i_mmap_sem);
@@ -49,10 +49,10 @@ index 892245a55c53..9977b557d50d 100644
  		truncate_pagecache_range(inode, start, end - 1);
  		inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 36ad45906d26..f72212ef1fee 100644
+index 7292d3b0af9c..fcd4ab065e4a 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -3517,6 +3517,35 @@ int ext4_can_truncate(struct inode *inode)
+@@ -3559,6 +3559,35 @@ int ext4_can_truncate(struct inode *inode)
  }
  
  /*
@@ -88,7 +88,7 @@ index 36ad45906d26..f72212ef1fee 100644
   * ext4_punch_hole: punches a hole in a file by releaseing the blocks
   * associated with the given offset and length
   *
-@@ -3594,9 +3623,13 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
+@@ -3636,9 +3665,13 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
  	last_block_offset = round_down((offset + length), sb->s_blocksize) - 1;
  
  	/* Now release the pages and zero block aligned part of pages*/
