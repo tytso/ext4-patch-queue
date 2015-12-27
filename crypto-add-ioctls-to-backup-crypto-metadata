@@ -11,8 +11,8 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  fs/ext4/ext4_crypto.h   |  14 +++++
  fs/ext4/ialloc.c        |   5 +-
  fs/ext4/ioctl.c         | 113 ++++++++++++++++++++++++++++++++++++++++
- fs/ext4/namei.c         | 308 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++---------
- 7 files changed, 570 insertions(+), 30 deletions(-)
+ fs/ext4/namei.c         | 307 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++---------
+ 7 files changed, 569 insertions(+), 30 deletions(-)
 
 diff --git a/fs/ext4/crypto_key.c b/fs/ext4/crypto_key.c
 index 9a16d1e..6e6fbcb 100644
@@ -437,7 +437,7 @@ index 5e872fd..ef55ce8 100644
  	default:
  		return -ENOIOCTLCMD;
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 06c3afc..2ca9230 100644
+index 06c3afc..2c6fe51 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -33,6 +33,8 @@
@@ -562,7 +562,7 @@ index 06c3afc..2ca9230 100644
   * Returns 0 for success, or a negative error value
   */
  static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
-@@ -3858,3 +3868,253 @@ const struct inode_operations ext4_special_inode_operations = {
+@@ -3858,3 +3868,252 @@ const struct inode_operations ext4_special_inode_operations = {
  	.get_acl	= ext4_get_acl,
  	.set_acl	= ext4_set_acl,
  };
@@ -636,15 +636,16 @@ index 06c3afc..2ca9230 100644
 +int ext4_set_encrypted_filename(struct inode *dir,
 +				struct ext4_rw_enc_mdata *mdata)
 +{
-+	unsigned char *cp = mdata->buf;
-+	handle_t *handle = NULL;
-+	struct ext4_filename fname;
-+	struct fd fd;
-+	struct inode *inode = NULL;
-+	umode_t mode;
-+	u16 crc, xlen;
-+	int credits, retval = 0, retries = 0, do_retry = 0;
-+	int len = mdata->u.len;
++	struct ext4_encryption_context *ctx = NULL;
++	struct ext4_filename		fname;
++	unsigned char			*cp = mdata->buf;
++	struct inode			*inode = NULL;
++	struct fd			fd;
++	handle_t			*handle = NULL;
++	umode_t				mode;
++	u16				crc, xlen, credits;
++	int				retval = 0, retries = 0, do_retry = 0;
++	int				len = mdata->u.len;
 +
 +	if (!dir || !ext4_encrypted_inode(dir))
 +		return -EINVAL;
@@ -686,8 +687,6 @@ index 06c3afc..2ca9230 100644
 +		if (S_ISDIR(mode))
 +			goto out;
 +	} else if (mdata->u.fd == -1) {
-+		struct ext4_encryption_context *ctx;
-+
 +		/* do an encrypted mkdir */
 +		fd.file = NULL;
 +		if (EXT4_DIR_LINK_MAX(dir))
