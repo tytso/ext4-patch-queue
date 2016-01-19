@@ -3,19 +3,22 @@ ext4 crypto: add ioctls to allow backup of encryption metadata
 Add new ioctls which allow for the metadata of encrypted files (both
 the filename and the crypto policy) to be backed up and restored.
 
+[ Included fix from Dan Carpenter for a missing mutex_unlock. ]
+
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
 ---
- fs/ext4/crypto_key.c    | 125 +++++++++++++++++++++++++++++++++++++++++++-
+ fs/ext4/crypto_key.c    | 127 +++++++++++++++++++++++++++++++++++++++-
  fs/ext4/crypto_policy.c |  10 ++++
- fs/ext4/ext4.h          |  25 +++++++--
+ fs/ext4/ext4.h          |  25 +++++++-
  fs/ext4/ext4_crypto.h   |  14 +++++
  fs/ext4/ialloc.c        |   5 +-
- fs/ext4/ioctl.c         | 113 ++++++++++++++++++++++++++++++++++++++++
- fs/ext4/namei.c         | 307 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++---------
- 7 files changed, 569 insertions(+), 30 deletions(-)
+ fs/ext4/ioctl.c         | 113 +++++++++++++++++++++++++++++++++++
+ fs/ext4/namei.c         | 307 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--------
+ 7 files changed, 571 insertions(+), 30 deletions(-)
 
 diff --git a/fs/ext4/crypto_key.c b/fs/ext4/crypto_key.c
-index 9a16d1e..6e6fbcb 100644
+index 9a16d1e..21fdcea 100644
 --- a/fs/ext4/crypto_key.c
 +++ b/fs/ext4/crypto_key.c
 @@ -10,11 +10,12 @@
@@ -32,7 +35,7 @@ index 9a16d1e..6e6fbcb 100644
  #include "xattr.h"
  
  static void derive_crypt_complete(struct crypto_async_request *req, int rc)
-@@ -274,3 +275,125 @@ int ext4_has_encryption_key(struct inode *inode)
+@@ -274,3 +275,127 @@ int ext4_has_encryption_key(struct inode *inode)
  
  	return (ei->i_crypt_info != NULL);
  }
@@ -133,8 +136,10 @@ index 9a16d1e..6e6fbcb 100644
 +
 +	handle = ext4_journal_start(inode, EXT4_HT_MISC,
 +				    ext4_jbd2_credits_xattr(inode));
-+	if (IS_ERR(handle))
-+		return PTR_ERR(handle);
++	if (IS_ERR(handle)) {
++		res = PTR_ERR(handle);
++		goto errout;
++	}
 +	res = ext4_xattr_set(inode, EXT4_XATTR_INDEX_ENCRYPTION,
 +			     EXT4_XATTR_NAME_ENCRYPTION_CONTEXT, ctx,
 +			     sizeof(struct ext4_encryption_context), 0);
@@ -437,7 +442,7 @@ index 5e872fd..ef55ce8 100644
  	default:
  		return -ENOIOCTLCMD;
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 06c3afc..2c6fe51 100644
+index 06c3afc..532f694 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -33,6 +33,8 @@
@@ -797,7 +802,7 @@ index 06c3afc..2c6fe51 100644
 +out:
 +	if (fd.file)
 +		fdput(fd);
-+	else if (retval && inode) {
++	else if (retval && inode && (mdata->u.fd == -1)) {
 +		/* need to undo a failed attempted mkdir */
 +		clear_nlink(inode);
 +		unlock_new_inode(inode);
