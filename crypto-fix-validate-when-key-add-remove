@@ -12,8 +12,8 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  fs/ext4/crypto.c | 44 ++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/dir.c    |  6 ++++++
  fs/ext4/ext4.h   |  1 +
- fs/ext4/namei.c  | 16 ++++++++++++++++
- 4 files changed, 67 insertions(+)
+ fs/ext4/namei.c  | 18 ++++++++++++++++++
+ 4 files changed, 69 insertions(+)
 
 diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
 index c802120..ec508af 100644
@@ -85,10 +85,10 @@ index 1d1bca7..6d17f31 100644
  		err = ext4_dx_readdir(file, ctx);
  		if (err != ERR_BAD_DX_DIR) {
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index edbe347..84f03d6 100644
+index 0662b28..157b458a 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2265,6 +2265,7 @@ struct page *ext4_encrypt(struct inode *inode,
+@@ -2302,6 +2302,7 @@ struct page *ext4_encrypt(struct inode *inode,
  int ext4_decrypt(struct page *page);
  int ext4_encrypted_zeroout(struct inode *inode, ext4_lblk_t lblk,
  			   ext4_fsblk_t pblk, ext4_lblk_t len);
@@ -97,10 +97,10 @@ index edbe347..84f03d6 100644
  #ifdef CONFIG_EXT4_FS_ENCRYPTION
  int ext4_init_crypto(void);
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 2047ff7..53dc31d 100644
+index 06574dd..8cf4278 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
-@@ -1558,6 +1558,22 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
+@@ -1558,6 +1558,24 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
  	struct ext4_dir_entry_2 *de;
  	struct buffer_head *bh;
  
@@ -114,7 +114,9 @@ index 2047ff7..53dc31d 100644
 +		 * created while the directory was encrypted and we
 +		 * don't have access to the key.
 +		 */
-+	       dentry->d_fsdata = (void *) (EXT4_I(dir)->i_crypt_info == NULL);
++	       dentry->d_fsdata = NULL;
++	       if (EXT4_I(dir)->i_crypt_info == NULL)
++		       dentry->d_fsdata = (void *) 1;
 +	       d_set_d_op(dentry, &ext4_encrypted_d_ops);
 +	       if (res && res != -ENOKEY)
 +		       return ERR_PTR(res);
