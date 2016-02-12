@@ -1,0 +1,63 @@
+ext4 crypto: move context consistency check to ext4_file_open()
+
+In the case where the per-file key for the directory is cached, but
+root does not have access to the key needed to derive the per-file key
+for the files in the directory, we allow the lookup to succeed, so
+that lstat(2) and unlink(2) can suceed.  However, if a program tries
+to open the file, it will get an ENOKEY error.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/file.c  | 9 +++++++++
+ fs/ext4/namei.c | 8 ++++++--
+ 2 files changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 1126436..474f1a4 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -350,6 +350,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+ 	struct super_block *sb = inode->i_sb;
+ 	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+ 	struct vfsmount *mnt = filp->f_path.mnt;
++	struct inode *dir = filp->f_path.dentry->d_parent->d_inode;
+ 	struct path path;
+ 	char buf[64], *cp;
+ 	int ret;
+@@ -393,6 +394,14 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
+ 		if (ext4_encryption_info(inode) == NULL)
+ 			return -ENOKEY;
+ 	}
++	if (ext4_encrypted_inode(dir) &&
++	    !ext4_is_child_context_consistent_with_parent(dir, inode)) {
++		ext4_warning(inode->i_sb,
++			     "Inconsistent encryption contexts: %lu/%lu\n",
++			     (unsigned long) dir->i_ino,
++			     (unsigned long) inode->i_ino);
++		return -EPERM;
++	}
+ 	/*
+ 	 * Set up the jbd2_inode if we are opening the inode for
+ 	 * writing and the journal is present
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 5de8483..48e4b89 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1603,11 +1603,15 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
+ 			return ERR_PTR(-EFSCORRUPTED);
+ 		}
+ 		if (!IS_ERR(inode) && ext4_encrypted_inode(dir) &&
+-		    (S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
+-		     S_ISLNK(inode->i_mode)) &&
++		    (S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode)) &&
+ 		    !ext4_is_child_context_consistent_with_parent(dir,
+ 								  inode)) {
++			int nokey = ext4_encrypted_inode(inode) &&
++				!ext4_encryption_info(inode);
++
+ 			iput(inode);
++			if (nokey)
++				return ERR_PTR(-ENOKEY);
+ 			ext4_warning(inode->i_sb,
+ 				     "Inconsistent encryption contexts: %lu/%lu\n",
+ 				     (unsigned long) dir->i_ino,
