@@ -12,7 +12,7 @@ complexity.
 This is reimplementation of the mbcache functionality to exactly fit the
 purpose ext? filesystems use it for. Cache entries are now considerably
 smaller (7 instead of 13 longs), the code is considerably smaller as
-well (432 vs 913 lines of code), and IMO also simpler. The new code is
+well (414 vs 913 lines of code), and IMO also simpler. The new code is
 also much more lightweight.
 
 I have measured the speed using artificial xattr-bench benchmark, which
@@ -44,13 +44,13 @@ V=10000
 F\P	1		2		4		8		16		32		64
 10	0.161,0.154	0.198,0.190	0.296,0.256	0.662,0.480	1.192,0.818	2.989,2.200	6.362,4.746
 100	0.176,0.174	0.236,0.203	0.326,0.255	0.696,0.511	1.183,0.855	4.205,3.444	19.510,17.760
-1000	0.199,0.183	0.240,0.227	1.159,1.014	2.286,2.154	6.023,6.039	10.933,---	36.620,---
+1000	0.199,0.183	0.240,0.227	1.159,1.014	2.286,2.154	6.023,6.039	---,10.933	---,36.620
 
 V=100000
 F\P	1		2		4		8		16		32		64
 10	0.171,0.162	0.204,0.198	0.285,0.230	0.692,0.500	1.225,0.881	2.990,2.243	6.379,4.771
 100	0.151,0.171	0.220,0.210	0.295,0.255	0.720,0.518	1.226,0.844	3.423,2.831	19.234,17.544
-1000	0.192,0.189	0.249,0.225	1.162,1.043	2.257,2.093	5.853,4.997	10.399,---	32.198,---
+1000	0.192,0.189	0.249,0.225	1.162,1.043	2.257,2.093	5.853,4.997	---,10.399	---,32.198
 
 We see that the new code is faster in pretty much all the cases and
 starting from 4 processes there are significant gains with the new code
@@ -62,9 +62,9 @@ Signed-off-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/Makefile              |   2 +-
- fs/mbcache2.c            | 388 +++++++++++++++++++++++++++++++++++++++++++++++
- include/linux/mbcache2.h |  54 +++++++
- 3 files changed, 443 insertions(+), 1 deletion(-)
+ fs/mbcache2.c            | 359 +++++++++++++++++++++++++++++++++++++++++++++++
+ include/linux/mbcache2.h |  50 +++++++
+ 3 files changed, 410 insertions(+), 1 deletion(-)
  create mode 100644 fs/mbcache2.c
  create mode 100644 include/linux/mbcache2.h
 
@@ -83,10 +83,10 @@ index 79f522575cba..15b3d6c4e46a 100644
  obj-$(CONFIG_COREDUMP)		+= coredump.o
 diff --git a/fs/mbcache2.c b/fs/mbcache2.c
 new file mode 100644
-index 000000000000..4ccf0752c6d1
+index 000000000000..5c3e1a8c38f6
 --- /dev/null
 +++ b/fs/mbcache2.c
-@@ -0,0 +1,388 @@
+@@ -0,0 +1,359 @@
 +#include <linux/spinlock.h>
 +#include <linux/slab.h>
 +#include <linux/list.h>
@@ -97,8 +97,14 @@ index 000000000000..4ccf0752c6d1
 +
 +/*
 + * Mbcache is a simple key-value store. Keys need not be unique, however
-+ * key-value pairs are expected to be unique (we use this in
++ * key-value pairs are expected to be unique (we use this fact in
 + * mb2_cache_entry_delete_block()).
++ *
++ * Ext2 and ext4 use this cache for deduplication of extended attribute blocks.
++ * They use hash of a block contents as a key and block number as a value.
++ * That's why keys need not be unique (different xattr blocks may end up having
++ * the same hash). However block number always uniquely identifies a cache
++ * entry.
 + *
 + * We provide functions for creation and removal of entries, search by key,
 + * and a special "delete entry with given key-value pair" operation. Fixed
@@ -129,13 +135,10 @@ index 000000000000..4ccf0752c6d1
 + *
 + * Creates entry in @cache with key @key and records that data is stored in
 + * block @block. The function returns -EBUSY if entry with the same key
-+ * and for the same block already exists in cache. Otherwise reference to
-+ * the created entry is returned.
++ * and for the same block already exists in cache. Otherwise 0 is returned.
 + */
-+struct mb2_cache_entry *mb2_cache_entry_create(struct mb2_cache *cache,
-+					       gfp_t mask,
-+					       unsigned int key,
-+					       sector_t block)
++int mb2_cache_entry_create(struct mb2_cache *cache, gfp_t mask, u32 key,
++			   sector_t block)
 +{
 +	struct mb2_cache_entry *entry, *dup;
 +	struct hlist_bl_node *dup_node;
@@ -143,11 +146,11 @@ index 000000000000..4ccf0752c6d1
 +
 +	entry = kmem_cache_alloc(mb2_entry_cache, mask);
 +	if (!entry)
-+		return ERR_PTR(-ENOMEM);
++		return -ENOMEM;
 +
 +	INIT_LIST_HEAD(&entry->e_lru_list);
 +	/* One ref for hash, one ref returned */
-+	atomic_set(&entry->e_refcnt, 2);
++	atomic_set(&entry->e_refcnt, 1);
 +	entry->e_key = key;
 +	entry->e_block = block;
 +	head = &cache->c_hash[hash_32(key, cache->c_bucket_bits)];
@@ -157,7 +160,7 @@ index 000000000000..4ccf0752c6d1
 +		if (dup->e_key == key && dup->e_block == block) {
 +			hlist_bl_unlock(head);
 +			kmem_cache_free(mb2_entry_cache, entry);
-+			return ERR_PTR(-EBUSY);
++			return -EBUSY;
 +		}
 +	}
 +	hlist_bl_add_head(&entry->e_hash_list, head);
@@ -170,7 +173,7 @@ index 000000000000..4ccf0752c6d1
 +	cache->c_entry_count++;
 +	spin_unlock(&cache->c_lru_list_lock);
 +
-+	return entry;
++	return 0;
 +}
 +EXPORT_SYMBOL(mb2_cache_entry_create);
 +
@@ -180,41 +183,9 @@ index 000000000000..4ccf0752c6d1
 +}
 +EXPORT_SYMBOL(__mb2_cache_entry_free);
 +
-+/*
-+ * mb2_cache_entry_delete - delete entry from cache
-+ * @cache - cache where the entry is
-+ * @entry - entry to delete
-+ *
-+ * Delete entry from cache. The entry is unhashed and deleted from the lru list
-+ * so it cannot be found. We also drop the reference to @entry caller gave us.
-+ * However entry need not be freed if there's someone else still holding a
-+ * reference to it. Freeing happens when the last reference is dropped.
-+ */
-+void mb2_cache_entry_delete(struct mb2_cache *cache,
-+			    struct mb2_cache_entry *entry)
-+{
-+	struct hlist_bl_head *head = entry->e_hash_list_head;
-+
-+	hlist_bl_lock(head);
-+	if (!hlist_bl_unhashed(&entry->e_hash_list)) {
-+		hlist_bl_del_init(&entry->e_hash_list);
-+		atomic_dec(&entry->e_refcnt);
-+	}
-+	hlist_bl_unlock(head);
-+	spin_lock(&cache->c_lru_list_lock);
-+	if (!list_empty(&entry->e_lru_list)) {
-+		list_del_init(&entry->e_lru_list);
-+		cache->c_entry_count--;
-+		atomic_dec(&entry->e_refcnt);
-+	}
-+	spin_unlock(&cache->c_lru_list_lock);
-+	mb2_cache_entry_put(cache, entry);
-+}
-+EXPORT_SYMBOL(mb2_cache_entry_delete);
-+
 +static struct mb2_cache_entry *__entry_find(struct mb2_cache *cache,
 +					    struct mb2_cache_entry *entry,
-+					    unsigned int key)
++					    u32 key)
 +{
 +	struct mb2_cache_entry *old_entry = entry;
 +	struct hlist_bl_node *node;
@@ -256,7 +227,7 @@ index 000000000000..4ccf0752c6d1
 + * entry found and returns the entry.
 + */
 +struct mb2_cache_entry *mb2_cache_entry_find_first(struct mb2_cache *cache,
-+						   unsigned int key)
++						   u32 key)
 +{
 +	return __entry_find(cache, NULL, key);
 +}
@@ -286,7 +257,7 @@ index 000000000000..4ccf0752c6d1
 + *
 + * Remove entry from cache @cache with key @key with data stored in @block.
 + */
-+void mb2_cache_entry_delete_block(struct mb2_cache *cache, unsigned int key,
++void mb2_cache_entry_delete_block(struct mb2_cache *cache, u32 key,
 +				  sector_t block)
 +{
 +	struct hlist_bl_node *node;
@@ -477,10 +448,10 @@ index 000000000000..4ccf0752c6d1
 +MODULE_LICENSE("GPL");
 diff --git a/include/linux/mbcache2.h b/include/linux/mbcache2.h
 new file mode 100644
-index 000000000000..2a58c51c3a0a
+index 000000000000..b6f160ff2533
 --- /dev/null
 +++ b/include/linux/mbcache2.h
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,50 @@
 +#ifndef _LINUX_MB2CACHE_H
 +#define _LINUX_MB2CACHE_H
 +
@@ -499,7 +470,7 @@ index 000000000000..2a58c51c3a0a
 +	struct hlist_bl_node	e_hash_list;
 +	atomic_t		e_refcnt;
 +	/* Key in hash - stable during lifetime of the entry */
-+	unsigned int		e_key;
++	u32			e_key;
 +	/* Block number of hashed block - stable during lifetime of the entry */
 +	sector_t		e_block;
 +	/* Head of hash list (for list bit lock) - stable */
@@ -509,12 +480,8 @@ index 000000000000..2a58c51c3a0a
 +struct mb2_cache *mb2_cache_create(int bucket_bits);
 +void mb2_cache_destroy(struct mb2_cache *cache);
 +
-+struct mb2_cache_entry *mb2_cache_entry_create(struct mb2_cache *cache,
-+					       gfp_t mask,
-+					       unsigned int key,
-+					       sector_t block);
-+void mb2_cache_entry_delete(struct mb2_cache *cache,
-+			   struct mb2_cache_entry *entry);
++int mb2_cache_entry_create(struct mb2_cache *cache, gfp_t mask, u32 key,
++			   sector_t block);
 +void __mb2_cache_entry_free(struct mb2_cache_entry *entry);
 +static inline int mb2_cache_entry_put(struct mb2_cache *cache,
 +				      struct mb2_cache_entry *entry)
@@ -525,10 +492,10 @@ index 000000000000..2a58c51c3a0a
 +	return 1;
 +}
 +
-+void mb2_cache_entry_delete_block(struct mb2_cache *cache, unsigned int key,
++void mb2_cache_entry_delete_block(struct mb2_cache *cache, u32 key,
 +				  sector_t block);
 +struct mb2_cache_entry *mb2_cache_entry_find_first(struct mb2_cache *cache,
-+						   unsigned int key);
++						   u32 key);
 +struct mb2_cache_entry *mb2_cache_entry_find_next(struct mb2_cache *cache,
 +						  struct mb2_cache_entry *entry);
 +void mb2_cache_entry_touch(struct mb2_cache *cache,
@@ -536,6 +503,6 @@ index 000000000000..2a58c51c3a0a
 +
 +#endif	/* _LINUX_MB2CACHE_H */
 -- 
-2.1.4
+2.6.2
 
 

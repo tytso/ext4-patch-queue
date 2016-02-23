@@ -20,7 +20,7 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  1 file changed, 45 insertions(+), 5 deletions(-)
 
 diff --git a/fs/mbcache2.c b/fs/mbcache2.c
-index 4ccf0752c6d1..fe9f6f6a2953 100644
+index 5c3e1a8c38f6..3e3198d6b9d6 100644
 --- a/fs/mbcache2.c
 +++ b/fs/mbcache2.c
 @@ -4,6 +4,7 @@
@@ -31,7 +31,7 @@ index 4ccf0752c6d1..fe9f6f6a2953 100644
  #include <linux/mbcache2.h>
  
  /*
-@@ -21,16 +22,29 @@ struct mb2_cache {
+@@ -27,16 +28,29 @@ struct mb2_cache {
  	struct hlist_bl_head	*c_hash;
  	/* log2 of hash table size */
  	int			c_bucket_bits;
@@ -61,7 +61,7 @@ index 4ccf0752c6d1..fe9f6f6a2953 100644
  /*
   * mb2_cache_entry_create - create entry in cache
   * @cache - cache where the entry should be created
-@@ -52,6 +66,13 @@ struct mb2_cache_entry *mb2_cache_entry_create(struct mb2_cache *cache,
+@@ -55,6 +69,13 @@ int mb2_cache_entry_create(struct mb2_cache *cache, gfp_t mask, u32 key,
  	struct hlist_bl_node *dup_node;
  	struct hlist_bl_head *head;
  
@@ -74,8 +74,8 @@ index 4ccf0752c6d1..fe9f6f6a2953 100644
 +
  	entry = kmem_cache_alloc(mb2_entry_cache, mask);
  	if (!entry)
- 		return ERR_PTR(-ENOMEM);
-@@ -252,12 +273,9 @@ static unsigned long mb2_cache_count(struct shrinker *shrink,
+ 		return -ENOMEM;
+@@ -223,12 +244,9 @@ static unsigned long mb2_cache_count(struct shrinker *shrink,
  }
  
  /* Shrink number of entries in cache */
@@ -90,7 +90,7 @@ index 4ccf0752c6d1..fe9f6f6a2953 100644
  	struct mb2_cache_entry *entry;
  	struct hlist_bl_head *head;
  	unsigned int shrunk = 0;
-@@ -290,6 +308,25 @@ static unsigned long mb2_cache_scan(struct shrinker *shrink,
+@@ -261,6 +279,25 @@ static unsigned long mb2_cache_scan(struct shrinker *shrink,
  	return shrunk;
  }
  
@@ -116,7 +116,7 @@ index 4ccf0752c6d1..fe9f6f6a2953 100644
  /*
   * mb2_cache_create - create cache
   * @bucket_bits: log2 of the hash table size
-@@ -309,6 +346,7 @@ struct mb2_cache *mb2_cache_create(int bucket_bits)
+@@ -280,6 +317,7 @@ struct mb2_cache *mb2_cache_create(int bucket_bits)
  	if (!cache)
  		goto err_out;
  	cache->c_bucket_bits = bucket_bits;
@@ -124,7 +124,7 @@ index 4ccf0752c6d1..fe9f6f6a2953 100644
  	INIT_LIST_HEAD(&cache->c_lru_list);
  	spin_lock_init(&cache->c_lru_list_lock);
  	cache->c_hash = kmalloc(bucket_count * sizeof(struct hlist_bl_head),
-@@ -325,6 +363,8 @@ struct mb2_cache *mb2_cache_create(int bucket_bits)
+@@ -296,6 +334,8 @@ struct mb2_cache *mb2_cache_create(int bucket_bits)
  	cache->c_shrink.seeks = DEFAULT_SEEKS;
  	register_shrinker(&cache->c_shrink);
  
@@ -134,6 +134,6 @@ index 4ccf0752c6d1..fe9f6f6a2953 100644
  
  err_out:
 -- 
-2.1.4
+2.6.2
 
 
