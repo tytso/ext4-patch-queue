@@ -1,0 +1,34 @@
+ext4: trim unused parameter from convert_initialized_extent()
+
+From: Eric Whitney <enwlinux@gmail.com>
+
+The flags parameter is also unused.
+
+Signed-off-by: Eric Whitney <enwlinux@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/extents.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 3753ceb..73a48c1 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -3927,7 +3927,7 @@ get_reserved_cluster_alloc(struct inode *inode, ext4_lblk_t lblk_start,
+ static int
+ convert_initialized_extent(handle_t *handle, struct inode *inode,
+ 			   struct ext4_map_blocks *map,
+-			   struct ext4_ext_path **ppath, int flags,
++			   struct ext4_ext_path **ppath,
+ 			   unsigned int allocated)
+ {
+ 	struct ext4_ext_path *path = *ppath;
+@@ -4347,7 +4347,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
+ 			    (flags & EXT4_GET_BLOCKS_CONVERT_UNWRITTEN)) {
+ 				allocated = convert_initialized_extent(
+ 						handle, inode, map, &path,
+-						flags, allocated);
++						allocated);
+ 				goto out2;
+ 			} else if (!ext4_ext_is_unwritten(ex))
+ 				goto out;
