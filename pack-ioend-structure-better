@@ -1,0 +1,29 @@
+ext4: pack ioend structure better
+
+From: Jan Kara <jack@suse.cz>
+
+On 64-bit architectures we have two 4-byte holes in struct ext4_io_end.
+Order entries better to avoid this and thus make the structure occupy
+64 instead of 72 bytes for 64-bit architectures.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 157b458a..5035dfe 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -182,9 +182,9 @@ typedef struct ext4_io_end {
+ 	struct bio		*bio;		/* Linked list of completed
+ 						 * bios covering the extent */
+ 	unsigned int		flag;		/* unwritten or not */
++	atomic_t		count;		/* reference counter */
+ 	loff_t			offset;		/* offset in the file */
+ 	ssize_t			size;		/* size of the extent */
+-	atomic_t		count;		/* reference counter */
+ } ext4_io_end_t;
+ 
+ struct ext4_io_submit {
