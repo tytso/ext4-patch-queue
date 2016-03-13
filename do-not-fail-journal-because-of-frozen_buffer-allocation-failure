@@ -1,0 +1,69 @@
+jbd2: do not fail journal because of frozen_buffer allocation failure
+
+From: Michal Hocko <mhocko@suse.com>
+
+Journal transaction might fail prematurely because the frozen_buffer
+is allocated by GFP_NOFS request:
+[   72.440013] do_get_write_access: OOM for frozen_buffer
+[   72.440014] EXT4-fs: ext4_reserve_inode_write:4729: aborting transaction: Out of memory in __ext4_journal_get_write_access
+[   72.440015] EXT4-fs error (device sda1) in ext4_reserve_inode_write:4735: Out of memory
+(...snipped....)
+[   72.495559] do_get_write_access: OOM for frozen_buffer
+[   72.495560] EXT4-fs: ext4_reserve_inode_write:4729: aborting transaction: Out of memory in __ext4_journal_get_write_access
+[   72.496839] do_get_write_access: OOM for frozen_buffer
+[   72.496841] EXT4-fs: ext4_reserve_inode_write:4729: aborting transaction: Out of memory in __ext4_journal_get_write_access
+[   72.505766] Aborting journal on device sda1-8.
+[   72.505851] EXT4-fs (sda1): Remounting filesystem read-only
+
+This wasn't a problem until "mm: page_alloc: do not lock up GFP_NOFS
+allocations upon OOM" because small GPF_NOFS allocations never failed.
+This allocation seems essential for the journal and GFP_NOFS is too
+restrictive to the memory allocator so let's use __GFP_NOFAIL here to
+emulate the previous behavior.
+
+Signed-off-by: Michal Hocko <mhocko@suse.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/jbd2/transaction.c | 22 +++++-----------------
+ 1 file changed, 5 insertions(+), 17 deletions(-)
+
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index 081dff0..01e4652 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -966,14 +966,8 @@ repeat:
+ 		if (!frozen_buffer) {
+ 			JBUFFER_TRACE(jh, "allocate memory for buffer");
+ 			jbd_unlock_bh_state(bh);
+-			frozen_buffer = jbd2_alloc(jh2bh(jh)->b_size, GFP_NOFS);
+-			if (!frozen_buffer) {
+-				printk(KERN_ERR "%s: OOM for frozen_buffer\n",
+-				       __func__);
+-				JBUFFER_TRACE(jh, "oom!");
+-				error = -ENOMEM;
+-				goto out;
+-			}
++			frozen_buffer = jbd2_alloc(jh2bh(jh)->b_size,
++						   GFP_NOFS | __GFP_NOFAIL);
+ 			goto repeat;
+ 		}
+ 		jh->b_frozen_data = frozen_buffer;
+@@ -1226,15 +1220,9 @@ int jbd2_journal_get_undo_access(handle_t *handle, struct buffer_head *bh)
+ 		goto out;
+ 
+ repeat:
+-	if (!jh->b_committed_data) {
+-		committed_data = jbd2_alloc(jh2bh(jh)->b_size, GFP_NOFS);
+-		if (!committed_data) {
+-			printk(KERN_ERR "%s: No memory for committed data\n",
+-				__func__);
+-			err = -ENOMEM;
+-			goto out;
+-		}
+-	}
++	if (!jh->b_committed_data)
++		committed_data = jbd2_alloc(jh2bh(jh)->b_size,
++					    GFP_NOFS|__GFP_NOFAIL);
+ 
+ 	jbd_lock_bh_state(bh);
+ 	if (!jh->b_committed_data) {
