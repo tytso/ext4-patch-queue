@@ -1,0 +1,121 @@
+vfs: add file_dentry()
+
+From: Miklos Szeredi <mszeredi@redhat.com>
+
+This series fixes bugs in nfs and ext4 due to 4bacc9c9234c ("overlayfs: Make
+f_path always point to the overlay and f_inode to the underlay").
+
+Regular files opened on overlayfs will result in the file being opened on
+the underlying filesystem, while f_path points to the overlayfs
+mount/dentry.
+
+This confuses filesystems which get the dentry from struct file and assume
+it's theirs.
+
+Add a new helper, file_dentry() [*], to get the filesystem's own dentry
+from the file.  This simply compares file_inode(file->f_path.dentry) to
+file_inode(file) and if they are equal returns file->f_path.dentry (this is
+the common, non-overlayfs case).
+
+In the uncommon case (regular file on overlayfs) it will call into
+overlayfs's ->d_native_dentry() to get the underlying dentry matching
+file_inode(file).
+
+[*] If possible, it's better simply to use file_inode() instead.
+
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+Tested-by: Goldwyn Rodrigues <rgoldwyn@suse.com>
+Reviewed-by: Trond Myklebust <trond.myklebust@primarydata.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: <stable@vger.kernel.org> # v4.2
+Cc: David Howells <dhowells@redhat.com>
+Cc: Al Viro <viro@zeniv.linux.org.uk>
+Cc: Daniel Axtens <dja@axtens.net>
+---
+ fs/open.c              | 11 +++++++++++
+ fs/overlayfs/super.c   | 16 ++++++++++++++++
+ include/linux/dcache.h |  1 +
+ include/linux/fs.h     |  2 ++
+ 4 files changed, 30 insertions(+)
+
+diff --git a/fs/open.c b/fs/open.c
+index 55bdc75..6326c11 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -831,6 +831,17 @@ char *file_path(struct file *filp, char *buf, int buflen)
+ }
+ EXPORT_SYMBOL(file_path);
+ 
++struct dentry *file_dentry(const struct file *file)
++{
++	struct dentry *dentry = file->f_path.dentry;
++
++	if (likely(d_inode(dentry) == file_inode(file)))
++		return dentry;
++	else
++		return dentry->d_op->d_native_dentry(dentry, file_inode(file));
++}
++EXPORT_SYMBOL(file_dentry);
++
+ /**
+  * vfs_open - open the file at the given path
+  * @path: path to open
+diff --git a/fs/overlayfs/super.c b/fs/overlayfs/super.c
+index 8d826bd..10dbdc7 100644
+--- a/fs/overlayfs/super.c
++++ b/fs/overlayfs/super.c
+@@ -334,13 +334,29 @@ static int ovl_dentry_weak_revalidate(struct dentry *dentry, unsigned int flags)
+ 	return ret;
+ }
+ 
++static struct dentry *ovl_d_native_dentry(struct dentry *dentry,
++					 struct inode *inode)
++{
++	struct ovl_entry *oe = dentry->d_fsdata;
++	struct dentry *realentry = ovl_upperdentry_dereference(oe);
++
++	if (realentry && inode == d_inode(realentry))
++		return realentry;
++	realentry = __ovl_dentry_lower(oe);
++	if (realentry && inode == d_inode(realentry))
++		return realentry;
++	BUG();
++}
++
+ static const struct dentry_operations ovl_dentry_operations = {
+ 	.d_release = ovl_dentry_release,
+ 	.d_select_inode = ovl_d_select_inode,
++	.d_native_dentry = ovl_d_native_dentry,
+ };
+ 
+ static const struct dentry_operations ovl_reval_dentry_operations = {
+ 	.d_release = ovl_dentry_release,
++	.d_native_dentry = ovl_d_native_dentry,
+ 	.d_revalidate = ovl_dentry_revalidate,
+ 	.d_weak_revalidate = ovl_dentry_weak_revalidate,
+ };
+diff --git a/include/linux/dcache.h b/include/linux/dcache.h
+index 7781ce11..957dd36 100644
+--- a/include/linux/dcache.h
++++ b/include/linux/dcache.h
+@@ -161,6 +161,7 @@ struct dentry_operations {
+ 	struct vfsmount *(*d_automount)(struct path *);
+ 	int (*d_manage)(struct dentry *, bool);
+ 	struct inode *(*d_select_inode)(struct dentry *, unsigned);
++	struct dentry *(*d_native_dentry)(struct dentry *, struct inode *);
+ } ____cacheline_aligned;
+ 
+ /*
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 1a20462..e626ab6 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -1237,6 +1237,8 @@ static inline struct inode *file_inode(const struct file *f)
+ 	return f->f_inode;
+ }
+ 
++extern struct dentry *file_dentry(const struct file *file);
++
+ static inline int locks_lock_file_wait(struct file *filp, struct file_lock *fl)
+ {
+ 	return locks_lock_inode_wait(file_inode(filp), fl);
