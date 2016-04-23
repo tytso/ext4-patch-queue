@@ -8,21 +8,21 @@ the filename and the crypto policy) to be backed up and restored.
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
 ---
- fs/ext4/crypto_key.c    | 127 +++++++++++++++++++++++++++++++++++++++-
- fs/ext4/crypto_policy.c |  10 ++++
- fs/ext4/ext4.h          |  25 +++++++-
- fs/ext4/ext4_crypto.h   |  14 +++++
+ fs/ext4/crypto_key.c    | 127 +++++++++++++++++++++++++++++++++-
+ fs/ext4/crypto_policy.c |  10 +++
+ fs/ext4/ext4.h          |  25 ++++++-
+ fs/ext4/ext4_crypto.h   |  14 ++++
  fs/ext4/ialloc.c        |   5 +-
- fs/ext4/ioctl.c         | 113 +++++++++++++++++++++++++++++++++++
- fs/ext4/namei.c         | 307 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--------
+ fs/ext4/ioctl.c         | 113 +++++++++++++++++++++++++++++++
+ fs/ext4/namei.c         | 307 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-------
  7 files changed, 571 insertions(+), 30 deletions(-)
 
 diff --git a/fs/ext4/crypto_key.c b/fs/ext4/crypto_key.c
-index 9a16d1e..21fdcea 100644
+index 0129d68..865e41d 100644
 --- a/fs/ext4/crypto_key.c
 +++ b/fs/ext4/crypto_key.c
-@@ -10,11 +10,12 @@
- 
+@@ -11,11 +11,12 @@
+ #include <crypto/skcipher.h>
  #include <keys/encrypted-type.h>
  #include <keys/user-type.h>
 +#include <linux/crc16.h>
@@ -35,7 +35,7 @@ index 9a16d1e..21fdcea 100644
  #include "xattr.h"
  
  static void derive_crypt_complete(struct crypto_async_request *req, int rc)
-@@ -274,3 +275,127 @@ int ext4_has_encryption_key(struct inode *inode)
+@@ -272,3 +273,127 @@ int ext4_has_encryption_key(struct inode *inode)
  
  	return (ei->i_crypt_info != NULL);
  }
@@ -185,10 +185,10 @@ index ad05069..08565f5 100644
   * ext4_inherit_context() - Sets a child context from its parent
   * @parent: Parent inode from which the context is inherited.
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 9fbe63d..11365b6 100644
+index 9a92f8b..bb2c31d 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -617,6 +617,10 @@ enum {
+@@ -637,6 +637,10 @@ enum {
  #define EXT4_IOC_SET_ENCRYPTION_POLICY	_IOR('f', 19, struct ext4_encryption_policy)
  #define EXT4_IOC_GET_ENCRYPTION_PWSALT	_IOW('f', 20, __u8[16])
  #define EXT4_IOC_GET_ENCRYPTION_POLICY	_IOW('f', 21, struct ext4_encryption_policy)
@@ -197,9 +197,9 @@ index 9fbe63d..11365b6 100644
 +#define EXT4_IOC_GET_ENCRYPTED_FILENAME	_IOWR('f', 24, struct ext4_encrypted_metadata)
 +#define EXT4_IOC_SET_ENCRYPTED_FILENAME	_IOR('f', 25, struct ext4_encrypted_metadata)
  
- #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
- /*
-@@ -2228,6 +2232,7 @@ ext4_fsblk_t ext4_inode_to_goal_block(struct inode *);
+ #ifndef FS_IOC_FSGETXATTR
+ /* Until the uapi changes get merged for project quota... */
+@@ -2294,6 +2298,7 @@ ext4_fsblk_t ext4_inode_to_goal_block(struct inode *);
  /* crypto_policy.c */
  int ext4_is_child_context_consistent_with_parent(struct inode *parent,
  						 struct inode *child);
@@ -207,7 +207,7 @@ index 9fbe63d..11365b6 100644
  int ext4_inherit_context(struct inode *parent, struct inode *child);
  void ext4_to_hex(char *dst, char *src, size_t src_size);
  int ext4_process_policy(const struct ext4_encryption_policy *policy,
-@@ -2311,6 +2316,10 @@ static inline void ext4_fname_free_filename(struct ext4_filename *fname) { }
+@@ -2380,6 +2385,10 @@ static inline void ext4_fname_free_filename(struct ext4_filename *fname) { }
  void ext4_free_crypt_info(struct ext4_crypt_info *ci);
  void ext4_free_encryption_info(struct inode *inode, struct ext4_crypt_info *ci);
  int _ext4_get_encryption_info(struct inode *inode);
@@ -218,7 +218,7 @@ index 9fbe63d..11365b6 100644
  
  #ifdef CONFIG_EXT4_FS_ENCRYPTION
  int ext4_has_encryption_key(struct inode *inode);
-@@ -2400,18 +2409,24 @@ extern int ext4fs_dirhash(const char *name, int len, struct
+@@ -2469,18 +2478,24 @@ extern int ext4fs_dirhash(const char *name, int len, struct
  			  dx_hash_info *hinfo);
  
  /* ialloc.c */
@@ -246,7 +246,7 @@ index 9fbe63d..11365b6 100644
  
  
  extern void ext4_free_inode(handle_t *, struct inode *);
-@@ -2546,6 +2561,10 @@ extern int ext4_generic_delete_entry(handle_t *handle,
+@@ -2621,6 +2636,10 @@ extern int ext4_generic_delete_entry(handle_t *handle,
  				     int buf_size,
  				     int csum_size);
  extern int ext4_empty_dir(struct inode *inode);
@@ -258,7 +258,7 @@ index 9fbe63d..11365b6 100644
  /* resize.c */
  extern int ext4_group_add(struct super_block *sb,
 diff --git a/fs/ext4/ext4_crypto.h b/fs/ext4/ext4_crypto.h
-index ac7d4e8..c65e97f 100644
+index 1f73c29..600da7e 100644
 --- a/fs/ext4/ext4_crypto.h
 +++ b/fs/ext4/ext4_crypto.h
 @@ -156,4 +156,18 @@ static inline u32 encrypted_symlink_data_len(u32 l)
@@ -281,10 +281,10 @@ index ac7d4e8..c65e97f 100644
 +};
  #endif	/* _EXT4_CRYPTO_H */
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index 1b8024d..0fb1ea0 100644
+index 237b877..e96e4ae 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
-@@ -740,7 +740,7 @@ out:
+@@ -742,7 +742,7 @@ out:
  struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
  			       umode_t mode, const struct qstr *qstr,
  			       __u32 goal, uid_t *owner, int handle_type,
@@ -293,7 +293,7 @@ index 1b8024d..0fb1ea0 100644
  {
  	struct super_block *sb;
  	struct buffer_head *inode_bitmap_bh = NULL;
-@@ -762,7 +762,8 @@ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
+@@ -764,7 +764,8 @@ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
  	if (!dir || !dir->i_nlink)
  		return ERR_PTR(-EPERM);
  
@@ -304,11 +304,11 @@ index 1b8024d..0fb1ea0 100644
  	    (S_ISREG(mode) || S_ISDIR(mode) || S_ISLNK(mode))) {
  		err = ext4_get_encryption_info(dir);
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 5e872fd..ef55ce8 100644
+index eae5917..65d38e9 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -202,6 +202,39 @@ static int uuid_is_zero(__u8 u[16])
- 	return 1;
+@@ -435,6 +435,39 @@ static inline unsigned long ext4_xflags_to_iflags(__u32 xflags)
+ 	return iflags;
  }
  
 +#ifdef CONFIG_EXT4_FS_ENCRYPTION
@@ -320,7 +320,7 @@ index 5e872fd..ef55ce8 100644
 +			   sizeof(struct ext4_encrypted_metadata)))
 +		return -EFAULT;
 +	/* Sanity check, as nothing should need to be this big */
-+	if (mdata->u.len > PAGE_CACHE_SIZE)
++	if (mdata->u.len > PAGE_SIZE)
 +		return -EINVAL;
 +	mdata->buf = kmalloc(mdata->u.len, GFP_KERNEL);
 +	if (!mdata->buf)
@@ -347,9 +347,9 @@ index 5e872fd..ef55ce8 100644
  long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  {
  	struct inode *inode = file_inode(filp);
-@@ -689,6 +722,83 @@ encryption_policy_out:
- 		return -EOPNOTSUPP;
- #endif
+@@ -896,6 +929,83 @@ encryption_policy_out:
+ 
+ 		return 0;
  	}
 +	case EXT4_IOC_GET_ENCRYPTION_METADATA: {
 +#ifdef CONFIG_EXT4_FS_ENCRYPTION
@@ -431,7 +431,7 @@ index 5e872fd..ef55ce8 100644
  	default:
  		return -ENOTTY;
  	}
-@@ -755,6 +865,9 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+@@ -962,6 +1072,9 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
  	case EXT4_IOC_SET_ENCRYPTION_POLICY:
  	case EXT4_IOC_GET_ENCRYPTION_PWSALT:
  	case EXT4_IOC_GET_ENCRYPTION_POLICY:
@@ -442,7 +442,7 @@ index 5e872fd..ef55ce8 100644
  	default:
  		return -ENOIOCTLCMD;
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 06c3afc..532f694 100644
+index c07422d..32edbe3 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -33,6 +33,8 @@
@@ -454,7 +454,7 @@ index 06c3afc..532f694 100644
  #include "ext4.h"
  #include "ext4_jbd2.h"
  
-@@ -2048,24 +2050,16 @@ out_frames:
+@@ -2075,24 +2077,16 @@ out_frames:
  }
  
  /*
@@ -483,7 +483,7 @@ index 06c3afc..532f694 100644
  	int	retval;
  	int	dx_fallback=0;
  	unsigned blocksize;
-@@ -2077,15 +2071,9 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -2104,15 +2098,9 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  
  	sb = dir->i_sb;
  	blocksize = sb->s_blocksize;
@@ -500,7 +500,7 @@ index 06c3afc..532f694 100644
  		if (retval < 0)
  			goto out;
  		if (retval == 1) {
-@@ -2095,7 +2083,7 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -2122,7 +2110,7 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  	}
  
  	if (is_dx(dir)) {
@@ -509,7 +509,7 @@ index 06c3afc..532f694 100644
  		if (!retval || (retval != ERR_BAD_DX_DIR))
  			goto out;
  		ext4_clear_inode_flag(dir, EXT4_INODE_INDEX);
-@@ -2110,14 +2098,14 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -2137,14 +2125,14 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  			bh = NULL;
  			goto out;
  		}
@@ -526,7 +526,7 @@ index 06c3afc..532f694 100644
  						  inode, bh);
  			bh = NULL; /* make_indexed_dir releases bh */
  			goto out;
-@@ -2139,9 +2127,8 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -2166,9 +2154,8 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  		initialize_dirent_tail(t, blocksize);
  	}
  
@@ -537,7 +537,7 @@ index 06c3afc..532f694 100644
  	brelse(bh);
  	if (retval == 0)
  		ext4_set_inode_state(inode, EXT4_STATE_NEWENTRY);
-@@ -2149,6 +2136,29 @@ out:
+@@ -2176,6 +2163,29 @@ out:
  }
  
  /*
@@ -567,7 +567,7 @@ index 06c3afc..532f694 100644
   * Returns 0 for success, or a negative error value
   */
  static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
-@@ -3858,3 +3868,252 @@ const struct inode_operations ext4_special_inode_operations = {
+@@ -3905,3 +3915,252 @@ const struct inode_operations ext4_special_inode_operations = {
  	.get_acl	= ext4_get_acl,
  	.set_acl	= ext4_set_acl,
  };

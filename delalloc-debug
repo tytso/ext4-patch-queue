@@ -6,25 +6,15 @@ inodes subject to delayed allocation to the console.
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/super.c | 81 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 80 insertions(+), 1 deletion(-)
+ fs/ext4/sysfs.c | 69 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 69 insertions(+)
 
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 85b3dd6..ae13cd3 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -790,6 +790,9 @@ static void ext4_put_super(struct super_block *sb)
- 
- 	if (sbi->s_proc) {
- 		remove_proc_entry("options", sbi->s_proc);
-+#ifdef CONFIG_EXT4_DEBUG
-+		remove_proc_entry("delalloc_debug", sbi->s_proc);
-+#endif
- 		remove_proc_entry(sb->s_id, ext4_proc_root);
- 	}
- 	kobject_del(&sbi->s_kobj);
-@@ -1832,6 +1835,74 @@ static const struct file_operations ext4_seq_options_fops = {
- 	.release = single_release,
+diff --git a/fs/ext4/sysfs.c b/fs/ext4/sysfs.c
+index 9d29723..507d33f 100644
+--- a/fs/ext4/sysfs.c
++++ b/fs/ext4/sysfs.c
+@@ -371,6 +371,74 @@ static struct kobject ext4_feat = {
+ 	.kset	= &ext4_kset,
  };
  
 +#ifdef CONFIG_EXT4_DEBUG
@@ -62,21 +52,21 @@ index 85b3dd6..ae13cd3 100644
 +	if (!list_empty(&sb->s_bdi->wb.b_dirty)) {
 +		printk(KERN_DEBUG "s_bdi->wb.b_dirty list:\n");
 +		list_for_each_entry(inode, &sb->s_bdi->wb.b_dirty,
-+				    i_wb_list) {
++				    i_io_list) {
 +			print_inode_delalloc_info(inode);
 +		}
 +	}
 +	if (!list_empty(&sb->s_bdi->wb.b_io)) {
 +		printk(KERN_DEBUG "s_bdi->wb.b_io list:\n");
 +		list_for_each_entry(inode, &sb->s_bdi->wb.b_io,
-+				    i_wb_list) {
++				    i_io_list) {
 +			print_inode_delalloc_info(inode);
 +		}
 +	}
 +	if (!list_empty(&sb->s_bdi->wb.b_more_io)) {
 +		printk(KERN_DEBUG "s_bdi->wb.b_more_io list:\n");
 +		list_for_each_entry(inode, &sb->s_bdi->wb.b_more_io,
-+				    i_wb_list) {
++				    i_io_list) {
 +			print_inode_delalloc_info(inode);
 +		}
 +	}
@@ -95,32 +85,14 @@ index 85b3dd6..ae13cd3 100644
 +};
 +#endif
 +
- static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
- 			    int read_only)
- {
-@@ -3764,9 +3835,14 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
- 	if (ext4_proc_root)
- 		sbi->s_proc = proc_mkdir(sb->s_id, ext4_proc_root);
+ #define PROC_FILE_SHOW_DEFN(name) \
+ static int name##_open(struct inode *inode, struct file *file) \
+ { \
+@@ -398,6 +466,7 @@ static struct ext4_proc_files {
+ 	PROC_FILE_LIST(options),
+ 	PROC_FILE_LIST(es_shrinker_info),
+ 	PROC_FILE_LIST(mb_groups),
++	PROC_FILE_LIST(delalloc_debug),
+ 	{ NULL, NULL },
+ };
  
--	if (sbi->s_proc)
-+	if (sbi->s_proc) {
- 		proc_create_data("options", S_IRUGO, sbi->s_proc,
- 				 &ext4_seq_options_fops, sb);
-+#ifdef CONFIG_EXT4_DEBUG
-+		proc_create_data("delalloc_debug", S_IRUSR, sbi->s_proc,
-+				 &ext4_seq_delalloc_debug_fops, sb);
-+#endif
-+	}
- 
- 	bgl_lock_init(sbi->s_blockgroup_lock);
- 
-@@ -4149,6 +4225,9 @@ failed_mount:
- 		crypto_free_shash(sbi->s_chksum_driver);
- 	if (sbi->s_proc) {
- 		remove_proc_entry("options", sbi->s_proc);
-+#ifdef CONFIG_EXT4_DEBUG
-+		remove_proc_entry("delalloc_debug", sbi->s_proc);
-+#endif
- 		remove_proc_entry(sb->s_id, ext4_proc_root);
- 	}
- #ifdef CONFIG_QUOTA

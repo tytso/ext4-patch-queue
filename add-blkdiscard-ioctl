@@ -7,16 +7,16 @@ Google-Bug-Id: 11517631
 
 Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
 ---
- fs/ext4/ext4.h    |   5 +++
- fs/ext4/extents.c |  38 +++++++++++++++++------
- fs/ext4/ioctl.c   | 138 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/ext4.h    |   5 ++++
+ fs/ext4/extents.c |  38 +++++++++++++++++++------
+ fs/ext4/ioctl.c   | 138 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  3 files changed, 172 insertions(+), 9 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 0179654f..fca1efb 100644
+index 122cc74..68d88c7 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -2867,6 +2867,8 @@ extern int ext4_check_blockref(const char *, unsigned int,
+@@ -3208,6 +3208,8 @@ extern int ext4_check_blockref(const char *, unsigned int,
  /* extents.c */
  struct ext4_ext_path;
  struct ext4_extent;
@@ -25,7 +25,7 @@ index 0179654f..fca1efb 100644
  
  /*
   * Maximum number of logical blocks in a file; ext4_extent's ee_block is
-@@ -2912,6 +2914,9 @@ extern int ext4_find_delalloc_range(struct inode *inode,
+@@ -3252,6 +3254,9 @@ extern int ext4_find_delalloc_range(struct inode *inode,
  				    ext4_lblk_t lblk_end);
  extern int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk);
  extern ext4_lblk_t ext4_ext_next_allocated_block(struct ext4_ext_path *path);
@@ -36,10 +36,10 @@ index 0179654f..fca1efb 100644
  			__u64 start, __u64 len);
  extern int ext4_ext_precache(struct inode *inode);
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 5330ec2..1941a4f 100644
+index 572fb4346..c32f0c1 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
-@@ -2142,9 +2142,13 @@ cleanup:
+@@ -2150,9 +2150,13 @@ cleanup:
  	return err;
  }
  
@@ -56,7 +56,7 @@ index 5330ec2..1941a4f 100644
  {
  	struct ext4_ext_path *path = NULL;
  	struct ext4_extent *ex;
-@@ -2153,7 +2157,6 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+@@ -2161,7 +2165,6 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
  	ext4_lblk_t last = block + num;
  	int exists, depth = 0, err = 0;
  	unsigned int flags = 0;
@@ -64,7 +64,7 @@ index 5330ec2..1941a4f 100644
  
  	while (block < last && block != EXT_MAX_BLOCKS) {
  		num = last - block;
-@@ -2270,11 +2273,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
+@@ -2278,11 +2281,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
  		}
  
  		if (exists) {
@@ -77,8 +77,8 @@ index 5330ec2..1941a4f 100644
  			if (err < 0)
  				break;
  			if (err == 1) {
-@@ -2291,6 +2290,27 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
- 	return err;
+@@ -2341,6 +2340,27 @@ static ext4_lblk_t ext4_ext_determine_hole(struct inode *inode,
+ 	return len;
  }
  
 +static int call_fill_fiemap(struct inode *inode, struct extent_status *es,
@@ -106,12 +106,12 @@ index 5330ec2..1941a4f 100644
   * ext4_ext_put_gap_in_cache:
   * calculate boundaries of the gap that the requested block fits into
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index 2cb9e17..7fc02e3 100644
+index 6c6be1d..fa8bac0 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -206,6 +206,132 @@ static int uuid_is_zero(__u8 u[16])
- 	return 1;
+@@ -468,6 +468,132 @@ static int write_user_mdata(unsigned long arg,
  }
+ #endif
  
 +static int discard_callback(struct inode *inode, struct extent_status *es,
 +			    unsigned int flags, void *private)
@@ -242,7 +242,7 @@ index 2cb9e17..7fc02e3 100644
  long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  {
  	struct inode *inode = file_inode(filp);
-@@ -697,6 +823,17 @@ encryption_policy_out:
+@@ -1006,6 +1132,17 @@ encryption_policy_out:
  		return -EOPNOTSUPP;
  #endif
  	}
@@ -260,10 +260,10 @@ index 2cb9e17..7fc02e3 100644
  	default:
  		return -ENOTTY;
  	}
-@@ -764,6 +901,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
- 	case EXT4_IOC_SET_ENCRYPTION_POLICY:
- 	case EXT4_IOC_GET_ENCRYPTION_PWSALT:
- 	case EXT4_IOC_GET_ENCRYPTION_POLICY:
+@@ -1075,6 +1212,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ 	case EXT4_IOC_GET_ENCRYPTION_METADATA:
+ 	case EXT4_IOC_SET_ENCRYPTION_METADATA:
+ 	case EXT4_IOC_GET_ENCRYPTED_FILENAME:
 +	case BLKDISCARD:
  		break;
  	default:
