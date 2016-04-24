@@ -13,8 +13,7 @@ going to return signal_pending() since we would end up returning
 duplicant entries.  See 9f2394c9be47 for a more detailed explanation.
 
 Added fix as suggested by Linus to check for signal_pending() in
-filldir64().  Also added a corresponding check to the 32/64-bit compat
-handlers.
+in the filldir() functions.
 
 Reported-by: Benjamin LaHaise <bcrl@kvack.org>
 Google-Bug-Id: 27880676
@@ -23,8 +22,8 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  fs/compat.c     | 4 ++++
  fs/ext4/dir.c   | 5 +++++
  fs/ext4/namei.c | 5 +++++
- fs/readdir.c    | 2 ++
- 4 files changed, 16 insertions(+)
+ fs/readdir.c    | 4 ++++
+ 4 files changed, 18 insertions(+)
 
 diff --git a/fs/compat.c b/fs/compat.c
 index a71936a..f940cb2 100644
@@ -81,10 +80,19 @@ index 48e4b89..c07422d 100644
  		ret = htree_dirblock_to_tree(dir_file, dir, block, &hinfo,
  					     start_hash, start_minor_hash);
 diff --git a/fs/readdir.c b/fs/readdir.c
-index e69ef3b..2b0bb4f 100644
+index e69ef3b..5f2d4be 100644
 --- a/fs/readdir.c
 +++ b/fs/readdir.c
-@@ -248,6 +248,8 @@ static int filldir64(struct dir_context *ctx, const char *name, int namlen,
+@@ -169,6 +169,8 @@ static int filldir(struct dir_context *ctx, const char *name, int namlen,
+ 	}
+ 	dirent = buf->previous;
+ 	if (dirent) {
++		if (signal_pending(current))
++			return -EINTR;
+ 		if (__put_user(offset, &dirent->d_off))
+ 			goto efault;
+ 	}
+@@ -248,6 +250,8 @@ static int filldir64(struct dir_context *ctx, const char *name, int namlen,
  		return -EINVAL;
  	dirent = buf->previous;
  	if (dirent) {
