@@ -1,0 +1,39 @@
+dax: call get_blocks() with create == 1 for write faults to unwritten extents
+
+From: Jan Kara <jack@suse.cz>
+
+Currently, __dax_fault() does not call get_blocks() callback with create
+argument set, when we got back unwritten extent from the initial
+get_blocks() call during a write fault. This is because originally
+filesystems were supposed to convert unwritten extents to written ones
+using complete_unwritten() callback. Later this was abandoned in favor of
+using pre-zeroed blocks however the condition whether get_blocks() needs
+to be called with create == 1 remained.
+
+Fix the condition so that filesystems are not forced to zero-out and
+convert unwritten extents when get_blocks() is called with create == 0
+(which introduces unnecessary overhead for read faults and can be
+problematic as the filesystem may possibly be read-only).
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/dax.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/dax.c b/fs/dax.c
+index 75ba46d82a76..2494255c5785 100644
+--- a/fs/dax.c
++++ b/fs/dax.c
+@@ -667,7 +667,7 @@ int __dax_fault(struct vm_area_struct *vma, struct vm_fault *vmf,
+ 	if (error)
+ 		goto unlock_page;
+ 
+-	if (!buffer_mapped(&bh) && !buffer_unwritten(&bh) && !vmf->cow_page) {
++	if (!buffer_mapped(&bh) && !vmf->cow_page) {
+ 		if (vmf->flags & FAULT_FLAG_WRITE) {
+ 			error = get_block(inode, block, &bh, 1);
+ 			count_vm_event(PGMAJFAULT);
+-- 
+2.6.6
+
