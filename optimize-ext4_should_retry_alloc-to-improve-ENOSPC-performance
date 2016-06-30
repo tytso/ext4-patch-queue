@@ -1,38 +1,34 @@
 ext4: optimize ext4_should_retry_alloc() to improve ENOSPC performance
 
-If there are pending blocks to be released after a commit, retrying
-the allocation after a journal commit has no hope of helping.  So
-track how many pending deleted blocks there might be, and don't retry
-if there are no pending blocks.
+If there are no pending blocks to be released after a commit, forcing
+a journal commit has no hope of helping.  It's possible that a commit
+had just completed, so if there are now free blocks available for
+allocation, it's worth retrying the commit.
 
 Reported-by: Chao Yu <yuchao0@huawei.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/balloc.c    |  8 +++++++-
+ fs/ext4/balloc.c    |  4 +++-
  fs/ext4/ext4.h      |  1 +
  fs/ext4/ext4_jbd2.h | 10 +++++++++-
  fs/ext4/mballoc.c   | 12 ++++++++++--
- 4 files changed, 27 insertions(+), 4 deletions(-)
+ 4 files changed, 23 insertions(+), 4 deletions(-)
 
 diff --git a/fs/ext4/balloc.c b/fs/ext4/balloc.c
-index 3020fd7..cdadd6b 100644
+index 3020fd7..0b8105b 100644
 --- a/fs/ext4/balloc.c
 +++ b/fs/ext4/balloc.c
-@@ -603,7 +603,13 @@ int ext4_claim_free_clusters(struct ext4_sb_info *sbi,
-  */
- int ext4_should_retry_alloc(struct super_block *sb, int *retries)
- {
--	if (!ext4_has_free_clusters(EXT4_SB(sb), 1, 0) ||
-+	unsigned int pending_blocks;
-+
+@@ -610,7 +610,9 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
+ 
+ 	jbd_debug(1, "%s: retrying operation after ENOSPC\n", sb->s_id);
+ 
+-	jbd2_journal_force_commit_nested(EXT4_SB(sb)->s_journal);
 +	smp_mb();
-+	pending_blocks = EXT4_SB(sb)->s_mb_free_pending;
-+
-+	if (pending_blocks == 0 ||
-+	    !ext4_has_free_clusters(EXT4_SB(sb), 1, 0) ||
- 	    (*retries)++ > 3 ||
- 	    !EXT4_SB(sb)->s_journal)
- 		return 0;
++	if (EXT4_SB(sb)->s_mb_free_pending)
++		jbd2_journal_force_commit_nested(EXT4_SB(sb)->s_journal);
+ 	return 1;
+ }
+ 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index b84aa1c..96c73e6 100644
 --- a/fs/ext4/ext4.h
