@@ -1,0 +1,30 @@
+ext4: in ext4_setattr(), only call ext4_truncate() if there is no data to drop
+
+If there are no blocks associated with the inode (and no inline data),
+there's no point calling ext4_truncate().  This avoids setting the
+replace-via-truncate hueristic if there is an attempt to truncate a
+file which is already zero-length --- which is something that happens
+in the core dumping code, in case there is an already existing core
+file.  In the comon case, there is not a previous core file, so by not
+enabling the replace-via-truncate hueristic, we can speed up core
+dumps.
+
+Reported-by: Omar Sandoval <osandov@fb.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/inode.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 44ee5d9..cd757f8 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -5171,7 +5171,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
+ 		 * in data=journal mode to make pages freeable.
+ 		 */
+ 		truncate_pagecache(inode, inode->i_size);
+-		if (shrink)
++		if (shrink && (inode->i_blocks || ext4_has_inline_data(inode)))
+ 			ext4_truncate(inode);
+ 		up_write(&EXT4_I(inode)->i_mmap_sem);
+ 	}
