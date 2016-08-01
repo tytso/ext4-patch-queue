@@ -1,0 +1,29 @@
+ext4: reserve xattr index for the Hurd
+
+The Hurd is using inode fields which restricts it from using more
+advanced ext4 file system features, due to design choices made over a
+decade ago.  By giving the Hurd an extended attribute index field we
+allow it to move the translator and author fields out of the core
+inode fields, and hopefully we can get rid of ugly hacks such as
+EXT4_OS_HURD and EXT4_MOUNT2_HURD_COMPAT somday.
+
+For more information please see:
+      https://summerofcode.withgoogle.com/projects/#5869799859027968
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/xattr.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/ext4/xattr.h b/fs/ext4/xattr.h
+index 69dd3e6..a92e783 100644
+--- a/fs/ext4/xattr.h
++++ b/fs/ext4/xattr.h
+@@ -24,6 +24,7 @@
+ #define EXT4_XATTR_INDEX_SYSTEM			7
+ #define EXT4_XATTR_INDEX_RICHACL		8
+ #define EXT4_XATTR_INDEX_ENCRYPTION		9
++#define EXT4_XATTR_INDEX_HURD			10 /* Reserved for Hurd */
+ 
+ struct ext4_xattr_header {
+ 	__le32	h_magic;	/* magic number for identification */
