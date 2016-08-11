@@ -1,0 +1,92 @@
+ext4: avoid deadlock when expanding inode size
+
+From: Jan Kara <jack@suse.cz>
+
+When we need to move xattrs into external xattr block, we call
+ext4_xattr_block_set() from ext4_expand_extra_isize_ea(). That may end
+up calling ext4_mark_inode_dirty() again which will recurse back into
+the inode expansion code leading to deadlocks.
+
+Protect from recursion using EXT4_STATE_NO_EXPAND inode flag and move
+its management into ext4_expand_extra_isize_ea() since its manipulation
+is safe there (due to xattr_sem) from possible races with
+ext4_xattr_set_handle() which plays with it as well.
+
+CC: <stable@vger.kernel.org> # 4.4.x-
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/inode.c |  2 --
+ fs/ext4/xattr.c | 19 +++++++++++++------
+ 2 files changed, 13 insertions(+), 8 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 3131747199e1..c6ea25a190f8 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -5466,8 +5466,6 @@ int ext4_mark_inode_dirty(handle_t *handle, struct inode *inode)
+ 						      sbi->s_want_extra_isize,
+ 						      iloc, handle);
+ 			if (ret) {
+-				ext4_set_inode_state(inode,
+-						     EXT4_STATE_NO_EXPAND);
+ 				if (mnt_count !=
+ 					le16_to_cpu(sbi->s_es->s_mnt_count)) {
+ 					ext4_warning(inode->i_sb,
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index c893f00b6dc0..2eb935ca5d9e 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -1358,12 +1358,14 @@ int ext4_expand_extra_isize_ea(struct inode *inode, int new_extra_isize,
+ 	int isize_diff;	/* How much do we need to grow i_extra_isize */
+ 
+ 	down_write(&EXT4_I(inode)->xattr_sem);
++	/*
++	 * Set EXT4_STATE_NO_EXPAND to avoid recursion when marking inode dirty
++	 */
++	ext4_set_inode_state(inode, EXT4_STATE_NO_EXPAND);
+ retry:
+ 	isize_diff = new_extra_isize - EXT4_I(inode)->i_extra_isize;
+-	if (EXT4_I(inode)->i_extra_isize >= new_extra_isize) {
+-		up_write(&EXT4_I(inode)->xattr_sem);
+-		return 0;
+-	}
++	if (EXT4_I(inode)->i_extra_isize >= new_extra_isize)
++		goto out;
+ 
+ 	header = IHDR(inode, raw_inode);
+ 	entry = IFIRST(header);
+@@ -1392,8 +1394,7 @@ retry:
+ 				(void *)header, total_ino,
+ 				inode->i_sb->s_blocksize);
+ 		EXT4_I(inode)->i_extra_isize = new_extra_isize;
+-		error = 0;
+-		goto cleanup;
++		goto out;
+ 	}
+ 
+ 	/*
+@@ -1553,6 +1554,8 @@ retry:
+ 		kfree(bs);
+ 	}
+ 	brelse(bh);
++out:
++	ext4_clear_inode_state(inode, EXT4_STATE_NO_EXPAND);
+ 	up_write(&EXT4_I(inode)->xattr_sem);
+ 	return 0;
+ 
+@@ -1564,6 +1567,10 @@ cleanup:
+ 	kfree(is);
+ 	kfree(bs);
+ 	brelse(bh);
++	/*
++	 * We deliberately leave EXT4_STATE_NO_EXPAND set here since inode
++	 * size expansion failed.
++	 */
+ 	up_write(&EXT4_I(inode)->xattr_sem);
+ 	return error;
+ }
+-- 
+2.6.6
+
+
