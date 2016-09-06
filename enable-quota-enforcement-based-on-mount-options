@@ -1,0 +1,131 @@
+ext4: enable quota enforcement based on mount options
+
+From: Jan Kara <jack@suse.cz>
+
+When quota information is stored in quota files, we enable only quota
+accounting on mount and enforcement is enabled only in response to
+Q_QUOTAON quotactl. To make ext4 behavior consistent with XFS, we add a
+possibility to enable quota enforcement on mount by specifying
+corresponding quota mount option (usrquota, grpquota, prjquota).
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4.h  | 12 +++++++++---
+ fs/ext4/super.c | 34 ++++++++++++++++++++++++----------
+ 2 files changed, 33 insertions(+), 13 deletions(-)
+
+The patch passed xfstests both with old style and new style quotas and some
+targetted manual tests so here we go... Ted please merge the patch if you
+agree with it.
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index b84aa1ca480a..224cb832e2dc 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1129,9 +1129,15 @@ struct ext4_inode_info {
+ #define EXT4_MOUNT_POSIX_ACL		0x08000	/* POSIX Access Control Lists */
+ #define EXT4_MOUNT_NO_AUTO_DA_ALLOC	0x10000	/* No auto delalloc mapping */
+ #define EXT4_MOUNT_BARRIER		0x20000 /* Use block barriers */
+-#define EXT4_MOUNT_QUOTA		0x80000 /* Some quota option set */
+-#define EXT4_MOUNT_USRQUOTA		0x100000 /* "old" user quota */
+-#define EXT4_MOUNT_GRPQUOTA		0x200000 /* "old" group quota */
++#define EXT4_MOUNT_QUOTA		0x40000 /* Some quota option set */
++#define EXT4_MOUNT_USRQUOTA		0x80000 /* "old" user quota,
++						 * enable enforcement for hidden
++						 * quota files */
++#define EXT4_MOUNT_GRPQUOTA		0x100000 /* "old" group quota, enable
++						  * enforcement for hidden quota
++						  * files */
++#define EXT4_MOUNT_PRJQUOTA		0x200000 /* Enable project quota
++						  * enforcement */
+ #define EXT4_MOUNT_DIOREAD_NOLOCK	0x400000 /* Enable support for dio read nolocking */
+ #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
+ #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 3822a5aedc61..a03232634cd5 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1187,7 +1187,7 @@ enum {
+ 	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
+ 	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_jqfmt_vfsv1, Opt_quota,
+ 	Opt_noquota, Opt_barrier, Opt_nobarrier, Opt_err,
+-	Opt_usrquota, Opt_grpquota, Opt_i_version, Opt_dax,
++	Opt_usrquota, Opt_grpquota, Opt_prjquota, Opt_i_version, Opt_dax,
+ 	Opt_stripe, Opt_delalloc, Opt_nodelalloc, Opt_mblk_io_submit,
+ 	Opt_lazytime, Opt_nolazytime,
+ 	Opt_nomblk_io_submit, Opt_block_validity, Opt_noblock_validity,
+@@ -1247,6 +1247,7 @@ static const match_table_t tokens = {
+ 	{Opt_noquota, "noquota"},
+ 	{Opt_quota, "quota"},
+ 	{Opt_usrquota, "usrquota"},
++	{Opt_prjquota, "prjquota"},
+ 	{Opt_barrier, "barrier=%u"},
+ 	{Opt_barrier, "barrier"},
+ 	{Opt_nobarrier, "nobarrier"},
+@@ -1466,8 +1467,11 @@ static const struct mount_opts {
+ 							MOPT_SET | MOPT_Q},
+ 	{Opt_grpquota, EXT4_MOUNT_QUOTA | EXT4_MOUNT_GRPQUOTA,
+ 							MOPT_SET | MOPT_Q},
++	{Opt_prjquota, EXT4_MOUNT_QUOTA | EXT4_MOUNT_PRJQUOTA,
++							MOPT_SET | MOPT_Q},
+ 	{Opt_noquota, (EXT4_MOUNT_QUOTA | EXT4_MOUNT_USRQUOTA |
+-		       EXT4_MOUNT_GRPQUOTA), MOPT_CLEAR | MOPT_Q},
++		       EXT4_MOUNT_GRPQUOTA | EXT4_MOUNT_PRJQUOTA),
++							MOPT_CLEAR | MOPT_Q},
+ 	{Opt_usrjquota, 0, MOPT_Q},
+ 	{Opt_grpjquota, 0, MOPT_Q},
+ 	{Opt_offusrjquota, 0, MOPT_Q},
+@@ -1756,13 +1760,17 @@ static int parse_options(char *options, struct super_block *sb,
+ 			return 0;
+ 	}
+ #ifdef CONFIG_QUOTA
+-	if (ext4_has_feature_quota(sb) &&
+-	    (test_opt(sb, USRQUOTA) || test_opt(sb, GRPQUOTA))) {
+-		ext4_msg(sb, KERN_INFO, "Quota feature enabled, usrquota and grpquota "
+-			 "mount options ignored.");
+-		clear_opt(sb, USRQUOTA);
+-		clear_opt(sb, GRPQUOTA);
+-	} else if (sbi->s_qf_names[USRQUOTA] || sbi->s_qf_names[GRPQUOTA]) {
++	/*
++	 * We do the test below only for project quotas. 'usrquota' and
++	 * 'grpquota' mount options are allowed even without quota feature
++	 * to support legacy quotas in quota files.
++	 */
++	if (test_opt(sb, PRJQUOTA) && !ext4_has_feature_project(sb)) {
++		ext4_msg(sb, KERN_ERR, "Project quota feature not enabled. "
++			 "Cannot enable project quota enforcement.");
++		return 0;
++	}
++	if (sbi->s_qf_names[USRQUOTA] || sbi->s_qf_names[GRPQUOTA]) {
+ 		if (test_opt(sb, USRQUOTA) && sbi->s_qf_names[USRQUOTA])
+ 			clear_opt(sb, USRQUOTA);
+ 
+@@ -5129,12 +5137,18 @@ static int ext4_enable_quotas(struct super_block *sb)
+ 		le32_to_cpu(EXT4_SB(sb)->s_es->s_grp_quota_inum),
+ 		le32_to_cpu(EXT4_SB(sb)->s_es->s_prj_quota_inum)
+ 	};
++	bool quota_mopt[EXT4_MAXQUOTAS] = {
++		test_opt(sb, USRQUOTA),
++		test_opt(sb, GRPQUOTA),
++		test_opt(sb, PRJQUOTA),
++	};
+ 
+ 	sb_dqopt(sb)->flags |= DQUOT_QUOTA_SYS_FILE;
+ 	for (type = 0; type < EXT4_MAXQUOTAS; type++) {
+ 		if (qf_inums[type]) {
+ 			err = ext4_quota_enable(sb, type, QFMT_VFS_V1,
+-						DQUOT_USAGE_ENABLED);
++				DQUOT_USAGE_ENABLED |
++				(quota_mopt[type] ? DQUOT_LIMITS_ENABLED : 0));
+ 			if (err) {
+ 				ext4_warning(sb,
+ 					"Failed to enable quota tracking "
+-- 
+2.6.6
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
