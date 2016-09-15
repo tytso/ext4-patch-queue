@@ -1,0 +1,36 @@
+ext4: fix memory leak when symlink decryption fails
+
+From: Eric Biggers <ebiggers@google.com>
+
+This bug was introduced in v4.8-rc1.
+
+Signed-off-by: Eric Biggers <ebiggers@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/symlink.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/ext4/symlink.c b/fs/ext4/symlink.c
+index 4d83d9e..04a7850 100644
+--- a/fs/ext4/symlink.c
++++ b/fs/ext4/symlink.c
+@@ -65,13 +65,12 @@ static const char *ext4_encrypted_get_link(struct dentry *dentry,
+ 	res = fscrypt_fname_alloc_buffer(inode, cstr.len, &pstr);
+ 	if (res)
+ 		goto errout;
++	paddr = pstr.name;
+ 
+ 	res = fscrypt_fname_disk_to_usr(inode, 0, 0, &cstr, &pstr);
+ 	if (res < 0)
+ 		goto errout;
+ 
+-	paddr = pstr.name;
+-
+ 	/* Null-terminate the name */
+ 	if (res <= pstr.len)
+ 		paddr[res] = '\0';
+-- 
+2.8.0.rc3.226.g39d4020
+
+
