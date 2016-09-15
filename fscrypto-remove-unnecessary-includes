@@ -1,0 +1,57 @@
+fscrypto: remove unnecessary includes
+
+From: Eric Biggers <ebiggers@google.com>
+
+This patch removes some #includes that are clearly not needed, such as a
+reference to ecryptfs, which is unrelated to the new filesystem
+encryption code.
+
+Signed-off-by: Eric Biggers <ebiggers@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/crypto/crypto.c  | 1 -
+ fs/crypto/fname.c   | 2 --
+ fs/crypto/keyinfo.c | 3 ---
+ 3 files changed, 6 deletions(-)
+
+diff --git a/fs/crypto/crypto.c b/fs/crypto/crypto.c
+index c502c11..7c39eab 100644
+--- a/fs/crypto/crypto.c
++++ b/fs/crypto/crypto.c
+@@ -28,7 +28,6 @@
+ #include <linux/dcache.h>
+ #include <linux/namei.h>
+ #include <linux/fscrypto.h>
+-#include <linux/ecryptfs.h>
+ 
+ static unsigned int num_prealloc_crypto_pages = 32;
+ static unsigned int num_prealloc_crypto_ctxs = 128;
+diff --git a/fs/crypto/fname.c b/fs/crypto/fname.c
+index 5d6d491..3108806 100644
+--- a/fs/crypto/fname.c
++++ b/fs/crypto/fname.c
+@@ -10,8 +10,6 @@
+  * This has not yet undergone a rigorous security audit.
+  */
+ 
+-#include <keys/encrypted-type.h>
+-#include <keys/user-type.h>
+ #include <linux/scatterlist.h>
+ #include <linux/ratelimit.h>
+ #include <linux/fscrypto.h>
+diff --git a/fs/crypto/keyinfo.c b/fs/crypto/keyinfo.c
+index 1ac263e..58b1c82 100644
+--- a/fs/crypto/keyinfo.c
++++ b/fs/crypto/keyinfo.c
+@@ -8,11 +8,8 @@
+  * Written by Michael Halcrow, Ildar Muslukhov, and Uday Savagaonkar, 2015.
+  */
+ 
+-#include <keys/encrypted-type.h>
+ #include <keys/user-type.h>
+-#include <linux/random.h>
+ #include <linux/scatterlist.h>
+-#include <uapi/linux/keyctl.h>
+ #include <linux/fscrypto.h>
+ 
+ static void derive_crypt_complete(struct crypto_async_request *req, int rc)
