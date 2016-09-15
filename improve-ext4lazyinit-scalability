@@ -38,11 +38,11 @@ xfstests:ext4/023
 Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/super.c | 46 ++++++++++++++++++++++++++++++++++------------
- 1 file changed, 34 insertions(+), 12 deletions(-)
+ fs/ext4/super.c | 41 +++++++++++++++++++++++++++++++----------
+ 1 file changed, 31 insertions(+), 10 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 5819b0e..ebeebf5 100644
+index 5819b0e..50912cc 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -2749,7 +2749,6 @@ static int ext4_run_li_request(struct ext4_li_request *elr)
@@ -62,7 +62,7 @@ index 5819b0e..ebeebf5 100644
  	return ret;
  }
  
-@@ -2842,21 +2839,46 @@ cont_thread:
+@@ -2842,19 +2839,43 @@ cont_thread:
  			mutex_unlock(&eli->li_list_mtx);
  			goto exit_thread;
  		}
@@ -108,13 +108,8 @@ index 5819b0e..ebeebf5 100644
 +				elr->lr_next_sched = jiffies +
 +					(prandom_u32()
 +					 % (EXT4_DEF_LI_MAX_START_DELAY * HZ));
-+				if (time_before(elr->lr_next_sched,
-+						next_wakeup))
-+					next_wakeup = elr->lr_next_sched;
  			}
 -
--			if (time_before(elr->lr_next_sched, next_wakeup))
--				next_wakeup = elr->lr_next_sched;
+ 			if (time_before(elr->lr_next_sched, next_wakeup))
+ 				next_wakeup = elr->lr_next_sched;
  		}
- 		mutex_unlock(&eli->li_list_mtx);
- 
