@@ -11,11 +11,11 @@ Signed-off-by: Geliang Tang <geliangtang@gmail.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 Reviewed-by: Jan Kara <jack@suse.cz>
 ---
- fs/jbd2/journal.c | 136 +++++++++++++++++++++---------------------------------
- 1 file changed, 53 insertions(+), 83 deletions(-)
+ fs/jbd2/journal.c | 131 +++++++++++++++++++++++++++++++++-----------------------------------------------------
+ 1 file changed, 50 insertions(+), 81 deletions(-)
 
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 46261a6..07e14ef 100644
+index 46261a6..927da49 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
 @@ -1090,11 +1090,15 @@ static void jbd2_stats_proc_exit(journal_t *journal)
@@ -35,7 +35,7 @@ index 46261a6..07e14ef 100644
  
  	journal = kzalloc(sizeof(*journal), GFP_KERNEL);
  	if (!journal)
-@@ -1131,6 +1135,35 @@ static journal_t * journal_init_common (void)
+@@ -1131,6 +1135,32 @@ static journal_t * journal_init_common (void)
  	lockdep_init_map(&journal->j_trans_commit_map, "jbd2_handle",
  			 &jbd2_trans_commit_key, 0);
  
@@ -45,13 +45,11 @@ index 46261a6..07e14ef 100644
 +	journal->j_fs_dev = fs_dev;
 +	journal->j_blk_offset = start;
 +	journal->j_maxlen = len;
-+	jbd2_stats_proc_init(journal);
 +	n = journal->j_blocksize / sizeof(journal_block_tag_t);
 +	journal->j_wbufsize = n;
 +	journal->j_wbuf = kmalloc_array(n, sizeof(struct buffer_head *),
 +					GFP_KERNEL);
 +	if (!journal->j_wbuf) {
-+		jbd2_stats_proc_exit(journal);
 +		kfree(journal);
 +		return NULL;
 +	}
@@ -61,7 +59,6 @@ index 46261a6..07e14ef 100644
 +		pr_err("%s: Cannot get buffer for journal superblock\n",
 +			__func__);
 +		kfree(journal->j_wbuf);
-+		jbd2_stats_proc_exit(journal);
 +		kfree(journal);
 +		return NULL;
 +	}
@@ -71,7 +68,7 @@ index 46261a6..07e14ef 100644
  	return journal;
  }
  
-@@ -1157,51 +1190,20 @@ static journal_t * journal_init_common (void)
+@@ -1157,51 +1187,21 @@ static journal_t * journal_init_common (void)
   *  range of blocks on an arbitrary block device.
   *
   */
@@ -97,7 +94,7 @@ index 46261a6..07e14ef 100644
 -	journal->j_maxlen = len;
  	bdevname(journal->j_dev, journal->j_devname);
  	strreplace(journal->j_devname, '/', '!');
--	jbd2_stats_proc_init(journal);
+ 	jbd2_stats_proc_init(journal);
 -	n = journal->j_blocksize / sizeof(journal_block_tag_t);
 -	journal->j_wbufsize = n;
 -	journal->j_wbuf = kmalloc(n * sizeof(struct buffer_head*), GFP_KERNEL);
@@ -126,7 +123,7 @@ index 46261a6..07e14ef 100644
  }
  
  /**
-@@ -1212,67 +1214,35 @@ out_err:
+@@ -1212,67 +1212,36 @@ out_err:
   * the journal.  The inode must exist already, must support bmap() and
   * must have all data blocks preallocated.
   */
@@ -171,8 +168,8 @@ index 46261a6..07e14ef 100644
 -
 -	journal->j_maxlen = inode->i_size >> inode->i_sb->s_blocksize_bits;
 -	journal->j_blocksize = inode->i_sb->s_blocksize;
--	jbd2_stats_proc_init(journal);
--
+ 	jbd2_stats_proc_init(journal);
+ 
 -	/* journal descriptor can store up to n blocks -bzzz */
 -	n = journal->j_blocksize / sizeof(journal_block_tag_t);
 -	journal->j_wbufsize = n;
@@ -200,7 +197,7 @@ index 46261a6..07e14ef 100644
 -	}
 -	journal->j_sb_buffer = bh;
 -	journal->j_superblock = (journal_superblock_t *)bh->b_data;
- 
+-
  	return journal;
 -out_err:
 -	kfree(journal->j_wbuf);
@@ -210,7 +207,3 @@ index 46261a6..07e14ef 100644
  }
  
  /*
--- 
-2.7.4
-
-
