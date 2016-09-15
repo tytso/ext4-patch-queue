@@ -1,0 +1,83 @@
+fscrypto: rename completion callbacks to reflect usage
+
+From: Eric Biggers <ebiggers@google.com>
+
+fscrypt_complete() was used only for data pages, not for all
+encryption/decryption.  Rename it to page_crypt_complete().
+
+dir_crypt_complete() was used for filename encryption/decryption for
+both directory entries and symbolic links.  Rename it to
+fname_crypt_complete().
+
+Signed-off-by: Eric Biggers <ebiggers@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/crypto/crypto.c | 10 +++++-----
+ fs/crypto/fname.c  | 10 ++++++----
+ 2 files changed, 11 insertions(+), 9 deletions(-)
+
+diff --git a/fs/crypto/crypto.c b/fs/crypto/crypto.c
+index 7c39eab..61057b7d 100644
+--- a/fs/crypto/crypto.c
++++ b/fs/crypto/crypto.c
+@@ -127,11 +127,11 @@ struct fscrypt_ctx *fscrypt_get_ctx(struct inode *inode, gfp_t gfp_flags)
+ EXPORT_SYMBOL(fscrypt_get_ctx);
+ 
+ /**
+- * fscrypt_complete() - The completion callback for page encryption
+- * @req: The asynchronous encryption request context
+- * @res: The result of the encryption operation
++ * page_crypt_complete() - completion callback for page crypto
++ * @req: The asynchronous cipher request context
++ * @res: The result of the cipher operation
+  */
+-static void fscrypt_complete(struct crypto_async_request *req, int res)
++static void page_crypt_complete(struct crypto_async_request *req, int res)
+ {
+ 	struct fscrypt_completion_result *ecr = req->data;
+ 
+@@ -169,7 +169,7 @@ static int do_page_crypto(struct inode *inode,
+ 
+ 	skcipher_request_set_callback(
+ 		req, CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
+-		fscrypt_complete, &ecr);
++		page_crypt_complete, &ecr);
+ 
+ 	BUILD_BUG_ON(FS_XTS_TWEAK_SIZE < sizeof(index));
+ 	memcpy(xts_tweak, &index, sizeof(index));
+diff --git a/fs/crypto/fname.c b/fs/crypto/fname.c
+index 7f3239c..db8f798 100644
+--- a/fs/crypto/fname.c
++++ b/fs/crypto/fname.c
+@@ -20,9 +20,11 @@ static u32 size_round_up(size_t size, size_t blksize)
+ }
+ 
+ /**
+- * dir_crypt_complete() -
++ * fname_crypt_complete() - completion callback for filename crypto
++ * @req: The asynchronous cipher request context
++ * @res: The result of the cipher operation
+  */
+-static void dir_crypt_complete(struct crypto_async_request *req, int res)
++static void fname_crypt_complete(struct crypto_async_request *req, int res)
+ {
+ 	struct fscrypt_completion_result *ecr = req->data;
+ 
+@@ -82,7 +84,7 @@ static int fname_encrypt(struct inode *inode,
+ 	}
+ 	skcipher_request_set_callback(req,
+ 			CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
+-			dir_crypt_complete, &ecr);
++			fname_crypt_complete, &ecr);
+ 
+ 	/* Copy the input */
+ 	memcpy(workbuf, iname->name, iname->len);
+@@ -145,7 +147,7 @@ static int fname_decrypt(struct inode *inode,
+ 	}
+ 	skcipher_request_set_callback(req,
+ 		CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
+-		dir_crypt_complete, &ecr);
++		fname_crypt_complete, &ecr);
+ 
+ 	/* Initialize IV */
+ 	memset(iv, 0, FS_CRYPTO_BLOCK_SIZE);
