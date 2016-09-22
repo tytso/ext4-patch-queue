@@ -1,0 +1,43 @@
+ext4: allow DAX writeback for hole punch
+
+From: Ross Zwisler <ross.zwisler@linux.intel.com>
+
+Currently when doing a DAX hole punch with ext4 we fail to do a writeback.
+This is because the logic around filemap_write_and_wait_range() in
+ext4_punch_hole() only looks for dirty page cache pages in the radix tree,
+not for dirty DAX exceptional entries.
+
+Signed-off-by: Ross Zwisler <ross.zwisler@linux.intel.com>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/inode.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 3131747..0900cb4 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3890,7 +3890,7 @@ int ext4_update_disksize_before_punch(struct inode *inode, loff_t offset,
+ }
+ 
+ /*
+- * ext4_punch_hole: punches a hole in a file by releaseing the blocks
++ * ext4_punch_hole: punches a hole in a file by releasing the blocks
+  * associated with the given offset and length
+  *
+  * @inode:  File inode
+@@ -3919,7 +3919,7 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
+ 	 * Write out all dirty pages to avoid race conditions
+ 	 * Then release them.
+ 	 */
+-	if (mapping->nrpages && mapping_tagged(mapping, PAGECACHE_TAG_DIRTY)) {
++	if (mapping_tagged(mapping, PAGECACHE_TAG_DIRTY)) {
+ 		ret = filemap_write_and_wait_range(mapping, offset,
+ 						   offset + length - 1);
+ 		if (ret)
+-- 
+2.9.0
+
+
