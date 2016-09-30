@@ -1,0 +1,46 @@
+ext4: unmap metadata when zeroing blocks
+
+From: Jan Kara <jack@suse.cz>
+
+When zeroing blocks for DAX allocations, we also have to unmap aliases
+in the block device mappings.  Otherwise writeback can overwrite zeros
+with stale data from block device page cache.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@kernel.org
+---
+ fs/ext4/inode.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+Ted, can you merge this patch please? It's a data corruption issue for DAX.
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index c6ea25a190f8..87150122d361 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -647,11 +647,19 @@ found:
+ 		/*
+ 		 * We have to zeroout blocks before inserting them into extent
+ 		 * status tree. Otherwise someone could look them up there and
+-		 * use them before they are really zeroed.
++		 * use them before they are really zeroed. We also have to
++		 * unmap metadata before zeroing as otherwise writeback can
++		 * overwrite zeros with stale data from block device.
+ 		 */
+ 		if (flags & EXT4_GET_BLOCKS_ZERO &&
+ 		    map->m_flags & EXT4_MAP_MAPPED &&
+ 		    map->m_flags & EXT4_MAP_NEW) {
++			ext4_lblk_t i;
++
++			for (i = 0; i < map->m_len; i++) {
++				unmap_underlying_metadata(inode->i_sb->s_bdev,
++							  map->m_pblk + i);
++			}
+ 			ret = ext4_issue_zeroout(inode, map->m_lblk,
+ 						 map->m_pblk, map->m_len);
+ 			if (ret) {
+-- 
+2.6.6
+
+
