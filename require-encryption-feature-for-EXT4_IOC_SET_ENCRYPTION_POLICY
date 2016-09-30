@@ -1,0 +1,40 @@
+ext4: require encryption feature for EXT4_IOC_SET_ENCRYPTION_POLICY
+
+From: Richard Weinberger <richard@nod.at>
+
+...otherwise an user can enable encryption for certain files even
+when the filesystem is unable to support it.
+Such a case would be a filesystem created by mkfs.ext4's default
+settings, 1KiB block size. Ext4 supports encyption only when block size
+is equal to PAGE_SIZE.
+But this constraint is only checked when the encryption feature flag
+is set.
+
+Signed-off-by: Richard Weinberger <richard@nod.at>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ioctl.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 1bb7df5..9e9a73e 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -772,6 +772,9 @@ resizefs_out:
+ #ifdef CONFIG_EXT4_FS_ENCRYPTION
+ 		struct fscrypt_policy policy;
+ 
++		if (!ext4_has_feature_encrypt(sb))
++			return -EOPNOTSUPP;
++
+ 		if (copy_from_user(&policy,
+ 				   (struct fscrypt_policy __user *)arg,
+ 				   sizeof(policy)))
+-- 
+2.7.3
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
