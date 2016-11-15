@@ -1,0 +1,327 @@
+Introduce cleaner
+
+From: Abutalib Aghayev <agayev@cs.cmu.edu>
+
+An experimental cleaner.  Copy the live blocks from the transaction at the
+tail in batches to the transaction at the head.  After a commit ends, check
+if free space is below watermark and start cleaning until free space is
+above high watermark.
+
+Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
+
+---
+ fs/jbd2/Makefile     |   2 +-
+ fs/jbd2/jmap.c       |  43 ++++++++++++++++++++++++++++++-----
+ fs/jbd2/journal.c    |  12 +++++++++-
+ include/linux/jbd2.h |   6 ++++-
+ include/linux/jmap.h | 111 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------------
+ 5 files changed, 151 insertions(+), 23 deletions(-)
+
+diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
+index a54f50b3a06e..b6a2dddcc0a7 100644
+--- a/fs/jbd2/Makefile
++++ b/fs/jbd2/Makefile
+@@ -5,4 +5,4 @@
+ obj-$(CONFIG_JBD2) += jbd2.o
+ 
+ jbd2-objs := transaction.o commit.o recovery.o checkpoint.o revoke.o journal.o \
+-		jmap.o
++		jmap.o cleaner.o
+diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
+index 8c844f65eeaa..693b3e8d736c 100644
+--- a/fs/jbd2/jmap.c
++++ b/fs/jbd2/jmap.c
+@@ -38,7 +38,7 @@ int jbd2_init_transaction_infos(journal_t *journal)
+ 	}
+ 
+ 	for (i = 0; i < MAX_LIVE_TRANSACTIONS; ++i)
+-		INIT_LIST_HEAD(&tis->buf[i].live_logblks);
++		INIT_LIST_HEAD(&tis->buf[i].live_blks);
+ 
+ 	journal->j_transaction_infos = tis;
+ 	return 0;
+@@ -91,15 +91,26 @@ static int process_existing_mappings(journal_t *journal,
+ 		 * We are either deleting the entry because it was revoked, or
+ 		 * we are moving it to the live blocks list of this transaction.
+ 		 * In either case, we remove it from its existing list.
++		 * However, before removing it we check to see if this is an
++		 * entry in the live blocks list of the tail transaction a
++		 * pointer to whom is cached by the cleaner and update the
++		 * cached pointer if so.
+ 		 */
+-		list_del(&je->list);
++		spin_lock(&journal->j_cleaner_ctx->pos_lock);
++		if (je == journal->j_cleaner_ctx->pos) {
++			journal->j_cleaner_ctx->pos = list_next_entry(je, list);
++			trace_jbd2_jmap_printf1("updating pos to",
++						(unsigned long long) journal->j_cleaner_ctx->pos);
++		}
++ 		list_del(&je->list);
++		spin_unlock(&journal->j_cleaner_ctx->pos_lock);
+ 
+ 		if (je->revoked) {
+ 			rb_erase(&je->rb_node, &journal->j_jmap);
+ 			kmem_cache_free(jbd2_jmap_cache, je);
+ 		} else {
+ 			trace_jbd2_jmap_replace(je, &mappings[i], t_idx);
+-			fill_entry(je, &mappings[i], t_idx, &ti->live_logblks);
++			fill_entry(je, &mappings[i], t_idx, &ti->live_blks);
+ 		}
+ 	}
+ 	return nr_new;
+@@ -161,8 +172,7 @@ static void add_new_mappings(journal_t *journal, struct transaction_info *ti,
+ 			else
+ 				BUG_ON(1);
+ 		}
+-		fill_entry(new_entries[i], &mappings[i], t_idx,
+-			&ti->live_logblks);
++		fill_entry(new_entries[i], &mappings[i], t_idx, &ti->live_blks);
+ 		rb_link_node(&new_entries[i]->rb_node, parent, p);
+ 		rb_insert_color(&new_entries[i]->rb_node, &journal->j_jmap);
+ 		trace_jbd2_jmap_insert(&mappings[i], t_idx);
+@@ -189,7 +199,9 @@ int jbd2_transaction_infos_add(journal_t *journal, transaction_t *transaction,
+ 	 * We are possibly reusing space of an old transaction_info.  The old
+ 	 * transaction should not have any live blocks in it.
+ 	 */
+-	BUG_ON(!list_empty(&ti->live_logblks));
++	BUG_ON(!list_empty(&ti->live_blks));
++
++	atomic_inc(&journal->j_cleaner_ctx->nr_txns_committed);
+ 
+ 	write_lock(&journal->j_jmap_lock);
+ 	nr_new = process_existing_mappings(journal, ti, t_idx, mappings,
+@@ -432,12 +444,31 @@ int jbd2_bh_submit_read(journal_t *journal, struct buffer_head *bh,
+ 
+ int jbd2_smr_journal_init(journal_t *journal)
+ {
++	journal->j_cleaner_ctx = kzalloc(sizeof(struct cleaner_ctx),
++					GFP_KERNEL);
++	if (!journal->j_cleaner_ctx)
++		return -ENOMEM;
++
++	journal->j_cleaner_ctx->journal = journal;
++	journal->j_cleaner_ctx->pos = NULL;
++	spin_lock_init(&journal->j_cleaner_ctx->pos_lock);
++	atomic_set(&journal->j_cleaner_ctx->cleaning, 0);
++	atomic_set(&journal->j_cleaner_ctx->batch_in_progress, 0);
++	atomic_set(&journal->j_cleaner_ctx->nr_pending_reads, 0);
++	atomic_set(&journal->j_cleaner_ctx->nr_txns_committed, 0);
++	atomic_set(&journal->j_cleaner_ctx->nr_txns_cleaned, 0);
++	init_completion(&journal->j_cleaner_ctx->live_block_reads);
++
+ 	journal->j_jmap = RB_ROOT;
+ 	rwlock_init(&journal->j_jmap_lock);
++
+ 	return jbd2_init_transaction_infos(journal);
+ }
+ 
+ void jbd2_smr_journal_exit(journal_t *journal)
+ {
++	atomic_set(&journal->j_cleaner_ctx->cleaning, 0);
++	flush_work(&journal->j_cleaner_ctx->work);
++	kfree(journal->j_cleaner_ctx);
+ 	jbd2_free_transaction_infos(journal);
+ }
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 0cbfb7fdc45d..8e305aacef48 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -51,7 +51,7 @@
+ #include <asm/page.h>
+ 
+ #ifdef CONFIG_JBD2_DEBUG
+-ushort jbd2_journal_enable_debug __read_mostly;
++ushort jbd2_journal_enable_debug __read_mostly = 1;
+ EXPORT_SYMBOL(jbd2_journal_enable_debug);
+ 
+ module_param_named(jbd2_debug, jbd2_journal_enable_debug, ushort, 0644);
+@@ -227,6 +227,14 @@ static int kjournald2(void *arg)
+ 	}
+ 
+ 	wake_up(&journal->j_wait_done_commit);
++
++	if (cleaning(journal) || low_on_space(journal)) {
++		if (try_to_move_tail(journal) && high_on_space(journal))
++			stop_cleaning(journal);
++		else
++			start_cleaning(journal);
++	}
++
+ 	if (freezing(current)) {
+ 		/*
+ 		 * The simpler the better. Flushing journal isn't a
+@@ -255,6 +263,8 @@ static int kjournald2(void *arg)
+ 			should_sleep = 0;
+ 		if (journal->j_flags & JBD2_UNMOUNT)
+ 			should_sleep = 0;
++		if (cleaning_batch_complete(journal))
++			should_sleep = 0;
+ 		if (should_sleep) {
+ 			write_unlock(&journal->j_state_lock);
+ 			schedule();
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 317efb491569..350d5d229b68 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -735,7 +735,8 @@ jbd2_time_diff(unsigned long start, unsigned long end)
+  * @j_superblock: Second part of superblock buffer
+  * @j_map: A map from file system blocks to log blocks
+  * @j_transaction_infos: An array of information structures per live transaction
+- * @j_map_lock: Protect j_jmap and j_transaction_infos
++ * @j_jmap_lock: Protect j_jmap and j_transaction_infos
++ * @j_cleaner_ctx: Cleaner state
+  * @j_format_version: Version of the superblock format
+  * @j_state_lock: Protect the various scalars in the journal
+  * @j_barrier_count:  Number of processes waiting to create a barrier lock
+@@ -820,6 +821,9 @@ struct journal_s
+ 	/* Protect j_jmap and j_transaction_infos */
+ 	rwlock_t		j_jmap_lock;
+ 
++	/* Cleaner state */
++	struct cleaner_ctx	*j_cleaner_ctx;
++
+ 	/* Version of the superblock format */
+ 	int			j_format_version;
+ 
+diff --git a/include/linux/jmap.h b/include/linux/jmap.h
+index d068358380b0..b734551ddb67 100644
+--- a/include/linux/jmap.h
++++ b/include/linux/jmap.h
+@@ -5,6 +5,14 @@
+ #include <linux/journal-head.h>
+ #include <linux/list.h>
+ #include <linux/circ_buf.h>
++#include <linux/completion.h>
++
++/*
++ * Forward declaration for journal_t so that we don't get circular dependency
++ * between jbd2.h and jmap.h
++ */
++struct journal_s;
++typedef struct journal_s journal_t;
+ 
+ /*
+  * Maximum number of transactions.  This guides the size of the circular buffer
+@@ -17,13 +25,6 @@
+ #define MAX_LIVE_TRANSACTIONS 65536
+ 
+ /*
+- * Forward declaration for journal_t so that we don't get circular dependency
+- * between jbd2.h and jmap.h
+- */
+-struct journal_s;
+-typedef struct journal_s journal_t;
+-
+-/*
+  * A mapping from file system block to log block.
+  */
+ struct blk_mapping {
+@@ -79,14 +80,14 @@ struct transaction_info {
+ 	sector_t offset;
+ 
+ 	/*
+-	 * A list of live log blocks referenced in the RB-tree that belong to
+-	 * this transaction.  It is used during cleaning to locate live blocks
+-	 * and migrate them to appropriate location.  If this list is empty,
+-	 * then the transaction does not contain any live blocks and we can
+-	 * reuse its space.  If this list is not empty, then we can quickly
+-	 * locate all the live blocks in this transaction.
++	 * A list of live blocks referenced in the RB-tree that belong to this
++	 * transaction.  It is used during cleaning to locate live blocks and
++	 * migrate them to appropriate location.  If this list is empty, then
++	 * the transaction does not contain any live blocks and we can reuse its
++	 * space.  If this list is not empty, then we can quickly locate all the
++	 * live blocks in this transaction.
+ 	 */
+-	struct list_head live_logblks;
++	struct list_head live_blks;
+ };
+ 
+ /*
+@@ -126,4 +127,86 @@ extern void jbd2_ll_rw_block(journal_t *journal, int rw, int op_flags, int nr,
+ extern int jbd2_bh_submit_read(journal_t *journal, struct buffer_head *bh,
+ 			       const char *func);
+ 
++/*
++ * Cleaner stuff is below.
++ */
++
++/*
++ * Number of blocks to read at once, for cleaning.
++ */
++#define CLEANER_BATCH_SIZE 16
++
++/*
++ * Context structure for the cleaner.
++ */
++struct cleaner_ctx {
++	/*
++	 * We set to true once we drop below low watermark and it stays so until
++	 * we rise above the high watermark.  It is accessed by the commit
++	 * thread and the foreground kernel threads during the journal
++	 * destruction, therefore it is atomic.
++	 */
++	atomic_t cleaning;
++
++	/*
++	 * We clean in batches of blocks.  This flag indicates if we are
++	 * currently cleaning a batch.  It is accessed by the commit thread and
++	 * the cleaner thread, therefore it is atomic.
++	 */
++	atomic_t batch_in_progress;
++
++	/*
++	 * We find live blocks to clean from the live blocks list of the
++	 * transaction at the tail.  This list can be larger than our batch size
++	 * and we may need several attempts to process it.  We cache the
++	 * position of the next entry to start from in |pos|.  Since cleaner
++	 * thread can run concurrently with the commit thread that can modify
++	 * the live blocks list of the transaction at the tail (for example, if
++	 * it needs to drop a revoked entry or if |pos| points to an entry that
++	 * has been updated and should move from the live blocks list of the
++	 * transaction at the tail to the live blocks list of current
++	 * transaction) we protect |pos| with |pos_lock|.
++	 */
++	struct jmap_entry *pos;
++	spinlock_t pos_lock;
++
++	/*
++	 * Live block mappings for the blocks that we copy in a batch.
++	 */
++	struct blk_mapping mappings[CLEANER_BATCH_SIZE];
++
++	/*
++	 * Buffer heads for the live blocks read in a batch.
++	 */
++	struct buffer_head *bhs[CLEANER_BATCH_SIZE];
++
++	/*
++	 * Number of pending reads in a batch.  Every submitted read increments
++	 * it and every completed read decrements it.
++	 */
++	atomic_t nr_pending_reads;
++
++	/*
++	 * The cleaner thread sleeps on this condition variable until the last
++	 * completed read wakes the up the cleaner thread.
++	 */
++	struct completion live_block_reads;
++
++	/* TODO: temporary for debugging, remove once done. */
++	atomic_t nr_txns_committed;
++	atomic_t nr_txns_cleaned;
++
++	journal_t *journal;
++	struct work_struct work;
++};
++
++extern int low_on_space(journal_t *journal);
++extern int high_on_space(journal_t *journal);
++extern bool cleaning(journal_t *journal);
++extern void stop_cleaning(journal_t *journal);
++extern void start_cleaning(journal_t *journal);
++extern void clean_next_batch(journal_t *journal);
++extern bool cleaning_batch_complete(journal_t *journal);
++extern bool try_to_move_tail(journal_t *journal);
++
+ #endif

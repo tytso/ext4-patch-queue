@@ -1,0 +1,22 @@
+Disable writeback
+
+From: Abutalib Aghayev <agayev@cs.cmu.edu>
+
+Now that we have a working cleaner, disable writeback of metadata blocks.
+
+Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
+
+diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
+index 67c1038..912a516 100644
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -1861,8 +1861,7 @@ static void __jbd2_journal_temp_unlink_buffer(struct journal_head *jh)
+ 
+ 	__blist_del_buffer(list, jh);
+ 	jh->b_jlist = BJ_None;
+-	if (test_clear_buffer_jbddirty(bh))
+-		mark_buffer_dirty(bh);	/* Expose it to the VM */
++	clear_buffer_jbddirty(bh);
+ }
+ 
+ /*

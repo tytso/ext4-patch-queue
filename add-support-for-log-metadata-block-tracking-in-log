@@ -1,0 +1,949 @@
+Add support for tracking metadata blocks in the log.
+
+From: Abutalib Aghayev <agayev@cs.cmu.edu>
+
+This patch adds two important data structures, jmap and transaction_infos,
+and supporting functions.  Jmap is a map from a metadata block number to
+the log block number.  When a transaction commits, jmap is updated with new
+mappings; when a block is revoked, the mapping for the block is removed
+from the jmap.  Transaction_infos is an array of transaction_info
+structures that contain information about transactions currently present in
+the log.  It contains a linked list of live blocks in a transaction, and it
+is updated after every commit to keep the list up-to-date.
+Transaction_infos array will be used by the cleaner for identifying live
+blocks and migrating them to appropriate location.
+
+Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
+
+---
+ fs/jbd2/Makefile            |   3 +-
+ fs/jbd2/commit.c            |  17 ++++
+ fs/jbd2/jmap.c              | 440 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/journal.c           |  17 +++-
+ include/linux/jbd2.h        |  13 +++
+ include/linux/jmap.h        | 129 +++++++++++++++++++++++++
+ include/trace/events/jbd2.h | 169 ++++++++++++++++++++++++++++++++
+ 7 files changed, 783 insertions(+), 5 deletions(-)
+
+diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
+index 802a3413872a..a54f50b3a06e 100644
+--- a/fs/jbd2/Makefile
++++ b/fs/jbd2/Makefile
+@@ -4,4 +4,5 @@
+ 
+ obj-$(CONFIG_JBD2) += jbd2.o
+ 
+-jbd2-objs := transaction.o commit.o recovery.o checkpoint.o revoke.o journal.o
++jbd2-objs := transaction.o commit.o recovery.o checkpoint.o revoke.o journal.o \
++		jmap.o
+diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
+index 31f8ca046639..4a249ec74b5c 100644
+--- a/fs/jbd2/commit.c
++++ b/fs/jbd2/commit.c
+@@ -361,6 +361,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 	int flags;
+ 	int err;
+ 	unsigned long long blocknr;
++	struct blk_mapping *mappings;
++	int nr_mappings;
+ 	ktime_t start_time;
+ 	u64 commit_time;
+ 	char *tagp = NULL;
+@@ -562,8 +564,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 	J_ASSERT(commit_transaction->t_nr_buffers <=
+ 		 atomic_read(&commit_transaction->t_outstanding_credits));
+ 
++	nr_mappings = commit_transaction->t_nr_buffers;
++	mappings = kmalloc(sizeof(*mappings) * nr_mappings, GFP_NOFS);
++	if (!mappings)
++		jbd2_journal_abort(journal, -ENOMEM);
++
+ 	err = 0;
+ 	bufs = 0;
++	nr_mappings = 0;
+ 	descriptor = NULL;
+ 	while (commit_transaction->t_buffers) {
+ 
+@@ -660,6 +668,9 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+ 			continue;
+ 		}
+ 		jbd2_file_log_bh(&io_bufs, wbuf[bufs]);
++		mappings[nr_mappings++] = (struct blk_mapping) {
++			jh2bh(jh)->b_blocknr, blocknr
++		};
+ 
+ 		/* Record the new block's tag in the current descriptor
+                    buffer */
+@@ -894,6 +905,12 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+            transaction can be removed from any checkpoint list it was on
+            before. */
+ 
++	err = jbd2_transaction_infos_add(journal, commit_transaction,
++					mappings, nr_mappings);
++	if (err)
++		jbd2_journal_abort(journal, -ENOMEM);
++	kfree(mappings);
++
+ 	jbd_debug(3, "JBD2: commit phase 6\n");
+ 
+ 	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
+diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
+new file mode 100644
+index 000000000000..7d7b4eb389ed
+--- /dev/null
++++ b/fs/jbd2/jmap.c
+@@ -0,0 +1,440 @@
++#include <linux/jbd2.h>
++#include <linux/jmap.h>
++#include <trace/events/jbd2.h>
++
++static struct kmem_cache *jbd2_jmap_cache;
++
++int jbd2_journal_init_jmap_cache(void)
++{
++	jbd2_jmap_cache = KMEM_CACHE(jmap_entry, SLAB_RECLAIM_ACCOUNT);
++	if (!jbd2_jmap_cache)
++		return -ENOMEM;
++	return 0;
++}
++
++void jbd2_journal_destroy_jmap_cache(void)
++{
++	if (jbd2_jmap_cache)
++		kmem_cache_destroy(jbd2_jmap_cache);
++	jbd2_jmap_cache = NULL;
++}
++
++/*
++ * Allocate an array of transaction_info structures and initialize the list
++ * heads inside them.
++ */
++int jbd2_init_transaction_infos(journal_t *journal)
++{
++	int i;
++	struct transaction_infos *tis = kzalloc(sizeof(*tis), GFP_KERNEL);
++	if (!tis)
++		return -ENOMEM;
++
++	tis->buf = kzalloc(sizeof(*tis->buf) * MAX_LIVE_TRANSACTIONS,
++			GFP_KERNEL);
++	if (!tis->buf) {
++		kfree(tis);
++		return -ENOMEM;
++	}
++
++	for (i = 0; i < MAX_LIVE_TRANSACTIONS; ++i)
++		INIT_LIST_HEAD(&tis->buf[i].live_logblks);
++
++	journal->j_transaction_infos = tis;
++	return 0;
++}
++
++/*
++ * Free the array of transaction_info structures.
++ */
++void jbd2_free_transaction_infos(journal_t *journal)
++{
++	struct transaction_infos *tis = journal->j_transaction_infos;
++	if (!tis)
++		return;
++	kfree(tis->buf);
++	kfree(tis);
++}
++
++/*
++ * Fill an entry to be stored in jmap.
++ */
++static void fill_entry(struct jmap_entry *entry, struct blk_mapping *mapping,
++			int t_idx, struct list_head *list)
++{
++	entry->mapping = *mapping;
++	entry->fsblk_last_modified = jiffies;
++	entry->t_idx = t_idx;
++	list_add(&entry->list, list);
++}
++
++/*
++ * A helper function for jbd2_transaction_infos_add.  Scans through the mappings
++ * array, dropping revoked entries from jmap and updating existing entries.
++ * Moves the new mappings to the beginning of the mappings array and returns the
++ * number of new mappings.  Should be called with a write lock on j_jmap_lock.
++ */
++static int process_existing_mappings(journal_t *journal,
++				struct transaction_info *ti, int t_idx,
++				struct blk_mapping *mappings, int nr_mappings)
++{
++	struct jmap_entry *je;
++	int i, nr_new = 0;
++
++	for (i = 0; i < nr_mappings; ++i) {
++		je = jbd2_jmap_lookup(journal, mappings[i].fsblk, __func__);
++		if (!je) {
++			mappings[nr_new++] = mappings[i];
++			continue;
++		}
++		if (je->revoked) {
++			rb_erase(&je->rb_node, &journal->j_jmap);
++			kmem_cache_free(jbd2_jmap_cache, je);
++		} else {
++			/*
++			 * Delete jmap entry from the old transaction's list
++			 * before adding it to the new transaction's list.
++			 */
++			list_del(&je->list);
++			fill_entry(je, &mappings[i], t_idx, &ti->live_logblks);
++			trace_jbd2_jmap_replace(je, &mappings[i], t_idx);
++		}
++	}
++	return nr_new;
++}
++
++/*
++ * A helper function for jbd2_transaction_infos_add.  Allocates an array of
++ * jmap_entry structures and returns the pointer to array if successful.
++ * Otherwise, returns NULL.
++ */
++static struct jmap_entry **alloc_jmap_entries(int nr_entries)
++{
++	struct jmap_entry **jmap_entries;
++	int i;
++
++	jmap_entries = kmalloc(sizeof(struct jmap_entry *) * nr_entries,
++			GFP_NOFS);
++	if (!jmap_entries)
++		return NULL;
++
++	for (i = 0; i < nr_entries; i++) {
++		jmap_entries[i] = kmem_cache_zalloc(jbd2_jmap_cache, GFP_NOFS);
++		if (!jmap_entries[i])
++			goto out_err;
++	}
++	return jmap_entries;
++
++out_err:
++	for (i = 0; i < nr_entries && jmap_entries[i]; ++i)
++		kmem_cache_free(jbd2_jmap_cache, jmap_entries[i]);
++	kfree(jmap_entries);
++	return NULL;
++}
++
++/*
++ * A helper function for jbd2_transaction_infos_add.  Adds new mappings to jmap
++ * and updates the linked list of live logblks of the new transaction.  Should
++ * be called with write lock on j_jmap_lock.
++ */
++static void add_new_mappings(journal_t *journal, struct transaction_info *ti,
++			int t_idx, struct blk_mapping *mappings,
++			struct jmap_entry **new_entries, int nr_new)
++{
++	struct rb_node **p = &journal->j_jmap.rb_node;
++	struct rb_node *parent = NULL;
++	struct jmap_entry *je;
++	int i;
++
++	for (i = 0; i < nr_new; ++i) {
++		while (*p) {
++			parent = *p;
++			je = rb_entry(parent, struct jmap_entry, rb_node);
++
++			if (mappings[i].fsblk < je->mapping.fsblk)
++				p = &(*p)->rb_left;
++			else if (mappings[i].fsblk > je->mapping.fsblk)
++				p = &(*p)->rb_right;
++			else
++				BUG_ON(1);
++		}
++		fill_entry(new_entries[i], &mappings[i], t_idx,
++			&ti->live_logblks);
++		rb_link_node(&new_entries[i]->rb_node, parent, p);
++		rb_insert_color(&new_entries[i]->rb_node, &journal->j_jmap);
++		trace_jbd2_jmap_insert(&mappings[i], t_idx);
++	}
++}
++
++/*
++ * This function is called after a transaction commits.  It adds new
++ * transaction_info structure to transaction_infos and populates jmap map with
++ * the new mappings that are part of the committed transaction.  It also adds
++ * all the mappings to the linked list that is part of the transaction_info
++ * structure.
++ */
++int jbd2_transaction_infos_add(journal_t *journal, transaction_t *transaction,
++			struct blk_mapping *mappings, int nr_mappings)
++{
++	struct transaction_infos *tis = journal->j_transaction_infos;
++	int t_idx = tis->head;
++	struct transaction_info *ti = &tis->buf[t_idx];
++	struct jmap_entry **new_entries = NULL;
++	int nr_new = 0;
++
++	/*
++	 * We are possibly reusing space of an old transaction_info.  The old
++	 * transaction should not have any live blocks in it.
++	 */
++	BUG_ON(!list_empty(&ti->live_logblks));
++
++	write_lock(&journal->j_jmap_lock);
++	nr_new = process_existing_mappings(journal, ti, t_idx, mappings,
++					nr_mappings);
++	write_unlock(&journal->j_jmap_lock);
++
++	if (nr_new == 0)
++		goto move_head;
++
++	new_entries = alloc_jmap_entries(nr_new);
++	if (!new_entries)
++		return -ENOMEM;
++
++	write_lock(&journal->j_jmap_lock);
++	add_new_mappings(journal, ti, t_idx, mappings, new_entries, nr_new);
++	write_unlock(&journal->j_jmap_lock);
++
++	kfree(new_entries);
++
++move_head:
++	write_lock(&journal->j_jmap_lock);
++	ti->tid = transaction->t_tid;
++	ti->offset = transaction->t_log_start;
++	tis->head = (tis->head + 1) & (MAX_LIVE_TRANSACTIONS - 1);
++	write_unlock(&journal->j_jmap_lock);
++
++	trace_jbd2_transaction_infos_add(t_idx, ti, nr_mappings);
++	return 0;
++}
++
++/*
++ * Look up fsblk in the jmap and return the corresponding jmap entry if found.
++ * Should be called with a read lock on j_jmap_lock.
++ */
++struct jmap_entry *jbd2_jmap_lookup(journal_t *journal, sector_t fsblk,
++				const char *func)
++{
++	struct rb_node *p;
++
++	BUG_ON(!journal);
++
++	for (p = journal->j_jmap.rb_node; p; ) {
++		struct jmap_entry *je = rb_entry(p, struct jmap_entry, rb_node);
++		if (je->mapping.fsblk > fsblk)
++			p = p->rb_left;
++		else if (je->mapping.fsblk < fsblk)
++			p = p->rb_right;
++		else {
++			trace_jbd2_jmap_lookup(fsblk, je->mapping.logblk, func);
++			return je;
++		}
++	}
++	trace_jbd2_jmap_lookup(fsblk, 0, func);
++	return NULL;
++}
++
++/*
++ * Revoke a mapping for the fsblk in the jmap.  A lookup for fsblk will return
++ * NULL and the mapping will be removed from the jmap during commit, unless
++ * fsblk is reallocated as a metadata block.
++ */
++void jbd2_jmap_revoke(journal_t *journal, sector_t fsblk)
++{
++	struct jmap_entry *je;
++
++	write_lock(&journal->j_jmap_lock);
++	je = jbd2_jmap_lookup(journal, fsblk, __func__);
++	/*
++	 * For now, since we do not construct jmap from the journal, it is
++	 * possible that a metadata block that was revoked is not in the jmap.
++	 * Eventually, this should not be the case and we should have a
++	 * BUG_ON(!je) here.
++	 */
++	if (je) {
++		BUG_ON(je->revoked);
++		je->revoked = true;
++	}
++	write_unlock(&journal->j_jmap_lock);
++}
++
++/*
++ * Cancel a revoke for the fsblk in the jmap.
++ */
++void jbd2_jmap_cancel_revoke(journal_t *journal, sector_t fsblk)
++{
++	struct jmap_entry *je;
++
++	write_lock(&journal->j_jmap_lock);
++	je = jbd2_jmap_lookup(journal, fsblk, __func__);
++	BUG_ON(!je);
++	BUG_ON(!je->revoked);
++	je->revoked = false;
++	write_unlock(&journal->j_jmap_lock);
++}
++
++/*
++ * Read bh from its most up-to-date location, either from the file system or
++ * from the log.
++ *
++ * If there is no mapping for the bh in jmap, this function acts like submit_bh.
++ * Otherwise, it submits a read for the block pointed by the mapping located in
++ * the log.  Upon completion, bh will be filled with the contents of the block
++ * read from the log.
++ */
++void jbd2_submit_bh(journal_t *journal, int rw, int op_flags,
++		    struct buffer_head *bh, const char *func)
++{
++	sector_t fsblk = bh->b_blocknr;
++	sector_t logblk;
++	struct jmap_entry *je;
++
++	BUG_ON(!buffer_locked(bh));
++
++	if (!journal) {
++		submit_bh(rw, op_flags, bh);
++		return;
++	}
++
++	read_lock(&journal->j_jmap_lock);
++	je = jbd2_jmap_lookup(journal, fsblk, func);
++	if (!je) {
++		read_unlock(&journal->j_jmap_lock);
++		submit_bh(rw, op_flags, bh);
++		return;
++	}
++	logblk = je->mapping.logblk;
++	read_unlock(&journal->j_jmap_lock);
++
++	BUG_ON(rw == WRITE);
++	read_block_from_log(journal, bh, op_flags, logblk);
++}
++
++/*
++ * End_io handler for read_block_from_log that copies the contents of
++ * log_bh read from log to the embedded bh.
++ */
++static void jbd2_end_log_read(struct buffer_head *log_bh, int uptodate)
++{
++	struct buffer_head *bh = log_bh->b_private;
++
++	if (uptodate) {
++		trace_jbd2_jmap_printf1("read from log", bh->b_blocknr);
++		memcpy(bh->b_data, log_bh->b_data, log_bh->b_size);
++	} else {
++		trace_jbd2_jmap_printf1("failed to read from log", bh->b_blocknr);
++	}
++
++	unlock_buffer(log_bh);
++	put_bh(log_bh);
++	brelse(log_bh);
++
++	bh->b_end_io(bh, uptodate);
++}
++
++/*
++ * This function fills |bh| with the contents of the |blk|.  Assume
++ * jmap maps metadata block 123 to log block 100123.  To read the
++ * metadata block 123, we obtain a buffer head for it and call
++ * read_block_from_log passing the obtained buffer head as |bh| and
++ * 100123 as |blk|.  If block 100123 is cached, then we copy the
++ * contents to |bh| and return.  Otherwise, we submit a request and
++ * end_io handler copies the contents of block 100123 to |bh|.
++ * Returns -ENOMEM if getblk fails, 1 if block is not cached, 0 if
++ * block is cached.
++ */
++int read_block_from_log(journal_t *journal, struct buffer_head *bh,
++			int op_flags, sector_t blk)
++{
++	struct buffer_head *log_bh;
++
++	BUG_ON(!buffer_locked(bh));
++
++	log_bh = __getblk(journal->j_fs_dev, blk, bh->b_size);
++	if (unlikely(!log_bh)) {
++		bh->b_end_io(bh, 0);
++		return -ENOMEM;
++	}
++
++	lock_buffer(log_bh);
++	if (buffer_uptodate(log_bh)) {
++		memcpy(bh->b_data, log_bh->b_data, bh->b_size);
++		unlock_buffer(log_bh);
++		brelse(log_bh);
++		bh->b_end_io(bh, 1);
++		return 0;
++	}
++
++	log_bh->b_end_io = jbd2_end_log_read;
++	log_bh->b_private = bh;
++	get_bh(log_bh);
++	submit_bh(READ, op_flags, log_bh);
++	return 1;
++}
++
++/*
++ * Copy of ll_rw_block that uses jbd2_submit_bh instead of submit_bh.
++ */
++void jbd2_ll_rw_block(journal_t *journal, int rw, int op_flags,
++		      int nr, struct buffer_head *bhs[], const char *func)
++{
++	int i;
++
++	for (i = 0; i < nr; i++) {
++		struct buffer_head *bh = bhs[i];
++
++		if (!trylock_buffer(bh))
++			continue;
++		BUG_ON(rw == WRITE);
++		if (!buffer_uptodate(bh)) {
++			bh->b_end_io = end_buffer_read_sync;
++			get_bh(bh);
++			jbd2_submit_bh(journal, rw, op_flags, bh, func);
++			continue;
++		}
++		unlock_buffer(bh);
++	}
++}
++
++/*
++ * Copy of bh_submit_read that uses jbd2_submit_bh instead of submit_bh.
++ */
++int jbd2_bh_submit_read(journal_t *journal, struct buffer_head *bh,
++			const char *func)
++{
++	BUG_ON(!buffer_locked(bh));
++
++	if (buffer_uptodate(bh)) {
++		unlock_buffer(bh);
++		return 0;
++	}
++
++	get_bh(bh);
++	bh->b_end_io = end_buffer_read_sync;
++	jbd2_submit_bh(journal, READ, 0, bh, func);
++	wait_on_buffer(bh);
++	if (buffer_uptodate(bh))
++		return 0;
++	return -EIO;
++}
++
++int jbd2_smr_journal_init(journal_t *journal)
++{
++	journal->j_jmap = RB_ROOT;
++	rwlock_init(&journal->j_jmap_lock);
++	return jbd2_init_transaction_infos(journal);
++}
++
++void jbd2_smr_journal_exit(journal_t *journal)
++{
++	jbd2_free_transaction_infos(journal);
++}
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 927da4956a89..0cbfb7fdc45d 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -1120,15 +1120,17 @@ static journal_t *journal_init_common(struct block_device *bdev,
+ 	journal->j_max_batch_time = 15000; /* 15ms */
+ 	atomic_set(&journal->j_reserved_credits, 0);
+ 
++	err = jbd2_smr_journal_init(journal);
++	if (err)
++		goto out_err;
++
+ 	/* The journal is marked for error until we succeed with recovery! */
+ 	journal->j_flags = JBD2_ABORT;
+ 
+ 	/* Set up a default-sized revoke table for the new mount. */
+ 	err = jbd2_journal_init_revoke(journal, JOURNAL_REVOKE_DEFAULT_HASH);
+-	if (err) {
+-		kfree(journal);
+-		return NULL;
+-	}
++	if (err)
++		goto out_err;
+ 
+ 	spin_lock_init(&journal->j_history_lock);
+ 
+@@ -1162,6 +1164,9 @@ static journal_t *journal_init_common(struct block_device *bdev,
+ 	journal->j_superblock = (journal_superblock_t *)bh->b_data;
+ 
+ 	return journal;
++out_err:
++	kfree(journal);
++	return NULL;
+ }
+ 
+ /* jbd2_journal_init_dev and jbd2_journal_init_inode:
+@@ -1734,6 +1739,7 @@ int jbd2_journal_destroy(journal_t *journal)
+ 		jbd2_journal_destroy_revoke(journal);
+ 	if (journal->j_chksum_driver)
+ 		crypto_free_shash(journal->j_chksum_driver);
++	jbd2_smr_journal_exit(journal);
+ 	kfree(journal->j_wbuf);
+ 	kfree(journal);
+ 
+@@ -2634,6 +2640,8 @@ static int __init journal_init_caches(void)
+ 		ret = jbd2_journal_init_handle_cache();
+ 	if (ret == 0)
+ 		ret = jbd2_journal_init_transaction_cache();
++	if (ret == 0)
++		ret = jbd2_journal_init_jmap_cache();
+ 	return ret;
+ }
+ 
+@@ -2643,6 +2651,7 @@ static void jbd2_journal_destroy_caches(void)
+ 	jbd2_journal_destroy_journal_head_cache();
+ 	jbd2_journal_destroy_handle_cache();
+ 	jbd2_journal_destroy_transaction_cache();
++	jbd2_journal_destroy_jmap_cache();
+ 	jbd2_journal_destroy_slabs();
+ }
+ 
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index dfaa1f4dcb0c..317efb491569 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -25,6 +25,7 @@
+ #include <linux/types.h>
+ #include <linux/buffer_head.h>
+ #include <linux/journal-head.h>
++#include <linux/jmap.h>
+ #include <linux/stddef.h>
+ #include <linux/mutex.h>
+ #include <linux/timer.h>
+@@ -732,6 +733,9 @@ jbd2_time_diff(unsigned long start, unsigned long end)
+  *     prior abort)?
+  * @j_sb_buffer: First part of superblock buffer
+  * @j_superblock: Second part of superblock buffer
++ * @j_map: A map from file system blocks to log blocks
++ * @j_transaction_infos: An array of information structures per live transaction
++ * @j_map_lock: Protect j_jmap and j_transaction_infos
+  * @j_format_version: Version of the superblock format
+  * @j_state_lock: Protect the various scalars in the journal
+  * @j_barrier_count:  Number of processes waiting to create a barrier lock
+@@ -807,6 +811,15 @@ struct journal_s
+ 	struct buffer_head	*j_sb_buffer;
+ 	journal_superblock_t	*j_superblock;
+ 
++	/* A map from file system blocks to journal blocks */
++	struct rb_root		j_jmap;
++
++	/* An array of housekeeping information about live transactions */
++	struct transaction_infos *j_transaction_infos;
++
++	/* Protect j_jmap and j_transaction_infos */
++	rwlock_t		j_jmap_lock;
++
+ 	/* Version of the superblock format */
+ 	int			j_format_version;
+ 
+diff --git a/include/linux/jmap.h b/include/linux/jmap.h
+new file mode 100644
+index 000000000000..d068358380b0
+--- /dev/null
++++ b/include/linux/jmap.h
+@@ -0,0 +1,129 @@
++#ifndef _LINUX_JMAP_H
++#define _LINUX_JMAP_H
++
++#include <linux/buffer_head.h>
++#include <linux/journal-head.h>
++#include <linux/list.h>
++#include <linux/circ_buf.h>
++
++/*
++ * Maximum number of transactions.  This guides the size of the circular buffer
++ * in which we store housekeeping information per transaction.  We start
++ * cleaning either when the circular buffer is full or when we hit the free
++ * space threshold, whichever happens first.  For starters, we make this
++ * constant large to make sure that we start cleaning only when we hit the free
++ * space threshold.  Later we can empirically determine a sensible value.
++ */
++#define MAX_LIVE_TRANSACTIONS 65536
++
++/*
++ * Forward declaration for journal_t so that we don't get circular dependency
++ * between jbd2.h and jmap.h
++ */
++struct journal_s;
++typedef struct journal_s journal_t;
++
++/*
++ * A mapping from file system block to log block.
++ */
++struct blk_mapping {
++	sector_t fsblk;
++	sector_t logblk;
++};
++
++/*
++ * An RB-tree entry wrapper for blk_mapping with extra housekeeping information.
++ */
++struct jmap_entry {
++	struct rb_node rb_node;
++
++	/* The actual mapping information. */
++	struct blk_mapping mapping;
++
++	/*
++	 * If a block that is mapped gets deleted, the revoked bit is set.  A
++	 * lookup for a deleted block fails.  If a deleted block gets
++	 * re-allocated as a metadata block, the mapping is updated and revoked
++	 * bit is cleared.
++	 */
++	bool revoked;
++
++	/*
++	 * All log blocks that are part of the same transaction in the log are
++	 * chained with a linked list.  The root of the list is stored in the
++	 * transaction_info structure described below.
++	 */
++	struct list_head list;
++
++	/*
++	 * The last time when fsblk was written again to the journal and
++	 * therefore was remapped to a different log block.
++	 */
++	unsigned long fsblk_last_modified;
++
++	/*
++	 * Index of the transaction in the transaction_info_buffer (described
++	 * below) of which the log block is part of.
++	 */
++	int t_idx;
++};
++
++/*
++ * Housekeeping information about committed transaction.
++ */
++struct transaction_info {
++	/* Id of the transaction */
++	tid_t tid;
++
++	/* Offset where the transaction starts in the log */
++	sector_t offset;
++
++	/*
++	 * A list of live log blocks referenced in the RB-tree that belong to
++	 * this transaction.  It is used during cleaning to locate live blocks
++	 * and migrate them to appropriate location.  If this list is empty,
++	 * then the transaction does not contain any live blocks and we can
++	 * reuse its space.  If this list is not empty, then we can quickly
++	 * locate all the live blocks in this transaction.
++	 */
++	struct list_head live_logblks;
++};
++
++/*
++ * An array of transaction_info structures about all the transactions in the
++ * log.  Since there can only be a limited number of transactions in the log, we
++ * use a circular buffer to store housekeeping information about transactions.
++ */
++struct transaction_infos {
++	struct transaction_info *buf;
++	int head;
++	int tail;
++};
++
++extern int jbd2_smr_journal_init(journal_t *journal);
++extern void jbd2_smr_journal_exit(journal_t *journal);
++
++extern int jbd2_journal_init_jmap_cache(void);
++extern void jbd2_journal_destroy_jmap_cache(void);
++
++extern int jbd2_init_transaction_infos(journal_t *journal);
++extern void jbd2_free_transaction_infos(journal_t *journal);
++extern int jbd2_transaction_infos_add(journal_t *journal,
++				transaction_t *transaction,
++				struct blk_mapping *mappings,
++				int nr_mappings);
++
++extern struct jmap_entry *jbd2_jmap_lookup(journal_t *journal, sector_t fsblk,
++					const char *func);
++extern void jbd2_jmap_revoke(journal_t *journal, sector_t fsblk);
++extern void jbd2_jmap_cancel_revoke(journal_t *journal, sector_t fsblk);
++extern void jbd2_submit_bh(journal_t *journal, int rw, int op_flags,
++			   struct buffer_head *bh, const char *func);
++extern int read_block_from_log(journal_t *journal, struct buffer_head *bh,
++			       int op_flags, sector_t blk);
++extern void jbd2_ll_rw_block(journal_t *journal, int rw, int op_flags, int nr,
++			     struct buffer_head *bhs[], const char *func);
++extern int jbd2_bh_submit_read(journal_t *journal, struct buffer_head *bh,
++			       const char *func);
++
++#endif
+diff --git a/include/trace/events/jbd2.h b/include/trace/events/jbd2.h
+index c1d1f3eb242d..bc1511a425ec 100644
+--- a/include/trace/events/jbd2.h
++++ b/include/trace/events/jbd2.h
+@@ -379,6 +379,175 @@ TRACE_EVENT(jbd2_lock_buffer_stall,
+ 		__entry->stall_ms)
+ );
+ 
++TRACE_EVENT(jbd2_jmap_replace,
++
++	TP_PROTO(struct jmap_entry *jentry, struct blk_mapping *mapping, \
++		int t_idx),
++
++	TP_ARGS(jentry, mapping, t_idx),
++
++	TP_STRUCT__entry(
++		__field(sector_t, fsblk		)
++		__field(sector_t, old_logblk	)
++		__field(sector_t, new_logblk	)
++		__field(int, old_t_idx		)
++		__field(int, new_t_idx		)
++	),
++
++	TP_fast_assign(
++		__entry->fsblk		= mapping->fsblk;
++		__entry->old_logblk	= jentry->mapping.logblk;
++		__entry->new_logblk	= mapping->logblk;
++		__entry->old_t_idx       = jentry->t_idx;
++		__entry->new_t_idx       = t_idx;
++	),
++
++	TP_printk("remap %llu from %llu to %llu, move from transaction at index %d to transaction at index %d",
++		  (unsigned long long) __entry->fsblk,
++		  (unsigned long long) __entry->old_logblk,
++		  (unsigned long long) __entry->new_logblk,
++		  __entry->old_t_idx,
++		  __entry->new_t_idx)
++);
++
++TRACE_EVENT(jbd2_jmap_insert,
++
++	TP_PROTO(struct blk_mapping *mapping, int t_idx),
++
++	TP_ARGS(mapping, t_idx),
++
++	TP_STRUCT__entry(
++		__field(sector_t, fsblk	)
++		__field(sector_t, logblk)
++		__field(int, t_idx)
++	),
++
++	TP_fast_assign(
++		__entry->fsblk	= mapping->fsblk;
++		__entry->logblk	= mapping->logblk;
++		__entry->t_idx = t_idx;
++	),
++
++	TP_printk("map %llu to %llu, insert to transaction %d",
++		  (unsigned long long) __entry->fsblk,
++		  (unsigned long long) __entry->logblk,
++		  __entry->t_idx)
++);
++
++TRACE_EVENT(jbd2_jmap_lookup,
++
++	TP_PROTO(sector_t fsblk, sector_t logblk, const char *func),
++
++	TP_ARGS(fsblk, logblk, func),
++
++	TP_STRUCT__entry(
++		__field(sector_t, fsblk	)
++		__field(sector_t, logblk)
++		__string(func, func)
++	),
++
++	TP_fast_assign(
++		__entry->fsblk	= fsblk;
++		__entry->logblk	= logblk;
++		__assign_str(func, func);
++	),
++
++	TP_printk("%s: lookup %llu -> %llu",
++		  __get_str(func),
++		  (unsigned long long) __entry->fsblk,
++		  (unsigned long long) __entry->logblk)
++);
++
++TRACE_EVENT(jbd2_jmap_printf,
++
++	TP_PROTO(const char *s),
++
++	TP_ARGS(s),
++
++	TP_STRUCT__entry(
++		__string(s, s)
++	),
++
++	TP_fast_assign(
++		__assign_str(s, s);
++	),
++
++	TP_printk("%s",
++		__get_str(s))
++);
++
++TRACE_EVENT(jbd2_jmap_printf1,
++
++	TP_PROTO(const char *s, sector_t fsblk),
++
++	TP_ARGS(s, fsblk),
++
++	TP_STRUCT__entry(
++		__string(s, s)
++		__field(sector_t, fsblk	)
++	),
++
++	TP_fast_assign(
++		__assign_str(s, s);
++		__entry->fsblk	= fsblk;
++	),
++
++	TP_printk("%s: %llu",
++		  __get_str(s),
++		  (unsigned long long) __entry->fsblk)
++);
++
++TRACE_EVENT(jbd2_jmap_printf2,
++
++	TP_PROTO(const char *s, sector_t fsblk, sector_t logblk),
++
++	TP_ARGS(s, fsblk, logblk),
++
++	TP_STRUCT__entry(
++		__string(s, s)
++		__field(sector_t, fsblk	)
++		__field(sector_t, logblk)
++	),
++
++	TP_fast_assign(
++		__assign_str(s, s);
++		__entry->fsblk	= fsblk;
++		__entry->logblk	= logblk;
++	),
++
++	TP_printk("%s: %llu:%llu",
++		  __get_str(s),
++		  (unsigned long long) __entry->fsblk,
++		  (unsigned long long) __entry->logblk)
++);
++
++TRACE_EVENT(jbd2_transaction_infos_add,
++
++	TP_PROTO(int t_idx, struct transaction_info *ti, int nr_mappings),
++
++	TP_ARGS(t_idx, ti, nr_mappings),
++
++	TP_STRUCT__entry(
++		__field(int, t_idx	)
++		__field(tid_t, tid	)
++		__field(sector_t, offset)
++		__field(int, nr_mappings)
++	),
++
++	TP_fast_assign(
++		__entry->t_idx	= t_idx;
++		__entry->tid	= ti->tid;
++		__entry->offset = ti->offset;
++		__entry->nr_mappings = nr_mappings;
++	),
++
++	TP_printk("inserted transaction %u (offset %llu) at index %d with %d mappings",
++		  __entry->tid,
++		  (unsigned long long) __entry->offset,
++		  __entry->t_idx,
++		  __entry->nr_mappings)
++);
++
+ #endif /* _TRACE_JBD2_H */
+ 
+ /* This part must be outside protection */

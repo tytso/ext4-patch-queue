@@ -1,0 +1,62 @@
+ext4: don't lock buffer in ext4_commit_super if holding spinlock
+
+If there is an error reported in mballoc via ext4_grp_locked_error(),
+the code is holding a spinlock, so ext4_commit_super() must not try to
+lock the buffer head, or else it will trigger a BUG:
+
+  BUG: sleeping function called from invalid context at ./include/linux/buffer_head.h:358
+  in_atomic(): 1, irqs_disabled(): 0, pid: 993, name: mount
+  CPU: 0 PID: 993 Comm: mount Not tainted 4.9.0-rc1-clouder1 #62
+  Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS rel-1.8.1-0-g4adadbd-20150316_085822-nilsson.home.kraxel.org 04/01/2014
+   ffff880006423548 ffffffff81318c89 ffffffff819ecdd0 0000000000000166
+   ffff880006423558 ffffffff810810b0 ffff880006423580 ffffffff81081153
+   ffff880006e5a1a0 ffff88000690e400 0000000000000000 ffff8800064235c0
+  Call Trace:
+    [<ffffffff81318c89>] dump_stack+0x67/0x9e
+    [<ffffffff810810b0>] ___might_sleep+0xf0/0x140
+    [<ffffffff81081153>] __might_sleep+0x53/0xb0
+    [<ffffffff8126c1dc>] ext4_commit_super+0x19c/0x290
+    [<ffffffff8126e61a>] __ext4_grp_locked_error+0x14a/0x230
+    [<ffffffff81081153>] ? __might_sleep+0x53/0xb0
+    [<ffffffff812822be>] ext4_mb_generate_buddy+0x1de/0x320
+
+Since ext4_grp_locked_error() calls ext4_commit_super with sync == 0
+(and it is the only caller which does so), avoid locking and unlocking
+the buffer in this case.
+
+This can result in races with ext4_commit_super() if there are other
+problems (which is what commit 4743f83990614 was trying to address),
+but a Warning is better than BUG.
+
+Fixes: 4743f83990614
+Cc: stable@vger.kernel.org # 4.9
+Reported-by: Nikolay Borisov <kernel@kyup.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/super.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index e4f61c39328a..ff6f3ab09c7e 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4537,7 +4537,8 @@ static int ext4_commit_super(struct super_block *sb, int sync)
+ 				&EXT4_SB(sb)->s_freeinodes_counter));
+ 	BUFFER_TRACE(sbh, "marking dirty");
+ 	ext4_superblock_csum_set(sb);
+-	lock_buffer(sbh);
++	if (sync)
++		lock_buffer(sbh);
+ 	if (buffer_write_io_error(sbh)) {
+ 		/*
+ 		 * Oh, dear.  A previous attempt to write the
+@@ -4553,8 +4554,8 @@ static int ext4_commit_super(struct super_block *sb, int sync)
+ 		set_buffer_uptodate(sbh);
+ 	}
+ 	mark_buffer_dirty(sbh);
+-	unlock_buffer(sbh);
+ 	if (sync) {
++		unlock_buffer(sbh);
+ 		error = __sync_dirty_buffer(sbh,
+ 			test_opt(sb, BARRIER) ? WRITE_FUA : WRITE_SYNC);
+ 		if (error)
