@@ -1,0 +1,35 @@
+fscrypto: remove unneeded Kconfig dependencies
+
+From: Eric Biggers <ebiggers@google.com>
+
+SHA256 and ENCRYPTED_KEYS are not needed.  CTR shouldn't be needed
+either, but I left it for now because it was intentionally added by
+commit 71dea01ea2ed ("ext4 crypto: require CONFIG_CRYPTO_CTR if ext4
+encryption is enabled").  So it sounds like there may be a dependency
+problem elsewhere, which I have not been able to identify specifically,
+that must be solved before CTR can be removed.
+
+Signed-off-by: Eric Biggers <ebiggers@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/crypto/Kconfig | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/fs/crypto/Kconfig b/fs/crypto/Kconfig
+index 92348fa..f514978 100644
+--- a/fs/crypto/Kconfig
++++ b/fs/crypto/Kconfig
+@@ -8,9 +8,7 @@ config FS_ENCRYPTION
+ 	select CRYPTO_XTS
+ 	select CRYPTO_CTS
+ 	select CRYPTO_CTR
+-	select CRYPTO_SHA256
+ 	select KEYS
+-	select ENCRYPTED_KEYS
+ 	help
+ 	  Enable encryption of files and directories.  This
+ 	  feature is similar to ecryptfs, but it is more memory
+-- 
+2.8.0.rc3.226.g39d4020
+
+
