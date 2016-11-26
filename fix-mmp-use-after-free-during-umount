@@ -1,0 +1,47 @@
+ext4: fix mmp use after free during unmount
+
+From: Eric Sandeen <sandeen@redhat.com>
+
+In ext4_put_super, we call brelse on the buffer head containing
+the ext4 superblock, but then try to use it when we stop the
+mmp thread, because when the thread shuts down it does:
+
+write_mmp_block
+  ext4_mmp_csum_set
+    ext4_has_metadata_csum
+      WARN_ON_ONCE(ext4_has_feature_metadata_csum(sb)...)
+
+which reaches into sb->s_fs_info->s_es->s_feature_ro_compat,
+which lives in the superblock buffer s_sbh which we just released.
+
+Fix this by moving the brelse down to a point where we are no
+longer using it.
+
+Reported-by: Wang Shu <shuwang@redhat.com>
+Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Andreas Dilger <adilger@dilger.ca>
+---
+ fs/ext4/super.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index bb3a8edc75db..a526956e49e7 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -863,7 +863,6 @@ static void ext4_put_super(struct super_block *sb)
+ 	percpu_counter_destroy(&sbi->s_dirs_counter);
+ 	percpu_counter_destroy(&sbi->s_dirtyclusters_counter);
+ 	percpu_free_rwsem(&sbi->s_journal_flag_rwsem);
+-	brelse(sbi->s_sbh);
+ #ifdef CONFIG_QUOTA
+ 	for (i = 0; i < EXT4_MAXQUOTAS; i++)
+ 		kfree(sbi->s_qf_names[i]);
+@@ -895,6 +894,7 @@ static void ext4_put_super(struct super_block *sb)
+ 	}
+ 	if (sbi->s_mmp_tsk)
+ 		kthread_stop(sbi->s_mmp_tsk);
++	brelse(sbi->s_sbh);
+ 	sb->s_fs_info = NULL;
+ 	/*
+ 	 * Now that we are completely done shutting down the
