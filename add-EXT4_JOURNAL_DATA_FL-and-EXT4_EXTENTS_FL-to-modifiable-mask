@@ -1,0 +1,47 @@
+ext4: add EXT4_JOURNAL_DATA_FL and EXT4_EXTENTS_FL to modifiable mask
+
+From: Jan Kara <jack@suse.cz>
+
+Add EXT4_JOURNAL_DATA_FL and EXT4_EXTENTS_FL to EXT4_FL_USER_MODIFIABLE
+to recognize that they are modifiable by userspace. So far we got away
+without having them there because ext4_ioctl_setflags() treats them in a
+special way. But it was really confusing like that.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4.h  | 2 +-
+ fs/ext4/ioctl.c | 3 +++
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index ea31931386ec..0814c9570bf1 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -393,7 +393,7 @@ struct flex_groups {
+ #define EXT4_RESERVED_FL		0x80000000 /* reserved for ext4 lib */
+ 
+ #define EXT4_FL_USER_VISIBLE		0x304BDFFF /* User visible flags */
+-#define EXT4_FL_USER_MODIFIABLE		0x204380FF /* User modifiable flags */
++#define EXT4_FL_USER_MODIFIABLE		0x204BC0FF /* User modifiable flags */
+ 
+ #define EXT4_FL_XFLAG_VISIBLE		(EXT4_SYNC_FL | \
+ 					 EXT4_IMMUTABLE_FL | \
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 1bb7df5e4536..e9433c155454 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -267,6 +267,9 @@ static int ext4_ioctl_setflags(struct inode *inode,
+ 	for (i = 0, mask = 1; i < 32; i++, mask <<= 1) {
+ 		if (!(mask & EXT4_FL_USER_MODIFIABLE))
+ 			continue;
++		/* These flags get special treatment later */
++		if (mask == EXT4_JOURNAL_DATA_FL || mask == EXT4_EXTENTS_FL)
++			continue;
+ 		if (mask & flags)
+ 			ext4_set_inode_flag(inode, i);
+ 		else
+-- 
+2.6.6
+
+
