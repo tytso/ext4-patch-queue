@@ -1,0 +1,50 @@
+fscrypt: unexport fscrypt_initialize()
+
+The fscrypt_initalize() function isn't used outside fs/crypto, so
+there's no point making it be an exported symbol.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/crypto/crypto.c          | 1 -
+ fs/crypto/fscrypt_private.h | 3 +++
+ include/linux/fscrypto.h    | 1 -
+ 3 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/crypto/crypto.c b/fs/crypto/crypto.c
+index b6029785714c..56f98f45cece 100644
+--- a/fs/crypto/crypto.c
++++ b/fs/crypto/crypto.c
+@@ -540,7 +540,6 @@ int fscrypt_initialize(void)
+ 	mutex_unlock(&fscrypt_init_mutex);
+ 	return res;
+ }
+-EXPORT_SYMBOL(fscrypt_initialize);
+ 
+ /**
+  * fscrypt_init() - Set up for fs encryption.
+diff --git a/fs/crypto/fscrypt_private.h b/fs/crypto/fscrypt_private.h
+index 7c31108728e4..bb92f0c0961b 100644
+--- a/fs/crypto/fscrypt_private.h
++++ b/fs/crypto/fscrypt_private.h
+@@ -13,6 +13,9 @@
+ 
+ #include <linux/fscrypto.h>
+ 
++/* crypto.c */
++int fscrypt_initialize(void);
++
+ /* keyinfo.c */
+ extern int fscrypt_get_crypt_info(struct inode *);
+ 
+diff --git a/include/linux/fscrypto.h b/include/linux/fscrypto.h
+index 2f8894f0696c..ce2ebdee6a89 100644
+--- a/include/linux/fscrypto.h
++++ b/include/linux/fscrypto.h
+@@ -244,7 +244,6 @@ static inline void fscrypt_set_d_op(struct dentry *dentry)
+ #if IS_ENABLED(CONFIG_FS_ENCRYPTION)
+ /* crypto.c */
+ extern struct kmem_cache *fscrypt_info_cachep;
+-int fscrypt_initialize(void);
+ 
+ extern struct fscrypt_ctx *fscrypt_get_ctx(const struct inode *, gfp_t);
+ extern void fscrypt_release_ctx(struct fscrypt_ctx *);
