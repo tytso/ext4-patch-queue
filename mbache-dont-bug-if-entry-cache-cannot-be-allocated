@@ -1,0 +1,37 @@
+mbcache: don't BUG() if entry cache cannot be allocated
+
+From: Eric Biggers <ebiggers@google.com>
+
+mbcache can be a module that is loaded long after startup, when someone
+asks to mount an ext2 or ext4 filesystem.  Therefore it should not BUG()
+if kmem_cache_create() fails, but rather just fail the module load.
+
+Signed-off-by: Eric Biggers <ebiggers@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/mbcache.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/mbcache.c b/fs/mbcache.c
+index 31e54c2..c56ab21 100644
+--- a/fs/mbcache.c
++++ b/fs/mbcache.c
+@@ -420,7 +420,8 @@ static int __init mbcache_init(void)
+ 	mb_entry_cache = kmem_cache_create("mbcache",
+ 				sizeof(struct mb_cache_entry), 0,
+ 				SLAB_RECLAIM_ACCOUNT|SLAB_MEM_SPREAD, NULL);
+-	BUG_ON(!mb_entry_cache);
++	if (!mb_entry_cache)
++		return -ENOMEM;
+ 	return 0;
+ }
+ 
+-- 
+2.8.0.rc3.226.g39d4020
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
