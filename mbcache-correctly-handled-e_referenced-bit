@@ -1,0 +1,45 @@
+mbcache: correctly handle 'e_referenced' bit
+
+From: Eric Biggers <ebiggers@google.com>
+
+mbcache entries have an 'e_referenced' bit which users can set with
+mb_cache_entry_touch() to indicate that an entry should be given another
+pass through the LRU list before the shrinker can delete it.  However,
+mb_cache_shrink() actually would, when seeing an e_referenced entry at
+the front of the list (the least-recently used end), place it right at
+the front of the list again.  The next iteration would then remove the
+entry from the list and delete it.  Consequently, e_referenced had
+essentially no effect, so ext2/ext4 xattr blocks would sometimes not be
+reused as often as expected.
+
+Fix this by making the shrinker move e_referenced entries to the back of
+the list rather than the front.
+
+Signed-off-by: Eric Biggers <ebiggers@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/mbcache.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/mbcache.c b/fs/mbcache.c
+index c5bd19f..31e54c2 100644
+--- a/fs/mbcache.c
++++ b/fs/mbcache.c
+@@ -286,7 +286,7 @@ static unsigned long mb_cache_shrink(struct mb_cache *cache,
+ 					 struct mb_cache_entry, e_list);
+ 		if (entry->e_referenced) {
+ 			entry->e_referenced = 0;
+-			list_move_tail(&cache->c_list, &entry->e_list);
++			list_move_tail(&entry->e_list, &cache->c_list);
+ 			continue;
+ 		}
+ 		list_del_init(&entry->e_list);
+-- 
+2.8.0.rc3.226.g39d4020
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
