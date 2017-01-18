@@ -1,0 +1,61 @@
+ext4: do not polute the extents cache while shifting extents
+
+From: Roman Pen <roman.penyaev@profitbricks.com>
+
+Inside ext4_ext_shift_extents() function ext4_find_extent() is called
+without EXT4_EX_NOCACHE flag, which should prevent cache population.
+
+This leads to oudated offsets in the extents tree and wrong blocks
+afterwards.
+
+Patch fixes the problem providing EXT4_EX_NOCACHE flag for each
+ext4_find_extents() call inside ext4_ext_shift_extents function.
+
+Fixes: 331573febb6a2
+Signed-off-by: Roman Pen <roman.penyaev@profitbricks.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: Namjae Jeon <namjae.jeon@samsung.com>
+Cc: Andreas Dilger <adilger.kernel@dilger.ca>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/extents.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 4d3014b5a3f9..2a97dff87b96 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -5334,7 +5334,8 @@ ext4_ext_shift_extents(struct inode *inode, handle_t *handle,
+ 	ext4_lblk_t stop, *iterator, ex_start, ex_end;
+ 
+ 	/* Let path point to the last extent */
+-	path = ext4_find_extent(inode, EXT_MAX_BLOCKS - 1, NULL, 0);
++	path = ext4_find_extent(inode, EXT_MAX_BLOCKS - 1, NULL,
++				EXT4_EX_NOCACHE);
+ 	if (IS_ERR(path))
+ 		return PTR_ERR(path);
+ 
+@@ -5350,7 +5351,8 @@ ext4_ext_shift_extents(struct inode *inode, handle_t *handle,
+ 	 * sure the hole is big enough to accommodate the shift.
+ 	*/
+ 	if (SHIFT == SHIFT_LEFT) {
+-		path = ext4_find_extent(inode, start - 1, &path, 0);
++		path = ext4_find_extent(inode, start - 1, &path,
++					EXT4_EX_NOCACHE);
+ 		if (IS_ERR(path))
+ 			return PTR_ERR(path);
+ 		depth = path->p_depth;
+@@ -5388,7 +5390,8 @@ ext4_ext_shift_extents(struct inode *inode, handle_t *handle,
+ 	 * becomes NULL to indicate the end of the loop.
+ 	 */
+ 	while (iterator && start <= stop) {
+-		path = ext4_find_extent(inode, *iterator, &path, 0);
++		path = ext4_find_extent(inode, *iterator, &path,
++					EXT4_EX_NOCACHE);
+ 		if (IS_ERR(path))
+ 			return PTR_ERR(path);
+ 		depth = path->p_depth;
+-- 
+2.10.2
+
+

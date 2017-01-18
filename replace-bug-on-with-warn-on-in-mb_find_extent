@@ -1,0 +1,39 @@
+ext4: replace BUG_ON with WARN_ON in mb_find_extent()
+
+The last BUG_ON in mb_find_extent() is apparently triggering in some
+rare cases.  Most of the time it indicates a bug in the buddy bitmap
+algorithms, but there are some weird cases where it can trigger when
+buddy bitmap is still in memory, but the block bitmap has to be read
+from disk, and there is disk or memory corruption such that the block
+bitmap and the buddy bitmap are out of sync.
+
+Google-Bug-Id: #33702157
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/mballoc.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 7ae43c59bc79..ec2f64b0e696 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -1556,7 +1556,17 @@ static int mb_find_extent(struct ext4_buddy *e4b, int block,
+ 		ex->fe_len += 1 << order;
+ 	}
+ 
+-	BUG_ON(ex->fe_start + ex->fe_len > (1 << (e4b->bd_blkbits + 3)));
++	if (ex->fe_start + ex->fe_len > (1 << (e4b->bd_blkbits + 3))) {
++		/* Should never happen! (but apparently sometimes does?!?) */
++		WARN_ON(1);
++		ext4_error(e4b->bd_sb, "corruption or bug in mb_find_extent "
++			   "block=%d, order=%d needed=%d ex=%u/%d/%d@%u",
++			   block, order, needed, ex->fe_group, ex->fe_start,
++			   ex->fe_len, ex->fe_logical);
++		ex->fe_len = 0;
++		ex->fe_start = 0;
++		ex->fe_group = 0;
++	}
+ 	return ex->fe_len;
+ }
+ 
