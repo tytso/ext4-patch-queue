@@ -1,0 +1,73 @@
+ext4: fix data corruption in data=journal mode
+
+From: Jan Kara <jack@suse.cz>
+
+ext4_journalled_write_end() did not propely handle all the cases when
+generic_perform_write() did not copy all the data into the target page
+and could mark buffers with uninitialized contents as uptodate and dirty
+leading to possible data corruption (which would be quickly fixed by
+generic_perform_write() retrying the write but still). Fix the problem
+by carefully handling the case when the page that is written to is not
+uptodate.
+
+CC: stable@vger.kernel.org
+Reported-by: Al Viro <viro@ZenIV.linux.org.uk>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/inode.c | 23 +++++++++++++----------
+ 1 file changed, 13 insertions(+), 10 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 88d57af1b516..4bb9136b0221 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1385,7 +1385,9 @@ static int ext4_write_end(struct file *file,
+  * set the buffer to be dirty, since in data=journalled mode we need
+  * to call ext4_handle_dirty_metadata() instead.
+  */
+-static void zero_new_buffers(struct page *page, unsigned from, unsigned to)
++static void ext4_journalled_zero_new_buffers(handle_t *handle,
++					    struct page *page,
++					    unsigned from, unsigned to)
+ {
+ 	unsigned int block_start = 0, block_end;
+ 	struct buffer_head *head, *bh;
+@@ -1402,7 +1404,7 @@ static void zero_new_buffers(struct page *page, unsigned from, unsigned to)
+ 					size = min(to, block_end) - start;
+ 
+ 					zero_user(page, start, size);
+-					set_buffer_uptodate(bh);
++					write_end_fn(handle, bh);
+ 				}
+ 				clear_buffer_new(bh);
+ 			}
+@@ -1434,15 +1436,16 @@ static int ext4_journalled_write_end(struct file *file,
+ 	if (ext4_has_inline_data(inode))
+ 		copied = ext4_write_inline_data_end(inode, pos, len,
+ 						    copied, page);
+-	else {
+-		if (copied < len) {
+-			if (!PageUptodate(page))
+-				copied = 0;
+-			zero_new_buffers(page, from+copied, to);
+-		}
+-
++	else if (unlikely(copied < len) && !PageUptodate(page)) {
++		copied = 0;
++		ext4_journalled_zero_new_buffers(handle, page, from, to);
++	} else {
++		if (unlikely(copied < len))
++			ext4_journalled_zero_new_buffers(handle, page,
++							 from + copied, to);
+ 		ret = ext4_walk_page_buffers(handle, page_buffers(page), from,
+-					     to, &partial, write_end_fn);
++					     from + copied, &partial,
++					     write_end_fn);
+ 		if (!partial)
+ 			SetPageUptodate(page);
+ 	}
+-- 
+2.10.2
+
+
