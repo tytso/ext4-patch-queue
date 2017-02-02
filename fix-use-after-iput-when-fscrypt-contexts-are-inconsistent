@@ -1,0 +1,45 @@
+ext4: fix use-after-iput when fscrypt contexts are inconsistent
+
+From: Eric Biggers <ebiggers@google.com>
+
+In the case where the child's encryption context was inconsistent with
+its parent directory, we were using inode->i_sb and inode->i_ino after
+the inode had already been iput().  Fix this by doing the iput() in the
+correct places.
+
+Note: only ext4 had this bug, not f2fs and ubifs.
+
+Fixes: d9cdc9033181 ("ext4 crypto: enforce context consistency")
+Cc: stable@vger.kernel.org
+Signed-off-by: Eric Biggers <ebiggers@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/namei.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index bb880c326191..931da9d5d915 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1618,13 +1618,15 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
+ 		    !fscrypt_has_permitted_context(dir, inode)) {
+ 			int nokey = ext4_encrypted_inode(inode) &&
+ 				!fscrypt_has_encryption_key(inode);
+-			iput(inode);
+-			if (nokey)
++			if (nokey) {
++				iput(inode);
+ 				return ERR_PTR(-ENOKEY);
++			}
+ 			ext4_warning(inode->i_sb,
+ 				     "Inconsistent encryption contexts: %lu/%lu",
+ 				     (unsigned long) dir->i_ino,
+ 				     (unsigned long) inode->i_ino);
++			iput(inode);
+ 			return ERR_PTR(-EPERM);
+ 		}
+ 	}
+-- 
+2.11.0.483.g087da7b7c-goog
+
+
