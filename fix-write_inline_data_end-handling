@@ -1,0 +1,79 @@
+ext4: fix inline data error paths
+
+The write_end() function must always unlock the page and drop its ref
+count, even on an error.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@vger.kernel.org
+---
+ fs/ext4/inline.c |  9 ++++++++-
+ fs/ext4/inode.c  | 20 +++++++++++++++-----
+ 2 files changed, 23 insertions(+), 6 deletions(-)
+
+diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
+index 338cfd862adb..b777b8aa14ae 100644
+--- a/fs/ext4/inline.c
++++ b/fs/ext4/inline.c
+@@ -943,8 +943,15 @@ int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
+ 				  struct page *page)
+ {
+ 	int i_size_changed = 0;
++	int ret;
+ 
+-	copied = ext4_write_inline_data_end(inode, pos, len, copied, page);
++	ret = ext4_write_inline_data_end(inode, pos, len, copied, page);
++	if (ret < 0) {
++		unlock_page(page);
++		put_page(page);
++		return ret;
++	}
++	copied = ret;
+ 
+ 	/*
+ 	 * No need to use i_size_read() here, the i_size
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 918d351d5b94..af97b9170358 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1330,8 +1330,11 @@ static int ext4_write_end(struct file *file,
+ 	if (ext4_has_inline_data(inode)) {
+ 		ret = ext4_write_inline_data_end(inode, pos, len,
+ 						 copied, page);
+-		if (ret < 0)
++		if (ret < 0) {
++			unlock_page(page);
++			put_page(page);
+ 			goto errout;
++		}
+ 		copied = ret;
+ 	} else
+ 		copied = block_write_end(file, mapping, pos,
+@@ -1433,10 +1436,16 @@ static int ext4_journalled_write_end(struct file *file,
+ 
+ 	BUG_ON(!ext4_handle_valid(handle));
+ 
+-	if (ext4_has_inline_data(inode))
+-		copied = ext4_write_inline_data_end(inode, pos, len,
+-						    copied, page);
+-	else if (unlikely(copied < len) && !PageUptodate(page)) {
++	if (ext4_has_inline_data(inode)) {
++		ret = ext4_write_inline_data_end(inode, pos, len,
++						 copied, page);
++		if (ret < 0) {
++			unlock_page(page);
++			put_page(page);
++			goto errout;
++		}
++		copied = ret;
++	} else if (unlikely(copied < len) && !PageUptodate(page)) {
+ 		copied = 0;
+ 		ext4_journalled_zero_new_buffers(handle, page, from, to);
+ 	} else {
+@@ -1471,6 +1480,7 @@ static int ext4_journalled_write_end(struct file *file,
+ 		 */
+ 		ext4_orphan_add(handle, inode);
+ 
++errout:
+ 	ret2 = ext4_journal_stop(handle);
+ 	if (!ret)
+ 		ret = ret2;

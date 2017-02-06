@@ -1,0 +1,128 @@
+ext4: add EXT4_IOC_GOINGDOWN ioctl
+
+This ioctl is modeled after the xfs's XFS_IOC_GOINGDOWN ioctl.  (In
+fact, it uses the same code points.)
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4.h  | 10 ++++++++++
+ fs/ext4/ioctl.c | 50 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/super.c |  2 +-
+ 3 files changed, 61 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 35d93ab7f3fb..55b7a77a0444 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -679,6 +679,16 @@ struct fsxattr {
+ #define EXT4_IOC_FSGETXATTR		FS_IOC_FSGETXATTR
+ #define EXT4_IOC_FSSETXATTR		FS_IOC_FSSETXATTR
+ 
++#define EXT4_IOC_GOINGDOWN _IOR ('X', 125, __u32)
++
++/*
++ * Flags for going down operation
++ */
++#define EXT4_GOING_FLAGS_DEFAULT		0x0	/* going down */
++#define EXT4_GOING_FLAGS_LOGFLUSH		0x1	/* flush log but not data */
++#define EXT4_GOING_FLAGS_NOLOGFLUSH		0x2	/* don't flush log nor data */
++
++
+ #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
+ /*
+  * ioctl commands in 32 bit emulation
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index d534399cf607..b383ebf4020c 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -16,6 +16,7 @@
+ #include <linux/quotaops.h>
+ #include <linux/uuid.h>
+ #include <linux/uaccess.h>
++#include <linux/delay.h>
+ #include "ext4_jbd2.h"
+ #include "ext4.h"
+ 
+@@ -442,6 +443,52 @@ static inline unsigned long ext4_xflags_to_iflags(__u32 xflags)
+ 	return iflags;
+ }
+ 
++int ext4_goingdown(struct super_block *sb, unsigned long arg)
++{
++	struct ext4_sb_info *sbi = EXT4_SB(sb);
++	__u32 flags;
++
++	if (!capable(CAP_SYS_ADMIN))
++		return -EPERM;
++
++	if (get_user(flags, (__u32 __user *)arg))
++		return -EFAULT;
++
++	if (flags > EXT4_GOING_FLAGS_NOLOGFLUSH)
++		return -EINVAL;
++
++	if (ext4_forced_shutdown(sbi))
++		return 0;
++
++	ext4_msg(sb, KERN_ALERT, "shut down requested (%d)", flags);
++
++	switch (flags) {
++	case EXT4_GOING_FLAGS_DEFAULT:
++		freeze_bdev(sb->s_bdev);
++		set_bit(EXT4_FLAGS_SHUTDOWN, &sbi->s_ext4_flags);
++		thaw_bdev(sb->s_bdev, sb);
++		break;
++	case EXT4_GOING_FLAGS_LOGFLUSH:
++		set_bit(EXT4_FLAGS_SHUTDOWN, &sbi->s_ext4_flags);
++		if (sbi->s_journal && !is_journal_aborted(sbi->s_journal)) {
++			(void) ext4_force_commit(sb);
++			jbd2_journal_abort(sbi->s_journal, 0);
++		}
++		break;
++	case EXT4_GOING_FLAGS_NOLOGFLUSH:
++		set_bit(EXT4_FLAGS_SHUTDOWN, &sbi->s_ext4_flags);
++		if (sbi->s_journal && !is_journal_aborted(sbi->s_journal)) {
++			msleep(100);
++			jbd2_journal_abort(sbi->s_journal, 0);
++		}
++		break;
++	default:
++		return -EINVAL;
++	}
++	clear_opt(sb, DISCARD);
++	return 0;
++}
++
+ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
+ 	struct inode *inode = file_inode(filp);
+@@ -893,6 +940,8 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 
+ 		return 0;
+ 	}
++	case EXT4_IOC_GOINGDOWN:
++		return ext4_goingdown(sb, arg);
+ 	default:
+ 		return -ENOTTY;
+ 	}
+@@ -959,6 +1008,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ 	case EXT4_IOC_SET_ENCRYPTION_POLICY:
+ 	case EXT4_IOC_GET_ENCRYPTION_PWSALT:
+ 	case EXT4_IOC_GET_ENCRYPTION_POLICY:
++	case EXT4_IOC_GOINGDOWN:
+ 		break;
+ 	default:
+ 		return -ENOIOCTLCMD;
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 91d6a6199fe0..f9a2252610a8 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4817,7 +4817,7 @@ static int ext4_freeze(struct super_block *sb)
+  */
+ static int ext4_unfreeze(struct super_block *sb)
+ {
+-	if (sb->s_flags & MS_RDONLY)
++	if ((sb->s_flags & MS_RDONLY) || ext4_forced_shutdown(EXT4_SB(sb)))
+ 		return 0;
+ 
+ 	if (EXT4_SB(sb)->s_journal) {
