@@ -14,9 +14,9 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  fs/ext4/inode.c     | 30 ++++++++++++++++++++++++++++--
  fs/ext4/namei.c     | 12 ++++++++++++
  fs/ext4/page-io.c   |  2 +-
- fs/ext4/super.c     | 18 ++++++++++++++++++
+ fs/ext4/super.c     | 21 +++++++++++++++++++++
  fs/ext4/xattr.c     |  3 +++
- 11 files changed, 100 insertions(+), 3 deletions(-)
+ 11 files changed, 103 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 2e7e02f2f771..35d93ab7f3fb 100644
@@ -305,7 +305,7 @@ index d83b0f3c5fe9..f8808835a28b 100644
  			 "failed to convert unwritten extents to written "
  			 "extents -- potential data loss!  "
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 514e5fc59893..879e3a6afd9d 100644
+index 514e5fc59893..cfa4ce5a1f80 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -438,6 +438,9 @@ void __ext4_error(struct super_block *sb, const char *function,
@@ -368,6 +368,16 @@ index 514e5fc59893..879e3a6afd9d 100644
  	es->s_last_error_ino = cpu_to_le32(ino);
  	es->s_last_error_block = cpu_to_le64(block);
  	__save_error_info(sb, function, line);
+@@ -4717,6 +4735,9 @@ static int ext4_sync_fs(struct super_block *sb, int wait)
+ 	bool needs_barrier = false;
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 
++	if (unlikely(ext4_forced_shutdown(EXT4_SB(sb))))
++		return 0;
++
+ 	trace_ext4_sync_fs(sb, wait);
+ 	flush_workqueue(sbi->rsv_conversion_wq);
+ 	/*
 diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
 index c40bd55b6400..67636acf7624 100644
 --- a/fs/ext4/xattr.c
