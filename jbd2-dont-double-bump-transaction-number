@@ -1,0 +1,23 @@
+jbd2: don't skip a transaction number when recovering journal
+
+In the lazy journalling patches we retain the journal, so skipping a
+transaction after the replay is problematic.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/jbd2/recovery.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
+index 02dd3360cb20..da100044566c 100644
+--- a/fs/jbd2/recovery.c
++++ b/fs/jbd2/recovery.c
+@@ -281,7 +281,7 @@ int jbd2_journal_recover(journal_t *journal)
+ 
+ 	/* Restart the log at the next transaction ID, thus invalidating
+ 	 * any existing commit records in the log. */
+-	journal->j_transaction_sequence = ++info.end_transaction;
++	journal->j_transaction_sequence = info.end_transaction;
+ 
+ 	jbd2_journal_clear_revoke(journal);
+ 	err2 = sync_blockdev(journal->j_fs_dev);
