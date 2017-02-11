@@ -14,12 +14,12 @@ Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
  fs/ext4/extents.c     |  3 ++-
  fs/ext4/ialloc.c      |  5 ++++-
  fs/ext4/indirect.c    |  3 ++-
- fs/ext4/inode.c       | 10 +++++++---
+ fs/ext4/inode.c       | 14 ++++++++++----
  fs/ext4/move_extent.c |  3 ++-
  fs/ext4/namei.c       |  8 +++++---
  fs/ext4/resize.c      |  4 +++-
  fs/jbd2/jmap.c        | 17 ++++++++++-------
- 8 files changed, 35 insertions(+), 18 deletions(-)
+ 8 files changed, 38 insertions(+), 19 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
 index 2a97dff87b96..342e4f0c23db 100644
@@ -94,7 +94,7 @@ index bc15c2c17633..21531ef4a182 100644
  				goto failure;
  			}
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index bc282f9d0969..b3b5cd7be666 100644
+index 831d025e59ad..f0a9f206c18f 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -995,13 +995,15 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
@@ -114,7 +114,7 @@ index bc282f9d0969..b3b5cd7be666 100644
  	wait_on_buffer(bh);
  	if (buffer_uptodate(bh))
  		return bh;
-@@ -4339,6 +4341,7 @@ static int __ext4_get_inode_loc(struct inode *inode,
+@@ -4343,6 +4345,7 @@ static int __ext4_get_inode_loc(struct inode *inode,
  	struct super_block	*sb = inode->i_sb;
  	ext4_fsblk_t		block;
  	int			inodes_per_block, inode_offset;
@@ -122,16 +122,20 @@ index bc282f9d0969..b3b5cd7be666 100644
  
  	iloc->bh = NULL;
  	if (!ext4_valid_inum(sb, inode->i_ino))
-@@ -4443,7 +4446,7 @@ static int __ext4_get_inode_loc(struct inode *inode,
+@@ -4446,8 +4449,10 @@ static int __ext4_get_inode_loc(struct inode *inode,
+ 			table += num / inodes_per_block;
  			if (end > table)
  				end = table;
- 			while (b <= end)
+-			while (b <= end)
 -				sb_breadahead(sb, b++);
-+				jbd2_sb_breadahead(sb, b++);
++			if (journal) {
++				while (b <= end)
++					jbd2_sb_breadahead(journal, sb, b++);
++			}
  		}
  
  		/*
-@@ -4454,7 +4457,8 @@ static int __ext4_get_inode_loc(struct inode *inode,
+@@ -4458,7 +4463,8 @@ static int __ext4_get_inode_loc(struct inode *inode,
  		trace_ext4_load_inode(inode);
  		get_bh(bh);
  		bh->b_end_io = end_buffer_read_sync;
