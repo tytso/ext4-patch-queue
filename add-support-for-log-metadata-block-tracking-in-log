@@ -18,12 +18,12 @@ Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
 ---
  fs/jbd2/Makefile            |   3 +-
  fs/jbd2/commit.c            |  17 ++++
- fs/jbd2/jmap.c              | 440 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/jmap.c              | 452 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/jbd2/journal.c           |  17 +++-
  include/linux/jbd2.h        |  13 +++
- include/linux/jmap.h        | 129 +++++++++++++++++++++++++
+ include/linux/jmap.h        | 131 +++++++++++++++++++++++++
  include/trace/events/jbd2.h | 169 ++++++++++++++++++++++++++++++++
- 7 files changed, 783 insertions(+), 5 deletions(-)
+ 7 files changed, 797 insertions(+), 5 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index 802a3413872a..a54f50b3a06e 100644
@@ -37,10 +37,10 @@ index 802a3413872a..a54f50b3a06e 100644
 +jbd2-objs := transaction.o commit.o recovery.o checkpoint.o revoke.o journal.o \
 +		jmap.o
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index 31f8ca046639..4a249ec74b5c 100644
+index 8c514367ba5a..cf091b79ac99 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
-@@ -361,6 +361,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -362,6 +362,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	int flags;
  	int err;
  	unsigned long long blocknr;
@@ -49,7 +49,7 @@ index 31f8ca046639..4a249ec74b5c 100644
  	ktime_t start_time;
  	u64 commit_time;
  	char *tagp = NULL;
-@@ -562,8 +564,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -563,8 +565,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	J_ASSERT(commit_transaction->t_nr_buffers <=
  		 atomic_read(&commit_transaction->t_outstanding_credits));
  
@@ -64,7 +64,7 @@ index 31f8ca046639..4a249ec74b5c 100644
  	descriptor = NULL;
  	while (commit_transaction->t_buffers) {
  
-@@ -660,6 +668,9 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -661,6 +669,9 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  			continue;
  		}
  		jbd2_file_log_bh(&io_bufs, wbuf[bufs]);
@@ -74,7 +74,7 @@ index 31f8ca046639..4a249ec74b5c 100644
  
  		/* Record the new block's tag in the current descriptor
                     buffer */
-@@ -894,6 +905,12 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -895,6 +906,12 @@ void jbd2_journal_commit_transaction(journal_t *journal)
             transaction can be removed from any checkpoint list it was on
             before. */
  
@@ -89,10 +89,11 @@ index 31f8ca046639..4a249ec74b5c 100644
  	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
 new file mode 100644
-index 000000000000..7d7b4eb389ed
+index 000000000000..2266a29d5572
 --- /dev/null
 +++ b/fs/jbd2/jmap.c
-@@ -0,0 +1,440 @@
+@@ -0,0 +1,452 @@
++#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
 +#include <linux/jmap.h>
 +#include <trace/events/jbd2.h>
@@ -533,8 +534,19 @@ index 000000000000..7d7b4eb389ed
 +{
 +	jbd2_free_transaction_infos(journal);
 +}
++
++void jbd2_sb_breadahead(journal_t *journal, struct super_block *sb,
++			sector_t block)
++{
++	struct buffer_head *bh = __getblk(sb->s_bdev, block, sb->s_blocksize);
++	if (likely(bh)) {
++		jbd2_ll_rw_block(journal, REQ_OP_READ, REQ_RAHEAD, 1,
++				 &bh, __func__);
++		brelse(bh);
++	}
++}
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 927da4956a89..0cbfb7fdc45d 100644
+index 85d1483939b2..98043e3d6c65 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
 @@ -1120,15 +1120,17 @@ static journal_t *journal_init_common(struct block_device *bdev,
@@ -569,7 +581,7 @@ index 927da4956a89..0cbfb7fdc45d 100644
  }
  
  /* jbd2_journal_init_dev and jbd2_journal_init_inode:
-@@ -1734,6 +1739,7 @@ int jbd2_journal_destroy(journal_t *journal)
+@@ -1735,6 +1740,7 @@ int jbd2_journal_destroy(journal_t *journal)
  		jbd2_journal_destroy_revoke(journal);
  	if (journal->j_chksum_driver)
  		crypto_free_shash(journal->j_chksum_driver);
@@ -577,7 +589,7 @@ index 927da4956a89..0cbfb7fdc45d 100644
  	kfree(journal->j_wbuf);
  	kfree(journal);
  
-@@ -2634,6 +2640,8 @@ static int __init journal_init_caches(void)
+@@ -2635,6 +2641,8 @@ static int __init journal_init_caches(void)
  		ret = jbd2_journal_init_handle_cache();
  	if (ret == 0)
  		ret = jbd2_journal_init_transaction_cache();
@@ -586,7 +598,7 @@ index 927da4956a89..0cbfb7fdc45d 100644
  	return ret;
  }
  
-@@ -2643,6 +2651,7 @@ static void jbd2_journal_destroy_caches(void)
+@@ -2644,6 +2652,7 @@ static void jbd2_journal_destroy_caches(void)
  	jbd2_journal_destroy_journal_head_cache();
  	jbd2_journal_destroy_handle_cache();
  	jbd2_journal_destroy_transaction_cache();
@@ -634,10 +646,10 @@ index dfaa1f4dcb0c..317efb491569 100644
  
 diff --git a/include/linux/jmap.h b/include/linux/jmap.h
 new file mode 100644
-index 000000000000..d068358380b0
+index 000000000000..a602ece7cc89
 --- /dev/null
 +++ b/include/linux/jmap.h
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,131 @@
 +#ifndef _LINUX_JMAP_H
 +#define _LINUX_JMAP_H
 +
@@ -765,6 +777,8 @@ index 000000000000..d068358380b0
 +			     struct buffer_head *bhs[], const char *func);
 +extern int jbd2_bh_submit_read(journal_t *journal, struct buffer_head *bh,
 +			       const char *func);
++extern void jbd2_sb_breadahead(journal_t *journal, struct super_block *sb,
++			       sector_t block);
 +
 +#endif
 diff --git a/include/trace/events/jbd2.h b/include/trace/events/jbd2.h

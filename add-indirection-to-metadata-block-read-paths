@@ -14,15 +14,15 @@ Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
  fs/ext4/extents.c     |  3 ++-
  fs/ext4/ialloc.c      |  5 ++++-
  fs/ext4/indirect.c    |  3 ++-
- fs/ext4/inode.c       |  8 ++++++--
+ fs/ext4/inode.c       | 10 +++++++---
  fs/ext4/move_extent.c |  3 ++-
  fs/ext4/namei.c       |  8 +++++---
  fs/ext4/resize.c      |  4 +++-
  fs/jbd2/jmap.c        | 17 ++++++++++-------
- 8 files changed, 34 insertions(+), 17 deletions(-)
+ 8 files changed, 35 insertions(+), 18 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index c930a0110fb4..aea6e67d9037 100644
+index 2a97dff87b96..342e4f0c23db 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -517,6 +517,7 @@ __read_extent_tree_block(const char *function, unsigned int line,
@@ -43,7 +43,7 @@ index c930a0110fb4..aea6e67d9037 100644
  			goto errout;
  	}
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index 170421edfdfe..919c2d114fb5 100644
+index b14bae2598bc..a095b8c1465a 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -14,6 +14,7 @@
@@ -94,10 +94,10 @@ index bc15c2c17633..21531ef4a182 100644
  				goto failure;
  			}
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 9c064727ed62..0e2f7c3b499e 100644
+index bc282f9d0969..b3b5cd7be666 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -989,13 +989,15 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
+@@ -995,13 +995,15 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
  			       ext4_lblk_t block, int map_flags)
  {
  	struct buffer_head *bh;
@@ -114,7 +114,7 @@ index 9c064727ed62..0e2f7c3b499e 100644
  	wait_on_buffer(bh);
  	if (buffer_uptodate(bh))
  		return bh;
-@@ -4201,6 +4203,7 @@ static int __ext4_get_inode_loc(struct inode *inode,
+@@ -4339,6 +4341,7 @@ static int __ext4_get_inode_loc(struct inode *inode,
  	struct super_block	*sb = inode->i_sb;
  	ext4_fsblk_t		block;
  	int			inodes_per_block, inode_offset;
@@ -122,7 +122,16 @@ index 9c064727ed62..0e2f7c3b499e 100644
  
  	iloc->bh = NULL;
  	if (!ext4_valid_inum(sb, inode->i_ino))
-@@ -4316,7 +4319,8 @@ static int __ext4_get_inode_loc(struct inode *inode,
+@@ -4443,7 +4446,7 @@ static int __ext4_get_inode_loc(struct inode *inode,
+ 			if (end > table)
+ 				end = table;
+ 			while (b <= end)
+-				sb_breadahead(sb, b++);
++				jbd2_sb_breadahead(sb, b++);
+ 		}
+ 
+ 		/*
+@@ -4454,7 +4457,8 @@ static int __ext4_get_inode_loc(struct inode *inode,
  		trace_ext4_load_inode(inode);
  		get_bh(bh);
  		bh->b_end_io = end_buffer_read_sync;
@@ -154,7 +163,7 @@ index 6fc14def0c70..b6c25638f5f4 100644
  				return err;
  		}
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 104f8bfba718..9c23616e7702 100644
+index 6ad612c576fc..0812a692db0f 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
 @@ -1361,6 +1361,7 @@ static struct buffer_head * ext4_find_entry (struct inode *dir,
@@ -173,7 +182,7 @@ index 104f8bfba718..9c23616e7702 100644
  	namelen = d_name->len;
  	if (namelen > EXT4_NAME_LEN)
  		return NULL;
-@@ -1449,9 +1451,9 @@ static struct buffer_head * ext4_find_entry (struct inode *dir,
+@@ -1451,9 +1453,9 @@ static struct buffer_head * ext4_find_entry (struct inode *dir,
  				}
  				bh_use[ra_max] = bh;
  				if (bh)
@@ -187,10 +196,10 @@ index 104f8bfba718..9c23616e7702 100644
  		}
  		if ((bh = bh_use[ra_ptr++]) == NULL)
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index cf681004b196..4e8711abc333 100644
+index c3ed9021b781..8406bca774c8 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -1192,10 +1192,12 @@ static int ext4_add_new_descs(handle_t *handle, struct super_block *sb,
+@@ -1193,10 +1193,12 @@ static int ext4_add_new_descs(handle_t *handle, struct super_block *sb,
  static struct buffer_head *ext4_get_bitmap(struct super_block *sb, __u64 block)
  {
  	struct buffer_head *bh = sb_getblk(sb, block);
@@ -205,10 +214,10 @@ index cf681004b196..4e8711abc333 100644
  			return NULL;
  		}
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
-index 7d7b4eb389ed..8c844f65eeaa 100644
+index 2266a29d5572..d45f2ece401e 100644
 --- a/fs/jbd2/jmap.c
 +++ b/fs/jbd2/jmap.c
-@@ -87,17 +87,19 @@ static int process_existing_mappings(journal_t *journal,
+@@ -88,17 +88,19 @@ static int process_existing_mappings(journal_t *journal,
  			mappings[nr_new++] = mappings[i];
  			continue;
  		}
@@ -234,7 +243,7 @@ index 7d7b4eb389ed..8c844f65eeaa 100644
  		}
  	}
  	return nr_new;
-@@ -141,12 +143,13 @@ static void add_new_mappings(journal_t *journal, struct transaction_info *ti,
+@@ -142,12 +144,13 @@ static void add_new_mappings(journal_t *journal, struct transaction_info *ti,
  			int t_idx, struct blk_mapping *mappings,
  			struct jmap_entry **new_entries, int nr_new)
  {
