@@ -1,0 +1,101 @@
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 55b7a77a0444..63a4be5d5b17 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1144,6 +1144,7 @@ struct ext4_inode_info {
+ #define EXT4_MOUNT_DIOREAD_NOLOCK	0x400000 /* Enable support for dio read nolocking */
+ #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
+ #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
++#define EXT4_MOUNT_JOURNAL_NO_CLEANUP	0x2000000 /* Preserve the journal on unmount */
+ #define EXT4_MOUNT_DELALLOC		0x8000000 /* Delalloc support */
+ #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
+ #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index dde14a7ac6d7..62b770229a99 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1308,6 +1308,7 @@ enum {
+ 	Opt_nomblk_io_submit, Opt_block_validity, Opt_noblock_validity,
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
+ 	Opt_dioread_nolock, Opt_dioread_lock,
++	Opt_journal_nocleanup, Opt_journal_cleanup,
+ 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
+ 	Opt_max_dir_size_kb, Opt_nojournal_checksum,
+ };
+@@ -1392,6 +1393,7 @@ static const match_table_t tokens = {
+ 	{Opt_noinit_itable, "noinit_itable"},
+ 	{Opt_max_dir_size_kb, "max_dir_size_kb=%u"},
+ 	{Opt_test_dummy_encryption, "test_dummy_encryption"},
++	{Opt_journal_nocleanup, "journal_nocleanup"},
+ 	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
+ 	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
+ 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
+@@ -1598,6 +1600,8 @@ static const struct mount_opts {
+ 	{Opt_jqfmt_vfsv1, QFMT_VFS_V1, MOPT_QFMT},
+ 	{Opt_max_dir_size_kb, 0, MOPT_GTE0},
+ 	{Opt_test_dummy_encryption, 0, MOPT_GTE0},
++	{Opt_journal_nocleanup, EXT4_MOUNT_JOURNAL_NO_CLEANUP, MOPT_SET},
++	{Opt_journal_cleanup, EXT4_MOUNT_JOURNAL_NO_CLEANUP, MOPT_CLEAR},
+ 	{Opt_err, 0, 0}
+ };
+ 
+@@ -4328,6 +4332,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+ 		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
+ 	else
+ 		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
++	if (test_opt(sb, JOURNAL_NO_CLEANUP))
++		journal->j_flags |= JBD2_NO_CLEANUP;
++	else
++		journal->j_flags &= ~JBD2_NO_CLEANUP;
+ 	write_unlock(&journal->j_state_lock);
+ }
+ 
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index 85d1483939b2..f7fd801be997 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -1685,6 +1685,11 @@ int jbd2_journal_destroy(journal_t *journal)
+ 	if (journal->j_running_transaction)
+ 		jbd2_journal_commit_transaction(journal);
+ 
++	if (journal->j_flags & JBD2_NO_CLEANUP) {
++		jbd2_journal_destroy_checkpoint(journal);
++		journal->j_checkpoint_transactions = NULL;
++	}
++
+ 	/* Force any old transactions to disk */
+ 
+ 	/* Totally anal locking here... */
+@@ -1712,7 +1717,9 @@ int jbd2_journal_destroy(journal_t *journal)
+ 	spin_unlock(&journal->j_list_lock);
+ 
+ 	if (journal->j_sb_buffer) {
+-		if (!is_journal_aborted(journal)) {
++		if (is_journal_aborted(journal))
++			err = -EIO;
++		else if ((journal->j_flags & JBD2_NO_CLEANUP) == 0) {
+ 			mutex_lock(&journal->j_checkpoint_mutex);
+ 
+ 			write_lock(&journal->j_state_lock);
+@@ -1723,8 +1730,7 @@ int jbd2_journal_destroy(journal_t *journal)
+ 			jbd2_mark_journal_empty(journal,
+ 					REQ_PREFLUSH | REQ_FUA);
+ 			mutex_unlock(&journal->j_checkpoint_mutex);
+-		} else
+-			err = -EIO;
++		}
+ 		brelse(journal->j_sb_buffer);
+ 	}
+ 
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index dfaa1f4dcb0c..9a07b0485784 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -1128,6 +1128,7 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
+ 						 * data write error in ordered
+ 						 * mode */
+ #define JBD2_REC_ERR	0x080	/* The errno in the sb has been recorded */
++#define JBD2_NO_CLEANUP	0x100	/* Don't flush empty the journal on shutdown  */
+ 
+ /*
+  * Function declarations for the journaling transaction and buffer
