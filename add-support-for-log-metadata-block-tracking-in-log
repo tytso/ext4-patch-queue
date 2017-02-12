@@ -13,17 +13,19 @@ is updated after every commit to keep the list up-to-date.
 Transaction_infos array will be used by the cleaner for identifying live
 blocks and migrating them to appropriate location.
 
-Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
+[ Modified by tytso to conditionalize changes on the JBD2_LAZY journal flag ]
 
+Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile            |   3 +-
- fs/jbd2/commit.c            |  17 ++++
- fs/jbd2/jmap.c              | 452 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/commit.c            |  23 +++++
+ fs/jbd2/jmap.c              | 457 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/jbd2/journal.c           |  17 +++-
- include/linux/jbd2.h        |  13 +++
+ include/linux/jbd2.h        |  14 +++
  include/linux/jmap.h        | 131 +++++++++++++++++++++++++
  include/trace/events/jbd2.h | 169 ++++++++++++++++++++++++++++++++
- 7 files changed, 797 insertions(+), 5 deletions(-)
+ 7 files changed, 809 insertions(+), 5 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index 802a3413872a..a54f50b3a06e 100644
@@ -37,62 +39,66 @@ index 802a3413872a..a54f50b3a06e 100644
 +jbd2-objs := transaction.o commit.o recovery.o checkpoint.o revoke.o journal.o \
 +		jmap.o
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index 8c514367ba5a..cf091b79ac99 100644
+index 8c514367ba5a..50e1a0b375c5 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
 @@ -362,6 +362,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	int flags;
  	int err;
  	unsigned long long blocknr;
-+	struct blk_mapping *mappings;
-+	int nr_mappings;
++	struct blk_mapping *mappings = NULL;
++	struct blk_mapping *map_ptr = NULL;
  	ktime_t start_time;
  	u64 commit_time;
  	char *tagp = NULL;
-@@ -563,8 +565,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -563,6 +565,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	J_ASSERT(commit_transaction->t_nr_buffers <=
  		 atomic_read(&commit_transaction->t_outstanding_credits));
  
-+	nr_mappings = commit_transaction->t_nr_buffers;
-+	mappings = kmalloc(sizeof(*mappings) * nr_mappings, GFP_NOFS);
-+	if (!mappings)
-+		jbd2_journal_abort(journal, -ENOMEM);
++	if (journal->j_flags & JBD2_LAZY) {
++		int nr_mappings = commit_transaction->t_nr_buffers;
++
++		map_ptr = mappings = kmalloc(sizeof(*mappings) * nr_mappings, GFP_NOFS);
++		if (!mappings)
++			jbd2_journal_abort(journal, -ENOMEM);
++	}
 +
  	err = 0;
  	bufs = 0;
-+	nr_mappings = 0;
  	descriptor = NULL;
- 	while (commit_transaction->t_buffers) {
- 
-@@ -661,6 +669,9 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -661,6 +671,11 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  			continue;
  		}
  		jbd2_file_log_bh(&io_bufs, wbuf[bufs]);
-+		mappings[nr_mappings++] = (struct blk_mapping) {
-+			jh2bh(jh)->b_blocknr, blocknr
-+		};
++		if (map_ptr) {
++			map_ptr->fsblk = jh2bh(jh)->b_blocknr;
++			map_ptr->logblk = blocknr;
++			map_ptr++;
++		}
  
  		/* Record the new block's tag in the current descriptor
                     buffer */
-@@ -895,6 +906,12 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -895,6 +910,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
             transaction can be removed from any checkpoint list it was on
             before. */
  
-+	err = jbd2_transaction_infos_add(journal, commit_transaction,
-+					mappings, nr_mappings);
-+	if (err)
-+		jbd2_journal_abort(journal, -ENOMEM);
-+	kfree(mappings);
++	if (mappings) {
++		err = jbd2_transaction_infos_add(journal, commit_transaction,
++						 mappings, map_ptr - mappings);
++		if (err)
++			jbd2_journal_abort(journal, -ENOMEM);
++		kfree(mappings);
++	}
 +
  	jbd_debug(3, "JBD2: commit phase 6\n");
  
  	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
 new file mode 100644
-index 000000000000..2266a29d5572
+index 000000000000..66a7efd807e1
 --- /dev/null
 +++ b/fs/jbd2/jmap.c
-@@ -0,0 +1,452 @@
+@@ -0,0 +1,457 @@
 +#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
 +#include <linux/jmap.h>
@@ -183,17 +189,19 @@ index 000000000000..2266a29d5572
 +			mappings[nr_new++] = mappings[i];
 +			continue;
 +		}
++		/*
++		 * We are either deleting the entry because it was revoked, or
++		 * we are moving it to the live blocks list of this transaction.
++		 * In either case, we remove it from its existing list.
++		 */
++		list_del(&je->list);
++
 +		if (je->revoked) {
 +			rb_erase(&je->rb_node, &journal->j_jmap);
 +			kmem_cache_free(jbd2_jmap_cache, je);
 +		} else {
-+			/*
-+			 * Delete jmap entry from the old transaction's list
-+			 * before adding it to the new transaction's list.
-+			 */
-+			list_del(&je->list);
-+			fill_entry(je, &mappings[i], t_idx, &ti->live_logblks);
 +			trace_jbd2_jmap_replace(je, &mappings[i], t_idx);
++			fill_entry(je, &mappings[i], t_idx, &ti->live_logblks);
 +		}
 +	}
 +	return nr_new;
@@ -237,12 +245,13 @@ index 000000000000..2266a29d5572
 +			int t_idx, struct blk_mapping *mappings,
 +			struct jmap_entry **new_entries, int nr_new)
 +{
-+	struct rb_node **p = &journal->j_jmap.rb_node;
++	struct rb_node **p;
 +	struct rb_node *parent = NULL;
 +	struct jmap_entry *je;
 +	int i;
 +
 +	for (i = 0; i < nr_new; ++i) {
++		p = &journal->j_jmap.rb_node;
 +		while (*p) {
 +			parent = *p;
 +			je = rb_entry(parent, struct jmap_entry, rb_node);
@@ -396,7 +405,7 @@ index 000000000000..2266a29d5572
 +
 +	BUG_ON(!buffer_locked(bh));
 +
-+	if (!journal) {
++	if (!journal || !(journal->j_flags & JBD2_LAZY)) {
 +		submit_bh(rw, op_flags, bh);
 +		return;
 +	}
@@ -527,6 +536,8 @@ index 000000000000..2266a29d5572
 +{
 +	journal->j_jmap = RB_ROOT;
 +	rwlock_init(&journal->j_jmap_lock);
++	if (!(journal->j_flags & JBD2_LAZY))
++		return 0;
 +	return jbd2_init_transaction_infos(journal);
 +}
 +
@@ -546,7 +557,7 @@ index 000000000000..2266a29d5572
 +	}
 +}
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 85d1483939b2..98043e3d6c65 100644
+index f7fd801be997..0fb2cd419ee3 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
 @@ -1120,15 +1120,17 @@ static journal_t *journal_init_common(struct block_device *bdev,
@@ -581,7 +592,7 @@ index 85d1483939b2..98043e3d6c65 100644
  }
  
  /* jbd2_journal_init_dev and jbd2_journal_init_inode:
-@@ -1735,6 +1740,7 @@ int jbd2_journal_destroy(journal_t *journal)
+@@ -1741,6 +1746,7 @@ int jbd2_journal_destroy(journal_t *journal)
  		jbd2_journal_destroy_revoke(journal);
  	if (journal->j_chksum_driver)
  		crypto_free_shash(journal->j_chksum_driver);
@@ -589,7 +600,7 @@ index 85d1483939b2..98043e3d6c65 100644
  	kfree(journal->j_wbuf);
  	kfree(journal);
  
-@@ -2635,6 +2641,8 @@ static int __init journal_init_caches(void)
+@@ -2641,6 +2647,8 @@ static int __init journal_init_caches(void)
  		ret = jbd2_journal_init_handle_cache();
  	if (ret == 0)
  		ret = jbd2_journal_init_transaction_cache();
@@ -598,7 +609,7 @@ index 85d1483939b2..98043e3d6c65 100644
  	return ret;
  }
  
-@@ -2644,6 +2652,7 @@ static void jbd2_journal_destroy_caches(void)
+@@ -2650,6 +2658,7 @@ static void jbd2_journal_destroy_caches(void)
  	jbd2_journal_destroy_journal_head_cache();
  	jbd2_journal_destroy_handle_cache();
  	jbd2_journal_destroy_transaction_cache();
@@ -607,7 +618,7 @@ index 85d1483939b2..98043e3d6c65 100644
  }
  
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index dfaa1f4dcb0c..317efb491569 100644
+index 9a07b0485784..841b54a34779 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
 @@ -25,6 +25,7 @@
@@ -644,6 +655,14 @@ index dfaa1f4dcb0c..317efb491569 100644
  	/* Version of the superblock format */
  	int			j_format_version;
  
+@@ -1129,6 +1142,7 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
+ 						 * mode */
+ #define JBD2_REC_ERR	0x080	/* The errno in the sb has been recorded */
+ #define JBD2_NO_CLEANUP	0x100	/* Don't flush empty the journal on shutdown  */
++#define JBD2_LAZY	0x100	/* Do lazy journalling  */
+ 
+ /*
+  * Function declarations for the journaling transaction and buffer
 diff --git a/include/linux/jmap.h b/include/linux/jmap.h
 new file mode 100644
 index 000000000000..a602ece7cc89
