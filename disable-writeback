@@ -6,17 +6,47 @@ Now that we have a working cleaner, disable writeback of metadata blocks.
 
 Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
 
+---
+ fs/jbd2/transaction.c        | 5 ++++-
+ include/linux/journal-head.h | 5 +++++
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+
 diff --git a/fs/jbd2/transaction.c b/fs/jbd2/transaction.c
-index 67c1038..912a516 100644
+index 5e659ee08d6a..1bd1a1530fbc 100644
 --- a/fs/jbd2/transaction.c
 +++ b/fs/jbd2/transaction.c
-@@ -1861,8 +1861,7 @@ static void __jbd2_journal_temp_unlink_buffer(struct journal_head *jh)
+@@ -894,6 +894,8 @@ do_get_write_access(handle_t *handle, struct journal_head *jh,
+ 	    jh->b_next_transaction == transaction)
+ 		goto done;
+ 
++	jh->b_jflags = journal->j_flags;
++
+ 	/*
+ 	 * this is the first time this transaction is touching this buffer,
+ 	 * reset the modified flag
+@@ -1863,7 +1865,8 @@ static void __jbd2_journal_temp_unlink_buffer(struct journal_head *jh)
  
  	__blist_del_buffer(list, jh);
  	jh->b_jlist = BJ_None;
--	if (test_clear_buffer_jbddirty(bh))
--		mark_buffer_dirty(bh);	/* Expose it to the VM */
-+	clear_buffer_jbddirty(bh);
- }
+-	if (transaction && is_journal_aborted(transaction->t_journal))
++	if ((transaction && is_journal_aborted(transaction->t_journal)) ||
++	    (jh->b_jflags & JBD2_LAZY))
+ 		clear_buffer_jbddirty(bh);
+ 	else if (test_clear_buffer_jbddirty(bh))
+ 		mark_buffer_dirty(bh);	/* Expose it to the VM */
+diff --git a/include/linux/journal-head.h b/include/linux/journal-head.h
+index 98cd41bb39c8..d4cce2bab7ff 100644
+--- a/include/linux/journal-head.h
++++ b/include/linux/journal-head.h
+@@ -58,6 +58,11 @@ struct journal_head {
+ 	char *b_committed_data;
  
- /*
+ 	/*
++	 * Copy of journal->j_flags
++	 */
++	unsigned b_jflags;
++
++	/*
+ 	 * Pointer to the compound transaction which owns this buffer's
+ 	 * metadata: either the running transaction or the committing
+ 	 * transaction (if there is one).  Only applies to buffers on a
