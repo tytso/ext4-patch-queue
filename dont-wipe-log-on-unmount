@@ -16,18 +16,23 @@ changes to journal.c and recovery.c is for finding the actual tail after
 mount (since now we are doing "recovery" on every mount) and updating
 in-memory journal superblock, so that new updates are written at the
 actual tail of the journal.
+
+Note: this patch is still a work in progress.  In particular, the
+jbd2_metamap_insert() function is no longer present.  We need to
+insert things via the new jbd2_transaction_infos_add.  -TYT
+
 ---
  fs/ext4/super.c    |  4 ++--
  fs/jbd2/commit.c   |  4 ++--
  fs/jbd2/journal.c  | 11 ++++++-----
- fs/jbd2/recovery.c | 10 +++++++---
- 4 files changed, 17 insertions(+), 12 deletions(-)
+ fs/jbd2/recovery.c | 25 +++++++++++++++++++++----
+ 4 files changed, 31 insertions(+), 13 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index dde14a7ac6d7..ff77c84ef089 100644
+index b2bd2a31a931..e8e2bbd1e898 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -4539,8 +4539,8 @@ static int ext4_load_journal(struct super_block *sb,
+@@ -4557,8 +4557,8 @@ static int ext4_load_journal(struct super_block *sb,
  	if (!(journal->j_flags & JBD2_BARRIER))
  		ext4_msg(sb, KERN_INFO, "barriers disabled");
  
@@ -39,10 +44,10 @@ index dde14a7ac6d7..ff77c84ef089 100644
  		char *save = kmalloc(EXT4_S_ERR_LEN, GFP_KERNEL);
  		if (save)
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index cf091b79ac99..6cfa74b32ad5 100644
+index 50e1a0b375c5..bf61fe5f1048 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
-@@ -898,8 +898,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -902,8 +902,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	 * erase checkpointed transactions from the log by updating journal
  	 * superblock.
  	 */
@@ -54,10 +59,10 @@ index cf091b79ac99..6cfa74b32ad5 100644
  	/* End of a transaction!  Finally, we can do checkpoint
             processing: any buffers committed as a result of this
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 3d44dd35c9f0..23e8b2aaf9c3 100644
+index 2d2743297810..e4e3f94e7a93 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
-@@ -1294,9 +1294,6 @@ static int journal_reset(journal_t *journal)
+@@ -1296,9 +1296,6 @@ static int journal_reset(journal_t *journal)
  
  	journal->j_first = first;
  	journal->j_last = last;
@@ -67,7 +72,7 @@ index 3d44dd35c9f0..23e8b2aaf9c3 100644
  	journal->j_free = last - first;
  
  	journal->j_tail_sequence = journal->j_transaction_sequence;
-@@ -1312,12 +1309,15 @@ static int journal_reset(journal_t *journal)
+@@ -1314,12 +1311,15 @@ static int journal_reset(journal_t *journal)
  	 * attempting a write to a potential-readonly device.
  	 */
  	if (sb->s_start == 0) {
@@ -83,7 +88,7 @@ index 3d44dd35c9f0..23e8b2aaf9c3 100644
  		/* Lock here to make assertions happy... */
  		mutex_lock(&journal->j_checkpoint_mutex);
  		/*
-@@ -1331,6 +1331,7 @@ static int journal_reset(journal_t *journal)
+@@ -1333,6 +1333,7 @@ static int journal_reset(journal_t *journal)
  						journal->j_tail,
  						REQ_FUA);
  		mutex_unlock(&journal->j_checkpoint_mutex);
@@ -91,7 +96,7 @@ index 3d44dd35c9f0..23e8b2aaf9c3 100644
  	}
  	return jbd2_journal_start_thread(journal);
  }
-@@ -1439,8 +1440,8 @@ static void jbd2_mark_journal_empty(journal_t *journal, int write_op)
+@@ -1441,8 +1442,8 @@ static void jbd2_mark_journal_empty(journal_t *journal, int write_op)
  	jbd_debug(1, "JBD2: Marking journal as empty (seq %d)\n",
  		  journal->j_tail_sequence);
  
@@ -103,7 +108,7 @@ index 3d44dd35c9f0..23e8b2aaf9c3 100644
  
  	jbd2_write_superblock(journal, write_op);
 diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
-index da100044566c..d5c308ec541d 100644
+index da100044566c..30dc632ccf0a 100644
 --- a/fs/jbd2/recovery.c
 +++ b/fs/jbd2/recovery.c
 @@ -32,6 +32,7 @@ struct recovery_info
@@ -143,7 +148,36 @@ index da100044566c..d5c308ec541d 100644
  		switch(blocktype) {
  		case JBD2_DESCRIPTOR_BLOCK:
  			/* Verify checksum first */
-@@ -791,6 +794,7 @@ static int do_one_pass(journal_t *journal,
+@@ -578,7 +581,7 @@ static int do_one_pass(journal_t *journal,
+ 						"block %ld in log\n",
+ 						err, io_block);
+ 				} else {
+-					unsigned long long blocknr;
++					unsigned long long blocknr, log_block;
+ 
+ 					J_ASSERT(obh != NULL);
+ 					blocknr = read_tag_block(journal,
+@@ -609,6 +612,19 @@ static int do_one_pass(journal_t *journal,
+ 						goto skip_write;
+ 					}
+ 
++					err = jbd2_journal_bmap(journal,
++								io_block,
++								&log_block);
++					J_ASSERT(!err);
++
++#if 0
++					if (!jbd2_metamap_insert(
++							journal,
++							blocknr,
++							log_block))
++						goto failed;
++#endif
++
+ 					/* Find a buffer for the new
+ 					 * data being restored */
+ 					nbh = __getblk(journal->j_fs_dev,
+@@ -791,6 +807,7 @@ static int do_one_pass(journal_t *journal,
  	if (pass == PASS_SCAN) {
  		if (!info->end_transaction)
  			info->end_transaction = next_commit_ID;

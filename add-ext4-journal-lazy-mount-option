@@ -1,0 +1,217 @@
+ext4: add journal_lazy mount option
+
+This option turns out the lazy journalling option, as described in the
+FAST 2017 paper, "Evolving Ext4 for Shingled Disks"[1].
+
+[1] https://www.usenix.org/conference/fast17/technical-sessions/presentation/aghayev
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4.h  |  1 +
+ fs/ext4/inode.c |  2 +-
+ fs/ext4/ioctl.c | 48 +++++++++++++++++++++++++++++++++---------------
+ fs/ext4/super.c | 32 +++++++++++++++++++++-----------
+ 4 files changed, 56 insertions(+), 27 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 63a4be5d5b17..07942ade7596 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1145,6 +1145,7 @@ struct ext4_inode_info {
+ #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
+ #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
+ #define EXT4_MOUNT_JOURNAL_NO_CLEANUP	0x2000000 /* Preserve the journal on unmount */
++#define EXT4_MOUNT_JOURNAL_LAZY		0x4000000 /* Do lazy writeback of journalled metadata */
+ #define EXT4_MOUNT_DELALLOC		0x8000000 /* Delalloc support */
+ #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
+ #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 831d025e59ad..00bed25d05b2 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3188,7 +3188,7 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
+ 		filemap_write_and_wait(mapping);
+ 	}
+ 
+-	if (EXT4_JOURNAL(inode) &&
++	if (EXT4_JOURNAL(inode) && !test_opt(inode->i_sb, JOURNAL_LAZY) &&
+ 	    ext4_test_inode_state(inode, EXT4_STATE_JDATA)) {
+ 		/*
+ 		 * This is a REALLY heavyweight approach, but the use of
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index b383ebf4020c..ba234eb5a1bd 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -242,6 +242,20 @@ static int ext4_ioctl_setflags(struct inode *inode,
+ 		if (!capable(CAP_SYS_RESOURCE))
+ 			goto flags_out;
+ 	}
++
++	/*
++	 * Clearing the JOURNAL_DATA flag is *hard* with lazy
++	 * journalling.  We can't use jbd2_journal_flush(); instead,
++	 * we would have to make sure all blocks belonging to the file
++	 * are evacuated from the journal and saved to their final
++	 * location on disk.  Punt for now.
++	 */
++	if ((oldflags & EXT4_JOURNAL_DATA_FL) && !jflag &&
++	    test_opt(inode->i_sb, JOURNAL_LAZY)) {
++		err = -EOPNOTSUPP;
++		goto flags_out;
++	}
++
+ 	if ((flags ^ oldflags) & EXT4_EXTENTS_FL)
+ 		migrate = 1;
+ 
+@@ -489,6 +503,22 @@ int ext4_goingdown(struct super_block *sb, unsigned long arg)
+ 	return 0;
+ }
+ 
++/*
++ * If we are using journalling (excepting JBD2 lazy mode), make sure
++ * the block group descriptors are written out immediately
++ */
++static int flush_fs_group_descriptors(struct super_block *sb)
++{
++	int err = 0;
++
++	if (EXT4_SB(sb)->s_journal && !test_opt(sb, JOURNAL_LAZY)) {
++		jbd2_journal_lock_updates(EXT4_SB(sb)->s_journal);
++		err = jbd2_journal_flush(EXT4_SB(sb)->s_journal);
++		jbd2_journal_unlock_updates(EXT4_SB(sb)->s_journal);
++	}
++	return err;
++}
++
+ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
+ 	struct inode *inode = file_inode(filp);
+@@ -606,11 +636,7 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 			goto group_extend_out;
+ 
+ 		err = ext4_group_extend(sb, EXT4_SB(sb)->s_es, n_blocks_count);
+-		if (EXT4_SB(sb)->s_journal) {
+-			jbd2_journal_lock_updates(EXT4_SB(sb)->s_journal);
+-			err2 = jbd2_journal_flush(EXT4_SB(sb)->s_journal);
+-			jbd2_journal_unlock_updates(EXT4_SB(sb)->s_journal);
+-		}
++		err2 = flush_fs_group_descriptors(sb);
+ 		if (err == 0)
+ 			err = err2;
+ 		mnt_drop_write_file(filp);
+@@ -696,11 +722,7 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 			goto group_add_out;
+ 
+ 		err = ext4_group_add(sb, &input);
+-		if (EXT4_SB(sb)->s_journal) {
+-			jbd2_journal_lock_updates(EXT4_SB(sb)->s_journal);
+-			err2 = jbd2_journal_flush(EXT4_SB(sb)->s_journal);
+-			jbd2_journal_unlock_updates(EXT4_SB(sb)->s_journal);
+-		}
++		err2 = flush_fs_group_descriptors(sb);
+ 		if (err == 0)
+ 			err = err2;
+ 		mnt_drop_write_file(filp);
+@@ -786,11 +808,7 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 			goto resizefs_out;
+ 
+ 		err = ext4_resize_fs(sb, n_blocks_count);
+-		if (EXT4_SB(sb)->s_journal) {
+-			jbd2_journal_lock_updates(EXT4_SB(sb)->s_journal);
+-			err2 = jbd2_journal_flush(EXT4_SB(sb)->s_journal);
+-			jbd2_journal_unlock_updates(EXT4_SB(sb)->s_journal);
+-		}
++		err2 = flush_fs_group_descriptors(sb);
+ 		if (err == 0)
+ 			err = err2;
+ 		mnt_drop_write_file(filp);
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 233fccf28025..b2bd2a31a931 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1309,6 +1309,7 @@ enum {
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
+ 	Opt_dioread_nolock, Opt_dioread_lock,
+ 	Opt_journal_nocleanup, Opt_journal_cleanup,
++	Opt_journal_nolazy, Opt_journal_lazy,
+ 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
+ 	Opt_max_dir_size_kb, Opt_nojournal_checksum,
+ };
+@@ -1395,6 +1396,8 @@ static const match_table_t tokens = {
+ 	{Opt_test_dummy_encryption, "test_dummy_encryption"},
+ 	{Opt_journal_nocleanup, "journal_nocleanup"},
+ 	{Opt_journal_cleanup, "journal_cleanup"},
++	{Opt_journal_lazy, "journal_lazy"},
++	{Opt_journal_nolazy, "journal_nolazy"},
+ 	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
+ 	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
+ 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
+@@ -1603,6 +1606,8 @@ static const struct mount_opts {
+ 	{Opt_test_dummy_encryption, 0, MOPT_GTE0},
+ 	{Opt_journal_nocleanup, EXT4_MOUNT_JOURNAL_NO_CLEANUP, MOPT_SET},
+ 	{Opt_journal_cleanup, EXT4_MOUNT_JOURNAL_NO_CLEANUP, MOPT_CLEAR},
++	{Opt_journal_lazy, EXT4_MOUNT_JOURNAL_LAZY, MOPT_SET},
++	{Opt_journal_nolazy, EXT4_MOUNT_JOURNAL_LAZY, MOPT_CLEAR},
+ 	{Opt_err, 0, 0}
+ };
+ 
+@@ -4337,6 +4342,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+ 		journal->j_flags |= JBD2_NO_CLEANUP;
+ 	else
+ 		journal->j_flags &= ~JBD2_NO_CLEANUP;
++	if (test_opt(sb, JOURNAL_LAZY))
++		journal->j_flags |= JBD2_LAZY;
++	else
++		journal->j_flags &= ~JBD2_LAZY;
+ 	write_unlock(&journal->j_state_lock);
+ }
+ 
+@@ -4801,21 +4810,20 @@ static int ext4_freeze(struct super_block *sb)
+ 	journal = EXT4_SB(sb)->s_journal;
+ 
+ 	if (journal) {
+-		/* Now we set up the journal barrier. */
+-		jbd2_journal_lock_updates(journal);
+-
+ 		/*
+-		 * Don't clear the needs_recovery flag if we failed to
+-		 * flush the journal.
++		 * Set the journal barrier, then flush the journal and
++		 * clear the needs_recovery flag if we are not in
++		 * JBD2_LAZY mode.
+ 		 */
+-		error = jbd2_journal_flush(journal);
+-		if (error < 0)
+-			goto out;
++		jbd2_journal_lock_updates(journal);
+ 
+-		/* Journal blocked and flushed, clear needs_recovery flag. */
++		if (!test_opt(sb, JOURNAL_LAZY)) {
++			error = jbd2_journal_flush(journal);
++			if (error < 0)
++				goto out;
++		}
+ 		ext4_clear_feature_journal_needs_recovery(sb);
+ 	}
+-
+ 	error = ext4_commit_super(sb, 1);
+ out:
+ 	if (journal)
+@@ -4833,7 +4841,7 @@ static int ext4_unfreeze(struct super_block *sb)
+ 	if ((sb->s_flags & MS_RDONLY) || ext4_forced_shutdown(EXT4_SB(sb)))
+ 		return 0;
+ 
+-	if (EXT4_SB(sb)->s_journal) {
++	if (EXT4_SB(sb)->s_journal && !test_opt(sb, JOURNAL_LAZY)) {
+ 		/* Reset the needs_recovery flag before the fs is unlocked. */
+ 		ext4_set_feature_journal_needs_recovery(sb);
+ 	}
+@@ -5349,6 +5357,8 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
+ 		 * We don't need to lock updates but journal_flush() could
+ 		 * otherwise be livelocked...
+ 		 */
++		if (test_opt(sb, JOURNAL_LAZY))
++			return -EOPNOTSUPP;
+ 		jbd2_journal_lock_updates(EXT4_SB(sb)->s_journal);
+ 		err = jbd2_journal_flush(EXT4_SB(sb)->s_journal);
+ 		jbd2_journal_unlock_updates(EXT4_SB(sb)->s_journal);

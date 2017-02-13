@@ -1,3 +1,16 @@
+ext4, jbd2: add the journal_nocleanup mount option
+
+This debugging option is useful for generating test cases for the
+journal replay code.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4.h       |  1 +
+ fs/ext4/super.c      |  9 +++++++++
+ fs/jbd2/journal.c    | 12 +++++++++---
+ include/linux/jbd2.h |  1 +
+ 4 files changed, 20 insertions(+), 3 deletions(-)
+
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 55b7a77a0444..63a4be5d5b17 100644
 --- a/fs/ext4/ext4.h
@@ -11,7 +24,7 @@ index 55b7a77a0444..63a4be5d5b17 100644
  #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
  #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index dde14a7ac6d7..62b770229a99 100644
+index dde14a7ac6d7..233fccf28025 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -1308,6 +1308,7 @@ enum {
@@ -22,15 +35,16 @@ index dde14a7ac6d7..62b770229a99 100644
  	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
  	Opt_max_dir_size_kb, Opt_nojournal_checksum,
  };
-@@ -1392,6 +1393,7 @@ static const match_table_t tokens = {
+@@ -1392,6 +1393,8 @@ static const match_table_t tokens = {
  	{Opt_noinit_itable, "noinit_itable"},
  	{Opt_max_dir_size_kb, "max_dir_size_kb=%u"},
  	{Opt_test_dummy_encryption, "test_dummy_encryption"},
 +	{Opt_journal_nocleanup, "journal_nocleanup"},
++	{Opt_journal_cleanup, "journal_cleanup"},
  	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
  	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
  	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
-@@ -1598,6 +1600,8 @@ static const struct mount_opts {
+@@ -1598,6 +1601,8 @@ static const struct mount_opts {
  	{Opt_jqfmt_vfsv1, QFMT_VFS_V1, MOPT_QFMT},
  	{Opt_max_dir_size_kb, 0, MOPT_GTE0},
  	{Opt_test_dummy_encryption, 0, MOPT_GTE0},
@@ -39,7 +53,7 @@ index dde14a7ac6d7..62b770229a99 100644
  	{Opt_err, 0, 0}
  };
  
-@@ -4328,6 +4332,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -4328,6 +4333,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;

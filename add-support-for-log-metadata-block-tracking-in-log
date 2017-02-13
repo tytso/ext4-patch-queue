@@ -20,12 +20,12 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile            |   3 +-
  fs/jbd2/commit.c            |  23 +++++
- fs/jbd2/jmap.c              | 457 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/jmap.c              | 455 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/jbd2/journal.c           |  17 +++-
  include/linux/jbd2.h        |  14 +++
  include/linux/jmap.h        | 131 +++++++++++++++++++++++++
  include/trace/events/jbd2.h | 169 ++++++++++++++++++++++++++++++++
- 7 files changed, 809 insertions(+), 5 deletions(-)
+ 7 files changed, 807 insertions(+), 5 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index 802a3413872a..a54f50b3a06e 100644
@@ -95,10 +95,10 @@ index 8c514367ba5a..50e1a0b375c5 100644
  	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
 new file mode 100644
-index 000000000000..66a7efd807e1
+index 000000000000..ddaa7d5f5634
 --- /dev/null
 +++ b/fs/jbd2/jmap.c
-@@ -0,0 +1,457 @@
+@@ -0,0 +1,455 @@
 +#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
 +#include <linux/jmap.h>
@@ -536,8 +536,6 @@ index 000000000000..66a7efd807e1
 +{
 +	journal->j_jmap = RB_ROOT;
 +	rwlock_init(&journal->j_jmap_lock);
-+	if (!(journal->j_flags & JBD2_LAZY))
-+		return 0;
 +	return jbd2_init_transaction_infos(journal);
 +}
 +
@@ -618,7 +616,7 @@ index f7fd801be997..0fb2cd419ee3 100644
  }
  
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 9a07b0485784..841b54a34779 100644
+index 9a07b0485784..771588026353 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
 @@ -25,6 +25,7 @@
@@ -659,7 +657,7 @@ index 9a07b0485784..841b54a34779 100644
  						 * mode */
  #define JBD2_REC_ERR	0x080	/* The errno in the sb has been recorded */
  #define JBD2_NO_CLEANUP	0x100	/* Don't flush empty the journal on shutdown  */
-+#define JBD2_LAZY	0x100	/* Do lazy journalling  */
++#define JBD2_LAZY	0x200	/* Do lazy journalling  */
  
  /*
   * Function declarations for the journaling transaction and buffer
