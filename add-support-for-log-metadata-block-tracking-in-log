@@ -20,12 +20,12 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile            |   3 +-
  fs/jbd2/commit.c            |  23 +++++
- fs/jbd2/jmap.c              | 455 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/jmap.c              | 454 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/jbd2/journal.c           |  17 +++-
  include/linux/jbd2.h        |  14 +++
  include/linux/jmap.h        | 131 +++++++++++++++++++++++++
  include/trace/events/jbd2.h | 169 ++++++++++++++++++++++++++++++++
- 7 files changed, 807 insertions(+), 5 deletions(-)
+ 7 files changed, 806 insertions(+), 5 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index 802a3413872a..a54f50b3a06e 100644
@@ -95,10 +95,10 @@ index 8c514367ba5a..50e1a0b375c5 100644
  	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
 new file mode 100644
-index 000000000000..ddaa7d5f5634
+index 000000000000..f023a317fff1
 --- /dev/null
 +++ b/fs/jbd2/jmap.c
-@@ -0,0 +1,455 @@
+@@ -0,0 +1,454 @@
 +#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
 +#include <linux/jmap.h>
@@ -116,8 +116,7 @@ index 000000000000..ddaa7d5f5634
 +
 +void jbd2_journal_destroy_jmap_cache(void)
 +{
-+	if (jbd2_jmap_cache)
-+		kmem_cache_destroy(jbd2_jmap_cache);
++	kmem_cache_destroy(jbd2_jmap_cache);
 +	jbd2_jmap_cache = NULL;
 +}
 +
@@ -555,7 +554,7 @@ index 000000000000..ddaa7d5f5634
 +	}
 +}
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index f7fd801be997..0fb2cd419ee3 100644
+index eae93cdfbaa7..77a44c86ccc2 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
 @@ -1120,15 +1120,17 @@ static journal_t *journal_init_common(struct block_device *bdev,
