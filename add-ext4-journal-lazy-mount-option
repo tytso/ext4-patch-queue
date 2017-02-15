@@ -14,19 +14,19 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  4 files changed, 56 insertions(+), 27 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 63a4be5d5b17..07942ade7596 100644
+index d3108a82f0fb..e76696b303d8 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1145,6 +1145,7 @@ struct ext4_inode_info {
  #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
  #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
- #define EXT4_MOUNT_JOURNAL_NO_CLEANUP	0x2000000 /* Preserve the journal on unmount */
+ #define EXT4_MOUNT_JOURNAL_NOCLEANUP	0x2000000 /* Preserve the journal on unmount */
 +#define EXT4_MOUNT_JOURNAL_LAZY		0x4000000 /* Do lazy writeback of journalled metadata */
  #define EXT4_MOUNT_DELALLOC		0x8000000 /* Delalloc support */
  #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
  #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 831d025e59ad..00bed25d05b2 100644
+index f622d4a577e3..1908ac336ee5 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -3188,7 +3188,7 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
@@ -126,10 +126,10 @@ index b383ebf4020c..ba234eb5a1bd 100644
  			err = err2;
  		mnt_drop_write_file(filp);
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 233fccf28025..b2bd2a31a931 100644
+index fe5f9cb1365c..f7b63a83b4b4 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1309,6 +1309,7 @@ enum {
+@@ -1310,6 +1310,7 @@ enum {
  	Opt_inode_readahead_blks, Opt_journal_ioprio,
  	Opt_dioread_nolock, Opt_dioread_lock,
  	Opt_journal_nocleanup, Opt_journal_cleanup,
@@ -137,7 +137,7 @@ index 233fccf28025..b2bd2a31a931 100644
  	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
  	Opt_max_dir_size_kb, Opt_nojournal_checksum,
  };
-@@ -1395,6 +1396,8 @@ static const match_table_t tokens = {
+@@ -1396,6 +1397,8 @@ static const match_table_t tokens = {
  	{Opt_test_dummy_encryption, "test_dummy_encryption"},
  	{Opt_journal_nocleanup, "journal_nocleanup"},
  	{Opt_journal_cleanup, "journal_cleanup"},
@@ -146,16 +146,16 @@ index 233fccf28025..b2bd2a31a931 100644
  	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
  	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
  	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
-@@ -1603,6 +1606,8 @@ static const struct mount_opts {
+@@ -1604,6 +1607,8 @@ static const struct mount_opts {
  	{Opt_test_dummy_encryption, 0, MOPT_GTE0},
- 	{Opt_journal_nocleanup, EXT4_MOUNT_JOURNAL_NO_CLEANUP, MOPT_SET},
- 	{Opt_journal_cleanup, EXT4_MOUNT_JOURNAL_NO_CLEANUP, MOPT_CLEAR},
+ 	{Opt_journal_nocleanup, EXT4_MOUNT_JOURNAL_NOCLEANUP, MOPT_SET},
+ 	{Opt_journal_cleanup, EXT4_MOUNT_JOURNAL_NOCLEANUP, MOPT_CLEAR},
 +	{Opt_journal_lazy, EXT4_MOUNT_JOURNAL_LAZY, MOPT_SET},
 +	{Opt_journal_nolazy, EXT4_MOUNT_JOURNAL_LAZY, MOPT_CLEAR},
  	{Opt_err, 0, 0}
  };
  
-@@ -4337,6 +4342,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -4338,6 +4343,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_NO_CLEANUP;
  	else
  		journal->j_flags &= ~JBD2_NO_CLEANUP;
@@ -166,7 +166,7 @@ index 233fccf28025..b2bd2a31a931 100644
  	write_unlock(&journal->j_state_lock);
  }
  
-@@ -4801,21 +4810,20 @@ static int ext4_freeze(struct super_block *sb)
+@@ -4802,21 +4811,20 @@ static int ext4_freeze(struct super_block *sb)
  	journal = EXT4_SB(sb)->s_journal;
  
  	if (journal) {
@@ -197,7 +197,7 @@ index 233fccf28025..b2bd2a31a931 100644
  	error = ext4_commit_super(sb, 1);
  out:
  	if (journal)
-@@ -4833,7 +4841,7 @@ static int ext4_unfreeze(struct super_block *sb)
+@@ -4834,7 +4842,7 @@ static int ext4_unfreeze(struct super_block *sb)
  	if ((sb->s_flags & MS_RDONLY) || ext4_forced_shutdown(EXT4_SB(sb)))
  		return 0;
  
@@ -206,7 +206,7 @@ index 233fccf28025..b2bd2a31a931 100644
  		/* Reset the needs_recovery flag before the fs is unlocked. */
  		ext4_set_feature_journal_needs_recovery(sb);
  	}
-@@ -5349,6 +5357,8 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
+@@ -5350,6 +5358,8 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
  		 * We don't need to lock updates but journal_flush() could
  		 * otherwise be livelocked...
  		 */
