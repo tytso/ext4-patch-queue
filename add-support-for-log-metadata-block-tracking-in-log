@@ -20,12 +20,12 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile            |   3 +-
  fs/jbd2/commit.c            |  23 +++++
- fs/jbd2/jmap.c              | 454 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/jmap.c              | 458 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/jbd2/journal.c           |  17 +++-
  include/linux/jbd2.h        |  14 +++
  include/linux/jmap.h        | 131 +++++++++++++++++++++++++
  include/trace/events/jbd2.h | 169 ++++++++++++++++++++++++++++++++
- 7 files changed, 806 insertions(+), 5 deletions(-)
+ 7 files changed, 810 insertions(+), 5 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index 802a3413872a..a54f50b3a06e 100644
@@ -95,10 +95,10 @@ index 8c514367ba5a..50e1a0b375c5 100644
  	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
 new file mode 100644
-index 000000000000..f023a317fff1
+index 000000000000..d95346084aef
 --- /dev/null
 +++ b/fs/jbd2/jmap.c
-@@ -0,0 +1,454 @@
+@@ -0,0 +1,458 @@
 +#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
 +#include <linux/jmap.h>
@@ -422,6 +422,7 @@ index 000000000000..f023a317fff1
 +	BUG_ON(rw == WRITE);
 +	read_block_from_log(journal, bh, op_flags, logblk);
 +}
++EXPORT_SYMBOL(jbd2_submit_bh);
 +
 +/*
 + * End_io handler for read_block_from_log that copies the contents of
@@ -508,6 +509,7 @@ index 000000000000..f023a317fff1
 +		unlock_buffer(bh);
 +	}
 +}
++EXPORT_SYMBOL(jbd2_ll_rw_block);
 +
 +/*
 + * Copy of bh_submit_read that uses jbd2_submit_bh instead of submit_bh.
@@ -530,6 +532,7 @@ index 000000000000..f023a317fff1
 +		return 0;
 +	return -EIO;
 +}
++EXPORT_SYMBOL(jbd2_bh_submit_read);
 +
 +int jbd2_smr_journal_init(journal_t *journal)
 +{
@@ -553,6 +556,7 @@ index 000000000000..f023a317fff1
 +		brelse(bh);
 +	}
 +}
++EXPORT_SYMBOL(jbd2_sb_breadahead);
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
 index eae93cdfbaa7..77a44c86ccc2 100644
 --- a/fs/jbd2/journal.c
