@@ -76,7 +76,7 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  1 file changed, 4 insertions(+)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index bc282f9d0969..831d025e59ad 100644
+index bc282f9d0969..f622d4a577e3 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -3944,6 +3944,10 @@ static int ext4_block_truncate_page(handle_t *handle,
@@ -84,7 +84,7 @@ index bc282f9d0969..831d025e59ad 100644
  	struct inode *inode = mapping->host;
  
 +	/* If we are processing an encrypted inode during orphan list handling */
-+	if (!fscrypt_has_encryption_key(inode))
++	if (ext4_encrypted_inode(inode) && !fscrypt_has_encryption_key(inode))
 +		return 0;
 +
  	blocksize = inode->i_sb->s_blocksize;
