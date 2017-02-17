@@ -1,0 +1,326 @@
+jbd2: load jmap from journal
+
+If the lazy journal feature is enabled, instead of replaying the
+journal, read the journal into journal map.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/jbd2/jmap.c       | 57 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/jbd2/recovery.c   | 89 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++----------------------
+ include/linux/jmap.h |  4 ++++
+ 3 files changed, 127 insertions(+), 23 deletions(-)
+
+diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
+index ea1bb25e2d5d..7cfc6f6eb9d3 100644
+--- a/fs/jbd2/jmap.c
++++ b/fs/jbd2/jmap.c
+@@ -100,7 +100,7 @@ static int process_existing_mappings(journal_t *journal,
+ 		if (je == journal->j_cleaner_ctx->pos) {
+ 			journal->j_cleaner_ctx->pos = list_next_entry(je, list);
+ 			trace_jbd2_jmap_printf1("updating pos to",
+-						(unsigned long long) journal->j_cleaner_ctx->pos);
++						(unsigned long long) (unsigned long) journal->j_cleaner_ctx->pos);
+ 		}
+ 		list_del(&je->list);
+ 		spin_unlock(&journal->j_cleaner_ctx->pos_lock);
+@@ -179,6 +179,61 @@ static void add_new_mappings(journal_t *journal, struct transaction_info *ti,
+ 	}
+ }
+ 
++void jbd2_add_new_transaction_infos(journal_t *journal, tid_t tid,
++				   unsigned long log_start)
++{
++	struct transaction_infos *tis = journal->j_transaction_infos;
++	int t_idx = tis->head;
++	struct transaction_info *ti = &tis->buf[t_idx];
++
++	/*
++	 * We are possibly reusing space of an old transaction_info.  The old
++	 * transaction should not have any live blocks in it.
++	 */
++	BUG_ON(!list_empty(&ti->live_blks));
++
++	write_lock(&journal->j_jmap_lock);
++	ti->tid = tid;
++	ti->offset = log_start;
++	write_unlock(&journal->j_jmap_lock);
++}
++
++int jbd2_add_mapping(journal_t *journal, struct blk_mapping *mapping)
++{
++	struct transaction_infos *tis = journal->j_transaction_infos;
++	int t_idx = tis->head;
++	struct transaction_info *ti = &tis->buf[t_idx];
++	struct jmap_entry *new_entry;
++	int nr_new = 0;
++
++	write_lock(&journal->j_jmap_lock);
++	nr_new = process_existing_mappings(journal, ti, t_idx, mapping, 1);
++	write_unlock(&journal->j_jmap_lock);
++
++	if (nr_new == 0)
++		return 0;
++
++	new_entry = kmem_cache_zalloc(jbd2_jmap_cache, GFP_NOFS);
++	if (!new_entry)
++		return -ENOMEM;
++
++	write_lock(&journal->j_jmap_lock);
++	add_new_mappings(journal, ti, t_idx, mapping, &new_entry, 1);
++	write_unlock(&journal->j_jmap_lock);
++	return 0;
++}
++
++void jbd2_finish_transaction_infos(journal_t *journal)
++{
++	struct transaction_infos *tis = journal->j_transaction_infos;
++
++	atomic_inc(&journal->j_cleaner_ctx->nr_txns_committed);
++
++	write_lock(&journal->j_jmap_lock);
++	tis->head = (tis->head + 1) & (MAX_LIVE_TRANSACTIONS - 1);
++	write_unlock(&journal->j_jmap_lock);
++}
++
+ /*
+  * This function is called after a transaction commits.  It adds new
+  * transaction_info structure to transaction_infos and populates jmap map with
+diff --git a/fs/jbd2/recovery.c b/fs/jbd2/recovery.c
+index da100044566c..fc02a2eb837c 100644
+--- a/fs/jbd2/recovery.c
++++ b/fs/jbd2/recovery.c
+@@ -32,17 +32,18 @@ struct recovery_info
+ {
+ 	tid_t		start_transaction;
+ 	tid_t		end_transaction;
++	int		tail_block;
+ 
+ 	int		nr_replays;
+ 	int		nr_revokes;
+ 	int		nr_revoke_hits;
+ };
+ 
+-enum passtype {PASS_SCAN, PASS_REVOKE, PASS_REPLAY};
++enum passtype {PASS_SCAN, PASS_REVOKE, PASS_REPLAY, PASS_JMAP};
+ static int do_one_pass(journal_t *journal,
+ 				struct recovery_info *info, enum passtype pass);
+-static int scan_revoke_records(journal_t *, struct buffer_head *,
+-				tid_t, struct recovery_info *);
++static int scan_revoke_records(journal_t *, struct buffer_head *, enum passtype,
++			       tid_t, struct recovery_info *);
+ 
+ #ifdef __KERNEL__
+ 
+@@ -267,11 +268,15 @@ int jbd2_journal_recover(journal_t *journal)
+ 		return 0;
+ 	}
+ 
+-	err = do_one_pass(journal, &info, PASS_SCAN);
+-	if (!err)
+-		err = do_one_pass(journal, &info, PASS_REVOKE);
+-	if (!err)
+-		err = do_one_pass(journal, &info, PASS_REPLAY);
++	if (journal->j_flags & JBD2_LAZY)
++		err = do_one_pass(journal, &info, PASS_JMAP);
++	else {
++		err = do_one_pass(journal, &info, PASS_SCAN);
++		if (!err)
++			err = do_one_pass(journal, &info, PASS_REVOKE);
++		if (!err)
++			err = do_one_pass(journal, &info, PASS_REPLAY);
++	}
+ 
+ 	jbd_debug(1, "JBD2: recovery, exit status %d, "
+ 		  "recovered transactions %u to %u\n",
+@@ -279,6 +284,14 @@ int jbd2_journal_recover(journal_t *journal)
+ 	jbd_debug(1, "JBD2: Replayed %d and revoked %d/%d blocks\n",
+ 		  info.nr_replays, info.nr_revoke_hits, info.nr_revokes);
+ 
++	if (journal->j_flags & JBD2_LAZY) {
++		if (err)
++			return err;
++		journal->j_head = be32_to_cpu(sb->s_start);
++		journal->j_tail = info.tail_block;
++		return 0;
++	}
++
+ 	/* Restart the log at the next transaction ID, thus invalidating
+ 	 * any existing commit records in the log. */
+ 	journal->j_transaction_sequence = info.end_transaction;
+@@ -431,6 +444,7 @@ static int do_one_pass(journal_t *journal,
+ 	__u32			crc32_sum = ~0; /* Transactional Checksums */
+ 	int			descr_csum_size = 0;
+ 	int			block_error = 0;
++	int			new_txn = 1;
+ 
+ 	/*
+ 	 * First thing is to establish what we expect to find in the log
+@@ -443,7 +457,7 @@ static int do_one_pass(journal_t *journal,
+ 	next_log_block = be32_to_cpu(sb->s_start);
+ 
+ 	first_commit_ID = next_commit_ID;
+-	if (pass == PASS_SCAN)
++	if (pass == PASS_SCAN || pass == PASS_JMAP)
+ 		info->start_transaction = first_commit_ID;
+ 
+ 	jbd_debug(1, "Starting recovery pass %d\n", pass);
+@@ -468,7 +482,7 @@ static int do_one_pass(journal_t *journal,
+ 		 * check right now that we haven't gone past the end of
+ 		 * the log. */
+ 
+-		if (pass != PASS_SCAN)
++		if (pass != PASS_SCAN && pass != PASS_JMAP)
+ 			if (tid_geq(next_commit_ID, info->end_transaction))
+ 				break;
+ 
+@@ -484,9 +498,6 @@ static int do_one_pass(journal_t *journal,
+ 		if (err)
+ 			goto failed;
+ 
+-		next_log_block++;
+-		wrap(journal, next_log_block);
+-
+ 		/* What kind of buffer is it?
+ 		 *
+ 		 * If it is a descriptor block, check that it has the
+@@ -510,6 +521,14 @@ static int do_one_pass(journal_t *journal,
+ 			break;
+ 		}
+ 
++		if ((pass == PASS_JMAP) && new_txn) {
++			jbd2_add_new_transaction_infos(journal, sequence, next_log_block);
++			new_txn = 0;
++		}
++
++		next_log_block++;
++		wrap(journal, next_log_block);
++
+ 		/* OK, we have a valid descriptor block which matches
+ 		 * all of the sequence number checks.  What are we going
+ 		 * to do with it?  That depends on the pass... */
+@@ -535,7 +554,7 @@ static int do_one_pass(journal_t *journal,
+ 			 * in pass REPLAY; if journal_checksums enabled, then
+ 			 * calculate checksums in PASS_SCAN, otherwise,
+ 			 * just skip over the blocks it describes. */
+-			if (pass != PASS_REPLAY) {
++			if ((pass != PASS_REPLAY) && (pass != PASS_JMAP)) {
+ 				if (pass == PASS_SCAN &&
+ 				    jbd2_has_feature_checksum(journal) &&
+ 				    !info->end_transaction) {
+@@ -562,12 +581,28 @@ static int do_one_pass(journal_t *journal,
+ 			while ((tagp - bh->b_data + tag_bytes)
+ 			       <= journal->j_blocksize - descr_csum_size) {
+ 				unsigned long io_block;
++				unsigned long long log_block;
+ 
+ 				tag = (journal_block_tag_t *) tagp;
+ 				flags = be16_to_cpu(tag->t_flags);
+ 
+ 				io_block = next_log_block++;
+ 				wrap(journal, next_log_block);
++				if (pass == PASS_JMAP) {
++					struct blk_mapping map;
++
++					err = jbd2_journal_bmap(journal,
++								io_block,
++								&log_block);
++					if (err)
++						goto failed;
++					map.fsblk = read_tag_block(journal, tag);
++					map.logblk = log_block;
++					err = jbd2_add_mapping(journal, &map);
++					if (err)
++						goto failed;
++					goto skip_write;
++				}
+ 				err = jread(&obh, journal, io_block);
+ 				if (err) {
+ 					/* Recover what we can, but
+@@ -753,6 +788,10 @@ static int do_one_pass(journal_t *journal,
+ 					break;
+ 				}
+ 			}
++			if (pass == PASS_JMAP) {
++				jbd2_finish_transaction_infos(journal);
++				new_txn = 1;
++			}
+ 			brelse(bh);
+ 			next_commit_ID++;
+ 			continue;
+@@ -760,12 +799,12 @@ static int do_one_pass(journal_t *journal,
+ 		case JBD2_REVOKE_BLOCK:
+ 			/* If we aren't in the REVOKE pass, then we can
+ 			 * just skip over this block. */
+-			if (pass != PASS_REVOKE) {
++			if (pass != PASS_REVOKE && pass != PASS_JMAP) {
+ 				brelse(bh);
+ 				continue;
+ 			}
+ 
+-			err = scan_revoke_records(journal, bh,
++			err = scan_revoke_records(journal, bh, pass,
+ 						  next_commit_ID, info);
+ 			brelse(bh);
+ 			if (err)
+@@ -788,9 +827,10 @@ static int do_one_pass(journal_t *journal,
+ 	 * transaction marks the end of the valid log.
+ 	 */
+ 
+-	if (pass == PASS_SCAN) {
++	if (pass == PASS_SCAN || pass == PASS_JMAP) {
+ 		if (!info->end_transaction)
+ 			info->end_transaction = next_commit_ID;
++		info->tail_block = next_log_block;
+ 	} else {
+ 		/* It's really bad news if different passes end up at
+ 		 * different places (but possible due to IO errors). */
+@@ -813,7 +853,8 @@ static int do_one_pass(journal_t *journal,
+ /* Scan a revoke record, marking all blocks mentioned as revoked. */
+ 
+ static int scan_revoke_records(journal_t *journal, struct buffer_head *bh,
+-			       tid_t sequence, struct recovery_info *info)
++			       enum passtype pass, tid_t sequence,
++			       struct recovery_info *info)
+ {
+ 	jbd2_journal_revoke_header_t *header;
+ 	int offset, max;
+@@ -839,16 +880,20 @@ static int scan_revoke_records(journal_t *journal, struct buffer_head *bh,
+ 
+ 	while (offset + record_len <= max) {
+ 		unsigned long long blocknr;
+-		int err;
+ 
+ 		if (record_len == 4)
+ 			blocknr = be32_to_cpu(* ((__be32 *) (bh->b_data+offset)));
+ 		else
+ 			blocknr = be64_to_cpu(* ((__be64 *) (bh->b_data+offset)));
+ 		offset += record_len;
+-		err = jbd2_journal_set_revoke(journal, blocknr, sequence);
+-		if (err)
+-			return err;
++		if (pass == PASS_JMAP)
++			jbd2_jmap_revoke(journal, blocknr);
++		else {
++			int err = jbd2_journal_set_revoke(journal, blocknr,
++							  sequence);
++			if (err)
++				return err;
++		}
+ 		++info->nr_revokes;
+ 	}
+ 	return 0;
+diff --git a/include/linux/jmap.h b/include/linux/jmap.h
+index acd588b4c68b..0d258cbeb603 100644
+--- a/include/linux/jmap.h
++++ b/include/linux/jmap.h
+@@ -109,6 +109,10 @@ extern void jbd2_journal_destroy_jmap_cache(void);
+ 
+ extern int jbd2_init_transaction_infos(journal_t *journal);
+ extern void jbd2_free_transaction_infos(journal_t *journal);
++extern void jbd2_add_new_transaction_infos(journal_t *journal, tid_t t_tid,
++					  unsigned long log_start);
++extern int jbd2_add_mapping(journal_t *journal, struct blk_mapping *mapping);
++extern void jbd2_finish_transaction_infos(journal_t *journal);
+ extern int jbd2_transaction_infos_add(journal_t *journal,
+ 				transaction_t *transaction,
+ 				struct blk_mapping *mappings,
