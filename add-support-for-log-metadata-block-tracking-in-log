@@ -19,13 +19,13 @@ Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile            |   3 +-
- fs/jbd2/commit.c            |  23 +++++
- fs/jbd2/jmap.c              | 458 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/jbd2/journal.c           |  17 +++-
+ fs/jbd2/commit.c            |  23 ++++
+ fs/jbd2/jmap.c              | 456 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/journal.c           |  17 ++-
  include/linux/jbd2.h        |  14 +++
- include/linux/jmap.h        | 131 +++++++++++++++++++++++++
- include/trace/events/jbd2.h | 169 ++++++++++++++++++++++++++++++++
- 7 files changed, 810 insertions(+), 5 deletions(-)
+ include/linux/jmap.h        | 131 +++++++++++++++++++++
+ include/trace/events/jbd2.h | 193 +++++++++++++++++++++++++++++++
+ 7 files changed, 832 insertions(+), 5 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index 802a3413872a..a54f50b3a06e 100644
@@ -95,10 +95,10 @@ index 8c514367ba5a..50e1a0b375c5 100644
  	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
 new file mode 100644
-index 000000000000..d95346084aef
+index 000000000000..31d143ea28ee
 --- /dev/null
 +++ b/fs/jbd2/jmap.c
-@@ -0,0 +1,458 @@
+@@ -0,0 +1,456 @@
 +#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
 +#include <linux/jmap.h>
@@ -432,12 +432,10 @@ index 000000000000..d95346084aef
 +{
 +	struct buffer_head *bh = log_bh->b_private;
 +
-+	if (uptodate) {
-+		trace_jbd2_jmap_printf1("read from log", bh->b_blocknr);
++	trace_jbd2_jmap_read_from_log(bh->b_blocknr, log_bh->b_blocknr,
++				      uptodate);
++	if (uptodate)
 +		memcpy(bh->b_data, log_bh->b_data, log_bh->b_size);
-+	} else {
-+		trace_jbd2_jmap_printf1("failed to read from log", bh->b_blocknr);
-+	}
 +
 +	unlock_buffer(log_bh);
 +	put_bh(log_bh);
@@ -802,10 +800,10 @@ index 000000000000..a602ece7cc89
 +
 +#endif
 diff --git a/include/trace/events/jbd2.h b/include/trace/events/jbd2.h
-index c1d1f3eb242d..bc1511a425ec 100644
+index c1d1f3eb242d..6d0619bc99af 100644
 --- a/include/trace/events/jbd2.h
 +++ b/include/trace/events/jbd2.h
-@@ -379,6 +379,175 @@ TRACE_EVENT(jbd2_lock_buffer_stall,
+@@ -379,6 +379,199 @@ TRACE_EVENT(jbd2_lock_buffer_stall,
  		__entry->stall_ms)
  );
  
@@ -886,6 +884,30 @@ index c1d1f3eb242d..bc1511a425ec 100644
 +		  __get_str(func),
 +		  (unsigned long long) __entry->fsblk,
 +		  (unsigned long long) __entry->logblk)
++);
++
++TRACE_EVENT(jbd2_jmap_read_from_log,
++
++	TP_PROTO(sector_t fsblk, sector_t logblk, int uptodate),
++
++	TP_ARGS(fsblk, logblk, uptodate),
++
++	TP_STRUCT__entry(
++		__field(sector_t, fsblk	)
++		__field(sector_t, logblk)
++		__field(int, uptodate)
++	),
++
++	TP_fast_assign(
++		__entry->fsblk	= fsblk;
++		__entry->logblk	= logblk;
++		__entry->uptodate = uptodate;
++	),
++
++	TP_printk("fsblk %llu logblk %llu uptodate %d",
++		  (unsigned long long) __entry->fsblk,
++		  (unsigned long long) __entry->logblk,
++		  __entry->uptodate)
 +);
 +
 +TRACE_EVENT(jbd2_jmap_printf,
