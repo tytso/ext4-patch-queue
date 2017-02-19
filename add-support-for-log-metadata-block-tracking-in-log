@@ -20,12 +20,12 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile            |   3 +-
  fs/jbd2/commit.c            |  23 ++++
- fs/jbd2/jmap.c              | 456 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/jbd2/journal.c           |  17 ++-
+ fs/jbd2/jmap.c              | 510 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/journal.c           |  20 ++-
  include/linux/jbd2.h        |  14 +++
- include/linux/jmap.h        | 131 +++++++++++++++++++++
- include/trace/events/jbd2.h | 193 +++++++++++++++++++++++++++++++
- 7 files changed, 832 insertions(+), 5 deletions(-)
+ include/linux/jmap.h        | 136 ++++++++++++++++++++
+ include/trace/events/jbd2.h | 193 ++++++++++++++++++++++++++++
+ 7 files changed, 894 insertions(+), 5 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index 802a3413872a..a54f50b3a06e 100644
@@ -95,10 +95,10 @@ index 8c514367ba5a..50e1a0b375c5 100644
  	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
 new file mode 100644
-index 000000000000..31d143ea28ee
+index 000000000000..18dd0e127aff
 --- /dev/null
 +++ b/fs/jbd2/jmap.c
-@@ -0,0 +1,456 @@
+@@ -0,0 +1,510 @@
 +#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
 +#include <linux/jmap.h>
@@ -139,7 +139,7 @@ index 000000000000..31d143ea28ee
 +	}
 +
 +	for (i = 0; i < MAX_LIVE_TRANSACTIONS; ++i)
-+		INIT_LIST_HEAD(&tis->buf[i].live_logblks);
++		INIT_LIST_HEAD(&tis->buf[i].live_blks);
 +
 +	journal->j_transaction_infos = tis;
 +	return 0;
@@ -200,7 +200,7 @@ index 000000000000..31d143ea28ee
 +			kmem_cache_free(jbd2_jmap_cache, je);
 +		} else {
 +			trace_jbd2_jmap_replace(je, &mappings[i], t_idx);
-+			fill_entry(je, &mappings[i], t_idx, &ti->live_logblks);
++			fill_entry(je, &mappings[i], t_idx, &ti->live_blks);
 +		}
 +	}
 +	return nr_new;
@@ -262,12 +262,66 @@ index 000000000000..31d143ea28ee
 +			else
 +				BUG_ON(1);
 +		}
-+		fill_entry(new_entries[i], &mappings[i], t_idx,
-+			&ti->live_logblks);
++		fill_entry(new_entries[i], &mappings[i], t_idx, &ti->live_blks);
 +		rb_link_node(&new_entries[i]->rb_node, parent, p);
 +		rb_insert_color(&new_entries[i]->rb_node, &journal->j_jmap);
 +		trace_jbd2_jmap_insert(&mappings[i], t_idx);
 +	}
++}
++
++void jbd2_add_new_transaction_infos(journal_t *journal, tid_t tid,
++				   unsigned long log_start)
++{
++	struct transaction_infos *tis = journal->j_transaction_infos;
++	int t_idx = tis->head;
++	struct transaction_info *ti = &tis->buf[t_idx];
++
++	/*
++	 * We are possibly reusing space of an old transaction_info.  The old
++	 * transaction should not have any live blocks in it.
++	 */
++	BUG_ON(!list_empty(&ti->live_blks));
++
++	write_lock(&journal->j_jmap_lock);
++	ti->tid = tid;
++	ti->offset = log_start;
++	write_unlock(&journal->j_jmap_lock);
++}
++
++int jbd2_add_mapping(journal_t *journal, struct blk_mapping *mapping)
++{
++	struct transaction_infos *tis = journal->j_transaction_infos;
++	int t_idx = tis->head;
++	struct transaction_info *ti = &tis->buf[t_idx];
++	struct jmap_entry *new_entry;
++	int nr_new = 0;
++
++	write_lock(&journal->j_jmap_lock);
++	nr_new = process_existing_mappings(journal, ti, t_idx, mapping, 1);
++	write_unlock(&journal->j_jmap_lock);
++
++	if (nr_new == 0)
++		return 0;
++
++	new_entry = kmem_cache_zalloc(jbd2_jmap_cache, GFP_NOFS);
++	if (!new_entry)
++		return -ENOMEM;
++
++	write_lock(&journal->j_jmap_lock);
++	add_new_mappings(journal, ti, t_idx, mapping, &new_entry, 1);
++	write_unlock(&journal->j_jmap_lock);
++	return 0;
++}
++
++void jbd2_finish_transaction_infos(journal_t *journal)
++{
++	struct transaction_infos *tis = journal->j_transaction_infos;
++
++	atomic_inc(&journal->j_cleaner_ctx->nr_txns_committed);
++
++	write_lock(&journal->j_jmap_lock);
++	tis->head = (tis->head + 1) & (MAX_LIVE_TRANSACTIONS - 1);
++	write_unlock(&journal->j_jmap_lock);
 +}
 +
 +/*
@@ -290,7 +344,7 @@ index 000000000000..31d143ea28ee
 +	 * We are possibly reusing space of an old transaction_info.  The old
 +	 * transaction should not have any live blocks in it.
 +	 */
-+	BUG_ON(!list_empty(&ti->live_logblks));
++	BUG_ON(!list_empty(&ti->live_blks));
 +
 +	write_lock(&journal->j_jmap_lock);
 +	nr_new = process_existing_mappings(journal, ti, t_idx, mappings,
@@ -556,7 +610,7 @@ index 000000000000..31d143ea28ee
 +}
 +EXPORT_SYMBOL(jbd2_sb_breadahead);
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index eae93cdfbaa7..77a44c86ccc2 100644
+index eae93cdfbaa7..493b72c60335 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
 @@ -1120,15 +1120,17 @@ static journal_t *journal_init_common(struct block_device *bdev,
@@ -591,7 +645,17 @@ index eae93cdfbaa7..77a44c86ccc2 100644
  }
  
  /* jbd2_journal_init_dev and jbd2_journal_init_inode:
-@@ -1741,6 +1746,7 @@ int jbd2_journal_destroy(journal_t *journal)
+@@ -1685,6 +1690,9 @@ int jbd2_journal_destroy(journal_t *journal)
+ 	if (journal->j_running_transaction)
+ 		jbd2_journal_commit_transaction(journal);
+ 
++	if (journal->j_flags & JBD2_LAZY)
++		journal->j_flags |= JBD2_NO_CLEANUP;
++
+ 	if (journal->j_flags & JBD2_NO_CLEANUP) {
+ 		jbd2_journal_destroy_checkpoint(journal);
+ 		journal->j_checkpoint_transactions = NULL;
+@@ -1741,6 +1749,7 @@ int jbd2_journal_destroy(journal_t *journal)
  		jbd2_journal_destroy_revoke(journal);
  	if (journal->j_chksum_driver)
  		crypto_free_shash(journal->j_chksum_driver);
@@ -599,7 +663,7 @@ index eae93cdfbaa7..77a44c86ccc2 100644
  	kfree(journal->j_wbuf);
  	kfree(journal);
  
-@@ -2641,6 +2647,8 @@ static int __init journal_init_caches(void)
+@@ -2641,6 +2650,8 @@ static int __init journal_init_caches(void)
  		ret = jbd2_journal_init_handle_cache();
  	if (ret == 0)
  		ret = jbd2_journal_init_transaction_cache();
@@ -608,7 +672,7 @@ index eae93cdfbaa7..77a44c86ccc2 100644
  	return ret;
  }
  
-@@ -2650,6 +2658,7 @@ static void jbd2_journal_destroy_caches(void)
+@@ -2650,6 +2661,7 @@ static void jbd2_journal_destroy_caches(void)
  	jbd2_journal_destroy_journal_head_cache();
  	jbd2_journal_destroy_handle_cache();
  	jbd2_journal_destroy_transaction_cache();
@@ -664,10 +728,10 @@ index 9a07b0485784..771588026353 100644
   * Function declarations for the journaling transaction and buffer
 diff --git a/include/linux/jmap.h b/include/linux/jmap.h
 new file mode 100644
-index 000000000000..a602ece7cc89
+index 000000000000..638f25df8302
 --- /dev/null
 +++ b/include/linux/jmap.h
-@@ -0,0 +1,131 @@
+@@ -0,0 +1,136 @@
 +#ifndef _LINUX_JMAP_H
 +#define _LINUX_JMAP_H
 +
@@ -675,6 +739,14 @@ index 000000000000..a602ece7cc89
 +#include <linux/journal-head.h>
 +#include <linux/list.h>
 +#include <linux/circ_buf.h>
++#include <linux/completion.h>
++
++/*
++ * Forward declaration for journal_t so that we don't get circular dependency
++ * between jbd2.h and jmap.h
++ */
++struct journal_s;
++typedef struct journal_s journal_t;
 +
 +/*
 + * Maximum number of transactions.  This guides the size of the circular buffer
@@ -685,13 +757,6 @@ index 000000000000..a602ece7cc89
 + * space threshold.  Later we can empirically determine a sensible value.
 + */
 +#define MAX_LIVE_TRANSACTIONS 65536
-+
-+/*
-+ * Forward declaration for journal_t so that we don't get circular dependency
-+ * between jbd2.h and jmap.h
-+ */
-+struct journal_s;
-+typedef struct journal_s journal_t;
 +
 +/*
 + * A mapping from file system block to log block.
@@ -749,14 +814,14 @@ index 000000000000..a602ece7cc89
 +	sector_t offset;
 +
 +	/*
-+	 * A list of live log blocks referenced in the RB-tree that belong to
-+	 * this transaction.  It is used during cleaning to locate live blocks
-+	 * and migrate them to appropriate location.  If this list is empty,
-+	 * then the transaction does not contain any live blocks and we can
-+	 * reuse its space.  If this list is not empty, then we can quickly
-+	 * locate all the live blocks in this transaction.
++	 * A list of live blocks referenced in the RB-tree that belong to this
++	 * transaction.  It is used during cleaning to locate live blocks and
++	 * migrate them to appropriate location.  If this list is empty, then
++	 * the transaction does not contain any live blocks and we can reuse its
++	 * space.  If this list is not empty, then we can quickly locate all the
++	 * live blocks in this transaction.
 +	 */
-+	struct list_head live_logblks;
++	struct list_head live_blks;
 +};
 +
 +/*
@@ -778,6 +843,10 @@ index 000000000000..a602ece7cc89
 +
 +extern int jbd2_init_transaction_infos(journal_t *journal);
 +extern void jbd2_free_transaction_infos(journal_t *journal);
++extern void jbd2_add_new_transaction_infos(journal_t *journal, tid_t t_tid,
++					  unsigned long log_start);
++extern int jbd2_add_mapping(journal_t *journal, struct blk_mapping *mapping);
++extern void jbd2_finish_transaction_infos(journal_t *journal);
 +extern int jbd2_transaction_infos_add(journal_t *journal,
 +				transaction_t *transaction,
 +				struct blk_mapping *mappings,

@@ -1,0 +1,127 @@
+ext4: journal superblock changes
+
+There are a number of changes to the ext4 superblock during the mount
+process which are done without using the journal, but instead via the
+brute-force call to ext4_commit_super().  Concentrate these changes to
+ext4_setup_super(), and make them using the journalling mechanism.
+
+Not only is this more efficient, but it also avoids some cases where
+the ext4 superblock's checksum was not properly set.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/super.c | 50 +++++++++++++++++++++++++++++---------------------
+ 1 file changed, 29 insertions(+), 21 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index a673558fe5f8..14360a1aae81 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -2064,9 +2064,10 @@ int ext4_seq_options_show(struct seq_file *seq, void *offset)
+ }
+ 
+ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+-			    int read_only)
++			    unsigned long journal_devnum, int read_only)
+ {
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
++	handle_t *handle;
+ 	int res = 0;
+ 
+ 	if (le32_to_cpu(es->s_rev_level) > EXT4_MAX_SUPP_REV) {
+@@ -2074,7 +2075,7 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+ 			 "forcing read-only mode");
+ 		res = MS_RDONLY;
+ 	}
+-	if (read_only)
++	if (read_only || res)
+ 		goto done;
+ 	if (!(sbi->s_mount_state & EXT4_VALID_FS))
+ 		ext4_msg(sb, KERN_WARNING, "warning: mounting unchecked fs, "
+@@ -2095,6 +2096,15 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+ 		ext4_msg(sb, KERN_WARNING,
+ 			 "warning: checktime reached, "
+ 			 "running e2fsck is recommended");
++	handle = ext4_journal_start_sb(sb, EXT4_HT_MISC, 1);
++	if (IS_ERR(handle))
++		return PTR_ERR(handle);
++	res = ext4_journal_get_write_access(handle, EXT4_SB(sb)->s_sbh);
++	if (res) {
++	stop_journal:
++		ext4_journal_stop(handle);
++		return res;
++	}
+ 	if (!sbi->s_journal)
+ 		es->s_state &= cpu_to_le16(~EXT4_VALID_FS);
+ 	if (!(__s16) le16_to_cpu(es->s_max_mnt_count))
+@@ -2104,8 +2114,18 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+ 	ext4_update_dynamic_rev(sb);
+ 	if (sbi->s_journal)
+ 		ext4_set_feature_journal_needs_recovery(sb);
+-
+-	ext4_commit_super(sb, 1);
++	if (journal_devnum)
++		es->s_journal_dev = cpu_to_le32(journal_devnum);
++	if (DUMMY_ENCRYPTION_ENABLED(sbi))
++		ext4_set_feature_encrypt(sb);
++	res = ext4_handle_dirty_super(handle, sb);
++	if (res)
++		goto stop_journal;
++	res = ext4_journal_stop(handle);
++	if (res)
++		return res;
++	if (!sbi->s_journal)
++		ext4_commit_super(sb, 1);
+ done:
+ 	if (test_opt(sb, DEBUG))
+ 		printk(KERN_INFO "[EXT4 FS bs=%lu, gc=%u, "
+@@ -4048,12 +4068,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		goto failed_mount_wq;
+ 	}
+ 
+-	if (DUMMY_ENCRYPTION_ENABLED(sbi) && !(sb->s_flags & MS_RDONLY) &&
+-	    !ext4_has_feature_encrypt(sb)) {
+-		ext4_set_feature_encrypt(sb);
+-		ext4_commit_super(sb, 1);
+-	}
+-
+ 	/*
+ 	 * Get the # of file system overhead blocks from the
+ 	 * superblock if present.
+@@ -4102,7 +4116,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		goto failed_mount4;
+ 	}
+ 
+-	if (ext4_setup_super(sb, es, sb->s_flags & MS_RDONLY))
++	err = ext4_setup_super(sb, es, journal_devnum, sb->s_flags & MS_RDONLY);
++	if (err < 0)
++		goto failed_mount4a;
++	if (err)
+ 		sb->s_flags |= MS_RDONLY;
+ 
+ 	/* determine the minimum size of new large inodes, if present */
+@@ -4561,15 +4578,6 @@ static int ext4_load_journal(struct super_block *sb,
+ 
+ 	EXT4_SB(sb)->s_journal = journal;
+ 	ext4_clear_journal_err(sb, es);
+-
+-	if (!really_read_only && journal_devnum &&
+-	    journal_devnum != le32_to_cpu(es->s_journal_dev)) {
+-		es->s_journal_dev = cpu_to_le32(journal_devnum);
+-
+-		/* Make sure we flush the recovery flag to disk. */
+-		ext4_commit_super(sb, 1);
+-	}
+-
+ 	return 0;
+ }
+ 
+@@ -5032,7 +5040,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 			if (sbi->s_journal)
+ 				ext4_clear_journal_err(sb, es);
+ 			sbi->s_mount_state = le16_to_cpu(es->s_state);
+-			if (!ext4_setup_super(sb, es, 0))
++			if (!ext4_setup_super(sb, es, 0, 0))
+ 				sb->s_flags &= ~MS_RDONLY;
+ 			if (ext4_has_feature_mmp(sb))
+ 				if (ext4_multi_mount_protect(sb,

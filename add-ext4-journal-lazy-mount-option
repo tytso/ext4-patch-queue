@@ -10,8 +10,8 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  fs/ext4/ext4.h  |  1 +
  fs/ext4/inode.c |  2 +-
  fs/ext4/ioctl.c | 48 +++++++++++++++++++++++++++++++++---------------
- fs/ext4/super.c | 32 +++++++++++++++++++++-----------
- 4 files changed, 56 insertions(+), 27 deletions(-)
+ fs/ext4/super.c | 56 ++++++++++++++++++++++++++++++++++++++++++++------------
+ 4 files changed, 79 insertions(+), 28 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index d3108a82f0fb..e76696b303d8 100644
@@ -26,10 +26,10 @@ index d3108a82f0fb..e76696b303d8 100644
  #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
  #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index f622d4a577e3..1908ac336ee5 100644
+index 4b5892e31b80..374a9767a0ed 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -3188,7 +3188,7 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
+@@ -3190,7 +3190,7 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
  		filemap_write_and_wait(mapping);
  	}
  
@@ -126,10 +126,20 @@ index b383ebf4020c..ba234eb5a1bd 100644
  			err = err2;
  		mnt_drop_write_file(filp);
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index fe5f9cb1365c..f7b63a83b4b4 100644
+index d411cc613bf0..00ecc96be253 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -1310,6 +1310,7 @@ enum {
+@@ -868,7 +868,8 @@ static void ext4_put_super(struct super_block *sb)
+ 	ext4_ext_release(sb);
+ 
+ 	if (!(sb->s_flags & MS_RDONLY) && !aborted &&
+-	    !test_opt(sb, JOURNAL_NOCLEANUP)) {
++	    !test_opt(sb, JOURNAL_NOCLEANUP) &&
++	    !test_opt(sb, JOURNAL_LAZY)) {
+ 		ext4_clear_feature_journal_needs_recovery(sb);
+ 		es->s_state = cpu_to_le16(sbi->s_mount_state);
+ 	}
+@@ -1310,6 +1311,7 @@ enum {
  	Opt_inode_readahead_blks, Opt_journal_ioprio,
  	Opt_dioread_nolock, Opt_dioread_lock,
  	Opt_journal_nocleanup, Opt_journal_cleanup,
@@ -137,7 +147,7 @@ index fe5f9cb1365c..f7b63a83b4b4 100644
  	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
  	Opt_max_dir_size_kb, Opt_nojournal_checksum,
  };
-@@ -1396,6 +1397,8 @@ static const match_table_t tokens = {
+@@ -1396,6 +1398,8 @@ static const match_table_t tokens = {
  	{Opt_test_dummy_encryption, "test_dummy_encryption"},
  	{Opt_journal_nocleanup, "journal_nocleanup"},
  	{Opt_journal_cleanup, "journal_cleanup"},
@@ -146,7 +156,7 @@ index fe5f9cb1365c..f7b63a83b4b4 100644
  	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
  	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
  	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
-@@ -1604,6 +1607,8 @@ static const struct mount_opts {
+@@ -1604,6 +1608,8 @@ static const struct mount_opts {
  	{Opt_test_dummy_encryption, 0, MOPT_GTE0},
  	{Opt_journal_nocleanup, EXT4_MOUNT_JOURNAL_NOCLEANUP, MOPT_SET},
  	{Opt_journal_cleanup, EXT4_MOUNT_JOURNAL_NOCLEANUP, MOPT_CLEAR},
@@ -155,7 +165,7 @@ index fe5f9cb1365c..f7b63a83b4b4 100644
  	{Opt_err, 0, 0}
  };
  
-@@ -4338,6 +4343,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -4355,6 +4361,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_NO_CLEANUP;
  	else
  		journal->j_flags &= ~JBD2_NO_CLEANUP;
@@ -166,7 +176,42 @@ index fe5f9cb1365c..f7b63a83b4b4 100644
  	write_unlock(&journal->j_state_lock);
  }
  
-@@ -4802,21 +4811,20 @@ static int ext4_freeze(struct super_block *sb)
+@@ -4588,6 +4598,24 @@ static int ext4_load_journal(struct super_block *sb,
+ 
+ 	EXT4_SB(sb)->s_journal = journal;
+ 	ext4_clear_journal_err(sb, es);
++
++	if (test_opt(sb, JOURNAL_LAZY)) {
++		struct buffer_head *sbh = EXT4_SB(sb)->s_sbh;
++
++		/* Read the latest version of the superblock from the journal */
++		lock_buffer(sbh);
++		clear_buffer_uptodate(sbh);
++		err = jbd2_bh_submit_read(journal, sbh, __func__);
++		if (err) {
++			ext4_msg(sb, KERN_ERR, "error rereading superblock %d",
++				err);
++			set_buffer_uptodate(sbh);
++		}
++		if (!ext4_superblock_csum_verify(sb, es))
++			ext4_msg(sb, KERN_ERR,
++				 "superblock csum doesn't verify"
++				 "after journal replay!");
++	}
+ 	return 0;
+ }
+ 
+@@ -4674,6 +4702,9 @@ static void ext4_mark_recovery_complete(struct super_block *sb,
+ {
+ 	journal_t *journal = EXT4_SB(sb)->s_journal;
+ 
++	if (test_opt(sb, JOURNAL_LAZY))
++		return;
++
+ 	if (!ext4_has_feature_journal(sb)) {
+ 		BUG_ON(journal != NULL);
+ 		return;
+@@ -4810,21 +4841,20 @@ static int ext4_freeze(struct super_block *sb)
  	journal = EXT4_SB(sb)->s_journal;
  
  	if (journal) {
@@ -197,7 +242,7 @@ index fe5f9cb1365c..f7b63a83b4b4 100644
  	error = ext4_commit_super(sb, 1);
  out:
  	if (journal)
-@@ -4834,7 +4842,7 @@ static int ext4_unfreeze(struct super_block *sb)
+@@ -4842,7 +4872,7 @@ static int ext4_unfreeze(struct super_block *sb)
  	if ((sb->s_flags & MS_RDONLY) || ext4_forced_shutdown(EXT4_SB(sb)))
  		return 0;
  
@@ -206,7 +251,7 @@ index fe5f9cb1365c..f7b63a83b4b4 100644
  		/* Reset the needs_recovery flag before the fs is unlocked. */
  		ext4_set_feature_journal_needs_recovery(sb);
  	}
-@@ -5350,6 +5358,8 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
+@@ -5358,6 +5388,8 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
  		 * We don't need to lock updates but journal_flush() could
  		 * otherwise be livelocked...
  		 */
