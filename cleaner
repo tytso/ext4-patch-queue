@@ -12,12 +12,12 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile     |   2 +-
  fs/jbd2/checkpoint.c |   3 +
- fs/jbd2/cleaner.c    | 369 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/cleaner.c    | 371 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/jbd2/jmap.c       |  32 +++++++
  fs/jbd2/journal.c    |  12 +++
  include/linux/jbd2.h |   6 +-
  include/linux/jmap.h |  82 ++++++++++++++++++
- 7 files changed, 504 insertions(+), 2 deletions(-)
+ 7 files changed, 506 insertions(+), 2 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index a54f50b3a06e..b6a2dddcc0a7 100644
@@ -45,10 +45,10 @@ index 4055f51617ef..b60bbf58e8f7 100644
  
 diff --git a/fs/jbd2/cleaner.c b/fs/jbd2/cleaner.c
 new file mode 100644
-index 000000000000..163557f726a8
+index 000000000000..31abb4fa2706
 --- /dev/null
 +++ b/fs/jbd2/cleaner.c
-@@ -0,0 +1,369 @@
+@@ -0,0 +1,371 @@
 +#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
 +#include <linux/jmap.h>
@@ -355,6 +355,7 @@ index 000000000000..163557f726a8
 +	bool wake_up_commit_thread = true;
 +	handle_t *handle = NULL;
 +	int nr_live, err;
++	int i = 0;
 +
 +	read_lock(&ctx->journal->j_jmap_lock);
 +	nr_live = find_live_blocks(ctx);
@@ -372,11 +373,12 @@ index 000000000000..163557f726a8
 +	} else {
 +		trace_jbd2_jmap_printf("not waiting for completion");
 +	}
-+	if (atomic_read(&ctx->nr_pending_reads)) {
++	while (atomic_read(&ctx->nr_pending_reads)) {
 +		/* Should never trigger, but we'll do better
-+		 * converting to a wait_channel instead of the compeltion */
++		 * converting to a wait_channel instead of the completion */
 +		pr_err("JBD2: clean_batch: completion failed, recovering\n");
 +		mdelay(100);
++		BUG_ON(i++ > 10);
 +	}
 +
 +	handle = jbd2_journal_start(ctx->journal, nr_live);

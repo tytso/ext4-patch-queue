@@ -20,12 +20,12 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile            |   3 +-
  fs/jbd2/commit.c            |  23 ++++
- fs/jbd2/jmap.c              | 510 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/jmap.c              | 512 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/jbd2/journal.c           |  20 ++-
- include/linux/jbd2.h        |  14 +++
+ include/linux/jbd2.h        |  14 ++
  include/linux/jmap.h        | 136 ++++++++++++++++++++
  include/trace/events/jbd2.h | 193 ++++++++++++++++++++++++++++
- 7 files changed, 894 insertions(+), 5 deletions(-)
+ 7 files changed, 896 insertions(+), 5 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index 802a3413872a..a54f50b3a06e 100644
@@ -95,10 +95,10 @@ index 8c514367ba5a..50e1a0b375c5 100644
  	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
 new file mode 100644
-index 000000000000..18dd0e127aff
+index 000000000000..6ff7fab450d6
 --- /dev/null
 +++ b/fs/jbd2/jmap.c
-@@ -0,0 +1,510 @@
+@@ -0,0 +1,512 @@
 +#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
 +#include <linux/jmap.h>
@@ -419,7 +419,9 @@ index 000000000000..18dd0e127aff
 +	 * BUG_ON(!je) here.
 +	 */
 +	if (je) {
-+		BUG_ON(je->revoked);
++		if (WARN_ON(je->revoked))
++			pr_err("JBD2: block %llu already revoked!\n",
++			       (unsigned long long) fsblk);
 +		je->revoked = true;
 +	}
 +	write_unlock(&journal->j_jmap_lock);
