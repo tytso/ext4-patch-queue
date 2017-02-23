@@ -12,10 +12,10 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
  4 files changed, 22 insertions(+), 4 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 55b7a77a0444..d3108a82f0fb 100644
+index 01d52b98f9a7..103fcfb19b9f 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1144,6 +1144,7 @@ struct ext4_inode_info {
+@@ -1148,6 +1148,7 @@ struct ext4_inode_info {
  #define EXT4_MOUNT_DIOREAD_NOLOCK	0x400000 /* Enable support for dio read nolocking */
  #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
  #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
@@ -24,7 +24,7 @@ index 55b7a77a0444..d3108a82f0fb 100644
  #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
  #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index a673558fe5f8..fe5f9cb1365c 100644
+index fe2797f29515..ba1489c5c4c3 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -867,7 +867,8 @@ static void ext4_put_super(struct super_block *sb)
@@ -63,7 +63,7 @@ index a673558fe5f8..fe5f9cb1365c 100644
  	{Opt_err, 0, 0}
  };
  
-@@ -4328,6 +4334,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -4345,6 +4351,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
@@ -75,7 +75,7 @@ index a673558fe5f8..fe5f9cb1365c 100644
  }
  
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 38ccd9070f72..eae93cdfbaa7 100644
+index d50c1867d122..a7f655829e6b 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
 @@ -1685,6 +1685,11 @@ int jbd2_journal_destroy(journal_t *journal)
@@ -98,7 +98,7 @@ index 38ccd9070f72..eae93cdfbaa7 100644
 +		if (is_journal_aborted(journal))
 +			err = -EIO;
 +		else if ((journal->j_flags & JBD2_NO_CLEANUP) == 0) {
- 			mutex_lock(&journal->j_checkpoint_mutex);
+ 			mutex_lock_io(&journal->j_checkpoint_mutex);
  
  			write_lock(&journal->j_state_lock);
 @@ -1723,8 +1730,7 @@ int jbd2_journal_destroy(journal_t *journal)
