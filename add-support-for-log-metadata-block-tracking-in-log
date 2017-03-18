@@ -19,13 +19,13 @@ Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile            |   3 +-
- fs/jbd2/commit.c            |  23 ++++
- fs/jbd2/jmap.c              | 512 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/jbd2/journal.c           |  20 ++-
- include/linux/jbd2.h        |  14 ++
- include/linux/jmap.h        | 136 ++++++++++++++++++++
- include/trace/events/jbd2.h | 193 ++++++++++++++++++++++++++++
- 7 files changed, 896 insertions(+), 5 deletions(-)
+ fs/jbd2/commit.c            |  25 +++++
+ fs/jbd2/jmap.c              | 510 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/jmap.h              | 128 ++++++++++++++++++++++
+ fs/jbd2/journal.c           |  13 +++
+ include/linux/jbd2.h        |  24 ++++
+ include/trace/events/jbd2.h | 196 +++++++++++++++++++++++++++++++++
+ 7 files changed, 898 insertions(+), 1 deletion(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index 802a3413872a..a54f50b3a06e 100644
@@ -39,10 +39,19 @@ index 802a3413872a..a54f50b3a06e 100644
 +jbd2-objs := transaction.o commit.o recovery.o checkpoint.o revoke.o journal.o \
 +		jmap.o
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index 8c514367ba5a..50e1a0b375c5 100644
+index b6b194ec1b4f..a3228d515404 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
-@@ -362,6 +362,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -29,6 +29,8 @@
+ #include <linux/bitops.h>
+ #include <trace/events/jbd2.h>
+ 
++#include "jmap.h"
++
+ /*
+  * IO end handler for temporary buffer_heads handling writes to the journal.
+  */
+@@ -362,6 +364,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	int flags;
  	int err;
  	unsigned long long blocknr;
@@ -51,7 +60,7 @@ index 8c514367ba5a..50e1a0b375c5 100644
  	ktime_t start_time;
  	u64 commit_time;
  	char *tagp = NULL;
-@@ -563,6 +565,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -563,6 +567,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	J_ASSERT(commit_transaction->t_nr_buffers <=
  		 atomic_read(&commit_transaction->t_outstanding_credits));
  
@@ -66,7 +75,7 @@ index 8c514367ba5a..50e1a0b375c5 100644
  	err = 0;
  	bufs = 0;
  	descriptor = NULL;
-@@ -661,6 +671,11 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -661,6 +673,11 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  			continue;
  		}
  		jbd2_file_log_bh(&io_bufs, wbuf[bufs]);
@@ -78,7 +87,7 @@ index 8c514367ba5a..50e1a0b375c5 100644
  
  		/* Record the new block's tag in the current descriptor
                     buffer */
-@@ -895,6 +910,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -895,6 +912,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
             transaction can be removed from any checkpoint list it was on
             before. */
  
@@ -95,13 +104,13 @@ index 8c514367ba5a..50e1a0b375c5 100644
  	J_ASSERT(list_empty(&commit_transaction->t_inode_list));
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
 new file mode 100644
-index 000000000000..6ff7fab450d6
+index 000000000000..7de6f4a0a1dc
 --- /dev/null
 +++ b/fs/jbd2/jmap.c
-@@ -0,0 +1,512 @@
+@@ -0,0 +1,510 @@
 +#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
-+#include <linux/jmap.h>
++#include "jmap.h"
 +#include <trace/events/jbd2.h>
 +
 +static struct kmem_cache *jbd2_jmap_cache;
@@ -316,8 +325,6 @@ index 000000000000..6ff7fab450d6
 +void jbd2_finish_transaction_infos(journal_t *journal)
 +{
 +	struct transaction_infos *tis = journal->j_transaction_infos;
-+
-+	atomic_inc(&journal->j_cleaner_ctx->nr_txns_committed);
 +
 +	write_lock(&journal->j_jmap_lock);
 +	tis->head = (tis->head + 1) & (MAX_LIVE_TRANSACTIONS - 1);
@@ -611,129 +618,12 @@ index 000000000000..6ff7fab450d6
 +	}
 +}
 +EXPORT_SYMBOL(jbd2_sb_breadahead);
-diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index eae93cdfbaa7..493b72c60335 100644
---- a/fs/jbd2/journal.c
-+++ b/fs/jbd2/journal.c
-@@ -1120,15 +1120,17 @@ static journal_t *journal_init_common(struct block_device *bdev,
- 	journal->j_max_batch_time = 15000; /* 15ms */
- 	atomic_set(&journal->j_reserved_credits, 0);
- 
-+	err = jbd2_smr_journal_init(journal);
-+	if (err)
-+		goto out_err;
-+
- 	/* The journal is marked for error until we succeed with recovery! */
- 	journal->j_flags = JBD2_ABORT;
- 
- 	/* Set up a default-sized revoke table for the new mount. */
- 	err = jbd2_journal_init_revoke(journal, JOURNAL_REVOKE_DEFAULT_HASH);
--	if (err) {
--		kfree(journal);
--		return NULL;
--	}
-+	if (err)
-+		goto out_err;
- 
- 	spin_lock_init(&journal->j_history_lock);
- 
-@@ -1162,6 +1164,9 @@ static journal_t *journal_init_common(struct block_device *bdev,
- 	journal->j_superblock = (journal_superblock_t *)bh->b_data;
- 
- 	return journal;
-+out_err:
-+	kfree(journal);
-+	return NULL;
- }
- 
- /* jbd2_journal_init_dev and jbd2_journal_init_inode:
-@@ -1685,6 +1690,9 @@ int jbd2_journal_destroy(journal_t *journal)
- 	if (journal->j_running_transaction)
- 		jbd2_journal_commit_transaction(journal);
- 
-+	if (journal->j_flags & JBD2_LAZY)
-+		journal->j_flags |= JBD2_NO_CLEANUP;
-+
- 	if (journal->j_flags & JBD2_NO_CLEANUP) {
- 		jbd2_journal_destroy_checkpoint(journal);
- 		journal->j_checkpoint_transactions = NULL;
-@@ -1741,6 +1749,7 @@ int jbd2_journal_destroy(journal_t *journal)
- 		jbd2_journal_destroy_revoke(journal);
- 	if (journal->j_chksum_driver)
- 		crypto_free_shash(journal->j_chksum_driver);
-+	jbd2_smr_journal_exit(journal);
- 	kfree(journal->j_wbuf);
- 	kfree(journal);
- 
-@@ -2641,6 +2650,8 @@ static int __init journal_init_caches(void)
- 		ret = jbd2_journal_init_handle_cache();
- 	if (ret == 0)
- 		ret = jbd2_journal_init_transaction_cache();
-+	if (ret == 0)
-+		ret = jbd2_journal_init_jmap_cache();
- 	return ret;
- }
- 
-@@ -2650,6 +2661,7 @@ static void jbd2_journal_destroy_caches(void)
- 	jbd2_journal_destroy_journal_head_cache();
- 	jbd2_journal_destroy_handle_cache();
- 	jbd2_journal_destroy_transaction_cache();
-+	jbd2_journal_destroy_jmap_cache();
- 	jbd2_journal_destroy_slabs();
- }
- 
-diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 9a07b0485784..771588026353 100644
---- a/include/linux/jbd2.h
-+++ b/include/linux/jbd2.h
-@@ -25,6 +25,7 @@
- #include <linux/types.h>
- #include <linux/buffer_head.h>
- #include <linux/journal-head.h>
-+#include <linux/jmap.h>
- #include <linux/stddef.h>
- #include <linux/mutex.h>
- #include <linux/timer.h>
-@@ -732,6 +733,9 @@ jbd2_time_diff(unsigned long start, unsigned long end)
-  *     prior abort)?
-  * @j_sb_buffer: First part of superblock buffer
-  * @j_superblock: Second part of superblock buffer
-+ * @j_map: A map from file system blocks to log blocks
-+ * @j_transaction_infos: An array of information structures per live transaction
-+ * @j_map_lock: Protect j_jmap and j_transaction_infos
-  * @j_format_version: Version of the superblock format
-  * @j_state_lock: Protect the various scalars in the journal
-  * @j_barrier_count:  Number of processes waiting to create a barrier lock
-@@ -807,6 +811,15 @@ struct journal_s
- 	struct buffer_head	*j_sb_buffer;
- 	journal_superblock_t	*j_superblock;
- 
-+	/* A map from file system blocks to journal blocks */
-+	struct rb_root		j_jmap;
-+
-+	/* An array of housekeeping information about live transactions */
-+	struct transaction_infos *j_transaction_infos;
-+
-+	/* Protect j_jmap and j_transaction_infos */
-+	rwlock_t		j_jmap_lock;
-+
- 	/* Version of the superblock format */
- 	int			j_format_version;
- 
-@@ -1129,6 +1142,7 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
- 						 * mode */
- #define JBD2_REC_ERR	0x080	/* The errno in the sb has been recorded */
- #define JBD2_NO_CLEANUP	0x100	/* Don't flush empty the journal on shutdown  */
-+#define JBD2_LAZY	0x200	/* Do lazy journalling  */
- 
- /*
-  * Function declarations for the journaling transaction and buffer
-diff --git a/include/linux/jmap.h b/include/linux/jmap.h
+diff --git a/fs/jbd2/jmap.h b/fs/jbd2/jmap.h
 new file mode 100644
-index 000000000000..638f25df8302
+index 000000000000..91564ce9bbda
 --- /dev/null
-+++ b/include/linux/jmap.h
-@@ -0,0 +1,136 @@
++++ b/fs/jbd2/jmap.h
+@@ -0,0 +1,128 @@
 +#ifndef _LINUX_JMAP_H
 +#define _LINUX_JMAP_H
 +
@@ -858,10 +748,114 @@ index 000000000000..638f25df8302
 +					const char *func);
 +extern void jbd2_jmap_revoke(journal_t *journal, sector_t fsblk);
 +extern void jbd2_jmap_cancel_revoke(journal_t *journal, sector_t fsblk);
-+extern void jbd2_submit_bh(journal_t *journal, int rw, int op_flags,
-+			   struct buffer_head *bh, const char *func);
 +extern int read_block_from_log(journal_t *journal, struct buffer_head *bh,
 +			       int op_flags, sector_t blk);
++
++#endif
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index b3b1d8ec1081..50ab9b5bc7f4 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -44,6 +44,8 @@
+ #include <linux/bitops.h>
+ #include <linux/ratelimit.h>
+ 
++#include "jmap.h"
++
+ #define CREATE_TRACE_POINTS
+ #include <trace/events/jbd2.h>
+ 
+@@ -1120,6 +1122,10 @@ static journal_t *journal_init_common(struct block_device *bdev,
+ 	journal->j_max_batch_time = 15000; /* 15ms */
+ 	atomic_set(&journal->j_reserved_credits, 0);
+ 
++	err = jbd2_smr_journal_init(journal);
++	if (err)
++		goto err_cleanup;
++
+ 	/* The journal is marked for error until we succeed with recovery! */
+ 	journal->j_flags = JBD2_ABORT;
+ 
+@@ -1685,6 +1691,9 @@ int jbd2_journal_destroy(journal_t *journal)
+ 	if (journal->j_running_transaction)
+ 		jbd2_journal_commit_transaction(journal);
+ 
++	if (journal->j_flags & JBD2_LAZY)
++		journal->j_flags |= JBD2_NO_CLEANUP;
++
+ 	if (journal->j_flags & JBD2_NO_CLEANUP) {
+ 		jbd2_journal_destroy_checkpoint(journal);
+ 		journal->j_checkpoint_transactions = NULL;
+@@ -1741,6 +1750,7 @@ int jbd2_journal_destroy(journal_t *journal)
+ 		jbd2_journal_destroy_revoke(journal);
+ 	if (journal->j_chksum_driver)
+ 		crypto_free_shash(journal->j_chksum_driver);
++	jbd2_smr_journal_exit(journal);
+ 	kfree(journal->j_wbuf);
+ 	kfree(journal);
+ 
+@@ -2641,6 +2651,8 @@ static int __init journal_init_caches(void)
+ 		ret = jbd2_journal_init_handle_cache();
+ 	if (ret == 0)
+ 		ret = jbd2_journal_init_transaction_cache();
++	if (ret == 0)
++		ret = jbd2_journal_init_jmap_cache();
+ 	return ret;
+ }
+ 
+@@ -2650,6 +2662,7 @@ static void jbd2_journal_destroy_caches(void)
+ 	jbd2_journal_destroy_journal_head_cache();
+ 	jbd2_journal_destroy_handle_cache();
+ 	jbd2_journal_destroy_transaction_cache();
++	jbd2_journal_destroy_jmap_cache();
+ 	jbd2_journal_destroy_slabs();
+ }
+ 
+diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
+index 9a07b0485784..a1d56bb9fa4f 100644
+--- a/include/linux/jbd2.h
++++ b/include/linux/jbd2.h
+@@ -732,6 +732,9 @@ jbd2_time_diff(unsigned long start, unsigned long end)
+  *     prior abort)?
+  * @j_sb_buffer: First part of superblock buffer
+  * @j_superblock: Second part of superblock buffer
++ * @j_map: A map from file system blocks to log blocks
++ * @j_transaction_infos: An array of information structures per live transaction
++ * @j_map_lock: Protect j_jmap and j_transaction_infos
+  * @j_format_version: Version of the superblock format
+  * @j_state_lock: Protect the various scalars in the journal
+  * @j_barrier_count:  Number of processes waiting to create a barrier lock
+@@ -807,6 +810,15 @@ struct journal_s
+ 	struct buffer_head	*j_sb_buffer;
+ 	journal_superblock_t	*j_superblock;
+ 
++	/* A map from file system blocks to journal blocks */
++	struct rb_root		j_jmap;
++
++	/* An array of housekeeping information about live transactions */
++	struct transaction_infos *j_transaction_infos;
++
++	/* Protect j_jmap and j_transaction_infos */
++	rwlock_t		j_jmap_lock;
++
+ 	/* Version of the superblock format */
+ 	int			j_format_version;
+ 
+@@ -1129,6 +1141,7 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
+ 						 * mode */
+ #define JBD2_REC_ERR	0x080	/* The errno in the sb has been recorded */
+ #define JBD2_NO_CLEANUP	0x100	/* Don't flush empty the journal on shutdown  */
++#define JBD2_LAZY	0x200	/* Do lazy journalling  */
+ 
+ /*
+  * Function declarations for the journaling transaction and buffer
+@@ -1401,6 +1414,17 @@ static inline void jbd2_journal_abort_handle(handle_t *handle)
+ 	handle->h_aborted = 1;
+ }
+ 
++/* Lazy journalling redirection */
++extern void jbd2_submit_bh(journal_t *journal, int rw, int op_flags,
++			   struct buffer_head *bh, const char *func);
 +extern void jbd2_ll_rw_block(journal_t *journal, int rw, int op_flags, int nr,
 +			     struct buffer_head *bhs[], const char *func);
 +extern int jbd2_bh_submit_read(journal_t *journal, struct buffer_head *bh,
@@ -869,12 +863,25 @@ index 000000000000..638f25df8302
 +extern void jbd2_sb_breadahead(journal_t *journal, struct super_block *sb,
 +			       sector_t block);
 +
-+#endif
++
+ #endif /* __KERNEL__   */
+ 
+ /* Comparison functions for transaction IDs: perform comparisons using
 diff --git a/include/trace/events/jbd2.h b/include/trace/events/jbd2.h
-index c1d1f3eb242d..6d0619bc99af 100644
+index c1d1f3eb242d..a0cbe7a03fc4 100644
 --- a/include/trace/events/jbd2.h
 +++ b/include/trace/events/jbd2.h
-@@ -379,6 +379,199 @@ TRACE_EVENT(jbd2_lock_buffer_stall,
+@@ -9,6 +9,9 @@
+ 
+ struct transaction_chp_stats_s;
+ struct transaction_run_stats_s;
++struct blk_mapping;
++struct jmap_entry;
++struct transaction_info;
+ 
+ TRACE_EVENT(jbd2_checkpoint,
+ 
+@@ -379,6 +382,199 @@ TRACE_EVENT(jbd2_lock_buffer_stall,
  		__entry->stall_ms)
  );
  
