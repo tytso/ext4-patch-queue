@@ -10,11 +10,11 @@ the ext4 superblock's checksum was not properly set.
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/super.c | 52 +++++++++++++++++++++++++++++++---------------------
- 1 file changed, 31 insertions(+), 21 deletions(-)
+ fs/ext4/super.c | 57 ++++++++++++++++++++++++++++++++++-----------------------
+ 1 file changed, 34 insertions(+), 23 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index a673558fe5f8..39b36090b2e8 100644
+index 2e03a0a88d92..7d3343cb36a0 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -2064,9 +2064,10 @@ int ext4_seq_options_show(struct seq_file *seq, void *offset)
@@ -73,7 +73,16 @@ index a673558fe5f8..39b36090b2e8 100644
  	ext4_commit_super(sb, 1);
  done:
  	if (test_opt(sb, DEBUG))
-@@ -4048,12 +4068,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -4032,8 +4052,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 
+ 	set_task_ioprio(sbi->s_journal->j_task, journal_ioprio);
+ 
+-	sbi->s_journal->j_commit_callback = ext4_journal_commit_callback;
+-
+ no_journal:
+ 	sbi->s_mb_cache = ext4_xattr_create_cache();
+ 	if (!sbi->s_mb_cache) {
+@@ -4048,12 +4066,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		goto failed_mount_wq;
  	}
  
@@ -86,7 +95,7 @@ index a673558fe5f8..39b36090b2e8 100644
  	/*
  	 * Get the # of file system overhead blocks from the
  	 * superblock if present.
-@@ -4102,7 +4116,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -4102,7 +4114,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		goto failed_mount4;
  	}
  
@@ -98,7 +107,17 @@ index a673558fe5f8..39b36090b2e8 100644
  		sb->s_flags |= MS_RDONLY;
  
  	/* determine the minimum size of new large inodes, if present */
-@@ -4561,15 +4578,6 @@ static int ext4_load_journal(struct super_block *sb,
+@@ -4197,6 +4212,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	}
+ #endif  /* CONFIG_QUOTA */
+ 
++	if (sbi->s_journal)
++		sbi->s_journal->j_commit_callback =
++			ext4_journal_commit_callback;
+ 	EXT4_SB(sb)->s_mount_state |= EXT4_ORPHAN_FS;
+ 	ext4_orphan_cleanup(sb, es);
+ 	EXT4_SB(sb)->s_mount_state &= ~EXT4_ORPHAN_FS;
+@@ -4561,15 +4579,6 @@ static int ext4_load_journal(struct super_block *sb,
  
  	EXT4_SB(sb)->s_journal = journal;
  	ext4_clear_journal_err(sb, es);
@@ -114,7 +133,7 @@ index a673558fe5f8..39b36090b2e8 100644
  	return 0;
  }
  
-@@ -5032,8 +5040,10 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+@@ -5032,8 +5041,10 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  			if (sbi->s_journal)
  				ext4_clear_journal_err(sb, es);
  			sbi->s_mount_state = le16_to_cpu(es->s_state);
