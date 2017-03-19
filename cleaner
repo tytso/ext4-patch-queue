@@ -12,12 +12,12 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile     |   2 +-
  fs/jbd2/checkpoint.c |   3 +
- fs/jbd2/cleaner.c    | 367 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/cleaner.c    | 368 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/jbd2/jmap.c       |  34 +++++++++
- fs/jbd2/jmap.h       |  82 +++++++++++++++++++++
- fs/jbd2/journal.c    |  12 +++
- include/linux/jbd2.h |   6 +-
- 7 files changed, 504 insertions(+), 2 deletions(-)
+ fs/jbd2/jmap.h       |  77 ++++++++++++++++++++
+ fs/jbd2/journal.c    |  23 +++++-
+ include/linux/jbd2.h |   9 ++-
+ 7 files changed, 512 insertions(+), 4 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index a54f50b3a06e..b6a2dddcc0a7 100644
@@ -45,10 +45,10 @@ index 4055f51617ef..b60bbf58e8f7 100644
  
 diff --git a/fs/jbd2/cleaner.c b/fs/jbd2/cleaner.c
 new file mode 100644
-index 000000000000..1ab9d2e50702
+index 000000000000..06ec11e1d2dd
 --- /dev/null
 +++ b/fs/jbd2/cleaner.c
-@@ -0,0 +1,367 @@
+@@ -0,0 +1,368 @@
 +#include <linux/blk_types.h>
 +#include <linux/jbd2.h>
 +#include "jmap.h"
@@ -58,7 +58,7 @@ index 000000000000..1ab9d2e50702
 +#include <linux/delay.h>
 +#include <trace/events/jbd2.h>
 +
-+inline int jbd2_low_on_space(journal_t *journal)
++static inline int jbd2_low_on_space(journal_t *journal)
 +{
 +	int x = atomic_read(&journal->j_cleaner_ctx->nr_txns_committed);
 +	if (x > 10) {
@@ -69,7 +69,7 @@ index 000000000000..1ab9d2e50702
 +	return false;
 +}
 +
-+inline int jbd2_high_on_space(journal_t *journal)
++static inline int jbd2_high_on_space(journal_t *journal)
 +{
 +	if (atomic_read(&journal->j_cleaner_ctx->nr_txns_cleaned) < 2) {
 +		trace_jbd2_jmap_printf("not enough cleaned");
@@ -81,51 +81,12 @@ index 000000000000..1ab9d2e50702
 +	return true;
 +}
 +
-+inline bool jbd2_cleaning(journal_t *journal)
-+{
-+	return atomic_read(&journal->j_cleaner_ctx->cleaning);
-+}
-+
-+inline void jbd2_stop_cleaning(journal_t *journal)
-+{
-+	trace_jbd2_jmap_printf("stopped cleaning");
-+	atomic_set(&journal->j_cleaner_ctx->cleaning, 0);
-+}
-+
-+inline void jbd2_start_cleaning(journal_t *journal)
-+{
-+	struct cleaner_ctx *ctx = journal->j_cleaner_ctx;
-+
-+	trace_jbd2_jmap_printf("started cleaning");
-+	atomic_set(&journal->j_cleaner_ctx->cleaning, 1);
-+
-+	/* Schedule the next batch of cleaning */
-+	if (!jbd2_cleaning_batch_complete(journal)) {
-+		trace_jbd2_jmap_printf("not scheduling a new batch");
-+		return;
-+	}
-+
-+	trace_jbd2_jmap_printf("scheduling a batch");
-+	BUG_ON(atomic_read(&ctx->nr_pending_reads));
-+
-+	atomic_set(&ctx->batch_in_progress, 1);
-+	schedule_work(&ctx->work);
-+
-+
-+}
-+
-+inline bool jbd2_cleaning_batch_complete(journal_t *journal)
-+{
-+	return jbd2_cleaning(journal) &&
-+		atomic_read(&journal->j_cleaner_ctx->batch_in_progress) == 0;
-+}
-+
 +/*
 + * Tries to move the tail forward (hence free space) as long as the transaction
 + * at the tail has only stale blocks.  Returns true if manages to free a
 + * transaction, false otherwise.
 + */
-+bool jbd2_try_to_move_tail(journal_t *journal)
++static bool jbd2_try_to_move_tail(journal_t *journal)
 +{
 +	struct transaction_infos *tis = journal->j_transaction_infos;
 +	struct transaction_info *ti, *ti1;
@@ -360,13 +321,14 @@ index 000000000000..1ab9d2e50702
 +void jbd2_jmap_do_clean_batch(struct work_struct *work)
 +{
 +	struct cleaner_ctx *ctx = container_of(work, struct cleaner_ctx, work);
++	journal_t *journal = ctx->journal;
 +	bool wake_up_commit_thread = true;
 +	handle_t *handle = NULL;
 +	int nr_live, err;
 +
-+	read_lock(&ctx->journal->j_jmap_lock);
++	read_lock(&journal->j_jmap_lock);
 +	nr_live = find_live_blocks(ctx);
-+	read_unlock(&ctx->journal->j_jmap_lock);
++	read_unlock(&journal->j_jmap_lock);
 +
 +	if (nr_live < CLEANER_BATCH_SIZE)
 +		wake_up_commit_thread = false;
@@ -377,16 +339,16 @@ index 000000000000..1ab9d2e50702
 +	wait_event(ctx->live_block_reads,
 +		   atomic_read(&ctx->nr_pending_reads) <= 0);
 +
-+	handle = jbd2_journal_start(ctx->journal, nr_live);
++	handle = jbd2_journal_start(journal, nr_live);
 +	if (IS_ERR(handle)) {
-+		jbd2_journal_abort(ctx->journal, PTR_ERR(handle));
++		jbd2_journal_abort(journal, PTR_ERR(handle));
 +		return;
 +	}
 +
-+	read_lock(&ctx->journal->j_jmap_lock);
++	read_lock(&journal->j_jmap_lock);
 +	if (discard_stale_blocks(ctx, nr_live))
 +		wake_up_commit_thread = false;
-+	read_unlock(&ctx->journal->j_jmap_lock);
++	read_unlock(&journal->j_jmap_lock);
 +	/*
 +	 * I'm not sure why this function was under the jmap_lock
 +	 * previously, but it can't be, since it calls functions that
@@ -399,7 +361,7 @@ index 000000000000..1ab9d2e50702
 +
 +	err = jbd2_journal_stop(handle);
 +	if (err) {
-+		jbd2_journal_abort(ctx->journal, err);
++		jbd2_journal_abort(journal, err);
 +		return;
 +	}
 +
@@ -408,12 +370,51 @@ index 000000000000..1ab9d2e50702
 +	atomic_inc(&ctx->nr_txns_cleaned);
 +	if (wake_up_commit_thread) {
 +		trace_jbd2_jmap_printf("waking up commit thread");
-+		wake_up(&ctx->journal->j_wait_commit);
++		wake_up(&journal->j_wait_commit);
 +	} else {
 +		trace_jbd2_jmap_printf("not waking up commit thread");
 +		spin_lock(&ctx->pos_lock);
 +		ctx->pos = NULL;
 +		spin_unlock(&ctx->pos_lock);
++	}
++	write_lock(&journal->j_state_lock);
++	journal->j_flags &= ~JBD2_CLEANING;
++	write_unlock(&journal->j_state_lock);
++}
++
++/*
++ * Called by the commit thread to see if we need to do any cleaning
++ * work.
++ * Called with j_state_lock write locked.
++ */
++void jbd2_check_cleaner(journal_t *journal)
++{
++	/*
++	 * If there is cleaning going on in the workqueue, don't check
++	 * until we're done.
++	 */
++	if (journal->j_flags & JBD2_CLEANING)
++		return;
++
++	if (journal->j_flags & JBD2_STOP_CLEANING) {
++	disengage_cleaner:
++		journal->j_flags &= ~JBD2_CLEANER_ENGAGED;
++		return;
++	}
++
++	if (journal->j_flags & JBD2_CLEANER_ENGAGED) {
++		if (jbd2_try_to_move_tail(journal) &&
++		    jbd2_high_on_space(journal))
++			goto disengage_cleaner;
++	schedule_batch:
++		journal->j_flags |= JBD2_CLEANING;
++		schedule_work(&journal->j_cleaner_ctx->work);
++		return;
++	}
++
++	if (jbd2_low_on_space(journal)) {
++		journal->j_flags |= JBD2_CLEANER_ENGAGED;
++		goto schedule_batch;
 +	}
 +}
 diff --git a/fs/jbd2/jmap.c b/fs/jbd2/jmap.c
@@ -490,10 +491,10 @@ index 7de6f4a0a1dc..0e759cc095f5 100644
  }
  
 diff --git a/fs/jbd2/jmap.h b/fs/jbd2/jmap.h
-index 91564ce9bbda..5ae3dc52746f 100644
+index 91564ce9bbda..a44f15152536 100644
 --- a/fs/jbd2/jmap.h
 +++ b/fs/jbd2/jmap.h
-@@ -125,4 +125,86 @@ extern void jbd2_jmap_cancel_revoke(journal_t *journal, sector_t fsblk);
+@@ -125,4 +125,81 @@ extern void jbd2_jmap_cancel_revoke(journal_t *journal, sector_t fsblk);
  extern int read_block_from_log(journal_t *journal, struct buffer_head *bh,
  			       int op_flags, sector_t blk);
  
@@ -572,46 +573,69 @@ index 91564ce9bbda..5ae3dc52746f 100644
 +	struct work_struct work;
 +};
 +
-+extern int jbd2_low_on_space(journal_t *journal);
-+extern int jbd2_high_on_space(journal_t *journal);
-+extern bool jbd2_cleaning(journal_t *journal);
-+extern void jbd2_stop_cleaning(journal_t *journal);
-+extern void jbd2_start_cleaning(journal_t *journal);
-+extern bool jbd2_cleaning_batch_complete(journal_t *journal);
-+extern bool jbd2_try_to_move_tail(journal_t *journal);
++void jbd2_check_cleaner(journal_t *journal);
++
  #endif
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 50ab9b5bc7f4..9c097ddfe63f 100644
+index 50ab9b5bc7f4..221e168c7c58 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
-@@ -229,6 +229,15 @@ static int kjournald2(void *arg)
+@@ -225,10 +225,16 @@ static int kjournald2(void *arg)
+ 		del_timer_sync(&journal->j_commit_timer);
+ 		jbd2_journal_commit_transaction(journal);
+ 		write_lock(&journal->j_state_lock);
+-		goto loop;
  	}
  
  	wake_up(&journal->j_wait_done_commit);
 +
-+	if ((journal->j_flags & JBD2_LAZY) &&
-+	    (jbd2_cleaning(journal) || jbd2_low_on_space(journal))) {
-+		if (jbd2_try_to_move_tail(journal) && jbd2_high_on_space(journal))
-+			jbd2_stop_cleaning(journal);
-+		else
-+			jbd2_start_cleaning(journal);
-+	}
++	if (journal->j_flags & JBD2_LAZY)
++		jbd2_check_cleaner(journal);
++
++	if (journal->j_commit_sequence != journal->j_commit_request)
++		goto loop;
 +
  	if (freezing(current)) {
  		/*
  		 * The simpler the better. Flushing journal isn't a
-@@ -257,6 +266,9 @@ static int kjournald2(void *arg)
+@@ -257,6 +263,9 @@ static int kjournald2(void *arg)
  			should_sleep = 0;
  		if (journal->j_flags & JBD2_UNMOUNT)
  			should_sleep = 0;
-+		if ((journal->j_flags & JBD2_LAZY) &&
-+		    jbd2_cleaning_batch_complete(journal))
++		if ((journal->j_flags & JBD2_CLEANER_ENGAGED) &&
++		    !(journal->j_flags & JBD2_CLEANING))
 +			should_sleep = 0;
  		if (should_sleep) {
  			write_unlock(&journal->j_state_lock);
  			schedule();
+@@ -302,14 +311,24 @@ static int jbd2_journal_start_thread(journal_t *journal)
+ static void journal_kill_thread(journal_t *journal)
+ {
+ 	write_lock(&journal->j_state_lock);
+-	journal->j_flags |= JBD2_UNMOUNT;
+ 
++	journal->j_flags |= JBD2_STOP_CLEANING;
++	while (journal->j_flags & JBD2_CLEANING) {
++		write_unlock(&journal->j_state_lock);
++		wake_up(&journal->j_wait_commit);
++		wait_event(journal->j_wait_done_commit,
++			   (journal->j_flags & JBD2_CLEANING) == 0);
++		write_lock(&journal->j_state_lock);
++	}
++
++	journal->j_flags |= JBD2_UNMOUNT;
+ 	while (journal->j_task) {
+ 		write_unlock(&journal->j_state_lock);
+ 		wake_up(&journal->j_wait_commit);
+ 		wait_event(journal->j_wait_done_commit, journal->j_task == NULL);
+ 		write_lock(&journal->j_state_lock);
+ 	}
++
+ 	write_unlock(&journal->j_state_lock);
+ }
+ 
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index a1d56bb9fa4f..fa6094124bcb 100644
+index a1d56bb9fa4f..bc28c585af54 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
 @@ -734,7 +734,8 @@ jbd2_time_diff(unsigned long start, unsigned long end)
@@ -634,3 +658,13 @@ index a1d56bb9fa4f..fa6094124bcb 100644
  	/* Version of the superblock format */
  	int			j_format_version;
  
+@@ -1142,6 +1146,9 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
+ #define JBD2_REC_ERR	0x080	/* The errno in the sb has been recorded */
+ #define JBD2_NO_CLEANUP	0x100	/* Don't flush empty the journal on shutdown  */
+ #define JBD2_LAZY	0x200	/* Do lazy journalling  */
++#define JBD2_CLEANING	0x400	/* Lazy journalling cleaning in progress */
++#define JBD2_CLEANER_ENGAGED	0x400	/* Cleaner has been engaged */
++#define JBD2_STOP_CLEANING 0x800 /* Request the cleaning thread to stop */
+ 
+ /*
+  * Function declarations for the journaling transaction and buffer
