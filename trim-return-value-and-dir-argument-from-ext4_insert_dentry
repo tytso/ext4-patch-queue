@@ -1,0 +1,97 @@
+ext4: trim return value and 'dir' argument from ext4_insert_dentry()
+
+From: Eric Biggers <ebiggers@google.com>
+
+In the initial implementation of ext4 encryption, the filename was
+encrypted in ext4_insert_dentry(), which could fail and also required
+access to the 'dir' inode.  Since then ext4 filename encryption has been
+changed to encrypt the filename earlier, so we can revert the additions
+to ext4_insert_dentry().
+
+Signed-off-by: Eric Biggers <ebiggers@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4.h   |  9 ++++-----
+ fs/ext4/inline.c |  2 +-
+ fs/ext4/namei.c  | 17 ++++++-----------
+ 3 files changed, 11 insertions(+), 17 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index f493af666591..d55a244b26a7 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2356,11 +2356,10 @@ extern int ext4_find_dest_de(struct inode *dir, struct inode *inode,
+ 			     void *buf, int buf_size,
+ 			     struct ext4_filename *fname,
+ 			     struct ext4_dir_entry_2 **dest_de);
+-int ext4_insert_dentry(struct inode *dir,
+-		       struct inode *inode,
+-		       struct ext4_dir_entry_2 *de,
+-		       int buf_size,
+-		       struct ext4_filename *fname);
++void ext4_insert_dentry(struct inode *inode,
++			struct ext4_dir_entry_2 *de,
++			int buf_size,
++			struct ext4_filename *fname);
+ static inline void ext4_update_dx_flag(struct inode *inode)
+ {
+ 	if (!ext4_has_feature_dir_index(inode->i_sb))
+diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
+index 375fb1c05d49..d5dea4c293ef 100644
+--- a/fs/ext4/inline.c
++++ b/fs/ext4/inline.c
+@@ -1034,7 +1034,7 @@ static int ext4_add_dirent_to_inline(handle_t *handle,
+ 	err = ext4_journal_get_write_access(handle, iloc->bh);
+ 	if (err)
+ 		return err;
+-	ext4_insert_dentry(dir, inode, de, inline_size, fname);
++	ext4_insert_dentry(inode, de, inline_size, fname);
+ 
+ 	ext4_show_inline_dir(dir, iloc->bh, inline_start, inline_size);
+ 
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 6ad612c576fc..70441cdee5cc 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1869,11 +1869,10 @@ int ext4_find_dest_de(struct inode *dir, struct inode *inode,
+ 	return res;
+ }
+ 
+-int ext4_insert_dentry(struct inode *dir,
+-		       struct inode *inode,
+-		       struct ext4_dir_entry_2 *de,
+-		       int buf_size,
+-		       struct ext4_filename *fname)
++void ext4_insert_dentry(struct inode *inode,
++			struct ext4_dir_entry_2 *de,
++			int buf_size,
++			struct ext4_filename *fname)
+ {
+ 
+ 	int nlen, rlen;
+@@ -1892,7 +1891,6 @@ int ext4_insert_dentry(struct inode *dir,
+ 	ext4_set_de_type(inode->i_sb, de, inode->i_mode);
+ 	de->name_len = fname_len(fname);
+ 	memcpy(de->name, fname_name(fname), fname_len(fname));
+-	return 0;
+ }
+ 
+ /*
+@@ -1928,11 +1926,8 @@ static int add_dirent_to_buf(handle_t *handle, struct ext4_filename *fname,
+ 		return err;
+ 	}
+ 
+-	/* By now the buffer is marked for journaling. Due to crypto operations,
+-	 * the following function call may fail */
+-	err = ext4_insert_dentry(dir, inode, de, blocksize, fname);
+-	if (err < 0)
+-		return err;
++	/* By now the buffer is marked for journaling */
++	ext4_insert_dentry(inode, de, blocksize, fname);
+ 
+ 	/*
+ 	 * XXX shouldn't update any times until successful
+-- 
+2.12.2.715.g7642488e1d-goog
+
+
