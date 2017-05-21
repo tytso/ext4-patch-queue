@@ -1,0 +1,32 @@
+ext4: fix off-by-in in loop termination in ext4_find_unwritten_pgoff()
+
+From: Jan Kara <jack@suse.cz>
+
+There is an off-by-one error in loop termination conditions in
+ext4_find_unwritten_pgoff() since 'end' may index a page beyond end of
+desired range if 'endoff' is page aligned. It doesn't have any visible
+effects but still it is good to fix it.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/file.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index bbea2dccd584..2b00bf84c05b 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -474,7 +474,7 @@ static int ext4_find_unwritten_pgoff(struct inode *inode,
+ 	endoff = (loff_t)end_blk << blkbits;
+ 
+ 	index = startoff >> PAGE_SHIFT;
+-	end = endoff >> PAGE_SHIFT;
++	end = (endoff - 1) >> PAGE_SHIFT;
+ 
+ 	pagevec_init(&pvec, 0);
+ 	do {
+-- 
+2.12.0
+
+
