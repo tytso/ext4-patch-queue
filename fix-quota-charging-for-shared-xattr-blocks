@@ -1,0 +1,160 @@
+ext4: fix quota charging for shared xattr blocks
+
+From: Tahsin Erdogan <tahsin@google.com>
+
+ext4_xattr_block_set() calls dquot_alloc_block() to charge for an xattr
+block when new references are made. However if dquot_initialize() hasn't
+been called on an inode, request for charging is effectively ignored
+because ext4_inode_info->i_dquot is not initialized yet.
+
+Add dquot_initialize() to call paths that lead to ext4_xattr_block_set().
+
+Signed-off-by: Tahsin Erdogan <tahsin@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+v3: added Reviewed-by tag
+v2:
+ - moved dquot_initialize() to outside the main transaction
+ - added dquot_initialize_needed() function that is used by
+   ext4_xattr_release_block() to warn about call paths that don't
+   call dquot_initialize()
+
+ fs/ext4/acl.c            |  4 ++++
+ fs/ext4/super.c          |  3 +++
+ fs/ext4/xattr.c          |  8 ++++++++
+ fs/quota/dquot.c         | 16 ++++++++++++++++
+ include/linux/quotaops.h |  6 ++++++
+ 5 files changed, 37 insertions(+)
+
+diff --git a/fs/ext4/acl.c b/fs/ext4/acl.c
+index fd389935ecd1..3ec0e46de95f 100644
+--- a/fs/ext4/acl.c
++++ b/fs/ext4/acl.c
+@@ -4,6 +4,7 @@
+  * Copyright (C) 2001-2003 Andreas Gruenbacher, <agruen@suse.de>
+  */
+ 
++#include <linux/quotaops.h>
+ #include "ext4_jbd2.h"
+ #include "ext4.h"
+ #include "xattr.h"
+@@ -232,6 +233,9 @@ ext4_set_acl(struct inode *inode, struct posix_acl *acl, int type)
+ 	handle_t *handle;
+ 	int error, retries = 0;
+ 
++	error = dquot_initialize(inode);
++	if (error)
++		return error;
+ retry:
+ 	handle = ext4_journal_start(inode, EXT4_HT_XATTR,
+ 				    ext4_jbd2_credits_xattr(inode));
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 0b177da9ea82..e2e0eb7ac9a0 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1179,6 +1179,9 @@ static int ext4_set_context(struct inode *inode, const void *ctx, size_t len,
+ 		return res;
+ 	}
+ 
++	res = dquot_initialize(inode);
++	if (res)
++		return res;
+ retry:
+ 	handle = ext4_journal_start(inode, EXT4_HT_MISC,
+ 			ext4_jbd2_credits_xattr(inode));
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index 8fb7ce14e6eb..5d3c2536641c 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -888,6 +888,8 @@ ext4_xattr_block_set(handle_t *handle, struct inode *inode,
+ 			else {
+ 				u32 ref;
+ 
++				WARN_ON_ONCE(dquot_initialize_needed(inode));
++
+ 				/* The old block is released after updating
+ 				   the inode. */
+ 				error = dquot_alloc_block(inode,
+@@ -954,6 +956,8 @@ ext4_xattr_block_set(handle_t *handle, struct inode *inode,
+ 			/* We need to allocate a new block */
+ 			ext4_fsblk_t goal, block;
+ 
++			WARN_ON_ONCE(dquot_initialize_needed(inode));
++
+ 			goal = ext4_group_first_block_no(sb,
+ 						EXT4_I(inode)->i_block_group);
+ 
+@@ -1166,6 +1170,7 @@ ext4_xattr_set_handle(handle_t *handle, struct inode *inode, int name_index,
+ 		return -EINVAL;
+ 	if (strlen(name) > 255)
+ 		return -ERANGE;
++
+ 	ext4_write_lock_xattr(inode, &no_expand);
+ 
+ 	error = ext4_reserve_inode_write(handle, inode, &is.iloc);
+@@ -1267,6 +1272,9 @@ ext4_xattr_set(struct inode *inode, int name_index, const char *name,
+ 	int error, retries = 0;
+ 	int credits = ext4_jbd2_credits_xattr(inode);
+ 
++	error = dquot_initialize(inode);
++	if (error)
++		return error;
+ retry:
+ 	handle = ext4_journal_start(inode, EXT4_HT_XATTR, credits);
+ 	if (IS_ERR(handle)) {
+diff --git a/fs/quota/dquot.c b/fs/quota/dquot.c
+index ebf80c7739e1..48813aeaab80 100644
+--- a/fs/quota/dquot.c
++++ b/fs/quota/dquot.c
+@@ -1512,6 +1512,22 @@ int dquot_initialize(struct inode *inode)
+ }
+ EXPORT_SYMBOL(dquot_initialize);
+ 
++bool dquot_initialize_needed(struct inode *inode)
++{
++	struct dquot **dquots;
++	int i;
++
++	if (!dquot_active(inode))
++		return false;
++
++	dquots = i_dquot(inode);
++	for (i = 0; i < MAXQUOTAS; i++)
++		if (!dquots[i] && sb_has_quota_active(inode->i_sb, i))
++			return true;
++	return false;
++}
++EXPORT_SYMBOL(dquot_initialize_needed);
++
+ /*
+  * Release all quotas referenced by inode.
+  *
+diff --git a/include/linux/quotaops.h b/include/linux/quotaops.h
+index 9c6f768b7d32..dda22f45fc1b 100644
+--- a/include/linux/quotaops.h
++++ b/include/linux/quotaops.h
+@@ -44,6 +44,7 @@ void inode_sub_rsv_space(struct inode *inode, qsize_t number);
+ void inode_reclaim_rsv_space(struct inode *inode, qsize_t number);
+ 
+ int dquot_initialize(struct inode *inode);
++bool dquot_initialize_needed(struct inode *inode);
+ void dquot_drop(struct inode *inode);
+ struct dquot *dqget(struct super_block *sb, struct kqid qid);
+ static inline struct dquot *dqgrab(struct dquot *dquot)
+@@ -207,6 +208,11 @@ static inline int dquot_initialize(struct inode *inode)
+ 	return 0;
+ }
+ 
++static inline bool dquot_initialize_needed(struct inode *inode)
++{
++	return false;
++}
++
+ static inline void dquot_drop(struct inode *inode)
+ {
+ }
+-- 
+2.13.0.219.gdb65acc882-goog
+
+
