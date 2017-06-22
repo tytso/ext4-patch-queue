@@ -1,0 +1,32 @@
+ext4: fix ext4_xattr_cmp()
+
+From: Tahsin Erdogan <tahsin@google.com>
+
+When a xattr entry refers to an external inode, the value data is not
+available in the inline area so we should not attempt to read it using
+value offset.
+
+Signed-off-by: Tahsin Erdogan <tahsin@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/xattr.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index 9c243b3510b7..739f73a5a345 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -2169,7 +2169,8 @@ ext4_xattr_cmp(struct ext4_xattr_header *header1,
+ 		    entry1->e_value_inum != entry2->e_value_inum ||
+ 		    memcmp(entry1->e_name, entry2->e_name, entry1->e_name_len))
+ 			return 1;
+-		if (memcmp((char *)header1 + le16_to_cpu(entry1->e_value_offs),
++		if (!entry1->e_value_inum &&
++		    memcmp((char *)header1 + le16_to_cpu(entry1->e_value_offs),
+ 			   (char *)header2 + le16_to_cpu(entry2->e_value_offs),
+ 			   le32_to_cpu(entry1->e_value_size)))
+ 			return 1;
+-- 
+2.13.1.611.g7e3b11ae1-goog
+
+
