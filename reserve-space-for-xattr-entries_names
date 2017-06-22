@@ -1,0 +1,78 @@
+ext4: reserve space for xattr entries/names
+
+From: Tahsin Erdogan <tahsin@google.com>
+
+New ea_inode feature allows putting large xattr values into external
+inodes.  struct ext4_xattr_entry and the attribute name however have to
+remain in the inode extra space or external attribute block.  Once that
+space is exhausted, no further entries can be added.  Some of that space
+could also be used by values that fit in there at the time of addition.
+
+So, a single xattr entry whose value barely fits in the external block
+could prevent further entries being added.
+
+To mitigate the problem, this patch introduces a notion of reserved
+space in the external attribute block that cannot be used by value data.
+This reserve is enforced when ea_inode feature is enabled.  The amount
+of reserve is arbitrarily chosen to be min(block_size/8, 1024).  The
+table below shows how much space is reserved for each block size and the
+guaranteed mininum number of entries that can be placed in the external
+attribute block.
+
+block size     reserved bytes  entries (name length = 16)
+ 1k            128              3
+ 2k            256              7
+ 4k            512             15
+ 8k            1024            31
+16k            1024            31
+32k            1024            31
+64k            1024            31
+
+Signed-off-by: Tahsin Erdogan <tahsin@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/xattr.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index a3f8bf4558f3..835b3dca5b65 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -1446,6 +1446,12 @@ static int ext4_xattr_inode_lookup_create(handle_t *handle, struct inode *inode,
+ 	return 0;
+ }
+ 
++/*
++ * Reserve min(block_size/8, 1024) bytes for xattr entries/names if ea_inode
++ * feature is enabled.
++ */
++#define EXT4_XATTR_BLOCK_RESERVE(inode)	min(i_blocksize(inode)/8, 1024U)
++
+ static int ext4_xattr_set_entry(struct ext4_xattr_info *i,
+ 				struct ext4_xattr_search *s,
+ 				handle_t *handle, struct inode *inode)
+@@ -1505,6 +1511,20 @@ static int ext4_xattr_set_entry(struct ext4_xattr_info *i,
+ 			ret = -ENOSPC;
+ 			goto out;
+ 		}
++
++		/*
++		 * If storing the value in an external inode is an option,
++		 * reserve space for xattr entries/names in the external
++		 * attribute block so that a long value does not occupy the
++		 * whole space and prevent futher entries being added.
++		 */
++		if (ext4_has_feature_ea_inode(inode->i_sb) && new_size &&
++		    (s->end - s->base) == i_blocksize(inode) &&
++		    (min_offs + old_size - new_size) <
++					EXT4_XATTR_BLOCK_RESERVE(inode)) {
++			ret = -ENOSPC;
++			goto out;
++		}
+ 	}
+ 
+ 	/*
+-- 
+2.13.1.611.g7e3b11ae1-goog
+
+
