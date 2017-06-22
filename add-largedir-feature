@@ -8,19 +8,24 @@ depth of 3 instead of the current limit of 2. These features are needed
 in order to exceed the current limit of approximately 10M entries in a
 single directory.
 
+This patch was originally written by Yang Sheng to support the Lustre server.
+
+Signed-off-by: Liang Zhen <liang.zhen@intel.com>
 Signed-off-by: Yang Sheng <yang.sheng@intel.com>
 Signed-off-by: Artem Blagodarenko <artem.blagodarenko@seagate.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Andreas Dilger <andreas.dilger@intel.com>
 ---
- fs/ext4/ext4.h  |  23 ++++++++---
- fs/ext4/inode.c |   4 +-
- fs/ext4/namei.c | 118 +++++++++++++++++++++++++++++++++++++++-----------------
- 3 files changed, 102 insertions(+), 43 deletions(-)
+ fs/ext4/ext4.h  |  23 ++++++++++---
+ fs/ext4/inode.c |   4 +--
+ fs/ext4/namei.c | 124 ++++++++++++++++++++++++++++++++++++++++++++++++-----------------------
+ 3 files changed, 105 insertions(+), 46 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 01d52b9..0bbbd9b 100644
+index 32191548abed..f17a4e7075be 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1799,7 +1799,8 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
+@@ -1800,7 +1800,8 @@ EXT4_FEATURE_INCOMPAT_FUNCS(encrypt,		ENCRYPT)
  					 EXT4_FEATURE_INCOMPAT_MMP | \
  					 EXT4_FEATURE_INCOMPAT_INLINE_DATA | \
  					 EXT4_FEATURE_INCOMPAT_ENCRYPT | \
@@ -30,7 +35,7 @@ index 01d52b9..0bbbd9b 100644
  #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
  					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
  					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
-@@ -2125,6 +2126,16 @@ struct dir_private_info {
+@@ -2126,6 +2127,16 @@ ext4_group_first_block_no(struct super_block *sb, ext4_group_t group_no)
   */
  #define ERR_BAD_DX_DIR	(-(MAX_ERRNO - 1))
  
@@ -47,7 +52,7 @@ index 01d52b9..0bbbd9b 100644
  /*
   * Timeout and state flag for lazy initialization inode thread.
   */
-@@ -2758,13 +2769,15 @@ static inline void ext4_r_blocks_count_set(struct ext4_super_block *es,
+@@ -2756,13 +2767,15 @@ static inline void ext4_r_blocks_count_set(struct ext4_super_block *es,
  	es->s_r_blocks_count_hi = cpu_to_le32(blk >> 32);
  }
  
@@ -68,10 +73,10 @@ index 01d52b9..0bbbd9b 100644
  
  static inline void ext4_isize_set(struct ext4_inode *raw_inode, loff_t i_size)
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index f622d4a..5787f3d 100644
+index 5cf82d03968c..47604d1352fc 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -4682,7 +4682,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+@@ -4712,7 +4712,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
  	if (ext4_has_feature_64bit(sb))
  		ei->i_file_acl |=
  			((__u64)le16_to_cpu(raw_inode->i_file_acl_high)) << 32;
@@ -80,7 +85,7 @@ index f622d4a..5787f3d 100644
  	if ((size = i_size_read(inode)) < 0) {
  		EXT4_ERROR_INODE(inode, "bad i_size value: %lld", size);
  		ret = -EFSCORRUPTED;
-@@ -5008,7 +5008,7 @@ static int ext4_do_update_inode(handle_t *handle,
+@@ -5037,7 +5037,7 @@ static int ext4_do_update_inode(handle_t *handle,
  		raw_inode->i_file_acl_high =
  			cpu_to_le16(ei->i_file_acl >> 32);
  	raw_inode->i_file_acl_lo = cpu_to_le32(ei->i_file_acl);
@@ -90,10 +95,10 @@ index f622d4a..5787f3d 100644
  		need_datasync = 1;
  	}
 diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
-index 6ad612c..3298fe3 100644
+index 404256caf9cf..423e1f761768 100644
 --- a/fs/ext4/namei.c
 +++ b/fs/ext4/namei.c
-@@ -513,7 +513,7 @@ static inline int ext4_handle_dirty_dx_node(handle_t *handle,
+@@ -513,7 +513,7 @@ ext4_next_entry(struct ext4_dir_entry_2 *p, unsigned long blocksize)
  
  static inline ext4_lblk_t dx_get_block(struct dx_entry *entry)
  {
@@ -102,7 +107,7 @@ index 6ad612c..3298fe3 100644
  }
  
  static inline void dx_set_block(struct dx_entry *entry, ext4_lblk_t value)
-@@ -739,6 +739,7 @@ struct stats dx_show_entries(struct dx_hash_info *hinfo, struct inode *dir,
+@@ -739,6 +739,7 @@ dx_probe(struct ext4_filename *fname, struct inode *dir,
  	struct dx_frame *ret_err = ERR_PTR(ERR_BAD_DX_DIR);
  	u32 hash;
  
@@ -110,7 +115,7 @@ index 6ad612c..3298fe3 100644
  	frame->bh = ext4_read_dirblock(dir, 0, INDEX);
  	if (IS_ERR(frame->bh))
  		return (struct dx_frame *) frame->bh;
-@@ -768,9 +769,15 @@ struct stats dx_show_entries(struct dx_hash_info *hinfo, struct inode *dir,
+@@ -768,9 +769,15 @@ dx_probe(struct ext4_filename *fname, struct inode *dir,
  	}
  
  	indirect = root->info.indirect_levels;
@@ -129,7 +134,7 @@ index 6ad612c..3298fe3 100644
  		goto fail;
  	}
  
-@@ -859,12 +866,19 @@ struct stats dx_show_entries(struct dx_hash_info *hinfo, struct inode *dir,
+@@ -859,12 +866,19 @@ dx_probe(struct ext4_filename *fname, struct inode *dir,
  
  static void dx_release(struct dx_frame *frames)
  {
@@ -161,16 +166,16 @@ index 6ad612c..3298fe3 100644
  	struct inode *dir;
  	ext4_lblk_t block;
  	int count = 0;
-@@ -1517,7 +1531,7 @@ static struct buffer_head * ext4_dx_find_entry(struct inode *dir,
+@@ -1485,7 +1499,7 @@ static struct buffer_head * ext4_dx_find_entry(struct inode *dir,
  			struct ext4_dir_entry_2 **res_dir)
  {
  	struct super_block * sb = dir->i_sb;
 -	struct dx_frame frames[2], *frame;
 +	struct dx_frame frames[EXT4_HTREE_LEVEL], *frame;
- 	const struct qstr *d_name = fname->usr_fname;
  	struct buffer_head *bh;
  	ext4_lblk_t block;
-@@ -1947,7 +1961,7 @@ static int add_dirent_to_buf(handle_t *handle, struct ext4_filename *fname,
+ 	int retval;
+@@ -1889,7 +1903,7 @@ static int add_dirent_to_buf(handle_t *handle, struct ext4_filename *fname,
  	 */
  	dir->i_mtime = dir->i_ctime = current_time(dir);
  	ext4_update_dx_flag(dir);
@@ -179,7 +184,7 @@ index 6ad612c..3298fe3 100644
  	ext4_mark_inode_dirty(handle, dir);
  	BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");
  	err = ext4_handle_dirty_dirent_node(handle, dir, bh);
-@@ -1966,7 +1980,7 @@ static int make_indexed_dir(handle_t *handle, struct ext4_filename *fname,
+@@ -1908,7 +1922,7 @@ static int make_indexed_dir(handle_t *handle, struct ext4_filename *fname,
  {
  	struct buffer_head *bh2;
  	struct dx_root	*root;
@@ -188,7 +193,7 @@ index 6ad612c..3298fe3 100644
  	struct dx_entry *entries;
  	struct ext4_dir_entry_2	*de, *de2;
  	struct ext4_dir_entry_tail *t;
-@@ -2185,13 +2199,16 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+@@ -2127,13 +2141,16 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
  			     struct inode *dir, struct inode *inode)
  {
@@ -206,7 +211,7 @@ index 6ad612c..3298fe3 100644
  	frame = dx_probe(fname, dir, NULL, frames);
  	if (IS_ERR(frame))
  		return PTR_ERR(frame);
-@@ -2213,24 +2230,44 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
+@@ -2155,24 +2172,44 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
  	if (err != -ENOSPC)
  		goto cleanup;
  
@@ -256,7 +261,7 @@ index 6ad612c..3298fe3 100644
  		bh2 = ext4_append(handle, dir, &newblock);
  		if (IS_ERR(bh2)) {
  			err = PTR_ERR(bh2);
-@@ -2245,7 +2282,7 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
+@@ -2187,7 +2224,7 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
  		err = ext4_journal_get_write_access(handle, frame->bh);
  		if (err)
  			goto journal_error;
@@ -265,7 +270,7 @@ index 6ad612c..3298fe3 100644
  			unsigned icount1 = icount/2, icount2 = icount - icount1;
  			unsigned hash2 = dx_get_hash(entries + icount1);
  			dxtrace(printk(KERN_DEBUG "Split index %i/%i\n",
-@@ -2253,7 +2290,7 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
+@@ -2195,7 +2232,7 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
  
  			BUFFER_TRACE(frame->bh, "get_write_access"); /* index root */
  			err = ext4_journal_get_write_access(handle,
@@ -274,7 +279,7 @@ index 6ad612c..3298fe3 100644
  			if (err)
  				goto journal_error;
  
-@@ -2269,17 +2306,23 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
+@@ -2211,17 +2248,25 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
  				frame->entries = entries = entries2;
  				swap(frame->bh, bh2);
  			}
@@ -288,12 +293,14 @@ index 6ad612c..3298fe3 100644
  			if (err)
  				goto journal_error;
  			brelse (bh2);
-+			ext4_handle_dirty_metadata(handle, dir,
++			err = ext4_handle_dirty_dx_node(handle, dir,
 +						   (frame - 1)->bh);
++			if (err)
++				goto journal_error;
 +			if (restart) {
-+				ext4_handle_dirty_metadata(handle, dir,
++				err = ext4_handle_dirty_dx_node(handle, dir,
 +							   frame->bh);
-+				goto cleanup;
++				goto journal_error;
 +			}
  		} else {
 -			dxtrace(printk(KERN_DEBUG
@@ -302,7 +309,7 @@ index 6ad612c..3298fe3 100644
  			memcpy((char *) entries2, (char *) entries,
  			       icount * sizeof(struct dx_entry));
  			dx_set_limit(entries2, dx_node_limit(dir));
-@@ -2287,19 +2330,17 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
+@@ -2229,22 +2274,18 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
  			/* Set up root */
  			dx_set_count(entries, 1);
  			dx_set_block(entries + 0, newblock);
@@ -315,24 +322,32 @@ index 6ad612c..3298fe3 100644
 -			frame->bh = bh2;
 -			err = ext4_journal_get_write_access(handle,
 -							     frame->bh);
--			if (err)
--				goto journal_error;
 +			dxroot = (struct dx_root *)frames[0].bh->b_data;
 +			dxroot->info.indirect_levels += 1;
 +			dxtrace(printk(KERN_DEBUG
 +				       "Creating %d level index...\n",
 +				       info->indirect_levels));
-+			ext4_handle_dirty_metadata(handle, dir, frame->bh);
-+			ext4_handle_dirty_metadata(handle, dir, bh2);
++			err = ext4_handle_dirty_dx_node(handle, dir, frame->bh);
+ 			if (err)
+ 				goto journal_error;
+-		}
+-		err = ext4_handle_dirty_dx_node(handle, dir, frames[0].bh);
+-		if (err) {
+-			ext4_std_error(inode->i_sb, err);
+-			goto cleanup;
++			err = ext4_handle_dirty_dx_node(handle, dir, bh2);
 +			brelse(bh2);
 +			restart = 1;
-+			goto cleanup;
++			goto journal_error;
  		}
--		err = ext4_handle_dirty_dx_node(handle, dir, frames[0].bh);
- 		if (err) {
- 			ext4_std_error(inode->i_sb, err);
- 			goto cleanup;
-@@ -2318,6 +2359,11 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
+ 	}
+ 	de = do_split(handle, dir, &bh, frame, &fname->hinfo);
+@@ -2256,10 +2297,15 @@ static int ext4_dx_add_entry(handle_t *handle, struct ext4_filename *fname,
+ 	goto cleanup;
+ 
+ journal_error:
+-	ext4_std_error(dir->i_sb, err);
++	ext4_std_error(dir->i_sb, err); /* this is a no-op if err == 0 */
  cleanup:
  	brelse(bh);
  	dx_release(frames);
@@ -344,7 +359,7 @@ index 6ad612c..3298fe3 100644
  	return err;
  }
  
-@@ -2354,7 +2400,7 @@ int ext4_generic_delete_entry(handle_t *handle,
+@@ -2296,7 +2342,7 @@ int ext4_generic_delete_entry(handle_t *handle,
  					blocksize);
  			else
  				de->inode = 0;
@@ -353,7 +368,3 @@ index 6ad612c..3298fe3 100644
  			return 0;
  		}
  		i += ext4_rec_len_from_disk(de->rec_len, blocksize);
--- 
-1.8.3.1
-
-
