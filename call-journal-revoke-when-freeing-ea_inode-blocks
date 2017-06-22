@@ -1,0 +1,48 @@
+ext4: call journal revoke when freeing ea_inode blocks
+
+From: Tahsin Erdogan <tahsin@google.com>
+
+ea_inode contents are treated as metadata, that's why it is journaled
+during initial writes. Failing to call revoke during freeing could cause
+user data to be overwritten with original ea_inode contents during journal
+replay.
+
+Signed-off-by: Tahsin Erdogan <tahsin@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/extents.c  | 3 ++-
+ fs/ext4/indirect.c | 3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 3e36508610b7..e0a8425ff74d 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2488,7 +2488,8 @@ int ext4_ext_index_trans_blocks(struct inode *inode, int extents)
+ 
+ static inline int get_default_free_blocks_flags(struct inode *inode)
+ {
+-	if (S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode))
++	if (S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode) ||
++	    ext4_test_inode_flag(inode, EXT4_INODE_EA_INODE))
+ 		return EXT4_FREE_BLOCKS_METADATA | EXT4_FREE_BLOCKS_FORGET;
+ 	else if (ext4_should_journal_data(inode))
+ 		return EXT4_FREE_BLOCKS_FORGET;
+diff --git a/fs/ext4/indirect.c b/fs/ext4/indirect.c
+index bc15c2c17633..7ffa290cbb8e 100644
+--- a/fs/ext4/indirect.c
++++ b/fs/ext4/indirect.c
+@@ -829,7 +829,8 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
+ 	int	flags = EXT4_FREE_BLOCKS_VALIDATED;
+ 	int	err;
+ 
+-	if (S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode))
++	if (S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode) ||
++	    ext4_test_inode_flag(inode, EXT4_INODE_EA_INODE))
+ 		flags |= EXT4_FREE_BLOCKS_FORGET | EXT4_FREE_BLOCKS_METADATA;
+ 	else if (ext4_should_journal_data(inode))
+ 		flags |= EXT4_FREE_BLOCKS_FORGET;
+-- 
+2.13.1.611.g7e3b11ae1-goog
+
+
