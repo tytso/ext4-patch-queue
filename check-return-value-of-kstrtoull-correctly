@@ -1,0 +1,34 @@
+ext4: check return value of kstrtoull correctly in reserved_clusters_store
+
+From: Chao Yu <yuchao0@huawei.com>
+
+kstrtoull returns 0 on success, however, in reserved_clusters_store we
+will return -EINVAL if kstrtoull returns 0, it makes us fail to update
+reserved_clusters value through sysfs.
+
+Fixes: 76d33bca5581b1dd5c3157fa168db849a784ada4
+Cc: stable@vger.kernel.org # 4.4
+Signed-off-by: Chao Yu <yuchao0@huawei.com>
+Signed-off-by: Miao Xie <miaoxie@huawei.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/sysfs.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/sysfs.c b/fs/ext4/sysfs.c
+index d74dc5f81a04..48c7a7d55ed3 100644
+--- a/fs/ext4/sysfs.c
++++ b/fs/ext4/sysfs.c
+@@ -100,7 +100,7 @@ static ssize_t reserved_clusters_store(struct ext4_attr *a,
+ 	int ret;
+ 
+ 	ret = kstrtoull(skip_spaces(buf), 0, &val);
+-	if (!ret || val >= clusters)
++	if (ret || val >= clusters)
+ 		return -EINVAL;
+ 
+ 	atomic64_set(&sbi->s_resv_clusters, val);
+-- 
+2.13.1.388.g69e6b9b4f4a9
+
+
