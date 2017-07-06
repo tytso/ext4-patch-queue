@@ -21,27 +21,26 @@ charges.
 Add get_inode_usage callback which can interrogate the total number of
 inodes that were charged for a given inode.
 
+[ Applied fix from Colin King to make sure the 'ret' variable is
+  initialized on the successful return path.  Detected by
+  CoverityScan, CID#1446616 ("Uninitialized scalar variable") --tytso]
+
 Signed-off-by: Tahsin Erdogan <tahsin@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
 Acked-by: Jan Kara <jack@suse.cz>
 ---
-v3: added Acked-by
-
-v2:
-  - added get_inode_usage() callback to query total inodes charge to
-    be transferred
-
  fs/ext4/inode.c       |  7 +++++++
  fs/ext4/ioctl.c       |  6 ++++++
- fs/ext4/super.c       | 21 ++++++++++----------
- fs/ext4/xattr.c       | 54 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/ext4/super.c       | 21 +++++++++++----------
+ fs/ext4/xattr.c       | 55 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
  fs/ext4/xattr.h       |  2 ++
- fs/quota/dquot.c      | 16 +++++++++++----
+ fs/quota/dquot.c      | 16 ++++++++++++----
  include/linux/quota.h |  2 ++
- 7 files changed, 94 insertions(+), 14 deletions(-)
+ 7 files changed, 95 insertions(+), 14 deletions(-)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index ea95bd9eab81..cd22de0b5d2c 100644
+index 962f28a0e176..d9733aa955e9 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -5295,7 +5295,14 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
@@ -110,10 +109,10 @@ index d501f8256dc4..5ac76e8d4013 100644
  
  static const struct quotactl_ops ext4_qctl_operations = {
 diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
-index 15c9f736dcc4..a3f8bf4558f3 100644
+index a4c8fe3692a2..22bfb6221a2d 100644
 --- a/fs/ext4/xattr.c
 +++ b/fs/ext4/xattr.c
-@@ -733,6 +733,60 @@ static void ext4_xattr_update_super_block(handle_t *handle,
+@@ -733,6 +733,61 @@ static void ext4_xattr_update_super_block(handle_t *handle,
  	}
  }
  
@@ -165,6 +164,7 @@ index 15c9f736dcc4..a3f8bf4558f3 100644
 +				ea_inode_refs++;
 +	}
 +	*usage = ea_inode_refs + 1;
++	ret = 0;
 +out:
 +	brelse(iloc.bh);
 +	brelse(bh);
@@ -257,7 +257,3 @@ index 3434eef2a5aa..bfd077ca6ac3 100644
  	/* Get next ID with active quota structure */
  	int (*get_next_id) (struct super_block *sb, struct kqid *qid);
  };
--- 
-2.13.1.611.g7e3b11ae1-goog
-
-
