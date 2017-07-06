@@ -10,16 +10,19 @@ single directory.
 
 This patch was originally written by Yang Sheng to support the Lustre server.
 
+[ Bumped the credits needed to update an indexed directory -- tytso ]
+
 Signed-off-by: Liang Zhen <liang.zhen@intel.com>
 Signed-off-by: Yang Sheng <yang.sheng@intel.com>
 Signed-off-by: Artem Blagodarenko <artem.blagodarenko@seagate.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 Reviewed-by: Andreas Dilger <andreas.dilger@intel.com>
 ---
- fs/ext4/ext4.h  |  23 ++++++++++---
- fs/ext4/inode.c |   4 +--
- fs/ext4/namei.c | 124 ++++++++++++++++++++++++++++++++++++++++++++++++-----------------------
- 3 files changed, 105 insertions(+), 46 deletions(-)
+ fs/ext4/ext4.h      |  23 ++++++++++---
+ fs/ext4/ext4_jbd2.h |   9 ++++-
+ fs/ext4/inode.c     |   4 +--
+ fs/ext4/namei.c     | 124 ++++++++++++++++++++++++++++++++++++++++++++++---------------------
+ 4 files changed, 113 insertions(+), 47 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 32191548abed..f17a4e7075be 100644
@@ -72,6 +75,26 @@ index 32191548abed..f17a4e7075be 100644
  }
  
  static inline void ext4_isize_set(struct ext4_inode *raw_inode, loff_t i_size)
+diff --git a/fs/ext4/ext4_jbd2.h b/fs/ext4/ext4_jbd2.h
+index f97611171023..5e61e464d71c 100644
+--- a/fs/ext4/ext4_jbd2.h
++++ b/fs/ext4/ext4_jbd2.h
+@@ -77,7 +77,14 @@
+ 
+ #define EXT4_RESERVE_TRANS_BLOCKS	12U
+ 
+-#define EXT4_INDEX_EXTRA_TRANS_BLOCKS	8
++/*
++ * Number of credits needed if we need to insert an entry into a
++ * directory.  For each new index block, we need 4 blocks (old index
++ * block, new index block, bitmap block, bg summary).  For normal
++ * htree directories there are 2 levels; if the largedir feature
++ * enabled it's 3 levels.
++ */
++#define EXT4_INDEX_EXTRA_TRANS_BLOCKS	12U
+ 
+ #ifdef CONFIG_QUOTA
+ /* Amount of blocks needed for quota update - we know that the structure was
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
 index 5cf82d03968c..47604d1352fc 100644
 --- a/fs/ext4/inode.c
