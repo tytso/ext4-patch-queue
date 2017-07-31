@@ -1,0 +1,42 @@
+ext4: correct comment references to ext4_ext_direct_IO()
+
+From: Eric Whitney <enwlinux@gmail.com>
+
+Commit 914f82a32d0268847 "ext4: refactor direct IO code" deleted
+ext4_ext_direct_IO(), but references to that function remain in
+comments.  Update them to refer to ext4_direct_IO_write().
+
+Signed-off-by: Eric Whitney <enwlinux@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Andreas Dilger <adilger@dilger.ca>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/inode.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 3c600f0..2e6c022 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -892,7 +892,7 @@ static int ext4_dio_get_block_unwritten_async(struct inode *inode,
+ /*
+  * Get block function for non-AIO DIO writes when we create unwritten extent if
+  * blocks are not allocated yet. The extent will be converted to written
+- * after IO is complete from ext4_ext_direct_IO() function.
++ * after IO is complete by ext4_direct_IO_write().
+  */
+ static int ext4_dio_get_block_unwritten_sync(struct inode *inode,
+ 		sector_t iblock, struct buffer_head *bh_result,	int create)
+@@ -907,7 +907,7 @@ static int ext4_dio_get_block_unwritten_sync(struct inode *inode,
+ 
+ 	/*
+ 	 * Mark inode as having pending DIO writes to unwritten extents.
+-	 * ext4_ext_direct_IO() checks this flag and converts extents to
++	 * ext4_direct_IO_write() checks this flag and converts extents to
+ 	 * written.
+ 	 */
+ 	if (!ret && buffer_unwritten(bh_result))
+-- 
+2.1.4
+
+
