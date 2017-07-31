@@ -18,13 +18,13 @@ Signed-off-by: Tahsin Erdogan <tahsin@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/crypto/policy.c             |  1 +
- fs/ext4/acl.c                  | 13 ++++++------
- fs/ext4/ialloc.c               | 26 +++++++++++++++++-------
+ fs/ext4/acl.c                  | 13 +++++++------
+ fs/ext4/ialloc.c               | 52 +++++++++++++++++++++++++++++++++++++++++++++-------
  fs/ext4/super.c                |  3 ++-
- fs/ext4/xattr.c                | 46 +++++++++++++++++++++++++-----------------
+ fs/ext4/xattr.c                | 46 +++++++++++++++++++++++++++-------------------
  fs/ext4/xattr.h                |  5 ++++-
  include/linux/fscrypt_common.h |  3 +++
- 7 files changed, 63 insertions(+), 34 deletions(-)
+ 7 files changed, 89 insertions(+), 34 deletions(-)
 
 diff --git a/fs/crypto/policy.c b/fs/crypto/policy.c
 index 210976e7a269..94becf5a1519 100644
@@ -96,7 +96,7 @@ index 8db03e5c78bc..09441ae07a5b 100644
  	}
  	return error;
 diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
-index 0c79e3efcaf7..21a2538afcc2 100644
+index 0c79e3efcaf7..507bfb3344d4 100644
 --- a/fs/ext4/ialloc.c
 +++ b/fs/ext4/ialloc.c
 @@ -766,11 +766,13 @@ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
@@ -116,7 +116,7 @@ index 0c79e3efcaf7..21a2538afcc2 100644
  	    (S_ISREG(mode) || S_ISDIR(mode) || S_ISLNK(mode)) &&
  	    !(i_flags & EXT4_EA_INODE_FL)) {
  		err = fscrypt_get_encryption_info(dir);
-@@ -778,19 +780,29 @@ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
+@@ -778,19 +780,55 @@ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
  			return ERR_PTR(err);
  		if (!fscrypt_has_encryption_key(dir))
  			return ERR_PTR(-ENOKEY);
@@ -127,12 +127,38 @@ index 0c79e3efcaf7..21a2538afcc2 100644
  
 -	sb = dir->i_sb;
 +	if (!handle && sbi->s_journal && !(i_flags & EXT4_EA_INODE_FL)) {
-+		/*
-+		 * 2 ea entries for ext4_init_acl(), 2 for ext4_init_security().
-+		 */
-+		nblocks += 4 * __ext4_xattr_set_credits(sb, NULL /* inode */,
-+					NULL /* block_bh */, XATTR_SIZE_MAX,
++#ifdef CONFIG_EXT4_FS_POSIX_ACL
++		struct posix_acl *p = get_acl(dir, ACL_TYPE_DEFAULT);
++
++		if (p) {
++			int acl_size = p->a_count * sizeof(ext4_acl_entry);
++
++			nblocks += (S_ISDIR(mode) ? 2 : 1) *
++				__ext4_xattr_set_credits(sb, NULL /* inode */,
++					NULL /* block_bh */, acl_size,
 +					true /* is_create */);
++			posix_acl_release(p);
++		}
++#endif
++
++#ifdef CONFIG_SECURITY
++		{
++			int num_security_xattrs = 1;
++
++#ifdef CONFIG_INTEGRITY
++			num_security_xattrs++;
++#endif
++			/*
++			 * We assume that security xattrs are never
++			 * more than 1k.  In practice they are under
++			 * 128 bytes.
++			 */
++			nblocks += num_security_xattrs *
++				__ext4_xattr_set_credits(sb, NULL /* inode */,
++					NULL /* block_bh */, 1024,
++					true /* is_create */);
++		}
++#endif
 +		if (encrypt)
 +			nblocks += __ext4_xattr_set_credits(sb,
 +					NULL /* inode */, NULL /* block_bh */,
@@ -165,10 +191,10 @@ index 56c971807df5..f666042a3d58 100644
  		return res;
  
 diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
-index 624aad69991d..1f617ffb775a 100644
+index 34fa37e7744c..cff4f41ced61 100644
 --- a/fs/ext4/xattr.c
 +++ b/fs/ext4/xattr.c
-@@ -829,11 +829,10 @@ static void ext4_xattr_inode_free_quota(struct inode *inode, size_t len)
+@@ -830,11 +830,10 @@ static void ext4_xattr_inode_free_quota(struct inode *inode, size_t len)
  	dquot_free_inode(inode);
  }
  
@@ -183,7 +209,7 @@ index 624aad69991d..1f617ffb775a 100644
  	int credits;
  	int blocks;
  
-@@ -859,7 +858,7 @@ static int __ext4_xattr_set_credits(struct inode *inode,
+@@ -860,7 +859,7 @@ static int __ext4_xattr_set_credits(struct inode *inode,
  	 * In case of inline data, we may push out the data to a block,
  	 * so we need to reserve credits for this eventuality
  	 */
@@ -192,7 +218,7 @@ index 624aad69991d..1f617ffb775a 100644
  		credits += ext4_writepage_trans_blocks(inode) + 1;
  
  	/* We are done if ea_inode feature is not enabled. */
-@@ -881,19 +880,23 @@ static int __ext4_xattr_set_credits(struct inode *inode,
+@@ -882,19 +881,23 @@ static int __ext4_xattr_set_credits(struct inode *inode,
  	/* Blocks themselves. */
  	credits += blocks;
  
@@ -226,7 +252,7 @@ index 624aad69991d..1f617ffb775a 100644
  
  	/* We may need to clone the existing xattr block in which case we need
  	 * to increment ref counts for existing ea_inodes referenced by it.
-@@ -2262,7 +2265,9 @@ ext4_xattr_set_handle(handle_t *handle, struct inode *inode, int name_index,
+@@ -2263,7 +2266,9 @@ ext4_xattr_set_handle(handle_t *handle, struct inode *inode, int name_index,
  			goto cleanup;
  		}
  
@@ -237,7 +263,7 @@ index 624aad69991d..1f617ffb775a 100644
  		brelse(bh);
  
  		if (!ext4_handle_has_enough_credits(handle, credits)) {
-@@ -2369,7 +2374,8 @@ ext4_xattr_set_handle(handle_t *handle, struct inode *inode, int name_index,
+@@ -2370,7 +2375,8 @@ ext4_xattr_set_handle(handle_t *handle, struct inode *inode, int name_index,
  	return error;
  }
  
@@ -247,7 +273,7 @@ index 624aad69991d..1f617ffb775a 100644
  {
  	struct buffer_head *bh;
  	int err;
-@@ -2385,7 +2391,8 @@ int ext4_xattr_set_credits(struct inode *inode, size_t value_len, int *credits)
+@@ -2386,7 +2392,8 @@ int ext4_xattr_set_credits(struct inode *inode, size_t value_len, int *credits)
  	if (IS_ERR(bh)) {
  		err = PTR_ERR(bh);
  	} else {
@@ -257,7 +283,7 @@ index 624aad69991d..1f617ffb775a 100644
  		brelse(bh);
  		err = 0;
  	}
-@@ -2416,7 +2423,8 @@ ext4_xattr_set(struct inode *inode, int name_index, const char *name,
+@@ -2417,7 +2424,8 @@ ext4_xattr_set(struct inode *inode, int name_index, const char *name,
  		return error;
  
  retry:
@@ -297,7 +323,3 @@ index 0a30c106c1e5..82beaf70e7e2 100644
  static inline bool fscrypt_dummy_context_enabled(struct inode *inode)
  {
  	if (inode->i_sb->s_cop->dummy_context &&
--- 
-2.13.2.725.g09c95d1e9-goog
-
-
