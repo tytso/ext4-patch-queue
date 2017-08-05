@@ -1,0 +1,36 @@
+ext4: release discard bio after sending discard commands
+
+From: Daeho Jeong <daeho.jeong@samsung.com>
+
+We've changed the discard command handling into parallel manner.
+But, in this change, I forgot decreasing the usage count of the bio
+which was used to send discard request. I'm sorry about that.
+
+Fixes: a015434480dc ("ext4: send parallel discards on commit completions")
+Signed-off-by: Daeho Jeong <daeho.jeong@samsung.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/mballoc.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index ab70b69e644c..88317b0cf7b8 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2892,8 +2892,10 @@ void ext4_process_freed_data(struct super_block *sb, tid_t commit_tid)
+ 				break;
+ 		}
+ 
+-		if (discard_bio)
++		if (discard_bio) {
+ 			submit_bio_wait(discard_bio);
++			bio_put(discard_bio);
++		}
+ 	}
+ 
+ 	list_for_each_entry_safe(entry, tmp, &freed_data_list, efd_list)
+-- 
+2.13.0
+
+
