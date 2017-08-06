@@ -1,0 +1,63 @@
+ext4: inplace xattr block update fails to deduplicate blocks
+
+From: Tahsin Erdogan <tahsin@google.com>
+
+When an xattr block has a single reference, block is updated inplace
+and it is reinserted to the cache. Later, a cache lookup is performed
+to see whether an existing block has the same contents. This cache
+lookup will most of the time return the just inserted entry so
+deduplication is not achieved.
+
+Running the following test script will produce two xattr blocks which
+can be observed in "File ACL: " line of debugfs output:
+
+  mke2fs -b 1024 -I 128 -F -O extent /dev/sdb 1G
+  mount /dev/sdb /mnt/sdb
+
+  touch /mnt/sdb/{x,y}
+
+  setfattr -n user.1 -v aaa /mnt/sdb/x
+  setfattr -n user.2 -v bbb /mnt/sdb/x
+
+  setfattr -n user.1 -v aaa /mnt/sdb/y
+  setfattr -n user.2 -v bbb /mnt/sdb/y
+
+  debugfs -R 'stat x' /dev/sdb | cat
+  debugfs -R 'stat y' /dev/sdb | cat
+
+This patch defers the reinsertion to the cache so that we can locate
+other blocks with the same contents.
+
+Signed-off-by: Tahsin Erdogan <tahsin@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Andreas Dilger <adilger@dilger.ca>
+---
+ fs/ext4/xattr.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index cff4f41ced61..ad4ea1cf685f 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -1815,9 +1815,6 @@ ext4_xattr_block_set(handle_t *handle, struct inode *inode,
+ 			ea_bdebug(bs->bh, "modifying in-place");
+ 			error = ext4_xattr_set_entry(i, s, handle, inode,
+ 						     true /* is_block */);
+-			if (!error)
+-				ext4_xattr_block_cache_insert(ea_block_cache,
+-							      bs->bh);
+ 			ext4_xattr_block_csum_set(inode, bs->bh);
+ 			unlock_buffer(bs->bh);
+ 			if (error == -EFSCORRUPTED)
+@@ -1973,6 +1970,7 @@ ext4_xattr_block_set(handle_t *handle, struct inode *inode,
+ 		} else if (bs->bh && s->base == bs->bh->b_data) {
+ 			/* We were modifying this block in-place. */
+ 			ea_bdebug(bs->bh, "keeping this block");
++			ext4_xattr_block_cache_insert(ea_block_cache, bs->bh);
+ 			new_bh = bs->bh;
+ 			get_bh(new_bh);
+ 		} else {
+-- 
+2.13.2.932.g7449e964c-goog
+
+
