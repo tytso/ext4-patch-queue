@@ -1,0 +1,55 @@
+ext4: add missing xattr hash update
+
+From: Tahsin Erdogan <tahsin@google.com>
+
+When updating an extended attribute, if the padded value sizes are the
+same, a shortcut is taken to avoid the bulk of the work. This was fine
+until the xattr hash update was moved inside ext4_xattr_set_entry().
+With that change, the hash update got missed in the shortcut case.
+
+Thanks to ZhangYi (yizhang089@gmail.com) for root causing the problem.
+
+Fixes: daf8328172df ("ext4: eliminate xattr entry e_hash recalculation for removes")
+
+Reported-by: Miklos Szeredi <miklos@szeredi.hu>
+Signed-off-by: Tahsin Erdogan <tahsin@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/xattr.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index 82a5af9f6668..3dd970168448 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -1543,7 +1543,7 @@ static int ext4_xattr_set_entry(struct ext4_xattr_info *i,
+ 			/* Clear padding bytes. */
+ 			memset(val + i->value_len, 0, new_size - i->value_len);
+ 		}
+-		return 0;
++		goto update_hash;
+ 	}
+ 
+ 	/* Compute min_offs and last. */
+@@ -1707,6 +1707,7 @@ static int ext4_xattr_set_entry(struct ext4_xattr_info *i,
+ 		here->e_value_size = cpu_to_le32(i->value_len);
+ 	}
+ 
++update_hash:
+ 	if (i->value) {
+ 		__le32 hash = 0;
+ 
+@@ -1725,7 +1726,8 @@ static int ext4_xattr_set_entry(struct ext4_xattr_info *i,
+ 						     here->e_name_len,
+ 						     &crc32c_hash, 1);
+ 		} else if (is_block) {
+-			__le32 *value = s->base + min_offs - new_size;
++			__le32 *value = s->base + le16_to_cpu(
++							here->e_value_offs);
+ 
+ 			hash = ext4_xattr_hash_entry(here->e_name,
+ 						     here->e_name_len, value,
+-- 
+2.14.0.rc1.383.gd1ce394fe2-goog
+
+
