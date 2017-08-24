@@ -1,0 +1,63 @@
+ext4: fix fault handling when mounted with -o dax,ro
+
+From: Randy Dodgen <dodgen@google.com>
+
+If an ext4 filesystem is mounted with both the DAX and read-only
+options, executables on that filesystem will fail to start (claiming
+'Segmentation fault') due to the fault handler returning
+VM_FAULT_SIGBUS.
+
+This is due to the DAX fault handler (see ext4_dax_huge_fault)
+attempting to write to the journal when FAULT_FLAG_WRITE is set. This is
+the wrong behavior for write faults which will lead to a COW page; in
+particular, this fails for readonly mounts.
+
+This change avoids journal writes for faults that are expected to COW.
+
+It might be the case that this could be better handled in
+ext4_iomap_begin / ext4_iomap_end (called via iomap_ops inside
+dax_iomap_fault). These is some overlap already (e.g. grabbing journal
+handles).
+
+Signed-off-by: Randy Dodgen <dodgen@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Reviewed-by: Ross Zwisler <ross.zwisler@linux.intel.com>
+---
+
+This version is simplified as suggested by Ross; all fault sizes and fallbacks
+are handled by dax_iomap_fault.
+
+ fs/ext4/file.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 0d7cf0cc9b87..dc1e1fb6b54c 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -279,7 +279,20 @@ static int ext4_dax_huge_fault(struct vm_fault *vmf,
+ 	handle_t *handle = NULL;
+ 	struct inode *inode = file_inode(vmf->vma->vm_file);
+ 	struct super_block *sb = inode->i_sb;
+-	bool write = vmf->flags & FAULT_FLAG_WRITE;
++
++	/*
++	 * We have to distinguish real writes from writes which will result in a
++	 * COW page; COW writes should *not* poke the journal (the file will not
++	 * be changed). Doing so would cause unintended failures when mounted
++	 * read-only.
++	 *
++	 * We check for VM_SHARED rather than vmf->cow_page since the latter is
++	 * unset for pe_size != PE_SIZE_PTE (i.e. only in do_cow_fault); for
++	 * other sizes, dax_iomap_fault will handle splitting / fallback so that
++	 * we eventually come back with a COW page.
++	 */
++	bool write = (vmf->flags & FAULT_FLAG_WRITE) &&
++		(vmf->vma->vm_flags & VM_SHARED);
+ 
+ 	if (write) {
+ 		sb_start_pagefault(sb);
+-- 
+2.14.1.342.g6490525c54-goog
+
+
