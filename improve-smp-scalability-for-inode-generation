@@ -1,18 +1,11 @@
 ext4: improve smp scalability for inode generation
 
 ->s_next_generation is protected by s_next_gen_lock but its usage
-pattern is very primitive.  We don't actually need sequentailly
+pattern is very primitive.  We don't actually need sequentially
 increasing new generation numbers, so let's use prandom_u32() instead.
 
 Reported-by: Dmitry Monakhov <dmonakhov@openvz.org>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
----
- fs/ext4/ext4.h   | 2 --
- fs/ext4/ialloc.c | 4 +---
- fs/ext4/ioctl.c  | 8 +++-----
- fs/ext4/super.c  | 2 --
- 4 files changed, 4 insertions(+), 12 deletions(-)
-
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 53ce95b52fd8..5e6d7b6f50c7 100644
 --- a/fs/ext4/ext4.h
