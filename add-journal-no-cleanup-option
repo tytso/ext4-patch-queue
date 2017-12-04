@@ -6,16 +6,16 @@ journal replay code.
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/ext4.h       |  1 +
- fs/ext4/super.c      | 12 +++++++++++-
+ fs/ext4/super.c      | 11 ++++++++++-
  fs/jbd2/journal.c    | 12 +++++++++---
  include/linux/jbd2.h |  1 +
- 4 files changed, 22 insertions(+), 4 deletions(-)
+ 4 files changed, 21 insertions(+), 4 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 9ebde0cd632e..e247c2a2a06c 100644
+index 4e091eae38b1..d1389c9fb8a1 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -1150,6 +1150,7 @@ struct ext4_inode_info {
+@@ -1108,6 +1108,7 @@ struct ext4_inode_info {
  #define EXT4_MOUNT_DIOREAD_NOLOCK	0x400000 /* Enable support for dio read nolocking */
  #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
  #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
@@ -24,20 +24,19 @@ index 9ebde0cd632e..e247c2a2a06c 100644
  #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
  #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index c9202be4cc1a..40d9cac94797 100644
+index 6783af7ec115..06da44b3d8e1 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -889,7 +889,8 @@ static void ext4_put_super(struct super_block *sb)
+@@ -888,7 +888,7 @@ static void ext4_put_super(struct super_block *sb)
  	ext4_mb_release(sb);
  	ext4_ext_release(sb);
  
--	if (!(sb->s_flags & MS_RDONLY) && !aborted) {
-+	if (!(sb->s_flags & MS_RDONLY) && !aborted &&
-+	    !test_opt(sb, JOURNAL_NOCLEANUP)) {
+-	if (!sb_rdonly(sb) && !aborted) {
++	if (!sb_rdonly(sb) && !aborted && !test_opt(sb, JOURNAL_NOCLEANUP)) {
  		ext4_clear_feature_journal_needs_recovery(sb);
  		es->s_state = cpu_to_le16(sbi->s_mount_state);
  	}
-@@ -1348,6 +1349,7 @@ enum {
+@@ -1348,6 +1348,7 @@ enum {
  	Opt_nomblk_io_submit, Opt_block_validity, Opt_noblock_validity,
  	Opt_inode_readahead_blks, Opt_journal_ioprio,
  	Opt_dioread_nolock, Opt_dioread_lock,
@@ -45,7 +44,7 @@ index c9202be4cc1a..40d9cac94797 100644
  	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
  	Opt_max_dir_size_kb, Opt_nojournal_checksum, Opt_nombcache,
  };
-@@ -1434,6 +1436,8 @@ static const match_table_t tokens = {
+@@ -1434,6 +1435,8 @@ static const match_table_t tokens = {
  	{Opt_test_dummy_encryption, "test_dummy_encryption"},
  	{Opt_nombcache, "nombcache"},
  	{Opt_nombcache, "no_mbcache"},	/* for backward compatibility */
@@ -54,7 +53,7 @@ index c9202be4cc1a..40d9cac94797 100644
  	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
  	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
  	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
-@@ -1642,6 +1646,8 @@ static const struct mount_opts {
+@@ -1642,6 +1645,8 @@ static const struct mount_opts {
  	{Opt_max_dir_size_kb, 0, MOPT_GTE0},
  	{Opt_test_dummy_encryption, 0, MOPT_GTE0},
  	{Opt_nombcache, EXT4_MOUNT_NO_MBCACHE, MOPT_SET},
@@ -63,7 +62,7 @@ index c9202be4cc1a..40d9cac94797 100644
  	{Opt_err, 0, 0}
  };
  
-@@ -4423,6 +4429,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
+@@ -4447,6 +4452,10 @@ static void ext4_init_journal_params(struct super_block *sb, journal_t *journal)
  		journal->j_flags |= JBD2_ABORT_ON_SYNCDATA_ERR;
  	else
  		journal->j_flags &= ~JBD2_ABORT_ON_SYNCDATA_ERR;
@@ -75,10 +74,10 @@ index c9202be4cc1a..40d9cac94797 100644
  }
  
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 7c6254330951..352c9491e668 100644
+index b01f07f65d59..218c50dd9dfc 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
-@@ -1708,6 +1708,11 @@ int jbd2_journal_destroy(journal_t *journal)
+@@ -1724,6 +1724,11 @@ int jbd2_journal_destroy(journal_t *journal)
  	if (journal->j_running_transaction)
  		jbd2_journal_commit_transaction(journal);
  
@@ -90,7 +89,7 @@ index 7c6254330951..352c9491e668 100644
  	/* Force any old transactions to disk */
  
  	/* Totally anal locking here... */
-@@ -1735,7 +1740,9 @@ int jbd2_journal_destroy(journal_t *journal)
+@@ -1751,7 +1756,9 @@ int jbd2_journal_destroy(journal_t *journal)
  	spin_unlock(&journal->j_list_lock);
  
  	if (journal->j_sb_buffer) {
@@ -101,7 +100,7 @@ index 7c6254330951..352c9491e668 100644
  			mutex_lock_io(&journal->j_checkpoint_mutex);
  
  			write_lock(&journal->j_state_lock);
-@@ -1746,8 +1753,7 @@ int jbd2_journal_destroy(journal_t *journal)
+@@ -1762,8 +1769,7 @@ int jbd2_journal_destroy(journal_t *journal)
  			jbd2_mark_journal_empty(journal,
  					REQ_SYNC | REQ_PREFLUSH | REQ_FUA);
  			mutex_unlock(&journal->j_checkpoint_mutex);
@@ -112,7 +111,7 @@ index 7c6254330951..352c9491e668 100644
  	}
  
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 606b6bce3a5b..fd14143d244b 100644
+index 296d1e0ea87b..58ec2b764abd 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
 @@ -1130,6 +1130,7 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
