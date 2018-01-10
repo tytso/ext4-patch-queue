@@ -1,0 +1,28 @@
+mbcache: make sure c_entry_count is not decremented past zero
+
+From: Jiang Biao <jiang.biao2@zte.com.cn>
+
+Signed-off-by: Jiang Biao <jiang.biao2@zte.com.cn>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+CC: Eric Biggers <ebiggers@google.com>
+CC: Andrew Morton <akpm@linux-foundation.org>
+CC: Jan Kara <jack@suse.cz>
+---
+ fs/mbcache.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/mbcache.c b/fs/mbcache.c
+index 0851af5c1c3d..f2f15b747bed 100644
+--- a/fs/mbcache.c
++++ b/fs/mbcache.c
+@@ -239,7 +239,9 @@ void mb_cache_entry_delete(struct mb_cache *cache, u32 key, u64 value)
+ 			spin_lock(&cache->c_list_lock);
+ 			if (!list_empty(&entry->e_list)) {
+ 				list_del_init(&entry->e_list);
+-				cache->c_entry_count--;
++				if (!WARN_ONCE(cache->c_entry_count == 0,
++		"mbcache: attempt to decrement c_entry_count past zero"))
++					cache->c_entry_count--;
+ 				atomic_dec(&entry->e_refcnt);
+ 			}
+ 			spin_unlock(&cache->c_list_lock);
