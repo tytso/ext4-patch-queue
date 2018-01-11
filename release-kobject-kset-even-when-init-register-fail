@@ -1,0 +1,59 @@
+ext4: release kobject/kset even when init/register fail
+
+From: Riccardo Schirone <sirmy15@gmail.com>
+
+Even when kobject_init_and_add/kset_register fail, the kobject has been
+already initialized and the refcount set to 1. Thus it is necessary to
+release the kobject/kset, to avoid the memory associated with it hanging
+around forever.
+
+Signed-off-by: Riccardo Schirone <sirmy15@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/sysfs.c | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/sysfs.c b/fs/ext4/sysfs.c
+index 48c7a7d55ed3..b096e157934f 100644
+--- a/fs/ext4/sysfs.c
++++ b/fs/ext4/sysfs.c
+@@ -395,8 +395,11 @@ int ext4_register_sysfs(struct super_block *sb)
+ 	init_completion(&sbi->s_kobj_unregister);
+ 	err = kobject_init_and_add(&sbi->s_kobj, &ext4_sb_ktype, NULL,
+ 				   "%s", sb->s_id);
+-	if (err)
++	if (err) {
++		kobject_put(&sbi->s_kobj);
++		wait_for_completion(&sbi->s_kobj_unregister);
+ 		return err;
++	}
+ 
+ 	if (ext4_proc_root)
+ 		sbi->s_proc = proc_mkdir(sb->s_id, ext4_proc_root);
+@@ -429,15 +432,19 @@ int __init ext4_init_sysfs(void)
+ 	kobject_set_name(&ext4_kset.kobj, "ext4");
+ 	ext4_kset.kobj.parent = fs_kobj;
+ 	ret = kset_register(&ext4_kset);
+-	if (ret)
++	if (ret) {
++		kset_unregister(&ext4_kset);
+ 		return ret;
++	}
+ 
+ 	ret = kobject_init_and_add(&ext4_feat, &ext4_feat_ktype,
+ 				   NULL, "features");
+-	if (ret)
++	if (ret) {
++		kobject_put(&ext4_feat);
+ 		kset_unregister(&ext4_kset);
+-	else
++	} else {
+ 		ext4_proc_root = proc_mkdir(proc_dirname, NULL);
++	}
+ 	return ret;
+ }
+ 
+-- 
+2.14.3
+
+
