@@ -1,0 +1,112 @@
+ext4: add tracepoints for shutdown and file system errors
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+
+---
+ fs/ext4/ioctl.c             |  1 +
+ fs/ext4/super.c             |  4 ++++
+ include/trace/events/ext4.h | 43 +++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 48 insertions(+)
+
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 7e99ad02f1ba..4d1b1575f8ac 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -481,6 +481,7 @@ static int ext4_shutdown(struct super_block *sb, unsigned long arg)
+ 		return 0;
+ 
+ 	ext4_msg(sb, KERN_ALERT, "shut down requested (%d)", flags);
++	trace_ext4_shutdown(sb, flags);
+ 
+ 	switch (flags) {
+ 	case EXT4_GOING_FLAGS_DEFAULT:
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 39bf464c35f1..756f515b762d 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -448,6 +448,7 @@ void __ext4_error(struct super_block *sb, const char *function,
+ 	if (unlikely(ext4_forced_shutdown(EXT4_SB(sb))))
+ 		return;
+ 
++	trace_ext4_error(sb, function, line);
+ 	if (ext4_error_ratelimit(sb)) {
+ 		va_start(args, fmt);
+ 		vaf.fmt = fmt;
+@@ -472,6 +473,7 @@ void __ext4_error_inode(struct inode *inode, const char *function,
+ 	if (unlikely(ext4_forced_shutdown(EXT4_SB(inode->i_sb))))
+ 		return;
+ 
++	trace_ext4_error(inode->i_sb, function, line);
+ 	es->s_last_error_ino = cpu_to_le32(inode->i_ino);
+ 	es->s_last_error_block = cpu_to_le64(block);
+ 	if (ext4_error_ratelimit(inode->i_sb)) {
+@@ -507,6 +509,7 @@ void __ext4_error_file(struct file *file, const char *function,
+ 	if (unlikely(ext4_forced_shutdown(EXT4_SB(inode->i_sb))))
+ 		return;
+ 
++	trace_ext4_error(inode->i_sb, function, line);
+ 	es = EXT4_SB(inode->i_sb)->s_es;
+ 	es->s_last_error_ino = cpu_to_le32(inode->i_ino);
+ 	if (ext4_error_ratelimit(inode->i_sb)) {
+@@ -719,6 +722,7 @@ __acquires(bitlock)
+ 	if (unlikely(ext4_forced_shutdown(EXT4_SB(sb))))
+ 		return;
+ 
++	trace_ext4_error(sb, function, line);
+ 	es->s_last_error_ino = cpu_to_le32(ino);
+ 	es->s_last_error_block = cpu_to_le64(block);
+ 	__save_error_info(sb, function, line);
+diff --git a/include/trace/events/ext4.h b/include/trace/events/ext4.h
+index 4d0e3af4e561..0e31eb136c57 100644
+--- a/include/trace/events/ext4.h
++++ b/include/trace/events/ext4.h
+@@ -2585,6 +2585,49 @@ DEFINE_GETFSMAP_EVENT(ext4_getfsmap_low_key);
+ DEFINE_GETFSMAP_EVENT(ext4_getfsmap_high_key);
+ DEFINE_GETFSMAP_EVENT(ext4_getfsmap_mapping);
+ 
++TRACE_EVENT(ext4_shutdown,
++	TP_PROTO(struct super_block *sb, unsigned long flags),
++
++	TP_ARGS(sb, flags),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field(     unsigned,	flags			)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= sb->s_dev;
++		__entry->flags	= flags;
++	),
++
++	TP_printk("dev %d,%d flags %u",
++		  MAJOR(__entry->dev), MINOR(__entry->dev),
++		  __entry->flags)
++);
++
++TRACE_EVENT(ext4_error,
++	TP_PROTO(struct super_block *sb, const char *function,
++		 unsigned int line),
++
++	TP_ARGS(sb, function, line),
++
++	TP_STRUCT__entry(
++		__field(	dev_t,	dev			)
++		__field( const char *,	function		)
++		__field(     unsigned,	line			)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= sb->s_dev;
++		__entry->function = function;
++		__entry->line	= line;
++	),
++
++	TP_printk("dev %d,%d function %s line %u",
++		  MAJOR(__entry->dev), MINOR(__entry->dev),
++		  __entry->function, __entry->line)
++);
++
+ #endif /* _TRACE_EXT4_H */
+ 
+ /* This part must be outside protection */
