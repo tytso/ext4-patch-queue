@@ -1,0 +1,297 @@
+ext4: remove EXT4_STATE_DIOREAD_LOCK flag
+
+From: Nikolay Borisov <nborisov@suse.com>
+
+Commit 16c54688592c ("ext4: Allow parallel DIO reads") reworked the way
+locking happens around parallel dio reads. This resulted in obviating
+the need for EXT4_STATE_DIOREAD_LOCK flag and accompanying logic.
+Currently this amounts to dead code so let's remove it. No functional
+changes
+
+Signed-off-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/ext4.h        | 17 -----------------
+ fs/ext4/extents.c     | 19 +++++--------------
+ fs/ext4/inode.c       |  8 --------
+ fs/ext4/ioctl.c       |  4 ----
+ fs/ext4/move_extent.c |  4 ----
+ fs/ext4/super.c       | 12 +++++-------
+ 6 files changed, 10 insertions(+), 54 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 3241475a1733..a42e71203e53 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1522,8 +1522,6 @@ enum {
+ 	EXT4_STATE_EXT_MIGRATE,		/* Inode is migrating */
+ 	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
+ 	EXT4_STATE_NEWENTRY,		/* File just added to dir */
+-	EXT4_STATE_DIOREAD_LOCK,	/* Disable support for dio read
+-					   nolocking */
+ 	EXT4_STATE_MAY_INLINE_DATA,	/* may have in-inode data */
+ 	EXT4_STATE_EXT_PRECACHED,	/* extents have been precached */
+ 	EXT4_STATE_LUSTRE_EA_INODE,	/* Lustre-style ea_inode */
+@@ -3181,21 +3179,6 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
+ 	set_bit(BH_BITMAP_UPTODATE, &(bh)->b_state);
+ }
+ 
+-/*
+- * Disable DIO read nolock optimization, so new dioreaders will be forced
+- * to grab i_mutex
+- */
+-static inline void ext4_inode_block_unlocked_dio(struct inode *inode)
+-{
+-	ext4_set_inode_state(inode, EXT4_STATE_DIOREAD_LOCK);
+-	smp_mb();
+-}
+-static inline void ext4_inode_resume_unlocked_dio(struct inode *inode)
+-{
+-	smp_mb();
+-	ext4_clear_inode_state(inode, EXT4_STATE_DIOREAD_LOCK);
+-}
+-
+ #define in_range(b, first, len)	((b) >= (first) && (b) <= (first) + (len) - 1)
+ 
+ /* For ioend & aio unwritten conversion wait queues */
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index 054416e9d827..837f0a6357c7 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -4796,7 +4796,6 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+ 		flags |= EXT4_GET_BLOCKS_KEEP_SIZE;
+ 
+ 	/* Wait all existing dio workers, newcomers will block on i_mutex */
+-	ext4_inode_block_unlocked_dio(inode);
+ 	inode_dio_wait(inode);
+ 
+ 	/* Preallocate the range including the unaligned edges */
+@@ -4807,7 +4806,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+ 				 round_down(offset, 1 << blkbits)) >> blkbits,
+ 				new_size, flags);
+ 		if (ret)
+-			goto out_dio;
++			goto out_mutex;
+ 
+ 	}
+ 
+@@ -4824,7 +4823,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+ 		ret = ext4_update_disksize_before_punch(inode, offset, len);
+ 		if (ret) {
+ 			up_write(&EXT4_I(inode)->i_mmap_sem);
+-			goto out_dio;
++			goto out_mutex;
+ 		}
+ 		/* Now release the pages and zero block aligned part of pages */
+ 		truncate_pagecache_range(inode, start, end - 1);
+@@ -4834,10 +4833,10 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+ 					     flags);
+ 		up_write(&EXT4_I(inode)->i_mmap_sem);
+ 		if (ret)
+-			goto out_dio;
++			goto out_mutex;
+ 	}
+ 	if (!partial_begin && !partial_end)
+-		goto out_dio;
++		goto out_mutex;
+ 
+ 	/*
+ 	 * In worst case we have to writeout two nonadjacent unwritten
+@@ -4850,7 +4849,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+ 	if (IS_ERR(handle)) {
+ 		ret = PTR_ERR(handle);
+ 		ext4_std_error(inode->i_sb, ret);
+-		goto out_dio;
++		goto out_mutex;
+ 	}
+ 
+ 	inode->i_mtime = inode->i_ctime = current_time(inode);
+@@ -4875,8 +4874,6 @@ static long ext4_zero_range(struct file *file, loff_t offset,
+ 		ext4_handle_sync(handle);
+ 
+ 	ext4_journal_stop(handle);
+-out_dio:
+-	ext4_inode_resume_unlocked_dio(inode);
+ out_mutex:
+ 	inode_unlock(inode);
+ 	return ret;
+@@ -4964,11 +4961,9 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+ 	}
+ 
+ 	/* Wait all existing dio workers, newcomers will block on i_mutex */
+-	ext4_inode_block_unlocked_dio(inode);
+ 	inode_dio_wait(inode);
+ 
+ 	ret = ext4_alloc_file_blocks(file, lblk, max_blocks, new_size, flags);
+-	ext4_inode_resume_unlocked_dio(inode);
+ 	if (ret)
+ 		goto out;
+ 
+@@ -5485,7 +5480,6 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
+ 	}
+ 
+ 	/* Wait for existing dio to complete */
+-	ext4_inode_block_unlocked_dio(inode);
+ 	inode_dio_wait(inode);
+ 
+ 	/*
+@@ -5562,7 +5556,6 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
+ 	ext4_journal_stop(handle);
+ out_mmap:
+ 	up_write(&EXT4_I(inode)->i_mmap_sem);
+-	ext4_inode_resume_unlocked_dio(inode);
+ out_mutex:
+ 	inode_unlock(inode);
+ 	return ret;
+@@ -5635,7 +5628,6 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
+ 	}
+ 
+ 	/* Wait for existing dio to complete */
+-	ext4_inode_block_unlocked_dio(inode);
+ 	inode_dio_wait(inode);
+ 
+ 	/*
+@@ -5737,7 +5729,6 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
+ 	ext4_journal_stop(handle);
+ out_mmap:
+ 	up_write(&EXT4_I(inode)->i_mmap_sem);
+-	ext4_inode_resume_unlocked_dio(inode);
+ out_mutex:
+ 	inode_unlock(inode);
+ 	return ret;
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index c94780075b04..7d285e79fd9f 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -4251,7 +4251,6 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
+ 	}
+ 
+ 	/* Wait all existing dio workers, newcomers will block on i_mutex */
+-	ext4_inode_block_unlocked_dio(inode);
+ 	inode_dio_wait(inode);
+ 
+ 	/*
+@@ -4324,7 +4323,6 @@ int ext4_punch_hole(struct inode *inode, loff_t offset, loff_t length)
+ 	ext4_journal_stop(handle);
+ out_dio:
+ 	up_write(&EXT4_I(inode)->i_mmap_sem);
+-	ext4_inode_resume_unlocked_dio(inode);
+ out_mutex:
+ 	inode_unlock(inode);
+ 	return ret;
+@@ -5506,9 +5504,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
+ 		 */
+ 		if (orphan) {
+ 			if (!ext4_should_journal_data(inode)) {
+-				ext4_inode_block_unlocked_dio(inode);
+ 				inode_dio_wait(inode);
+-				ext4_inode_resume_unlocked_dio(inode);
+ 			} else
+ 				ext4_wait_for_tail_page_commit(inode);
+ 		}
+@@ -5999,7 +5995,6 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
+ 		return -EROFS;
+ 
+ 	/* Wait for all existing dio workers */
+-	ext4_inode_block_unlocked_dio(inode);
+ 	inode_dio_wait(inode);
+ 
+ 	/*
+@@ -6015,7 +6010,6 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
+ 		err = filemap_write_and_wait(inode->i_mapping);
+ 		if (err < 0) {
+ 			up_write(&EXT4_I(inode)->i_mmap_sem);
+-			ext4_inode_resume_unlocked_dio(inode);
+ 			return err;
+ 		}
+ 	}
+@@ -6038,7 +6032,6 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
+ 		if (err < 0) {
+ 			jbd2_journal_unlock_updates(journal);
+ 			percpu_up_write(&sbi->s_journal_flag_rwsem);
+-			ext4_inode_resume_unlocked_dio(inode);
+ 			return err;
+ 		}
+ 		ext4_clear_inode_flag(inode, EXT4_INODE_JOURNAL_DATA);
+@@ -6050,7 +6043,6 @@ int ext4_change_inode_journal_flag(struct inode *inode, int val)
+ 
+ 	if (val)
+ 		up_write(&EXT4_I(inode)->i_mmap_sem);
+-	ext4_inode_resume_unlocked_dio(inode);
+ 
+ 	/* Finally we can mark the inode as dirty. */
+ 
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 7e99ad02f1ba..3644e31ba347 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -124,8 +124,6 @@ static long swap_inode_boot_loader(struct super_block *sb,
+ 	truncate_inode_pages(&inode_bl->i_data, 0);
+ 
+ 	/* Wait for all existing dio workers */
+-	ext4_inode_block_unlocked_dio(inode);
+-	ext4_inode_block_unlocked_dio(inode_bl);
+ 	inode_dio_wait(inode);
+ 	inode_dio_wait(inode_bl);
+ 
+@@ -186,8 +184,6 @@ static long swap_inode_boot_loader(struct super_block *sb,
+ 	ext4_double_up_write_data_sem(inode, inode_bl);
+ 
+ journal_err_out:
+-	ext4_inode_resume_unlocked_dio(inode);
+-	ext4_inode_resume_unlocked_dio(inode_bl);
+ 	unlock_two_nondirectories(inode, inode_bl);
+ 	iput(inode_bl);
+ 	return err;
+diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
+index b96e4bd3b3ec..8e17efdcbf11 100644
+--- a/fs/ext4/move_extent.c
++++ b/fs/ext4/move_extent.c
+@@ -601,8 +601,6 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
+ 	lock_two_nondirectories(orig_inode, donor_inode);
+ 
+ 	/* Wait for all existing dio workers */
+-	ext4_inode_block_unlocked_dio(orig_inode);
+-	ext4_inode_block_unlocked_dio(donor_inode);
+ 	inode_dio_wait(orig_inode);
+ 	inode_dio_wait(donor_inode);
+ 
+@@ -693,8 +691,6 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
+ 	ext4_ext_drop_refs(path);
+ 	kfree(path);
+ 	ext4_double_up_write_data_sem(orig_inode, donor_inode);
+-	ext4_inode_resume_unlocked_dio(orig_inode);
+-	ext4_inode_resume_unlocked_dio(donor_inode);
+ 	unlock_two_nondirectories(orig_inode, donor_inode);
+ 
+ 	return ret;
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 39bf464c35f1..8781f8afbe50 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -101,15 +101,13 @@ static struct inode *ext4_get_journal_inode(struct super_block *sb,
+  *   i_data_sem (rw)
+  *
+  * truncate:
+- * sb_start_write -> i_mutex -> EXT4_STATE_DIOREAD_LOCK (w) -> i_mmap_sem (w) ->
+- *   i_mmap_rwsem (w) -> page lock
+- * sb_start_write -> i_mutex -> EXT4_STATE_DIOREAD_LOCK (w) -> i_mmap_sem (w) ->
+- *   transaction start -> i_data_sem (rw)
++ * sb_start_write -> i_mutex -> i_mmap_sem (w) -> i_mmap_rwsem (w) -> page lock
++ * sb_start_write -> i_mutex -> i_mmap_sem (w) -> transaction start ->
++ *   i_data_sem (rw)
+  *
+  * direct IO:
+- * sb_start_write -> i_mutex -> EXT4_STATE_DIOREAD_LOCK (r) -> mmap_sem
+- * sb_start_write -> i_mutex -> EXT4_STATE_DIOREAD_LOCK (r) ->
+- *   transaction start -> i_data_sem (rw)
++ * sb_start_write -> i_mutex -> mmap_sem
++ * sb_start_write -> i_mutex -> transaction start -> i_data_sem (rw)
+  *
+  * writepages:
+  * transaction start -> page lock(s) -> i_data_sem (rw)
+-- 
+2.7.4
+
+
