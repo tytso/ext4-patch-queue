@@ -1,0 +1,84 @@
+ext4: update i_disksize if direct write past ondisk size
+
+From: Eryu Guan <guaneryu@gmail.com>
+
+Currently in ext4 direct write path, we update i_disksize only when
+new eof is greater than i_size, and don't update it even when new
+eof is greater than i_disksize but less than i_size. This doesn't
+work well with delalloc buffer write, which updates i_size and
+i_disksize only when delalloc blocks are resolved (at writeback
+time), the i_disksize from direct write can be lost if a previous
+buffer write succeeded at write time but failed at writeback time,
+then results in corrupted ondisk inode size.
+
+Consider this case, first buffer write 4k data to a new file at
+offset 16k with delayed allocation, then direct write 4k data to the
+same file at offset 4k before delalloc blocks are resolved, which
+doesn't update i_disksize because it writes within i_size(20k), but
+the extent tree metadata has been committed in journal. Then
+writeback of the delalloc blocks fails (due to device error etc.),
+and i_size/i_disksize from buffer write can't be written to disk
+(still zero). A subsequent umount/mount cycle recovers journal and
+writes extent tree metadata from direct write to disk, but with
+i_disksize being zero.
+
+Fix it by updating i_disksize too in direct write path when new eof
+is greater than i_disksize but less than i_size, so i_disksize is
+always consistent with direct write.
+
+This fixes occasional i_size corruption in fstests generic/475.
+
+Signed-off-by: Eryu Guan <guaneryu@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+
+v2:
+- basically no change since v1, just fix the locking issue first, and
+  reintroduce the "ei" definition in this patch.
+
+I've tested this patchset by looping generic/475 200 times without
+hitting a corruption, usually it fails within 5 iterations for me. Also
+tested by full fstests runs on ext2_4k, ext3_2k, ext4_1k configurations
+and dio tests from LTP, all results looked good.
+
+ fs/ext4/inode.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index bff44b4a0783..9acac476c15c 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3658,6 +3658,7 @@ static ssize_t ext4_direct_IO_write(struct kiocb *iocb, struct iov_iter *iter)
+ {
+ 	struct file *file = iocb->ki_filp;
+ 	struct inode *inode = file->f_mapping->host;
++	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	ssize_t ret;
+ 	loff_t offset = iocb->ki_pos;
+ 	size_t count = iov_iter_count(iter);
+@@ -3668,7 +3669,7 @@ static ssize_t ext4_direct_IO_write(struct kiocb *iocb, struct iov_iter *iter)
+ 	int orphan = 0;
+ 	handle_t *handle;
+ 
+-	if (final_size > inode->i_size) {
++	if (final_size > inode->i_size || final_size > ei->i_disksize) {
+ 		/* Credits for sb + inode write */
+ 		handle = ext4_journal_start(inode, EXT4_HT_INODE, 2);
+ 		if (IS_ERR(handle)) {
+@@ -3788,9 +3789,10 @@ static ssize_t ext4_direct_IO_write(struct kiocb *iocb, struct iov_iter *iter)
+ 			ext4_orphan_del(handle, inode);
+ 		if (ret > 0) {
+ 			loff_t end = offset + ret;
+-			if (end > inode->i_size) {
++			if (end > inode->i_size || end > ei->i_disksize) {
+ 				ext4_update_i_disksize(inode, end);
+-				i_size_write(inode, end);
++				if (end > inode->i_size)
++					i_size_write(inode, end);
+ 				/*
+ 				 * We're going to return a positive `ret'
+ 				 * here due to non-zero-length I/O, so there's
+-- 
+2.14.3
+
+
