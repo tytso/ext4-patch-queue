@@ -7,7 +7,10 @@ ext4_evict_inode() will try to free the inode on disk, before all of
 the file system structures are set up, and this will result in an OOPS
 caused by a NULL pointer dereference.
 
+This issue has been assigned CVE-2018-1092.
+
 https://bugzilla.kernel.org/show_bug.cgi?id=199179
+https://bugzilla.redhat.com/show_bug.cgi?id=1560777
 
 Reported-by: Wen Xu <wen.xu@gatech.edu>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
@@ -17,10 +20,10 @@ Cc: stable@vger.kernel.org
  1 file changed, 6 insertions(+)
 
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index 951a3d69ed17..5adfd0980c71 100644
+index 435965598cb8..18aa2ef963ad 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -4745,6 +4745,12 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
+@@ -4732,6 +4732,12 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
  		goto bad_inode;
  	raw_inode = ext4_raw_inode(&iloc);
  
