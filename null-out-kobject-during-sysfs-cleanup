@@ -1,0 +1,36 @@
+ext4: null out kobject* during sysfs cleanup
+
+From: Tyson Nottingham <tgnottingham@gmail.com>
+
+Make cleanup of ext4_feat kobject consistent with similar objects.
+
+Signed-off-by: Tyson Nottingham <tgnottingham@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/sysfs.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ext4/sysfs.c b/fs/ext4/sysfs.c
+index 1205261..aa8165e 100644
+--- a/fs/ext4/sysfs.c
++++ b/fs/ext4/sysfs.c
+@@ -464,6 +464,7 @@ int __init ext4_init_sysfs(void)
+ 
+ feat_err:
+ 	kobject_put(ext4_feat);
++	ext4_feat = NULL;
+ kset_err:
+ 	kset_unregister(ext4_kset);
+ 	ext4_kset = NULL;
+@@ -473,6 +474,7 @@ int __init ext4_init_sysfs(void)
+ void ext4_exit_sysfs(void)
+ {
+ 	kobject_put(ext4_feat);
++	ext4_feat = NULL;
+ 	kset_unregister(ext4_kset);
+ 	ext4_kset = NULL;
+ 	remove_proc_entry(proc_dirname, NULL);
+-- 
+2.7.4
+
+
