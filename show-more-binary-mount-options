@@ -1,0 +1,116 @@
+ext4: show more binary mount options in procfs
+
+From: Tyson Nottingham <tgnottingham@gmail.com>
+
+Previously, /proc/fs/ext4/<dev>/options would only show binary options
+if they were set (1 in the options bit mask). E.g. it would show "grpid"
+if it was set, but it would not show "nogrpid" if grpid was not set.
+
+This seems sensible, but when an option is absent from the file, it can
+be hard for the unfamiliar to know what is being used. E.g. if there
+isn't a (no)grpid entry, nogrpid is in effect. But if there isn't a
+(no)auto_da_alloc entry, auto_da_alloc is in effect. If there isn't a
+(minixdf|bsddf) entry, it turns out bsddf is in effect. It all depends
+on how the option is implemented.
+
+It's clearer to be explicit, so print the corresponding option
+regardless of whether it means a 1 or a 0 in the bit mask.
+
+Note that options which do not have an explicit disable option aren't
+indicated as being disabled even with this change (e.g. dax).
+
+Signed-off-by: Tyson Nottingham <tgnottingham@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+
+Before:
+
+$ cat /proc/fs/ext4/loop0/options
+rw
+block_validity
+delalloc
+journal_checksum
+barrier
+user_xattr
+acl
+resuid=0
+resgid=0
+errors=continue
+commit=5
+min_batch_time=0
+max_batch_time=15000
+stripe=0
+data=ordered
+inode_readahead_blks=32
+init_itable=10
+max_dir_size_kb=0
+
+
+After (additions starred):
+
+$ cat /proc/fs/ext4/loop0/options
+rw
+*bsddf
+*nogrpid
+block_validity
+*dioread_lock
+*nodiscard
+delalloc
+journal_checksum
+barrier
+*auto_da_alloc
+user_xattr
+acl
+*noquota
+resuid=0
+resgid=0
+errors=continue
+commit=5
+min_batch_time=0
+max_batch_time=15000
+stripe=0
+data=ordered
+inode_readahead_blks=32
+init_itable=10
+max_dir_size_kb=0
+
+---
+ fs/ext4/super.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index e82e35a..6b07fa2 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -2018,7 +2018,7 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
+ {
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 	struct ext4_super_block *es = sbi->s_es;
+-	int def_errors, def_mount_opt = nodefs ? 0 : sbi->s_def_mount_opt;
++	int def_errors, def_mount_opt = sbi->s_def_mount_opt;
+ 	const struct mount_opts *m;
+ 	char sep = nodefs ? '\n' : ',';
+ 
+@@ -2033,7 +2033,7 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
+ 		if (((m->flags & (MOPT_SET|MOPT_CLEAR)) == 0) ||
+ 		    (m->flags & MOPT_CLEAR_ERR))
+ 			continue;
+-		if (!(m->mount_opt & (sbi->s_mount_opt ^ def_mount_opt)))
++		if (!nodefs && !(m->mount_opt & (sbi->s_mount_opt ^ def_mount_opt)))
+ 			continue; /* skip if same as the default */
+ 		if ((want_set &&
+ 		     (sbi->s_mount_opt & m->mount_opt) != m->mount_opt) ||
+@@ -2067,7 +2067,8 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
+ 		SEQ_OPTS_PUTS("i_version");
+ 	if (nodefs || sbi->s_stripe)
+ 		SEQ_OPTS_PRINT("stripe=%lu", sbi->s_stripe);
+-	if (EXT4_MOUNT_DATA_FLAGS & (sbi->s_mount_opt ^ def_mount_opt)) {
++	if (nodefs || EXT4_MOUNT_DATA_FLAGS &
++			(sbi->s_mount_opt ^ def_mount_opt)) {
+ 		if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)
+ 			SEQ_OPTS_PUTS("data=journal");
+ 		else if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA)
+-- 
+2.7.4
+
+
