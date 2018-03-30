@@ -2,15 +2,17 @@ ext4: limit xattr size to INT_MAX
 
 From: Eric Biggers <ebiggers@google.com>
 
-ext4 isn't validating the sizes of xattrs.  This is problematic
-because ->e_value_size is a u32, but ext4_xattr_get() returns an int.
-A very large size is misinterpreted as an error code, which
-ext4_get_acl() translates into a bogus ERR_PTR() for which IS_ERR()
-returns false, causing a crash.
+ext4 isn't validating the sizes of xattrs where the value of the xattr
+is stored in an external inode.  This is problematic because
+->e_value_size is a u32, but ext4_xattr_get() returns an int.  A very
+large size is misinterpreted as an error code, which ext4_get_acl()
+translates into a bogus ERR_PTR() for which IS_ERR() returns false,
+causing a crash.
 
 Fix this by validating that all xattrs are <= INT_MAX bytes.  Also add
 explicit checks in ext4_xattr_block_get() and ext4_xattr_ibody_get()
-just in case the xattr block is corrupted in memory.
+just in case the xattr block is corrupted in memory after it is
+verifeid.
 
 This issue has been assigned CVE-2018-1095.
 
@@ -21,25 +23,32 @@ Reported-by: Wen Xu <wen.xu@gatech.edu>
 Signed-off-by: Eric Biggers <ebiggers@google.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 Cc: stable@vger.kernel.org
+Fixes: e50e5129f384 ("ext4: xattr-in-inode support")
 ---
- fs/ext4/xattr.c | 11 +++++++++--
- 1 file changed, 9 insertions(+), 2 deletions(-)
+ fs/ext4/xattr.c | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
 
 diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
-index 63656dbafdc4..fea1108c3bea 100644
+index 63656dbafdc4..d2a9b078e121 100644
 --- a/fs/ext4/xattr.c
 +++ b/fs/ext4/xattr.c
-@@ -201,6 +201,9 @@ ext4_xattr_check_entries(struct ext4_xattr_entry *entry, void *end,
- 			u32 size = le32_to_cpu(entry->e_value_size);
+@@ -195,10 +195,14 @@ ext4_xattr_check_entries(struct ext4_xattr_entry *entry, void *end,
+ 
+ 	/* Check the values */
+ 	while (!IS_LAST_ENTRY(entry)) {
++		u32 size = le32_to_cpu(entry->e_value_size);
++
++		if (size > INT_MAX)
++			return -EFSCORRUPTED;
++
+ 		if (entry->e_value_size != 0 &&
+ 		    entry->e_value_inum == 0) {
+ 			u16 offs = le16_to_cpu(entry->e_value_offs);
+-			u32 size = le32_to_cpu(entry->e_value_size);
  			void *value;
  
-+			if (size > INT_MAX)
-+				return -EFSCORRUPTED;
-+
  			/*
- 			 * The value cannot overlap the names, and the value
- 			 * with padding cannot extend beyond 'end'.  Check both
-@@ -523,8 +526,10 @@ ext4_xattr_block_get(struct inode *inode, int name_index, const char *name,
+@@ -523,8 +527,10 @@ ext4_xattr_block_get(struct inode *inode, int name_index, const char *name,
  	if (error)
  		goto cleanup;
  	size = le32_to_cpu(entry->e_value_size);
@@ -51,7 +60,7 @@ index 63656dbafdc4..fea1108c3bea 100644
  		if (size > buffer_size)
  			goto cleanup;
  		if (entry->e_value_inum) {
-@@ -572,8 +577,10 @@ ext4_xattr_ibody_get(struct inode *inode, int name_index, const char *name,
+@@ -572,8 +578,10 @@ ext4_xattr_ibody_get(struct inode *inode, int name_index, const char *name,
  	if (error)
  		goto cleanup;
  	size = le32_to_cpu(entry->e_value_size);
