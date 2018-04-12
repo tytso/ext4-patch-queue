@@ -12,12 +12,12 @@ Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile     |   2 +-
  fs/jbd2/checkpoint.c |   3 +
- fs/jbd2/cleaner.c    | 368 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/jbd2/jmap.c       |  34 +++++++++
- fs/jbd2/jmap.h       |  77 ++++++++++++++++++++
+ fs/jbd2/cleaner.c    | 368 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/jmap.c       |  34 ++++++++
+ fs/jbd2/jmap.h       |  77 +++++++++++++++++
  fs/jbd2/journal.c    |  23 +++++-
- include/linux/jbd2.h |   9 ++-
- 7 files changed, 512 insertions(+), 4 deletions(-)
+ include/linux/jbd2.h |   8 ++
+ 7 files changed, 512 insertions(+), 3 deletions(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index a54f50b3a06e..b6a2dddcc0a7 100644
@@ -30,10 +30,10 @@ index a54f50b3a06e..b6a2dddcc0a7 100644
 -		jmap.o
 +		jmap.o cleaner.o
 diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
-index 4055f51617ef..b60bbf58e8f7 100644
+index c125d662777c..b2468698f566 100644
 --- a/fs/jbd2/checkpoint.c
 +++ b/fs/jbd2/checkpoint.c
-@@ -389,6 +389,9 @@ int jbd2_cleanup_journal_tail(journal_t *journal)
+@@ -386,6 +386,9 @@ int jbd2_cleanup_journal_tail(journal_t *journal)
  	tid_t		first_tid;
  	unsigned long	blocknr;
  
@@ -577,10 +577,10 @@ index 91564ce9bbda..a44f15152536 100644
 +
  #endif
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 50ab9b5bc7f4..221e168c7c58 100644
+index 114c7636d706..5fdcaff927cf 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
-@@ -225,10 +225,16 @@ static int kjournald2(void *arg)
+@@ -230,10 +230,16 @@ static int kjournald2(void *arg)
  		del_timer_sync(&journal->j_commit_timer);
  		jbd2_journal_commit_transaction(journal);
  		write_lock(&journal->j_state_lock);
@@ -598,7 +598,7 @@ index 50ab9b5bc7f4..221e168c7c58 100644
  	if (freezing(current)) {
  		/*
  		 * The simpler the better. Flushing journal isn't a
-@@ -257,6 +263,9 @@ static int kjournald2(void *arg)
+@@ -262,6 +268,9 @@ static int kjournald2(void *arg)
  			should_sleep = 0;
  		if (journal->j_flags & JBD2_UNMOUNT)
  			should_sleep = 0;
@@ -608,7 +608,7 @@ index 50ab9b5bc7f4..221e168c7c58 100644
  		if (should_sleep) {
  			write_unlock(&journal->j_state_lock);
  			schedule();
-@@ -302,14 +311,24 @@ static int jbd2_journal_start_thread(journal_t *journal)
+@@ -307,14 +316,24 @@ static int jbd2_journal_start_thread(journal_t *journal)
  static void journal_kill_thread(journal_t *journal)
  {
  	write_lock(&journal->j_state_lock);
@@ -635,30 +635,22 @@ index 50ab9b5bc7f4..221e168c7c58 100644
  }
  
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index a1d56bb9fa4f..bc28c585af54 100644
+index a53c7d333199..bb994983cdba 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
-@@ -734,7 +734,8 @@ jbd2_time_diff(unsigned long start, unsigned long end)
-  * @j_superblock: Second part of superblock buffer
-  * @j_map: A map from file system blocks to log blocks
-  * @j_transaction_infos: An array of information structures per live transaction
-- * @j_map_lock: Protect j_jmap and j_transaction_infos
-+ * @j_jmap_lock: Protect j_jmap and j_transaction_infos
-+ * @j_cleaner_ctx: Cleaner state
-  * @j_format_version: Version of the superblock format
-  * @j_state_lock: Protect the various scalars in the journal
-  * @j_barrier_count:  Number of processes waiting to create a barrier lock
-@@ -819,6 +820,9 @@ struct journal_s
- 	/* Protect j_jmap and j_transaction_infos */
+@@ -786,6 +786,11 @@ struct journal_s
+ 	 */
  	rwlock_t		j_jmap_lock;
  
-+	/* Cleaner state */
++	/**
++	 * @j_cleaner_ctx: Cleaner state
++	 */
 +	struct cleaner_ctx	*j_cleaner_ctx;
 +
- 	/* Version of the superblock format */
- 	int			j_format_version;
- 
-@@ -1142,6 +1146,9 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
+ 	/**
+ 	 * @j_format_version: Version of the superblock format.
+ 	 */
+@@ -1254,6 +1259,9 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
  #define JBD2_REC_ERR	0x080	/* The errno in the sb has been recorded */
  #define JBD2_NO_CLEANUP	0x100	/* Don't flush empty the journal on shutdown  */
  #define JBD2_LAZY	0x200	/* Do lazy journalling  */

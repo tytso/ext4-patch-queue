@@ -19,13 +19,13 @@ Signed-off-by: Abutalib Aghayev <agayev@cs.cmu.edu>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/jbd2/Makefile            |   3 +-
- fs/jbd2/commit.c            |  25 +++++
- fs/jbd2/jmap.c              | 510 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/jbd2/jmap.h              | 128 ++++++++++++++++++++++
- fs/jbd2/journal.c           |  13 +++
- include/linux/jbd2.h        |  24 ++++
- include/trace/events/jbd2.h | 196 +++++++++++++++++++++++++++++++++
- 7 files changed, 898 insertions(+), 1 deletion(-)
+ fs/jbd2/commit.c            |  25 ++++
+ fs/jbd2/jmap.c              | 510 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/jbd2/jmap.h              | 128 +++++++++++++++++++
+ fs/jbd2/journal.c           |  13 ++
+ include/linux/jbd2.h        |  29 +++++
+ include/trace/events/jbd2.h | 196 +++++++++++++++++++++++++++++
+ 7 files changed, 903 insertions(+), 1 deletion(-)
 
 diff --git a/fs/jbd2/Makefile b/fs/jbd2/Makefile
 index 802a3413872a..a54f50b3a06e 100644
@@ -39,10 +39,10 @@ index 802a3413872a..a54f50b3a06e 100644
 +jbd2-objs := transaction.o commit.o recovery.o checkpoint.o revoke.o journal.o \
 +		jmap.o
 diff --git a/fs/jbd2/commit.c b/fs/jbd2/commit.c
-index b6b194ec1b4f..a3228d515404 100644
+index 8de0e7723316..82aaaf3f63fe 100644
 --- a/fs/jbd2/commit.c
 +++ b/fs/jbd2/commit.c
-@@ -29,6 +29,8 @@
+@@ -26,6 +26,8 @@
  #include <linux/bitops.h>
  #include <trace/events/jbd2.h>
  
@@ -51,7 +51,7 @@ index b6b194ec1b4f..a3228d515404 100644
  /*
   * IO end handler for temporary buffer_heads handling writes to the journal.
   */
-@@ -362,6 +364,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -351,6 +353,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	int flags;
  	int err;
  	unsigned long long blocknr;
@@ -60,7 +60,7 @@ index b6b194ec1b4f..a3228d515404 100644
  	ktime_t start_time;
  	u64 commit_time;
  	char *tagp = NULL;
-@@ -563,6 +567,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -552,6 +556,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  	J_ASSERT(commit_transaction->t_nr_buffers <=
  		 atomic_read(&commit_transaction->t_outstanding_credits));
  
@@ -75,7 +75,7 @@ index b6b194ec1b4f..a3228d515404 100644
  	err = 0;
  	bufs = 0;
  	descriptor = NULL;
-@@ -661,6 +673,11 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -650,6 +662,11 @@ void jbd2_journal_commit_transaction(journal_t *journal)
  			continue;
  		}
  		jbd2_file_log_bh(&io_bufs, wbuf[bufs]);
@@ -87,7 +87,7 @@ index b6b194ec1b4f..a3228d515404 100644
  
  		/* Record the new block's tag in the current descriptor
                     buffer */
-@@ -895,6 +912,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
+@@ -884,6 +901,14 @@ void jbd2_journal_commit_transaction(journal_t *journal)
             transaction can be removed from any checkpoint list it was on
             before. */
  
@@ -753,19 +753,19 @@ index 000000000000..91564ce9bbda
 +
 +#endif
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index b3b1d8ec1081..50ab9b5bc7f4 100644
+index 6a6f75834cca..114c7636d706 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
-@@ -44,6 +44,8 @@
- #include <linux/bitops.h>
+@@ -42,6 +42,8 @@
  #include <linux/ratelimit.h>
+ #include <linux/sched/mm.h>
  
 +#include "jmap.h"
 +
  #define CREATE_TRACE_POINTS
  #include <trace/events/jbd2.h>
  
-@@ -1120,6 +1122,10 @@ static journal_t *journal_init_common(struct block_device *bdev,
+@@ -1156,6 +1158,10 @@ static journal_t *journal_init_common(struct block_device *bdev,
  	journal->j_max_batch_time = 15000; /* 15ms */
  	atomic_set(&journal->j_reserved_credits, 0);
  
@@ -776,7 +776,7 @@ index b3b1d8ec1081..50ab9b5bc7f4 100644
  	/* The journal is marked for error until we succeed with recovery! */
  	journal->j_flags = JBD2_ABORT;
  
-@@ -1685,6 +1691,9 @@ int jbd2_journal_destroy(journal_t *journal)
+@@ -1727,6 +1733,9 @@ int jbd2_journal_destroy(journal_t *journal)
  	if (journal->j_running_transaction)
  		jbd2_journal_commit_transaction(journal);
  
@@ -786,7 +786,7 @@ index b3b1d8ec1081..50ab9b5bc7f4 100644
  	if (journal->j_flags & JBD2_NO_CLEANUP) {
  		jbd2_journal_destroy_checkpoint(journal);
  		journal->j_checkpoint_transactions = NULL;
-@@ -1741,6 +1750,7 @@ int jbd2_journal_destroy(journal_t *journal)
+@@ -1783,6 +1792,7 @@ int jbd2_journal_destroy(journal_t *journal)
  		jbd2_journal_destroy_revoke(journal);
  	if (journal->j_chksum_driver)
  		crypto_free_shash(journal->j_chksum_driver);
@@ -794,7 +794,7 @@ index b3b1d8ec1081..50ab9b5bc7f4 100644
  	kfree(journal->j_wbuf);
  	kfree(journal);
  
-@@ -2641,6 +2651,8 @@ static int __init journal_init_caches(void)
+@@ -2693,6 +2703,8 @@ static int __init journal_init_caches(void)
  		ret = jbd2_journal_init_handle_cache();
  	if (ret == 0)
  		ret = jbd2_journal_init_transaction_cache();
@@ -803,7 +803,7 @@ index b3b1d8ec1081..50ab9b5bc7f4 100644
  	return ret;
  }
  
-@@ -2650,6 +2662,7 @@ static void jbd2_journal_destroy_caches(void)
+@@ -2702,6 +2714,7 @@ static void jbd2_journal_destroy_caches(void)
  	jbd2_journal_destroy_journal_head_cache();
  	jbd2_journal_destroy_handle_cache();
  	jbd2_journal_destroy_transaction_cache();
@@ -812,36 +812,34 @@ index b3b1d8ec1081..50ab9b5bc7f4 100644
  }
  
 diff --git a/include/linux/jbd2.h b/include/linux/jbd2.h
-index 9a07b0485784..a1d56bb9fa4f 100644
+index 81fa9fa7ce9c..a53c7d333199 100644
 --- a/include/linux/jbd2.h
 +++ b/include/linux/jbd2.h
-@@ -732,6 +732,9 @@ jbd2_time_diff(unsigned long start, unsigned long end)
-  *     prior abort)?
-  * @j_sb_buffer: First part of superblock buffer
-  * @j_superblock: Second part of superblock buffer
-+ * @j_map: A map from file system blocks to log blocks
-+ * @j_transaction_infos: An array of information structures per live transaction
-+ * @j_map_lock: Protect j_jmap and j_transaction_infos
-  * @j_format_version: Version of the superblock format
-  * @j_state_lock: Protect the various scalars in the journal
-  * @j_barrier_count:  Number of processes waiting to create a barrier lock
-@@ -807,6 +810,15 @@ struct journal_s
- 	struct buffer_head	*j_sb_buffer;
+@@ -769,6 +769,23 @@ struct journal_s
+ 	 */
  	journal_superblock_t	*j_superblock;
  
-+	/* A map from file system blocks to journal blocks */
++	/**
++	 * @j_jmap: A map from file system blocks to journal blocks
++	 */
 +	struct rb_root		j_jmap;
 +
-+	/* An array of housekeeping information about live transactions */
++	/**
++	 * @j_transaction_infos:
++	 *
++	 * An array of housekeeping information about live transactions
++	 */
 +	struct transaction_infos *j_transaction_infos;
 +
-+	/* Protect j_jmap and j_transaction_infos */
++	/**
++	 * @j_jmap_lock: Protect j_jmap and j_transaction_infos
++	 */
 +	rwlock_t		j_jmap_lock;
 +
- 	/* Version of the superblock format */
- 	int			j_format_version;
- 
-@@ -1129,6 +1141,7 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
+ 	/**
+ 	 * @j_format_version: Version of the superblock format.
+ 	 */
+@@ -1236,6 +1253,7 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
  						 * mode */
  #define JBD2_REC_ERR	0x080	/* The errno in the sb has been recorded */
  #define JBD2_NO_CLEANUP	0x100	/* Don't flush empty the journal on shutdown  */
@@ -849,7 +847,7 @@ index 9a07b0485784..a1d56bb9fa4f 100644
  
  /*
   * Function declarations for the journaling transaction and buffer
-@@ -1401,6 +1414,17 @@ static inline void jbd2_journal_abort_handle(handle_t *handle)
+@@ -1509,6 +1527,17 @@ static inline void jbd2_journal_abort_handle(handle_t *handle)
  	handle->h_aborted = 1;
  }
  
@@ -868,10 +866,10 @@ index 9a07b0485784..a1d56bb9fa4f 100644
  
  /* Comparison functions for transaction IDs: perform comparisons using
 diff --git a/include/trace/events/jbd2.h b/include/trace/events/jbd2.h
-index c1d1f3eb242d..a0cbe7a03fc4 100644
+index 2310b259329f..c9c2af4f80e5 100644
 --- a/include/trace/events/jbd2.h
 +++ b/include/trace/events/jbd2.h
-@@ -9,6 +9,9 @@
+@@ -10,6 +10,9 @@
  
  struct transaction_chp_stats_s;
  struct transaction_run_stats_s;
@@ -881,7 +879,7 @@ index c1d1f3eb242d..a0cbe7a03fc4 100644
  
  TRACE_EVENT(jbd2_checkpoint,
  
-@@ -379,6 +382,199 @@ TRACE_EVENT(jbd2_lock_buffer_stall,
+@@ -380,6 +383,199 @@ TRACE_EVENT(jbd2_lock_buffer_stall,
  		__entry->stall_ms)
  );
  
