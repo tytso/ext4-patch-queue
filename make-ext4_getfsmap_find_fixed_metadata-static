@@ -1,0 +1,34 @@
+ext4: make function ‘ext4_getfsmap_find_fixed_metadata’ static
+
+From: Mathieu Malaterre <malat@debian.org>
+
+Since function ‘ext4_getfsmap_find_fixed_metadata’ can be made static,
+make it so. Remove the following gcc warning (W=1):
+
+  fs/ext4/fsmap.c:405:5: warning: no previous prototype for ‘ext4_getfsmap_find_fixed_metadata’ [-Wmissing-prototypes]
+
+Signed-off-by: Mathieu Malaterre <malat@debian.org>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/fsmap.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/fsmap.c b/fs/ext4/fsmap.c
+index e871c4bf18e9..4b99e2db95b8 100644
+--- a/fs/ext4/fsmap.c
++++ b/fs/ext4/fsmap.c
+@@ -402,8 +402,8 @@ static void ext4_getfsmap_free_fixed_metadata(struct list_head *meta_list)
+ }
+ 
+ /* Find all the fixed metadata in the filesystem. */
+-int ext4_getfsmap_find_fixed_metadata(struct super_block *sb,
+-				      struct list_head *meta_list)
++static int ext4_getfsmap_find_fixed_metadata(struct super_block *sb,
++					     struct list_head *meta_list)
+ {
+ 	struct ext4_group_desc *gdp;
+ 	ext4_group_t agno;
+-- 
+2.11.0
+
+
