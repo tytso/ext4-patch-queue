@@ -1,0 +1,56 @@
+ext4: use XATTR_CREATE in ext4_initxattrs()
+
+From: Eryu Guan <guaneryu@gmail.com>
+
+I hit ENOSPC error when creating new file in a newly created ext4
+with ea_inode feature enabled, if selinux is enabled and ext4 is
+mounted without any selinux context. e.g.
+
+  mkfs -t ext4 -O ea_inode -F /dev/sda5
+  mount /dev/sda5 /mnt/ext4
+  touch /mnt/ext4/testfile  # got ENOSPC here
+
+It turns out that we run out of journal credits in
+ext4_xattr_set_handle() when creating new selinux label for the
+newly created inode.
+
+This is because that in __ext4_new_inode() we use
+__ext4_xattr_set_credits() to calculate the reserved credits for new
+xattr, with the 'is_create' argument being true, which implies less
+credits in the ea_inode case. But we calculate the required credits
+in ext4_xattr_set_handle() with 'is_create' being false, which means
+we need more credits if ea_inode feature is enabled. So we don't
+have enough credits and error out with ENOSPC.
+
+Fix it by simply calling ext4_xattr_set_handle() with XATTR_CREATE
+flag in ext4_initxattrs(), so we end up with requiring less credits
+than reserved. The semantic of XATTR_CREATE is "Perform a pure
+create, which fails if the named attribute exists already." (from
+setxattr(2)), which is fine in this case, because we only call
+ext4_initxattrs() on newly created inode.
+
+Fixes: af65207c76ce ("ext4: fix __ext4_new_inode() journal credits calculation")
+Cc: Tahsin Erdogan <tahsin@google.com>
+Signed-off-by: Eryu Guan <guaneryu@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/xattr_security.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/xattr_security.c b/fs/ext4/xattr_security.c
+index 629001b28632..197a9d8a15ef 100644
+--- a/fs/ext4/xattr_security.c
++++ b/fs/ext4/xattr_security.c
+@@ -43,7 +43,7 @@ ext4_initxattrs(struct inode *inode, const struct xattr *xattr_array,
+ 		err = ext4_xattr_set_handle(handle, inode,
+ 					    EXT4_XATTR_INDEX_SECURITY,
+ 					    xattr->name, xattr->value,
+-					    xattr->value_len, 0);
++					    xattr->value_len, XATTR_CREATE);
+ 		if (err < 0)
+ 			break;
+ 	}
+-- 
+2.14.3
+
+
