@@ -1,0 +1,31 @@
+ext4: fix wrong return value in ext4_read_inode_bitmap()
+
+From: Wang Shilong <wshilong@ddn.com>
+
+The only reason that sb_getblk() could fail is out of memory,
+ext4 codes have returned -ENOMME for all other places except this
+one, let's fix it here too.
+
+Signed-off-by: Wang Shilong <wshilong@ddn.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ialloc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index df92e3ec9913..33a2c98ce1ff 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -143,7 +143,7 @@ ext4_read_inode_bitmap(struct super_block *sb, ext4_group_t block_group)
+ 		ext4_error(sb, "Cannot read inode bitmap - "
+ 			    "block_group = %u, inode_bitmap = %llu",
+ 			    block_group, bitmap_blk);
+-		return ERR_PTR(-EIO);
++		return ERR_PTR(-ENOMEM);
+ 	}
+ 	if (bitmap_uptodate(bh))
+ 		goto verify;
+-- 
+2.14.3
+
+
