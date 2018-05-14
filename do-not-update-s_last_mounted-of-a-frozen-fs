@@ -1,0 +1,82 @@
+ext4: do not update s_last_mounted of a frozen fs
+
+From: Amir Goldstein <amir73il@gmail.com>
+
+If fs is frozen after mount and before the first file open, the
+update of s_last_mounted bypasses freeze protection and prints out
+a WARNING splat:
+
+$ mount /vdf
+$ fsfreeze -f /vdf
+$ cat /vdf/foo
+
+[   31.578555] WARNING: CPU: 1 PID: 1415 at
+fs/ext4/ext4_jbd2.c:53 ext4_journal_check_start+0x48/0x82
+
+[   31.614016] Call Trace:
+[   31.614997]  __ext4_journal_start_sb+0xe4/0x1a4
+[   31.616771]  ? ext4_file_open+0xb6/0x189
+[   31.618094]  ext4_file_open+0xb6/0x189
+
+If fs is frozen, skip s_last_mounted update.
+
+[backport hint: to apply to stable tree, need to apply also patches
+ vfs: add the sb_start_intwrite_trylock() helper
+ ext4: factor out helper ext4_sample_last_mounted()]
+
+Cc: stable@vger.kernel.org
+Fixes: bc0b0d6d69ee ("ext4: update the s_last_mounted field in the superblock")
+Signed-off-by: Amir Goldstein <amir73il@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/file.c | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/fs/ext4/file.c b/fs/ext4/file.c
+index 065e95bb7186..918a59b6bc1a 100644
+--- a/fs/ext4/file.c
++++ b/fs/ext4/file.c
+@@ -392,7 +392,7 @@ static int ext4_sample_last_mounted(struct super_block *sb,
+ 	if (likely(sbi->s_mount_flags & EXT4_MF_MNTDIR_SAMPLED))
+ 		return 0;
+ 
+-	if (sb_rdonly(sb))
++	if (sb_rdonly(sb) || !sb_start_intwrite_trylock(sb))
+ 		return 0;
+ 
+ 	sbi->s_mount_flags |= EXT4_MF_MNTDIR_SAMPLED;
+@@ -406,21 +406,25 @@ static int ext4_sample_last_mounted(struct super_block *sb,
+ 	path.mnt = mnt;
+ 	path.dentry = mnt->mnt_root;
+ 	cp = d_path(&path, buf, sizeof(buf));
++	err = 0;
+ 	if (IS_ERR(cp))
+-		return 0;
++		goto out;
+ 
+ 	handle = ext4_journal_start_sb(sb, EXT4_HT_MISC, 1);
++	err = PTR_ERR(handle);
+ 	if (IS_ERR(handle))
+-		return PTR_ERR(handle);
++		goto out;
+ 	BUFFER_TRACE(sbi->s_sbh, "get_write_access");
+ 	err = ext4_journal_get_write_access(handle, sbi->s_sbh);
+ 	if (err)
+-		goto out;
++		goto out_journal;
+ 	strlcpy(sbi->s_es->s_last_mounted, cp,
+ 		sizeof(sbi->s_es->s_last_mounted));
+ 	ext4_handle_dirty_super(handle, sb);
+-out:
++out_journal:
+ 	ext4_journal_stop(handle);
++out:
++	sb_end_intwrite(sb);
+ 	return err;
+ }
+ 
+-- 
+2.7.4
+
+
