@@ -1,0 +1,43 @@
+ext4: remove NULL check before calling kmem_cache_destroy()
+
+From: Sean Fu <fxinrong@gmail.com>
+
+Signed-off-by: Sean Fu <fxinrong@gmail.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/extents_status.c | 3 +--
+ fs/ext4/mballoc.c        | 3 +--
+ 2 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/fs/ext4/extents_status.c b/fs/ext4/extents_status.c
+index 763ef18..c4e6fb1 100644
+--- a/fs/ext4/extents_status.c
++++ b/fs/ext4/extents_status.c
+@@ -162,8 +162,7 @@ int __init ext4_init_es(void)
+ 
+ void ext4_exit_es(void)
+ {
+-	if (ext4_es_cachep)
+-		kmem_cache_destroy(ext4_es_cachep);
++	kmem_cache_destroy(ext4_es_cachep);
+ }
+ 
+ void ext4_es_init_tree(struct ext4_es_tree *tree)
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index d9f8b90a..4fd1349 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2549,8 +2549,7 @@ static void ext4_groupinfo_destroy_slabs(void)
+ 	int i;
+ 
+ 	for (i = 0; i < NR_GRPINFO_CACHES; i++) {
+-		if (ext4_groupinfo_caches[i])
+-			kmem_cache_destroy(ext4_groupinfo_caches[i]);
++		kmem_cache_destroy(ext4_groupinfo_caches[i]);
+ 		ext4_groupinfo_caches[i] = NULL;
+ 	}
+ }
+-- 
+2.6.2
+
+
