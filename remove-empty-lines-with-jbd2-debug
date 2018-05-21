@@ -1,0 +1,44 @@
+jbd2: remove bunch of empty lines with jbd2 debug
+
+From: Wang Shilong <wshilong@ddn.com>
+
+See following dmesg output with jbd2 debug enabled:
+
+...(start_this_handle, 313): New handle 00000000c88d6ceb going live.
+
+...(start_this_handle, 383): Handle 00000000c88d6ceb given 53 credits (total 53, free 32681)
+
+...(do_get_write_access, 838): journal_head 0000000002856fc0, force_copy 0
+
+...(jbd2_journal_cancel_revoke, 421): journal_head 0000000002856fc0, cancelling revoke
+
+We have an extra line with every messages, this is a waste of buffer,
+we can fix it by removing "\n" in the caller or remove it in
+the __jbd2_debug(), i checked every jbd2_debug() passed '\n' explicitly.
+
+To avoid more lines, let's remove it inside __jbd2_debug().
+
+Signed-off-by: Wang Shilong <wshilong@ddn.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/jbd2/journal.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index dfb0579..e942701 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -114,7 +114,7 @@ void __jbd2_debug(int level, const char *file, const char *func,
+ 	va_start(args, fmt);
+ 	vaf.fmt = fmt;
+ 	vaf.va = &args;
+-	printk(KERN_DEBUG "%s: (%s, %u): %pV\n", file, func, line, &vaf);
++	printk(KERN_DEBUG "%s: (%s, %u): %pV", file, func, line, &vaf);
+ 	va_end(args);
+ }
+ EXPORT_SYMBOL(__jbd2_debug);
+-- 
+1.8.3.1
+
+
