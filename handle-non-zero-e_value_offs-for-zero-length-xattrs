@@ -7,7 +7,7 @@ e_value_size is zero.
 
 There was one exception to this, which is in ext4_xattr_set_entry(),
 where if there is a maliciously crafted file system where there is an
-extended attribute with e_value_offs is non-zero and e_values_size is
+extended attribute with e_value_offs is non-zero and e_value_size is
 0, the attempt to remove this xattr will result in a negative value
 getting passed to memmove, leading to the following sadness:
 
@@ -16,59 +16,31 @@ getting passed to memmove, leading to the following sadness:
 [   44.538733] IP: __memmove+0x81/0x1a0
 [   44.538755] PGD 1249bd067 P4D 1249bd067 PUD 1249c1067 PMD 80000001230000e1
 [   44.538793] Oops: 0003 [#1] SMP PTI
-[   44.538815] Modules linked in: snd_hda_codec_generic snd_hda_intel snd_hda_codec snd_hwdep snd_hda_core snd_pcm snd_timer snd soundcore i2c_piix4 mac_hid ib_iser rdma_cm iw_cm ib_cm ib_core iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi autofs4 btrfs zstd_decompress zstd_compress xxhash raid10 raid456 libcrc32c async_raid6_recov async_memcpy async_pq async_xor async_tx xor raid6_pq raid1 raid0 multipath linear qxl 8139too drm_kms_helper syscopyarea sysfillrect sysimgblt fb_sys_fops ttm crct10dif_pclmul drm 8139cp floppy crc32_pclmul aesni_intel aes_x86_64 crypto_simd cryptd pata_acpi glue_helper mii
 [   44.539074] CPU: 0 PID: 1470 Comm: poc Not tainted 4.16.0-rc1+ #1
-[   44.539104] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS Ubuntu-1.8.2-1ubuntu1 04/01/2014
-[   44.539147] RIP: 0010:__memmove+0x81/0x1a0
-[   44.539170] RSP: 0018:ffffb84e00cb7a30 EFLAGS: 00010203
-[   44.539199] RAX: ffff9ec9a15a6400 RBX: ffffb84e00cb7c38 RCX: 1fffffffffcb4c7e
-[   44.539231] RDX: fffffffffffffff4 RSI: ffff9ec9a3000000 RDI: ffff9ec9a3000000
-[   44.539263] RBP: ffffb84e00cb7bb0 R08: 0000000000000000 R09: ffffffff83321992
-[   44.539295] R10: ffff9ec9a15a63ec R11: 0000000000000000 R12: ffff9ec9a15a6020
-[   44.539328] R13: 00000000000003f4 R14: ffff9ec9a15a6400 R15: 0000000000000000
-[   44.539361] FS:  00007f3628101700(0000) GS:ffff9ec9bfc00000(0000) knlGS:0000000000000000
-[   44.539397] CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
-[   44.539424] CR2: ffff9ec9a3000000 CR3: 0000000138c52000 CR4: 00000000000006f0
+    ...
 [   44.539475] Call Trace:
 [   44.539832]  ext4_xattr_set_entry+0x9e7/0xf80
-[   44.539871]  ? jbd2_journal_cancel_revoke+0xbb/0xe0
-[   44.539897]  ? do_get_write_access+0x318/0x400
-[   44.539924]  ? kmem_cache_alloc+0xd9/0x1b0
-[   44.539946]  ? jbd2_journal_get_write_access+0x54/0x60
+    ...
 [   44.539972]  ext4_xattr_block_set+0x212/0xea0
-[   44.539998]  ? _cond_resched+0x16/0x40
-[   44.540019]  ? xattr_find_entry+0x89/0x110
+    ...
 [   44.540041]  ext4_xattr_set_handle+0x514/0x610
 [   44.540065]  ext4_xattr_set+0x7f/0x120
 [   44.540090]  __vfs_removexattr+0x4d/0x60
 [   44.540112]  vfs_removexattr+0x75/0xe0
 [   44.540132]  removexattr+0x4d/0x80
-[   44.540152]  ? kmem_cache_alloc+0xd9/0x1b0
-[   44.540174]  ? _cond_resched+0x16/0x40
-[   44.540194]  ? kmem_cache_alloc+0xd9/0x1b0
-[   44.540217]  ? _cond_resched+0x16/0x40
-[   44.540238]  ? __mnt_want_write+0x54/0x60
-[   44.540259]  ? mnt_want_write+0x28/0x50
+    ...
 [   44.540279]  path_removexattr+0x91/0xb0
 [   44.540300]  SyS_removexattr+0xf/0x20
 [   44.540322]  do_syscall_64+0x71/0x120
 [   44.540344]  entry_SYSCALL_64_after_hwframe+0x21/0x86
-[   44.541387] RIP: 0033:0x7f3627c221c7
-[   44.542304] RSP: 002b:00007ffe569d7248 EFLAGS: 00000206 ORIG_RAX: 00000000000000c5
-[   44.543244] RAX: ffffffffffffffda RBX: 0000000000000000 RCX: 00007f3627c221c7
-[   44.544186] RDX: 0000000000000071 RSI: 0000000000401489 RDI: 000000000233f0c0
-[   44.545111] RBP: 00007ffe569d73b0 R08: 000000000233f0a0 R09: 0000000000000000
-[   44.546025] R10: 0000000000000595 R11: 0000000000000206 R12: 0000000000400c20
-[   44.546935] R13: 00007ffe569d74b0 R14: 0000000000000000 R15: 0000000000000000
-[   44.547829] Code: 08 4c 89 4f 10 4c 89 47 18 48 8d 7f 20 73 d4 48 83 c2 20 e9 a2 00 00 00 66 90 48 89 d1 4c 8b 5c 16 f8 4c 8d 54 17 f8 48 c1 e9 03 <f3> 48 a5 4d 89 1a e9 0c 01 00 00 0f 1f 40 00 48 89 d1 4c 8b 1e
-[   44.549629] RIP: __memmove+0x81/0x1a0 RSP: ffffb84e00cb7a30
-[   44.550479] CR2: ffff9ec9a3000000
-[   44.551304] ---[ end trace 71ac2ebfa045556f ]---
 
 https://bugzilla.kernel.org/show_bug.cgi?id=199347
 
+This addresses CVE-2018-10840.
+
 Reported-by: "Xu, Wen" <wen.xu@gatech.edu>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Andreas Dilger <adilger@dilger.ca>
 Cc: stable@kernel.org
 Fixes: dec214d00e0d7 ("ext4: xattr inode deduplication")
 ---
