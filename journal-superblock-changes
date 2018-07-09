@@ -10,14 +10,14 @@ the ext4 superblock's checksum was not properly set.
 
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/ext4/super.c | 57 ++++++++++++++++++++++++++++++++++-----------------------
- 1 file changed, 34 insertions(+), 23 deletions(-)
+ fs/ext4/super.c | 50 ++++++++++++++++++++++++++++----------------------
+ 1 file changed, 28 insertions(+), 22 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index 7c46693a14d7..6783af7ec115 100644
+index 680526e9ee96..ae86983cbf60 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -2108,9 +2108,10 @@ int ext4_seq_options_show(struct seq_file *seq, void *offset)
+@@ -2148,9 +2148,10 @@ int ext4_seq_options_show(struct seq_file *seq, void *offset)
  }
  
  static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
@@ -26,35 +26,35 @@ index 7c46693a14d7..6783af7ec115 100644
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
 +	handle_t *handle;
- 	int res = 0;
+ 	int err = 0;
  
  	if (le32_to_cpu(es->s_rev_level) > EXT4_MAX_SUPP_REV) {
-@@ -2118,7 +2119,7 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+@@ -2158,7 +2159,7 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
  			 "forcing read-only mode");
- 		res = SB_RDONLY;
+ 		err = -EROFS;
  	}
 -	if (read_only)
-+	if (read_only || res)
++	if (read_only || err)
  		goto done;
  	if (!(sbi->s_mount_state & EXT4_VALID_FS))
  		ext4_msg(sb, KERN_WARNING, "warning: mounting unchecked fs, "
-@@ -2139,6 +2140,15 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+@@ -2179,6 +2180,15 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
  		ext4_msg(sb, KERN_WARNING,
  			 "warning: checktime reached, "
  			 "running e2fsck is recommended");
 +	handle = ext4_journal_start_sb(sb, EXT4_HT_MISC, 1);
 +	if (IS_ERR(handle))
 +		return PTR_ERR(handle);
-+	res = ext4_journal_get_write_access(handle, EXT4_SB(sb)->s_sbh);
-+	if (res) {
++	err = ext4_journal_get_write_access(handle, EXT4_SB(sb)->s_sbh);
++	if (err) {
 +	stop_journal:
 +		ext4_journal_stop(handle);
-+		return res;
++		return err;
 +	}
  	if (!sbi->s_journal)
  		es->s_state &= cpu_to_le16(~EXT4_VALID_FS);
  	if (!(__s16) le16_to_cpu(es->s_max_mnt_count))
-@@ -2148,7 +2158,17 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
+@@ -2188,7 +2198,17 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
  	ext4_update_dynamic_rev(sb);
  	if (sbi->s_journal)
  		ext4_set_feature_journal_needs_recovery(sb);
@@ -63,17 +63,17 @@ index 7c46693a14d7..6783af7ec115 100644
 +		es->s_journal_dev = cpu_to_le32(journal_devnum);
 +	if (DUMMY_ENCRYPTION_ENABLED(sbi))
 +		ext4_set_feature_encrypt(sb);
-+	res = ext4_handle_dirty_super(handle, sb);
-+	if (res)
++	err = ext4_handle_dirty_super(handle, sb);
++	if (err)
 +		goto stop_journal;
-+	res = ext4_journal_stop(handle);
-+	if (res)
-+		return res;
++	err = ext4_journal_stop(handle);
++	if (err)
++		return err;
 +	ext4_journal_force_commit(sbi->s_journal);
- 	ext4_commit_super(sb, 1);
+ 	err = ext4_commit_super(sb, 1);
  done:
  	if (test_opt(sb, DEBUG))
-@@ -4116,8 +4136,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -4229,8 +4249,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  
  	set_task_ioprio(sbi->s_journal->j_task, journal_ioprio);
  
@@ -82,7 +82,7 @@ index 7c46693a14d7..6783af7ec115 100644
  no_journal:
  	if (!test_opt(sb, NO_MBCACHE)) {
  		sbi->s_ea_block_cache = ext4_xattr_create_cache();
-@@ -4144,12 +4162,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -4257,12 +4275,6 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		goto failed_mount_wq;
  	}
  
@@ -95,19 +95,16 @@ index 7c46693a14d7..6783af7ec115 100644
  	/*
  	 * Get the # of file system overhead blocks from the
  	 * superblock if present.
-@@ -4198,7 +4210,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+@@ -4311,7 +4323,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		goto failed_mount4;
  	}
  
--	if (ext4_setup_super(sb, es, sb_rdonly(sb)))
-+	err = ext4_setup_super(sb, es, journal_devnum, sb_rdonly(sb));
-+	if (err < 0)
-+		goto failed_mount4a;
-+	if (err)
+-	ret = ext4_setup_super(sb, es, sb_rdonly(sb));
++	ret = ext4_setup_super(sb, es, journal_devnum, sb_rdonly(sb));
+ 	if (ret == -EROFS) {
  		sb->s_flags |= SB_RDONLY;
- 
- 	/* determine the minimum size of new large inodes, if present */
-@@ -4293,6 +4308,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		ret = 0;
+@@ -4410,6 +4422,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	}
  #endif  /* CONFIG_QUOTA */
  
@@ -117,7 +114,7 @@ index 7c46693a14d7..6783af7ec115 100644
  	EXT4_SB(sb)->s_mount_state |= EXT4_ORPHAN_FS;
  	ext4_orphan_cleanup(sb, es);
  	EXT4_SB(sb)->s_mount_state &= ~EXT4_ORPHAN_FS;
-@@ -4663,15 +4681,6 @@ static int ext4_load_journal(struct super_block *sb,
+@@ -4780,15 +4795,6 @@ static int ext4_load_journal(struct super_block *sb,
  
  	EXT4_SB(sb)->s_journal = journal;
  	ext4_clear_journal_err(sb, es);
@@ -133,16 +130,12 @@ index 7c46693a14d7..6783af7ec115 100644
  	return 0;
  }
  
-@@ -5139,8 +5148,10 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
- 			if (sbi->s_journal)
+@@ -5263,7 +5269,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  				ext4_clear_journal_err(sb, es);
  			sbi->s_mount_state = le16_to_cpu(es->s_state);
--			if (!ext4_setup_super(sb, es, 0))
--				sb->s_flags &= ~SB_RDONLY;
-+			sb->s_flags &= ~SB_RDONLY;
+ 
+-			err = ext4_setup_super(sb, es, 0);
 +			err = ext4_setup_super(sb, es, 0, 0);
-+			if (err)
-+				goto restore_opts;
- 			if (ext4_has_feature_mmp(sb))
- 				if (ext4_multi_mount_protect(sb,
- 						le64_to_cpu(es->s_mmp_block))) {
+ 			if (err)
+ 				goto restore_opts;
+ 
