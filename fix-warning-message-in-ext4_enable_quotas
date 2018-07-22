@@ -1,0 +1,38 @@
+ext4: fix warning message in ext4_enable_quotas()
+
+From: Junichi Uekawa <uekawa@google.com>
+
+Output the warning message before we clobber type and be -1 all the time.
+The error message would now be
+
+[    1.519791] EXT4-fs warning (device vdb): ext4_enable_quotas:5402:
+Failed to enable quota tracking (type=0, err=-3). Please run e2fsck to fix.
+
+Signed-off-by: Junichi Uekawa <uekawa@google.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Andreas Dilger <adilger@dilger.ca>
+---
+ fs/ext4/super.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 2f679632f045..084e6e9f41fc 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -5692,13 +5692,13 @@ static int ext4_enable_quotas(struct super_block *sb)
+ 				DQUOT_USAGE_ENABLED |
+ 				(quota_mopt[type] ? DQUOT_LIMITS_ENABLED : 0));
+ 			if (err) {
+-				for (type--; type >= 0; type--)
+-					dquot_quota_off(sb, type);
+-
+ 				ext4_warning(sb,
+ 					"Failed to enable quota tracking "
+ 					"(type=%d, err=%d). Please run "
+ 					"e2fsck to fix.", type, err);
++				for (type--; type >= 0; type--)
++					dquot_quota_off(sb, type);
++
+ 				return err;
+ 			}
+ 		}
