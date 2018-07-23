@@ -1,0 +1,36 @@
+ext4: check allocation failure when duplicating "data" in ext4_remount()
+
+From: Chengguang Xu <cgxu519@gmx.com>
+
+There is no check for allocation failure when duplicating
+"data" in ext4_remount(). Check for failure and return
+error -ENOMEM in this case.
+
+Signed-off-by: Chengguang Xu <cgxu519@gmx.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Andreas Dilger <adilger@dilger.ca>
+---
+v2:
+- Modify changelog for easy understading.
+
+ fs/ext4/super.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 0c4c2201b3aa..f9c3da513cae 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -5014,6 +5014,9 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ #endif
+ 	char *orig_data = kstrdup(data, GFP_KERNEL);
+ 
++	if (data && !orig_data)
++		return -ENOMEM;
++
+ 	/* Store the original options */
+ 	old_sb_flags = sb->s_flags;
+ 	old_opts.s_mount_opt = sbi->s_mount_opt;
+-- 
+2.17.1
+
+
