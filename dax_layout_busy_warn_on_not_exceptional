@@ -1,0 +1,49 @@
+dax: dax_layout_busy_page() warn on !exceptional
+
+From: Ross Zwisler <ross.zwisler@linux.intel.com>
+
+Inodes using DAX should only ever have exceptional entries in their page
+caches.  Make this clear by warning if the iteration in
+dax_layout_busy_page() ever sees a non-exceptional entry, and by adding a
+comment for the pagevec_release() call which only deals with struct page
+pointers.
+
+Signed-off-by: Ross Zwisler <ross.zwisler@linux.intel.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/dax.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/fs/dax.c b/fs/dax.c
+index 641192808bb6..897b51e41d8f 100644
+--- a/fs/dax.c
++++ b/fs/dax.c
+@@ -566,7 +566,8 @@ struct page *dax_layout_busy_page(struct address_space *mapping)
+ 			if (index >= end)
+ 				break;
+ 
+-			if (!radix_tree_exceptional_entry(pvec_ent))
++			if (WARN_ON_ONCE(
++			     !radix_tree_exceptional_entry(pvec_ent)))
+ 				continue;
+ 
+ 			xa_lock_irq(&mapping->i_pages);
+@@ -578,6 +579,13 @@ struct page *dax_layout_busy_page(struct address_space *mapping)
+ 			if (page)
+ 				break;
+ 		}
++
++		/*
++		 * We don't expect normal struct page entries to exist in our
++		 * tree, but we keep these pagevec calls so that this code is
++		 * consistent with the common pattern for handling pagevecs
++		 * throughout the kernel.
++		 */
+ 		pagevec_remove_exceptionals(&pvec);
+ 		pagevec_release(&pvec);
+ 		index++;
+-- 
+2.14.4
+
+
