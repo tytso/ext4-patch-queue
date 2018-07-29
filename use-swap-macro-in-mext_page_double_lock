@@ -1,0 +1,38 @@
+ext4: use swap macro in mext_page_double_lock
+
+From: "Gustavo A. R. Silva" <gustavo@embeddedor.com>
+
+Make use of the swap macro and remove unnecessary variable *tmp*.
+This makes the code easier to read and maintain.
+
+This code was detected with the help of Coccinelle.
+
+Signed-off-by: Gustavo A. R. Silva <gustavo@embeddedor.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+Changes in v2:
+ - Update changelog. Remove the line claiming that this
+   patch reduces stack usage.
+
+ fs/ext4/move_extent.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
+index 8e17efd..a409ff7 100644
+--- a/fs/ext4/move_extent.c
++++ b/fs/ext4/move_extent.c
+@@ -134,9 +134,7 @@ mext_page_double_lock(struct inode *inode1, struct inode *inode2,
+ 		mapping[0] = inode1->i_mapping;
+ 		mapping[1] = inode2->i_mapping;
+ 	} else {
+-		pgoff_t tmp = index1;
+-		index1 = index2;
+-		index2 = tmp;
++		swap(index1, index2);
+ 		mapping[0] = inode2->i_mapping;
+ 		mapping[1] = inode1->i_mapping;
+ 	}
+-- 
+2.7.4
+
+
