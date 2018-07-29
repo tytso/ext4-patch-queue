@@ -1,0 +1,59 @@
+docs: add new ext4 superblock time extension fields
+
+From: Darrick J. Wong <darrick.wong@oracle.com>
+
+The superblock timestamp fields were enlarged by u8 to be 40 bits wide.
+Update the documentation to reflect this.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ Documentation/filesystems/ext4/ondisk/super.rst |   32 ++++++++++++++++++++++-
+ 1 file changed, 30 insertions(+), 2 deletions(-)
+
+
+diff --git a/Documentation/filesystems/ext4/ondisk/super.rst b/Documentation/filesystems/ext4/ondisk/super.rst
+index 1f5ac9ab6f0c..5f81dd87e0b9 100644
+--- a/Documentation/filesystems/ext4/ondisk/super.rst
++++ b/Documentation/filesystems/ext4/ondisk/super.rst
+@@ -442,8 +442,36 @@ The ext4 superblock is laid out as follows in
+      - Checksum seed used for metadata\_csum calculations. This value is
+        crc32c(~0, $orig\_fs\_uuid).
+    * - 0x274
+-     - \_\_le32
+-     - s\_reserved[98]
++     - \_\_u8
++     - s\_wtime_hi
++     - Upper 8 bits of the s_wtime field.
++   * - 0x275
++     - \_\_u8
++     - s\_wtime_hi
++     - Upper 8 bits of the s_mtime field.
++   * - 0x276
++     - \_\_u8
++     - s\_mkfs_time_hi
++     - Upper 8 bits of the s_mkfs_time field.
++   * - 0x277
++     - \_\_u8
++     - s\_lastcheck_hi
++     - Upper 8 bits of the s_lastcheck_hi field.
++   * - 0x278
++     - \_\_u8
++     - s\_first_error_time_hi
++     - Upper 8 bits of the s_first_error_time_hi field.
++   * - 0x279
++     - \_\_u8
++     - s\_last_error_time_hi
++     - Upper 8 bits of the s_last_error_time_hi field.
++   * - 0x27A
++     - \_\_u8[2]
++     - s\_pad
++     - Zero padding.
++   * - 0x27C
++     - \_\_le32
++     - s\_reserved[96]
+      - Padding to the end of the block.
+    * - 0x3FC
+      - \_\_le32
+
+
