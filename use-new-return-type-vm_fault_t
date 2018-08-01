@@ -9,9 +9,9 @@ Signed-off-by: Souptick Joarder <jrdr.linux@gmail.com>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
  fs/ext4/ext4.h              |  4 ++--
- fs/ext4/inode.c             | 28 ++++++++++++++--------------
+ fs/ext4/inode.c             | 32 ++++++++++++++++----------------
  include/linux/buffer_head.h |  3 ++-
- 3 files changed, 18 insertions(+), 17 deletions(-)
+ 3 files changed, 20 insertions(+), 19 deletions(-)
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 6d7dec48372b..21fb1964a672 100644
@@ -29,7 +29,7 @@ index 6d7dec48372b..21fb1964a672 100644
  extern int ext4_get_projid(struct inode *inode, kprojid_t *projid);
  extern void ext4_da_update_reserve_space(struct inode *inode,
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index ba0de19fb1ad..ef227862bf28 100644
+index ba0de19fb1ad..a6da9eda2194 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
 @@ -6107,27 +6107,27 @@ static int ext4_bh_unmapped(handle_t *handle, struct buffer_head *bh)
@@ -65,32 +65,36 @@ index ba0de19fb1ad..ef227862bf28 100644
  		goto out_ret;
  
  	/* Delalloc case is easy... */
-@@ -6137,9 +6137,9 @@ int ext4_page_mkwrite(struct vm_fault *vmf)
+@@ -6135,9 +6135,9 @@ int ext4_page_mkwrite(struct vm_fault *vmf)
+ 	    !ext4_should_journal_data(inode) &&
+ 	    !ext4_nonda_switch(inode->i_sb)) {
  		do {
- 			ret = block_page_mkwrite(vma, vmf,
- 						   ext4_da_get_block_prep);
+-			ret = block_page_mkwrite(vma, vmf,
+-						   ext4_da_get_block_prep);
 -		} while (ret == -ENOSPC &&
-+		} while (ret == VM_FAULT_SIGBUS &&
++			err = block_page_mkwrite(vma, vmf,
++						 ext4_da_get_block_prep);
++		} while (err == -ENOSPC &&
  		       ext4_should_retry_alloc(inode->i_sb, &retries));
--		goto out_ret;
-+		goto out;
+ 		goto out_ret;
  	}
- 
- 	lock_page(page);
-@@ -6187,31 +6187,31 @@ int ext4_page_mkwrite(struct vm_fault *vmf)
+@@ -6182,8 +6182,8 @@ int ext4_page_mkwrite(struct vm_fault *vmf)
+ 		ret = VM_FAULT_SIGBUS;
+ 		goto out;
+ 	}
+-	ret = block_page_mkwrite(vma, vmf, get_block);
+-	if (!ret && ext4_should_journal_data(inode)) {
++	err = block_page_mkwrite(vma, vmf, get_block);
++	if (!err && ext4_should_journal_data(inode)) {
  		if (ext4_walk_page_buffers(handle, page_buffers(page), 0,
  			  PAGE_SIZE, NULL, do_journal_get_write_access)) {
  			unlock_page(page);
--			ret = VM_FAULT_SIGBUS;
- 			ext4_journal_stop(handle);
- 			goto out;
- 		}
+@@ -6194,24 +6194,24 @@ int ext4_page_mkwrite(struct vm_fault *vmf)
  		ext4_set_inode_state(inode, EXT4_STATE_JDATA);
  	}
  	ext4_journal_stop(handle);
 -	if (ret == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
-+	if (ret == VM_FAULT_SIGBUS &&
-+		ext4_should_retry_alloc(inode->i_sb, &retries))
++	if (err == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
  		goto retry_alloc;
  out_ret:
 -	ret = block_page_mkwrite_return(ret);
