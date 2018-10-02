@@ -1,0 +1,32 @@
+ext4: fix use-after-free race in ext4_remount()'s error path
+
+It's possible for ext4_show_quota_options() to try reading
+s_qf_names[i] while it is being modified by ext4_remount() --- most
+notably, in ext4_remount's error path when the original values of the
+quota file name gets restored.
+
+Reported-by: syzbot+a2872d6feea6918008a9@syzkaller.appspotmail.com
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@kernel.org
+---
+ fs/ext4/super.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index faf293ed8060..11a1bfae0937 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -2048,11 +2048,13 @@ static inline void ext4_show_quota_options(struct seq_file *seq,
+ 		seq_printf(seq, ",jqfmt=%s", fmtname);
+ 	}
+ 
++	down_read(&sb->s_umount);
+ 	if (sbi->s_qf_names[USRQUOTA])
+ 		seq_show_option(seq, "usrjquota", sbi->s_qf_names[USRQUOTA]);
+ 
+ 	if (sbi->s_qf_names[GRPQUOTA])
+ 		seq_show_option(seq, "grpjquota", sbi->s_qf_names[GRPQUOTA]);
++	up_read(&sb->s_umount);
+ #endif
+ }
+ 
