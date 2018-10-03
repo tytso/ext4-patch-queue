@@ -1,0 +1,39 @@
+ext4: propagate error from dquot_initialize() in EXT4_IOC_FSSETXATTR
+
+From: Wang Shilong <wshilong@ddn.com>
+
+We return most failure of dquota_initialize() except
+inode evict, this could make a bit sense, for example
+we allow file removal even quota files are broken?
+
+But it dosen't make sense to allow setting project
+if quota files etc are broken.
+
+Signed-off-by: Wang Shilong <wshilong@ddn.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@kernel.org
+---
+v1->v2:
+based it on one patchset, to make reviewers happy.
+ fs/ext4/ioctl.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index f81102b..781dd69 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -359,7 +359,9 @@ static int ext4_ioctl_setproject(struct file *filp, __u32 projid)
+ 		brelse(iloc.bh);
+ 	}
+ 
+-	dquot_initialize(inode);
++	err = dquot_initialize(inode);
++	if (err)
++		return err;
+ 
+ 	handle = ext4_journal_start(inode, EXT4_HT_QUOTA,
+ 		EXT4_QUOTA_INIT_BLOCKS(sb) +
+-- 
+1.8.3.1
+
+
