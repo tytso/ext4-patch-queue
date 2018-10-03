@@ -1,0 +1,33 @@
+ext4: initialize retries variable in ext4_da_write_inline_data_begin()
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Variable retries is not initialized in ext4_da_write_inline_data_begin()
+which can lead to nondeterministic number of retries in case we hit
+ENOSPC. Initialize retries to zero as we do everywhere else.
+
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Fixes: bc0ca9df3b2a ("ext4: retry allocation when inline->extent conversion failed")
+Cc: stable@kernel.org
+---
+ fs/ext4/inline.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
+index 3543fe80a3c4..1b13fa5c9d6e 100644
+--- a/fs/ext4/inline.c
++++ b/fs/ext4/inline.c
+@@ -863,7 +863,7 @@ int ext4_da_write_inline_data_begin(struct address_space *mapping,
+ 	handle_t *handle;
+ 	struct page *page;
+ 	struct ext4_iloc iloc;
+-	int retries;
++	int retries = 0;
+ 
+ 	ret = ext4_get_inode_loc(inode, &iloc);
+ 	if (ret)
+-- 
+2.17.1
+
+
