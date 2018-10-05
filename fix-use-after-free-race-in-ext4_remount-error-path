@@ -9,24 +9,74 @@ Reported-by: syzbot+a2872d6feea6918008a9@syzkaller.appspotmail.com
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 Cc: stable@kernel.org
 ---
- fs/ext4/super.c | 2 ++
- 1 file changed, 2 insertions(+)
+ fs/ext4/super.c | 25 +++++++++++++++++++------
+ 1 file changed, 19 insertions(+), 6 deletions(-)
 
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index faf293ed8060..11a1bfae0937 100644
+index faf293ed8060..0843fd5ce449 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -2048,11 +2048,13 @@ static inline void ext4_show_quota_options(struct seq_file *seq,
+@@ -1578,6 +1578,7 @@ static int clear_qf_name(struct super_block *sb, int qtype)
+ {
+ 
+ 	struct ext4_sb_info *sbi = EXT4_SB(sb);
++	char *to_free;
+ 
+ 	if (sb_any_quota_loaded(sb) &&
+ 		sbi->s_qf_names[qtype]) {
+@@ -1585,8 +1586,11 @@ static int clear_qf_name(struct super_block *sb, int qtype)
+ 			" when quota turned on");
+ 		return -1;
+ 	}
+-	kfree(sbi->s_qf_names[qtype]);
+-	sbi->s_qf_names[qtype] = NULL;
++	to_free = rcu_dereference_protected(sbi->s_qf_names[qtype],
++					    lockdep_is_held(&sb->s_umount));
++	rcu_assign_pointer(sbi->s_qf_names[qtype], NULL);
++	synchronize_rcu();
++	kfree(to_free);
+ 	return 1;
+ }
+ #endif
+@@ -2048,11 +2052,15 @@ static inline void ext4_show_quota_options(struct seq_file *seq,
  		seq_printf(seq, ",jqfmt=%s", fmtname);
  	}
  
-+	down_read(&sb->s_umount);
++	rcu_read_lock();
  	if (sbi->s_qf_names[USRQUOTA])
- 		seq_show_option(seq, "usrjquota", sbi->s_qf_names[USRQUOTA]);
+-		seq_show_option(seq, "usrjquota", sbi->s_qf_names[USRQUOTA]);
++		seq_show_option(seq, "usrjquota",
++				rcu_dereference(sbi->s_qf_names[USRQUOTA]));
  
  	if (sbi->s_qf_names[GRPQUOTA])
- 		seq_show_option(seq, "grpjquota", sbi->s_qf_names[GRPQUOTA]);
-+	up_read(&sb->s_umount);
+-		seq_show_option(seq, "grpjquota", sbi->s_qf_names[GRPQUOTA]);
++		seq_show_option(seq, "grpjquota",
++				rcu_dereference(sbi->s_qf_names[GRPQUOTA]));
++	rcu_read_unlock();
  #endif
  }
  
+@@ -5104,6 +5112,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ 	int err = 0;
+ #ifdef CONFIG_QUOTA
+ 	int i, j;
++	char *to_free[EXT4_MAXQUOTAS];
+ #endif
+ 	char *orig_data = kstrdup(data, GFP_KERNEL);
+ 
+@@ -5353,9 +5362,13 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
+ #ifdef CONFIG_QUOTA
+ 	sbi->s_jquota_fmt = old_opts.s_jquota_fmt;
+ 	for (i = 0; i < EXT4_MAXQUOTAS; i++) {
+-		kfree(sbi->s_qf_names[i]);
+-		sbi->s_qf_names[i] = old_opts.s_qf_names[i];
++		to_free[i] = rcu_dereference_protected(sbi->s_qf_names[i],
++						       &sb->s_umount);
++		rcu_assign_pointer(sbi->s_qf_names[i], old_opts.s_qf_names[i]);
+ 	}
++	for (i = 0; i < EXT4_MAXQUOTAS; i++)
++		kfree(to_free[i]);
++	synchronize_rcu();
+ #endif
+ 	kfree(orig_data);
+ 	return err;
