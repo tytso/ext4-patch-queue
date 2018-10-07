@@ -18,7 +18,7 @@ Cc: stable@kernel.org
  1 file changed, 11 insertions(+), 5 deletions(-)
 
 diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
-index a409ff70d67b..4901e389f847 100644
+index a409ff70d67b..cadbbf9a404f 100644
 --- a/fs/ext4/move_extent.c
 +++ b/fs/ext4/move_extent.c
 @@ -92,16 +92,18 @@ mext_check_coverage(struct inode *inode, ext4_lblk_t from, ext4_lblk_t count,
@@ -35,11 +35,11 @@ index a409ff70d67b..4901e389f847 100644
  		ext = path[ext_depth(inode)].p_ext;
 -		if (unwritten != ext4_ext_is_unwritten(ext))
 +		len = ext4_ext_get_actual_len(ext);
-+		if ((ext->ee_block < from) ||
++		if ((le32_to_cpu(ext->ee_block) < from) ||
 +		    (unwritten != ext4_ext_is_unwritten(ext)))
  			goto out;
 -		from += ext4_ext_get_actual_len(ext);
-+		from = ext->ee_block + len;
++		from = le32_to_cpu(ext->ee_block) + len;
  		ext4_ext_drop_refs(path);
  	}
  	ret = 1;
