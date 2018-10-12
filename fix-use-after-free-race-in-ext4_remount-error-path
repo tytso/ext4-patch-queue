@@ -28,13 +28,14 @@ index 86e1bacac757..12f90d48ba61 100644
  #endif
  	unsigned int s_want_extra_isize; /* New inodes should reserve # bytes */
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index faf293ed8060..1909fbb28583 100644
+index faf293ed8060..a221f1cdf704 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
-@@ -920,6 +920,18 @@ static inline void ext4_quota_off_umount(struct super_block *sb)
+@@ -914,6 +914,18 @@ static inline void ext4_quota_off_umount(struct super_block *sb)
+ 	for (type = 0; type < EXT4_MAXQUOTAS; type++)
+ 		ext4_quota_off(sb, type);
  }
- #endif
- 
++
 +/*
 + * This is a helper function which is used in the mount/remount
 + * codepaths (which holds s_umount) to fetch the quota file name.
@@ -46,10 +47,9 @@ index faf293ed8060..1909fbb28583 100644
 +	return rcu_dereference_protected(sbi->s_qf_names[type],
 +					 lockdep_is_held(&sb->s_umount));
 +}
-+
- static void ext4_put_super(struct super_block *sb)
+ #else
+ static inline void ext4_quota_off_umount(struct super_block *sb)
  {
- 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 @@ -965,7 +977,7 @@ static void ext4_put_super(struct super_block *sb)
  	percpu_free_rwsem(&sbi->s_journal_flag_rwsem);
  #ifdef CONFIG_QUOTA
@@ -119,7 +119,7 @@ index faf293ed8060..1909fbb28583 100644
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
 -	char *p;
-+	char *p, *usr_qf_name, *grp_qf_name;
++	char *p, __maybe_unused *usr_qf_name, __maybe_unused *grp_qf_name;
  	substring_t args[MAX_OPT_ARGS];
  	int token;
  
