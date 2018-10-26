@@ -14,36 +14,14 @@ Reported-by: syzbot+c61979f6f2cba5cb3c06@syzkaller.appspotmail.com
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 Cc: stable@kernel.org
 ---
- fs/ext4/move_extent.c | 16 +++++++++++-----
- 1 file changed, 11 insertions(+), 5 deletions(-)
+ fs/ext4/move_extent.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/move_extent.c b/fs/ext4/move_extent.c
-index a409ff70d67b..cadbbf9a404f 100644
+index a409ff70d67b..2f5be02fc6f6 100644
 --- a/fs/ext4/move_extent.c
 +++ b/fs/ext4/move_extent.c
-@@ -92,16 +92,18 @@ mext_check_coverage(struct inode *inode, ext4_lblk_t from, ext4_lblk_t count,
- {
- 	struct ext4_ext_path *path = NULL;
- 	struct ext4_extent *ext;
--	int ret = 0;
-+	int len, ret = 0;
- 	ext4_lblk_t last = from + count;
- 	while (from < last) {
- 		*err = get_ext_path(inode, from, &path);
- 		if (*err)
- 			goto out;
- 		ext = path[ext_depth(inode)].p_ext;
--		if (unwritten != ext4_ext_is_unwritten(ext))
-+		len = ext4_ext_get_actual_len(ext);
-+		if ((le32_to_cpu(ext->ee_block) < from) ||
-+		    (unwritten != ext4_ext_is_unwritten(ext)))
- 			goto out;
--		from += ext4_ext_get_actual_len(ext);
-+		from = le32_to_cpu(ext->ee_block) + len;
- 		ext4_ext_drop_refs(path);
- 	}
- 	ret = 1;
-@@ -516,9 +518,13 @@ mext_check_arguments(struct inode *orig_inode,
+@@ -516,9 +516,13 @@ mext_check_arguments(struct inode *orig_inode,
  			orig_inode->i_ino, donor_inode->i_ino);
  		return -EINVAL;
  	}
