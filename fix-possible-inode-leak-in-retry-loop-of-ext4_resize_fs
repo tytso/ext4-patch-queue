@@ -1,0 +1,31 @@
+ext4: fix possible inode leak in the retry loop of ext4_resize_fs()
+
+From:   Vasily Averin <vvs@virtuozzo.com>
+
+Fixes: 1c6bd7173d66 ("ext4: convert file system to meta_bg if needed ...")
+Signed-off-by: Vasily Averin <vvs@virtuozzo.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@vger.kernel.org # 3.7
+---
+ fs/ext4/resize.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 5fee65afd58b..85158e9de7c2 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -2058,6 +2058,10 @@ int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
+ 		n_blocks_count_retry = 0;
+ 		free_flex_gd(flex_gd);
+ 		flex_gd = NULL;
++		if (resize_inode) {
++			iput(resize_inode);
++			resize_inode = NULL;
++		}
+ 		goto retry;
+ 	}
+ 
+-- 
+2.17.1
+
+
