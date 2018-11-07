@@ -1,0 +1,31 @@
+ext4: fix buffer leak in ext4_xattr_move_to_block() on error path
+
+From: Vasily Averin <vvs@virtuozzo.com>
+
+Fixes: 3f2571c1f91f ("ext4: factor out xattr moving")
+Fixes: 6dd4ee7cab7e ("ext4: Expand extra_inodes space per ...")
+Reviewed-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Vasily Averin <vvs@virtuozzo.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@kernel.org # 2.6.23
+---
+ fs/ext4/xattr.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index 07b9a335c8eb..5c9bc0d85cc0 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -2617,6 +2617,8 @@ static int ext4_xattr_move_to_block(handle_t *handle, struct inode *inode,
+ 	kfree(buffer);
+ 	if (is)
+ 		brelse(is->iloc.bh);
++	if (bs)
++		brelse(bs->bh);
+ 	kfree(is);
+ 	kfree(bs);
+ 
+-- 
+2.17.1
+
+
