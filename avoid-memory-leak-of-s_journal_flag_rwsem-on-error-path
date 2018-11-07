@@ -1,0 +1,28 @@
+ext4: fix possible leak of s_journal_flag_rwsem in error path
+
+From: Vasily Averin <vvs@virtuozzo.com>
+
+Fixes: c8585c6fcaf2 ("ext4: fix races between changing inode journal ...")
+Signed-off-by: Vasily Averin <vvs@virtuozzo.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@kernel.org # 4.7
+---
+ fs/ext4/super.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index ed4d36506ec2..0c9e165b4e3f 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4511,6 +4511,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	percpu_counter_destroy(&sbi->s_freeinodes_counter);
+ 	percpu_counter_destroy(&sbi->s_dirs_counter);
+ 	percpu_counter_destroy(&sbi->s_dirtyclusters_counter);
++	percpu_free_rwsem(&sbi->s_journal_flag_rwsem);
+ failed_mount5:
+ 	ext4_ext_release(sb);
+ 	ext4_release_system_zone(sb);
+-- 
+2.17.1
+
+
