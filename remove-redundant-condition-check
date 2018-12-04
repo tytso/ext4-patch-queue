@@ -1,0 +1,66 @@
+ext4: remove redundant condition check
+
+From: Chengguang Xu <cgxu519@gmx.com>
+
+ext4_xattr_destroy_cache() can handle NULL pointer correctly,
+so there is no need to check NULL pointer before calling
+ext4_xattr_destroy_cache().
+
+Reviewed-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Chengguang Xu <cgxu519@gmx.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/super.c | 29 +++++++++++++----------------
+ 1 file changed, 13 insertions(+), 16 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 53ff6c2a26ed..30d4a4e69de8 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1000,14 +1000,13 @@ static void ext4_put_super(struct super_block *sb)
+ 		invalidate_bdev(sbi->journal_bdev);
+ 		ext4_blkdev_remove(sbi);
+ 	}
+-	if (sbi->s_ea_inode_cache) {
+-		ext4_xattr_destroy_cache(sbi->s_ea_inode_cache);
+-		sbi->s_ea_inode_cache = NULL;
+-	}
+-	if (sbi->s_ea_block_cache) {
+-		ext4_xattr_destroy_cache(sbi->s_ea_block_cache);
+-		sbi->s_ea_block_cache = NULL;
+-	}
++
++	ext4_xattr_destroy_cache(sbi->s_ea_inode_cache);
++	sbi->s_ea_inode_cache = NULL;
++
++	ext4_xattr_destroy_cache(sbi->s_ea_block_cache);
++	sbi->s_ea_block_cache = NULL;
++
+ 	if (sbi->s_mmp_tsk)
+ 		kthread_stop(sbi->s_mmp_tsk);
+ 	brelse(sbi->s_sbh);
+@@ -4522,14 +4521,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	if (EXT4_SB(sb)->rsv_conversion_wq)
+ 		destroy_workqueue(EXT4_SB(sb)->rsv_conversion_wq);
+ failed_mount_wq:
+-	if (sbi->s_ea_inode_cache) {
+-		ext4_xattr_destroy_cache(sbi->s_ea_inode_cache);
+-		sbi->s_ea_inode_cache = NULL;
+-	}
+-	if (sbi->s_ea_block_cache) {
+-		ext4_xattr_destroy_cache(sbi->s_ea_block_cache);
+-		sbi->s_ea_block_cache = NULL;
+-	}
++	ext4_xattr_destroy_cache(sbi->s_ea_inode_cache);
++	sbi->s_ea_inode_cache = NULL;
++
++	ext4_xattr_destroy_cache(sbi->s_ea_block_cache);
++	sbi->s_ea_block_cache = NULL;
++
+ 	if (sbi->s_journal) {
+ 		jbd2_journal_destroy(sbi->s_journal);
+ 		sbi->s_journal = NULL;
+-- 
+2.17.2
+
+
