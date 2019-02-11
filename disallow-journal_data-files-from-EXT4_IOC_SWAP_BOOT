@@ -1,0 +1,23 @@
+ext4: disallow files with EXT4_JOURNAL_DATA_FL from EXT4_IOC_SWAP_BOOT
+
+A malicious/clueless root user can use EXT4_IOC_SWAP_BOOT to force a
+corner casew which can lead to the file system getting corrupted.
+There's no usefulness to allowing this, so just prohibit this case.
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ioctl.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 2e76fb55d94a..eb8ca8d80885 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -132,6 +132,7 @@ static long swap_inode_boot_loader(struct super_block *sb,
+ 
+ 	if (inode->i_nlink != 1 || !S_ISREG(inode->i_mode) ||
+ 	    IS_SWAPFILE(inode) || IS_ENCRYPTED(inode) ||
++	    (EXT4_I(inode)->i_flags & EXT4_JOURNAL_DATA_FL) ||
+ 	    ext4_has_inline_data(inode)) {
+ 		err = -EINVAL;
+ 		goto journal_err_out;
