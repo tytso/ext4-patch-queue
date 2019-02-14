@@ -25,11 +25,11 @@ Reported-by: zhangyi (F) <yi.zhang@huawei.com>
 Suggested-by: Jan Kara <jack@suse.cz>
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
- fs/jbd2/journal.c | 18 ++++++++++--------
- 1 file changed, 10 insertions(+), 8 deletions(-)
+ fs/jbd2/journal.c | 52 +++++++++++++++++++++++++++-------------------------
+ 1 file changed, 27 insertions(+), 25 deletions(-)
 
 diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
-index 88d8f22d2cba..a8082c86d569 100644
+index 88d8f22d2cba..67ac91b53050 100644
 --- a/fs/jbd2/journal.c
 +++ b/fs/jbd2/journal.c
 @@ -1356,6 +1356,10 @@ static int journal_reset(journal_t *journal)
@@ -93,3 +93,56 @@ index 88d8f22d2cba..a8082c86d569 100644
  	if (errcode == -ESHUTDOWN)
  		errcode = 0;
  	jbd_debug(1, "JBD2: updating superblock error (errno %d)\n", errcode);
+@@ -1894,28 +1896,27 @@ int jbd2_journal_set_features (journal_t *journal, unsigned long compat,
+ 
+ 	sb = journal->j_superblock;
+ 
++	/* Load the checksum driver if necessary */
++	if ((journal->j_chksum_driver == NULL) &&
++	    INCOMPAT_FEATURE_ON(JBD2_FEATURE_INCOMPAT_CSUM_V3)) {
++		journal->j_chksum_driver = crypto_alloc_shash("crc32c", 0, 0);
++		if (IS_ERR(journal->j_chksum_driver)) {
++			printk(KERN_ERR "JBD2: Cannot load crc32c driver.\n");
++			journal->j_chksum_driver = NULL;
++			return 0;
++		}
++		/* Precompute checksum seed for all metadata */
++		journal->j_csum_seed = jbd2_chksum(journal, ~0, sb->s_uuid,
++						   sizeof(sb->s_uuid));
++	}
++
++	lock_buffer(journal->j_sb_buffer);
++
+ 	/* If enabling v3 checksums, update superblock */
+ 	if (INCOMPAT_FEATURE_ON(JBD2_FEATURE_INCOMPAT_CSUM_V3)) {
+ 		sb->s_checksum_type = JBD2_CRC32C_CHKSUM;
+ 		sb->s_feature_compat &=
+ 			~cpu_to_be32(JBD2_FEATURE_COMPAT_CHECKSUM);
+-
+-		/* Load the checksum driver */
+-		if (journal->j_chksum_driver == NULL) {
+-			journal->j_chksum_driver = crypto_alloc_shash("crc32c",
+-								      0, 0);
+-			if (IS_ERR(journal->j_chksum_driver)) {
+-				printk(KERN_ERR "JBD2: Cannot load crc32c "
+-				       "driver.\n");
+-				journal->j_chksum_driver = NULL;
+-				return 0;
+-			}
+-
+-			/* Precompute checksum seed for all metadata */
+-			journal->j_csum_seed = jbd2_chksum(journal, ~0,
+-							   sb->s_uuid,
+-							   sizeof(sb->s_uuid));
+-		}
+ 	}
+ 
+ 	/* If enabling v1 checksums, downgrade superblock */
+@@ -1927,6 +1928,7 @@ int jbd2_journal_set_features (journal_t *journal, unsigned long compat,
+ 	sb->s_feature_compat    |= cpu_to_be32(compat);
+ 	sb->s_feature_ro_compat |= cpu_to_be32(ro);
+ 	sb->s_feature_incompat  |= cpu_to_be32(incompat);
++	unlock_buffer(journal->j_sb_buffer);
+ 
+ 	return 1;
+ #undef COMPAT_FEATURE_ON
