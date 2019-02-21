@@ -1,0 +1,35 @@
+ext4: fix compile error when using BUFFER_TRACE
+
+From: "zhangyi (F)" <yi.zhang@huawei.com>
+
+Fix compile error below when using BUFFER_TRACE.
+
+fs/ext4/inode.c: In function ‘ext4_expand_extra_isize’:
+fs/ext4/inode.c:5979:19: error: request for member ‘bh’ in something not a structure or union
+  BUFFER_TRACE(iloc.bh, "get_write_access");
+
+Fixes: c03b45b853f58 ("ext4, project: expand inode extra size if possible")
+Signed-off-by: zhangyi (F) <yi.zhang@huawei.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/ext4/inode.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 22a9d81..b7384d5 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -5976,7 +5976,7 @@ int ext4_expand_extra_isize(struct inode *inode,
+ 
+ 	ext4_write_lock_xattr(inode, &no_expand);
+ 
+-	BUFFER_TRACE(iloc.bh, "get_write_access");
++	BUFFER_TRACE(iloc->bh, "get_write_access");
+ 	error = ext4_journal_get_write_access(handle, iloc->bh);
+ 	if (error) {
+ 		brelse(iloc->bh);
+-- 
+2.7.4
+
+
