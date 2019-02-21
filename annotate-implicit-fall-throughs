@@ -1,0 +1,43 @@
+ext4: annotate implicit fall throughs
+
+From: Mathieu Malaterre <malat@debian.org>
+
+There is a plan to build the kernel with -Wimplicit-fallthrough and
+these places in the code produced warnings (W=1). Fix them up.
+
+This commit remove the following warnings:
+
+  fs/ext4/hash.c:233:15: warning: this statement may fall through [-Wimplicit-fallthrough=]
+  fs/ext4/hash.c:246:15: warning: this statement may fall through [-Wimplicit-fallthrough=]
+
+Signed-off-by: Mathieu Malaterre <malat@debian.org>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Andreas Dilger <adilger@dilger.ca>
+---
+ fs/ext4/hash.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ext4/hash.c b/fs/ext4/hash.c
+index e22dcfab308b..46b24da33a28 100644
+--- a/fs/ext4/hash.c
++++ b/fs/ext4/hash.c
+@@ -231,6 +231,7 @@ int ext4fs_dirhash(const char *name, int len, struct dx_hash_info *hinfo)
+ 		break;
+ 	case DX_HASH_HALF_MD4_UNSIGNED:
+ 		str2hashbuf = str2hashbuf_unsigned;
++		/* fall through */
+ 	case DX_HASH_HALF_MD4:
+ 		p = name;
+ 		while (len > 0) {
+@@ -244,6 +245,7 @@ int ext4fs_dirhash(const char *name, int len, struct dx_hash_info *hinfo)
+ 		break;
+ 	case DX_HASH_TEA_UNSIGNED:
+ 		str2hashbuf = str2hashbuf_unsigned;
++		/* fall through */
+ 	case DX_HASH_TEA:
+ 		p = name;
+ 		while (len > 0) {
+-- 
+2.19.2
+
+
