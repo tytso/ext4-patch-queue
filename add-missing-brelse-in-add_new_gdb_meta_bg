@@ -1,0 +1,48 @@
+ext4: add missing brelse() in add_new_gdb_meta_bg()
+
+From: Lukas Czerner <lczerner@redhat.com>
+
+Currently in add_new_gdb_meta_bg() there is a missing brelse of gdb_bh
+in case ext4_journal_get_write_access() fails.
+Additionally kvfree() is missing in the same error path. Fix it by
+moving the ext4_journal_get_write_access() before the ext4 sb update as
+Ted suggested and release n_group_desc and gdb_bh in case it fails.
+
+Fixes: 61a9c11e5e7a ("ext4: add missing brelse() add_new_gdb_meta_bg()'s error path")
+Signed-off-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+v2: Move ext4_journal_get_write_access() before we update ext4 sb
+
+ fs/ext4/resize.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 48421de803b7..5f89c19043a2 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -932,11 +932,18 @@ static int add_new_gdb_meta_bg(struct super_block *sb,
+ 	memcpy(n_group_desc, o_group_desc,
+ 	       EXT4_SB(sb)->s_gdb_count * sizeof(struct buffer_head *));
+ 	n_group_desc[gdb_num] = gdb_bh;
++
++	BUFFER_TRACE(gdb_bh, "get_write_access");
++	err = ext4_journal_get_write_access(handle, gdb_bh);
++	if (err) {
++		kvfree(n_group_desc);
++		brelse(gdb_bh);
++		return err;
++	}
++
+ 	EXT4_SB(sb)->s_group_desc = n_group_desc;
+ 	EXT4_SB(sb)->s_gdb_count++;
+ 	kvfree(o_group_desc);
+-	BUFFER_TRACE(gdb_bh, "get_write_access");
+-	err = ext4_journal_get_write_access(handle, gdb_bh);
+ 	return err;
+ }
+ 
+-- 
+2.20.1
+
+
