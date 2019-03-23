@@ -1,0 +1,34 @@
+ext4: prohibit fstrim in norecovery mode
+
+From: Darrick J. Wong <darrick.wong@oracle.com>
+
+The ext4 fstrim implementation uses the block bitmaps to find free space
+that can be discarded.  If we haven't replayed the journal, the bitmaps
+will be stale and we absolutely *cannot* use stale metadata to zap the
+underlying storage.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ioctl.c |    7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 3c4f8bb59f8a..bab3da4f1e0d 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -1000,6 +1000,13 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 		if (!blk_queue_discard(q))
+ 			return -EOPNOTSUPP;
+ 
++		/*
++		 * We haven't replayed the journal, so we cannot use our
++		 * block-bitmap-guided storage zapping commands.
++		 */
++		if (test_opt(sb, NOLOAD) && ext4_has_feature_journal(sb))
++			return -EROFS;
++
+ 		if (copy_from_user(&range, (struct fstrim_range __user *)arg,
+ 		    sizeof(range)))
+ 			return -EFAULT;
+
