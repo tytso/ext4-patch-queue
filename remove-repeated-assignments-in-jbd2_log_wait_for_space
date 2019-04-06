@@ -1,0 +1,30 @@
+jbd2: remove repeated assignments in __jbd2_log_wait_for_space()
+
+From: Liu Song <liu.song11@zte.com.cn>
+
+At the beginning, nblocks has been assigned. There is no need
+to repeat the assignment in the while loop, and remove it.
+
+Signed-off-by: Liu Song <liu.song11@zte.com.cn>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+---
+ fs/jbd2/checkpoint.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/jbd2/checkpoint.c b/fs/jbd2/checkpoint.c
+index 26f8d7e46462..23053de5e999 100644
+--- a/fs/jbd2/checkpoint.c
++++ b/fs/jbd2/checkpoint.c
+@@ -132,7 +132,6 @@ void __jbd2_log_wait_for_space(journal_t *journal)
+ 			return;
+ 		}
+ 		spin_lock(&journal->j_list_lock);
+-		nblocks = jbd2_space_needed(journal);
+ 		space_left = jbd2_log_space_left(journal);
+ 		if (space_left < nblocks) {
+ 			int chkpt = journal->j_checkpoint_transactions != NULL;
+-- 
+2.19.1
+
+
