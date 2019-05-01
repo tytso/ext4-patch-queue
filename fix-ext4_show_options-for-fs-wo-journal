@@ -1,0 +1,34 @@
+ext4: fix ext4_show_options for file systems w/o journal
+
+From: Debabrata Banerjee <dbanerje@akamai.com>
+
+Instead of removing EXT4_MOUNT_JOURNAL_CHECKSUM from s_def_mount_opt as
+I assume was intended, all other options were blown away leading to
+_ext4_show_options() output being incorrect.
+
+Fixes: 1e381f60dad9 ("ext4: do not allow journal_opts for fs w/o journal")
+Signed-off-by: Debabrata Banerjee <dbanerje@akamai.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Cc: stable@kernel.org
+---
+ fs/ext4/super.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 6ed4eb81e674..5cdf1d88b5c3 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4238,7 +4238,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 				 "data=, fs mounted w/o journal");
+ 			goto failed_mount_wq;
+ 		}
+-		sbi->s_def_mount_opt &= EXT4_MOUNT_JOURNAL_CHECKSUM;
++		sbi->s_def_mount_opt &= ~EXT4_MOUNT_JOURNAL_CHECKSUM;
+ 		clear_opt(sb, JOURNAL_CHECKSUM);
+ 		clear_opt(sb, DATA_FLAGS);
+ 		sbi->s_journal = NULL;
+-- 
+2.21.0
+
+
