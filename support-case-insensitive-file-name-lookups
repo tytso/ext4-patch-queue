@@ -6,11 +6,11 @@ This patch implements the actual support for case-insensitive file name
 lookups in ext4, based on the feature bit and the encoding stored in the
 superblock.
 
-A filesystem that has the fname_encoding feature set is able to
-configure directories with the +F (EXT4_CASEFOLD_FL) attribute, enabling
-lookups to succeed in that directory in a case-insensitive fashion, i.e:
-match a directory entry even if the name used by userspace is not a byte
-per byte match with the disk name, but is an equivalent case-insensitive
+A filesystem that has the casefold feature set is able to configure
+directories with the +F (EXT4_CASEFOLD_FL) attribute, enabling lookups
+to succeed in that directory in a case-insensitive fashion, i.e: match
+a directory entry even if the name used by userspace is not a byte per
+byte match with the disk name, but is an equivalent case-insensitive
 version of the Unicode string.  This operation is called a
 case-insensitive file name lookup.
 
@@ -346,7 +346,7 @@ index 20faa6a69238..e14e6c5ede9d 100644
  	}
  
 +	if ((flags ^ oldflags) & EXT4_CASEFOLD_FL) {
-+		if (!ext4_has_feature_fname_encoding(sb)) {
++		if (!ext4_has_feature_casefold(sb)) {
 +			err = -EOPNOTSUPP;
 +			goto flags_out;
 +		}
