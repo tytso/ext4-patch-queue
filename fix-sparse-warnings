@@ -1,0 +1,48 @@
+ext4: fix miscellaneous sparse warnings
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/fsmap.c | 2 +-
+ fs/ext4/ioctl.c | 2 +-
+ fs/ext4/super.c | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/fsmap.c b/fs/ext4/fsmap.c
+index 4b99e2db95b8..dbccf46f1770 100644
+--- a/fs/ext4/fsmap.c
++++ b/fs/ext4/fsmap.c
+@@ -626,7 +626,7 @@ int ext4_getfsmap(struct super_block *sb, struct ext4_fsmap_head *head,
+ {
+ 	struct ext4_fsmap dkeys[2];	/* per-dev keys */
+ 	struct ext4_getfsmap_dev handlers[EXT4_GETFSMAP_DEVS];
+-	struct ext4_getfsmap_info info = {0};
++	struct ext4_getfsmap_info info = { NULL };
+ 	int i;
+ 	int error = 0;
+ 
+diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
+index 7e85ecf0b849..e486e49b31ed 100644
+--- a/fs/ext4/ioctl.c
++++ b/fs/ext4/ioctl.c
+@@ -608,7 +608,7 @@ static int ext4_getfsmap_format(struct ext4_fsmap *xfm, void *priv)
+ static int ext4_ioc_getfsmap(struct super_block *sb,
+ 			     struct fsmap_head __user *arg)
+ {
+-	struct getfsmap_info info = {0};
++	struct getfsmap_info info = { NULL };
+ 	struct ext4_fsmap_head xhead = {0};
+ 	struct fsmap_head head;
+ 	bool aborted = false;
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index fc6fa2c93e77..5013d04b41fd 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4679,7 +4679,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 
+ #ifdef CONFIG_QUOTA
+ 	for (i = 0; i < EXT4_MAXQUOTAS; i++)
+-		kfree(sbi->s_qf_names[i]);
++		kfree(get_qf_name(sb, sbi, i));
+ #endif
+ 	ext4_blkdev_remove(sbi);
+ 	brelse(bh);

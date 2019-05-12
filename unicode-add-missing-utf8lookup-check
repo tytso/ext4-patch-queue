@@ -1,0 +1,21 @@
+unicode: add missing check for an error return from utf8lookup()
+
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: Gabriel Krisman Bertazi <krisman@collabora.com>
+---
+ fs/unicode/utf8-norm.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/unicode/utf8-norm.c b/fs/unicode/utf8-norm.c
+index 20d440c3f2db..801ed6d2ea37 100644
+--- a/fs/unicode/utf8-norm.c
++++ b/fs/unicode/utf8-norm.c
+@@ -714,6 +714,8 @@ int utf8byte(struct utf8cursor *u8c)
+ 			}
+ 
+ 			leaf = utf8lookup(u8c->data, u8c->hangul, u8c->s);
++			if (!leaf)
++				return -1;
+ 			ccc = LEAF_CCC(leaf);
+ 		}
+ 
