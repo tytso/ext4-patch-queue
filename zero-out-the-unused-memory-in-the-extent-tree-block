@@ -19,7 +19,7 @@ Cc: stable@kernel.org
  1 file changed, 15 insertions(+), 2 deletions(-)
 
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 0f89f5190cd7..31efe8ad56ae 100644
+index 0f89f5190cd7..f2c62e2a0c98 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -1035,6 +1035,7 @@ static int ext4_ext_split(handle_t *handle, struct inode *inode,
@@ -36,7 +36,7 @@ index 0f89f5190cd7..31efe8ad56ae 100644
  
 +	/* zero out unused area in the extent block */
 +	ext_size = sizeof(struct ext4_extent_header) +
-+		sizeof(struct ext4_extent) * neh->eh_entries;
++		sizeof(struct ext4_extent) * le16_to_cpu(neh->eh_entries);
 +	memset(bh->b_data + ext_size, 0, inode->i_sb->s_blocksize - ext_size);
  	ext4_extent_block_csum_set(inode, neh);
  	set_buffer_uptodate(bh);
@@ -47,7 +47,7 @@ index 0f89f5190cd7..31efe8ad56ae 100644
  		}
 +		/* zero out unused area in the extent block */
 +		ext_size = sizeof(struct ext4_extent_header) +
-+			sizeof(struct ext4_extent) * neh->eh_entries;
++		   (sizeof(struct ext4_extent) * le16_to_cpu(neh->eh_entries));
 +		memset(bh->b_data + ext_size, 0,
 +			inode->i_sb->s_blocksize - ext_size);
  		ext4_extent_block_csum_set(inode, neh);
@@ -75,7 +75,3 @@ index 0f89f5190cd7..31efe8ad56ae 100644
  
  	/* set size of new block */
  	neh = ext_block_hdr(bh);
--- 
-2.20.0
-
-
